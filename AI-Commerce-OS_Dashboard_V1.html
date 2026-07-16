@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI-Commerce-OS Dashboard Prototype V1</title>
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:#f4f6fb;color:#222}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:240px;background:#18233d;color:#fff;padding:20px}
+.sidebar h2{margin-top:0}
+.sidebar ul{list-style:none;padding:0}
+.sidebar li{padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+.main{margin-left:260px;padding:24px}
+.hero{background:#fff;border-radius:14px;padding:24px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.card{background:#fff;padding:18px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.panel{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:20px}
+.box{background:#fff;padding:18px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+button{background:#4f46e5;color:#fff;border:none;padding:12px 18px;border-radius:8px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="sidebar">
+<h2>AI-Commerce-OS</h2>
+<ul>
+<li>🏢 公司</li>
+<li>📈 今日运营</li>
+<li>🤖 AI员工</li>
+<li>🏬 店铺</li>
+<li>📦 产品</li>
+<li>🛒 商品</li>
+<li>📋 订单</li>
+<li>📦 库存</li>
+<li>📊 数据中心</li>
+<li>⚙ 系统设置</li>
+</ul>
+</div>
+<div class="main">
+<div class="hero">
+<h1>AI CEO 总控台</h1>
+<p>欢迎回来，立行。AI 公司已准备开始今天的运营。</p>
+<button onclick="alert('未来这里将启动 AI 工作流（N8N + Agent Runtime）')">开始今日运营</button>
+</div>
+<div class="cards">
+<div class="card"><h3>产品</h3><h1>128</h1></div>
+<div class="card"><h3>店铺</h3><h1>8</h1></div>
+<div class="card"><h3>Listing</h3><h1>1256</h1></div>
+<div class="card"><h3>库存</h3><h1>9872</h1></div>
+<div class="card"><h3>订单</h3><h1>358</h1></div>
+</div>
+<div class="panel">
+<div class="box">
+<h2>AI CEO 今日建议</h2>
+<ol>
+<li>发布 20 个新品 Listing</li>
+<li>同步所有店铺库存</li>
+<li>回复高优先级客户</li>
+<li>生成今日经营报告</li>
+</ol>
+</div>
+<div class="box">
+<h2>AI 员工状态</h2>
+<p>🧠 AI CEO：运行中</p>
+<p>📦 Product Agent：分析新品</p>
+<p>🛒 Listing Agent：发布中</p>
+<p>📋 Order Agent：待命</p>
+</div>
+</div>
+</div>
+</body>
+</html>
