@@ -1,4 +1,39 @@
+import { useEffect, useState } from "react";
+import { getDashboardSummary } from "../../services/api";
+
 function Hero() {
+
+  const [summary, setSummary] = useState({
+    products: 0,
+    listings: 0,
+    inventories: 0,
+    orders: 0,
+  });
+
+  useEffect(() => {
+
+    async function loadDashboard() {
+
+      try {
+
+        const data = await getDashboardSummary();
+
+        console.log("Dashboard API:", data);
+
+        setSummary(data);
+
+      } catch (error) {
+
+        console.error(error);
+
+      }
+
+    }
+
+    loadDashboard();
+
+  }, []);
+
   return (
     <section className="hero">
 
@@ -15,6 +50,21 @@ function Hero() {
         <p>
           AI CEO 已制定今天的运营计划，公司已进入自动运营状态。
         </p>
+
+        <div
+          style={{
+            marginTop: "24px",
+            display: "flex",
+            gap: "18px",
+            flexWrap: "wrap",
+            fontSize: "15px",
+          }}
+        >
+          <div>📦 产品：{summary.products}</div>
+          <div>🛒 商品：{summary.listings}</div>
+          <div>🏬 库存：{summary.inventories}</div>
+          <div>📑 订单：{summary.orders}</div>
+        </div>
 
         <div className="hero-buttons">
 
