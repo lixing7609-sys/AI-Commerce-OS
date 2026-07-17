@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.runtime.engine.runtime_engine import RuntimeEngine
+from app.runtime.engine.runtime_engine import runtime_engine
 
 
 router = APIRouter(
@@ -9,13 +9,10 @@ router = APIRouter(
 )
 
 
-runtime_engine = RuntimeEngine()
-
-
 @router.get("/status")
 def get_runtime_status():
     """
-    获取系统运行时状态。
+    获取 RuntimeEngine 当前运行状态。
     """
 
     return runtime_engine.status()
@@ -24,28 +21,28 @@ def get_runtime_status():
 @router.post("/start")
 def start_runtime():
     """
-    启动系统运行时。
+    启动 RuntimeEngine。
     """
 
-    runtime_engine.start()
+    status = runtime_engine.start()
 
     return {
         "success": True,
         "message": "RuntimeEngine 已启动",
-        **runtime_engine.status(),
+        **status,
     }
 
 
 @router.post("/stop")
 def stop_runtime():
     """
-    停止系统运行时。
+    停止 RuntimeEngine。
     """
 
-    runtime_engine.stop()
+    status = runtime_engine.stop()
 
     return {
         "success": True,
         "message": "RuntimeEngine 已停止",
-        **runtime_engine.status(),
+        **status,
     }

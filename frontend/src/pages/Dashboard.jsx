@@ -8,6 +8,12 @@ function Dashboard() {
     listings: 0,
     inventories: 0,
     orders: 0,
+    runtime: {
+      running: false,
+      status: "stopped",
+      started_at: null,
+      stopped_at: null,
+    },
   });
 
   const today = new Date();
@@ -23,33 +29,55 @@ function Dashboard() {
     async function loadSummary() {
       try {
         const data = await getDashboardSummary();
-        setSummary(data);
+
+        setSummary({
+          products: data.products ?? 0,
+          listings: data.listings ?? 0,
+          inventories: data.inventories ?? 0,
+          orders: data.orders ?? 0,
+          runtime: {
+            running: data.runtime?.running ?? false,
+            status: data.runtime?.status ?? "stopped",
+            started_at: data.runtime?.started_at ?? null,
+            stopped_at: data.runtime?.stopped_at ?? null,
+          },
+        });
       } catch (error) {
         console.error("Dashboard 数据加载失败：", error);
       }
     }
 
     loadSummary();
+
+    const timer = window.setInterval(loadSummary, 5000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
   }, []);
+
+  const runtimeRunning = summary.runtime.running;
 
   const agents = [
     {
       name: "AI CEO",
-      description: "公司策略与决策支持",
-      status: "运行中",
-      state: "running",
+      description: runtimeRunning
+        ? "公司策略与决策支持"
+        : "等待 RuntimeEngine 启动",
+      status: runtimeRunning ? "运行中" : "已停止",
+      state: runtimeRunning ? "running" : "waiting",
     },
     {
       name: "产品 Agent",
       description: "产品规划与优化建议",
-      status: "运行中",
-      state: "running",
+      status: runtimeRunning ? "运行中" : "待机",
+      state: runtimeRunning ? "running" : "waiting",
     },
     {
       name: "销售 Agent",
       description: "客户跟进与成交支持",
-      status: "运行中",
-      state: "running",
+      status: runtimeRunning ? "运行中" : "待机",
+      state: runtimeRunning ? "running" : "waiting",
     },
     {
       name: "财务 Agent",
@@ -112,8 +140,14 @@ function Dashboard() {
 
         <div className="sidebar-account">
           <div className="account-status">
-            <span className="status-light" />
-            AI CEO 在线
+            <span
+              className="status-light"
+              style={{
+                background: runtimeRunning ? "#26b85d" : "#a7a8ad",
+              }}
+            />
+
+            {runtimeRunning ? "AI CEO 在线" : "AI CEO 离线"}
           </div>
 
           <div className="account-plan">
@@ -128,7 +162,11 @@ function Dashboard() {
           <div>
             <h1>上午好，立行 👋</h1>
 
-            <p>AI CEO 已就绪，为你提供智能决策与运营支持</p>
+            <p>
+              {runtimeRunning
+                ? "AI CEO 已就绪，为你提供智能决策与运营支持"
+                : "RuntimeEngine 尚未启动，AI 员工当前处于待机状态"}
+            </p>
 
             <span>
               聚焦产品、营销、服务、财务，打造一人公司的高效增长引擎。
@@ -173,7 +211,7 @@ function Dashboard() {
           <article className="metric-card">
             <span>待办任务</span>
             <strong>3</strong>
-            <small>进行中</small>
+            <small>{runtimeRunning ? "进行中" : "暂停中"}</small>
             <em>▤</em>
           </article>
         </section>
@@ -181,7 +219,9 @@ function Dashboard() {
         <section className="main-grid">
           <article className="ceo-command-card">
             <div className="ceo-command-copy">
-              <span>AI CEO 建议</span>
+              <span>
+                {runtimeRunning ? "AI CEO 建议" : "AI CEO 当前离线"}
+              </span>
 
               <h2>
                 今天公司
@@ -190,10 +230,14 @@ function Dashboard() {
               </h2>
 
               <p>
-                基于数据库和经营状态，AI CEO 为你生成今日关键任务。
+                {runtimeRunning
+                  ? "基于数据库和经营状态，AI CEO 为你生成今日关键任务。"
+                  : "启动 RuntimeEngine 后，AI CEO 将开始生成经营建议。"}
               </p>
 
-              <button>查看建议任务 →</button>
+              <button>
+                {runtimeRunning ? "查看建议任务 →" : "等待系统启动"}
+              </button>
             </div>
 
             <div className="ceo-analysis-card">
@@ -210,9 +254,19 @@ function Dashboard() {
 
               <h4>AI 建议</h4>
 
-              <p>优化产品定价策略</p>
-              <p>加强社交媒体内容输出</p>
-              <p>跟进潜在客户回访</p>
+              {runtimeRunning ? (
+                <>
+                  <p>优化产品定价策略</p>
+                  <p>加强社交媒体内容输出</p>
+                  <p>跟进潜在客户回访</p>
+                </>
+              ) : (
+                <>
+                  <p>RuntimeEngine 当前未运行</p>
+                  <p>AI 员工暂未开始执行任务</p>
+                  <p>请先通过 Runtime API 启动系统</p>
+                </>
+              )}
             </div>
           </article>
 
@@ -280,8 +334,12 @@ function Dashboard() {
             </div>
 
             <div className="reminder-item">
-              <span>有 2 个客户需要跟进</span>
-              <small>10 分钟前</small>
+              <span>
+                {runtimeRunning
+                  ? "RuntimeEngine 正在运行"
+                  : "RuntimeEngine 当前已停止"}
+              </span>
+              <small>实时状态</small>
             </div>
 
             <div className="reminder-item">
