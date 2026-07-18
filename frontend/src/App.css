@@ -1294,3 +1294,361 @@ button {
     text-align: left;
   }
 }
+
+/* =========================
+   异常任务处置
+========================= */
+
+.recovery-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  background: #ffffff;
+  border: 1px solid #dedee1;
+  border-radius: 12px;
+}
+
+.recovery-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.recovery-panel-title {
+  color: #2e2f34;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.recovery-summary-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+}
+
+.recovery-summary-banner.normal {
+  background: #f7f7f8;
+}
+
+.recovery-summary-banner.blocked {
+  background: #fef3c7;
+}
+
+.recovery-summary-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  color: #66676d;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.recovery-summary-counts strong {
+  color: #171719;
+  font-weight: 800;
+}
+
+.recovery-summary-reason {
+  margin: 0;
+  color: #46474c;
+  font-size: 12px;
+}
+
+.recovery-summary-banner.blocked .recovery-summary-reason {
+  color: #92660a;
+  font-weight: 650;
+}
+
+.recovery-alert {
+  padding: 9px 13px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.recovery-alert.error {
+  color: #9a2f24;
+  background: #fdecea;
+  border: 1px solid #f3c7c1;
+}
+
+.recovery-alert.success {
+  color: #198447;
+  background: #e8f8ee;
+  border: 1px solid #c3ecd3;
+}
+
+.recovery-empty,
+.recovery-loading {
+  padding: 20px 0;
+  color: #85868c;
+  text-align: center;
+  font-size: 12px;
+}
+
+.recovery-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.recovery-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #85868c;
+  font-weight: 650;
+}
+
+.recovery-filter-field select {
+  padding: 6px 10px;
+  color: #2e2f34;
+  background: #ffffff;
+  border: 1px solid #dedee1;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.recovery-table-wrapper {
+  overflow-x: auto;
+}
+
+.recovery-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.recovery-table th {
+  padding: 8px 10px;
+  color: #85868c;
+  font-weight: 650;
+  text-align: left;
+  border-bottom: 1px solid #e9e9eb;
+  white-space: nowrap;
+}
+
+.recovery-table td {
+  padding: 9px 10px;
+  color: #46474c;
+  border-bottom: 1px solid #e9e9eb;
+  vertical-align: middle;
+}
+
+.recovery-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.recovery-task-id-link {
+  padding: 0;
+  color: #202023;
+  background: none;
+  border: 0;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.recovery-status {
+  display: inline-block;
+  padding: 3px 9px;
+  font-size: 10px;
+  font-weight: 650;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.recovery-status.pending {
+  color: #68696f;
+  background: #efeff1;
+}
+
+.recovery-status.running {
+  color: #198447;
+  background: #e8f8ee;
+}
+
+.recovery-stale-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  color: #9a2f24;
+  background: #fdecea;
+  border: 1px solid #f3c7c1;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.recovery-row-actions {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.recovery-action-button {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.recovery-action-button.secondary {
+  color: #46474c;
+  background: #ffffff;
+  border: 1px solid #dedee1;
+}
+
+.recovery-action-button.danger {
+  color: #9a2f24;
+  background: #fdecea;
+  border: 1px solid #f3c7c1;
+}
+
+.recovery-action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.recovery-pagination {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.recovery-pagination-button {
+  padding: 6px 14px;
+  color: #62636a;
+  background: #ffffff;
+  border: 1px solid #dedee1;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.recovery-pagination-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* =========================
+   通用确认弹窗
+========================= */
+
+.confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(20, 20, 22, 0.45);
+  z-index: 1000;
+}
+
+.confirm-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 420px;
+  padding: 22px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+}
+
+.confirm-dialog-title {
+  margin: 0;
+  color: #171719;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.confirm-dialog-message {
+  margin: 0;
+  color: #46474c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.confirm-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.confirm-dialog-textarea {
+  padding: 10px 12px;
+  color: #2e2f34;
+  background: #f7f7f8;
+  border: 1px solid #dedee1;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.confirm-dialog-textarea:disabled {
+  opacity: 0.6;
+}
+
+.confirm-dialog-char-count {
+  align-self: flex-end;
+  color: #85868c;
+  font-size: 11px;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.confirm-dialog-button {
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.confirm-dialog-button.cancel {
+  color: #46474c;
+  background: #ffffff;
+  border: 1px solid #dedee1;
+}
+
+.confirm-dialog-button.confirm {
+  color: #ffffff;
+  background: #171719;
+  border: 1px solid #171719;
+}
+
+.confirm-dialog-button.confirm.danger {
+  background: #c22f22;
+  border-color: #c22f22;
+}
+
+.confirm-dialog-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .recovery-summary-counts {
+    gap: 10px;
+  }
+
+  .recovery-filters {
+    flex-direction: column;
+  }
+}

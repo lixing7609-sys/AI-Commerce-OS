@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import RecoveryCandidatesPanel from "../components/tasks/RecoveryCandidatesPanel";
 import { getTaskDetail, getTasks, getTaskStats } from "../services/api";
 
 const STATUS_LABELS = {
@@ -61,6 +62,8 @@ function TaskCenter({ onNavigate = () => {} }) {
   const [selectedTask, setSelectedTask] = useState(null);
   const [detailError, setDetailError] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const selectedTaskIdRef = useRef(null);
 
@@ -137,7 +140,11 @@ function TaskCenter({ onNavigate = () => {} }) {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [statusFilter]);
+  }, [statusFilter, refreshTick]);
+
+  function refreshTaskCenterData() {
+    setRefreshTick((tick) => tick + 1);
+  }
 
   async function handleSelectTask(taskId) {
     setDetailError(null);
@@ -265,6 +272,11 @@ function TaskCenter({ onNavigate = () => {} }) {
               <strong>{stats.failed}</strong>
             </article>
           </section>
+
+          <RecoveryCandidatesPanel
+            onTaskMutated={refreshTaskCenterData}
+            onViewTask={handleSelectTask}
+          />
 
           <div className="task-filter-tabs">
             {FILTERS.map((filter) => (
