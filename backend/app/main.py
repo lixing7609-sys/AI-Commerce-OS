@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,11 +13,26 @@ from app.api.v1.runtime import router as runtime_router
 from app.api.v1.stores import router as stores_router
 from app.api.v1.suppliers import router as suppliers_router
 from app.api.v1.tasks import router as tasks_router
+from app.database.db import create_database_tables
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI 生命周期。
+
+    系统启动时检查并创建数据库表。
+    """
+
+    create_database_tables()
+
+    yield
 
 
 app = FastAPI(
     title="AI-Commerce-OS",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 

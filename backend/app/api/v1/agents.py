@@ -5,6 +5,7 @@ from app.models.agent_task_request import AgentTaskRequest
 from app.runtime.engine.runtime_engine import runtime_engine
 from app.runtime.task import Task
 from app.runtime.task_queue import task_queue
+from app.services.task_service import TaskService
 
 
 router = APIRouter(
@@ -50,8 +51,13 @@ def run_agent_task(
     """
     向指定 AI 员工发送并同步执行任务。
 
-    任务会先进入 TaskQueue，
-    再由当前同步执行流程取出并执行。
+    任务会：
+
+    1. 创建标准 Task；
+    2. 写入 PostgreSQL；
+    3. 进入 TaskQueue；
+    4. 执行 Agent；
+    5. 更新最终执行状态和结果。
     """
 
     if not runtime_engine.running:
@@ -81,17 +87,30 @@ def run_agent_task(
         priority=request.priority,
     )
 
+    try:
+        TaskService.create_task(task)
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"任务写入数据库失败：{error}",
+        ) from error
+
     task_queue.push(task)
 
     queued_task = task_queue.pop()
 
     if queued_task is None:
+        task.mark_failed("任务队列读取失败")
+        TaskService.update_task(task)
+
         raise HTTPException(
             status_code=500,
-            detail="任务队列读取失败",
+            detail=task.to_dict(),
         )
 
     queued_task.mark_running()
+    TaskService.update_task(queued_task)
 
     try:
         result = agent.run(
@@ -106,6 +125,7 @@ def run_agent_task(
             )
 
             queued_task.mark_failed(error_message)
+            TaskService.update_task(queued_task)
 
             raise HTTPException(
                 status_code=500,
@@ -113,6 +133,7 @@ def run_agent_task(
             )
 
         queued_task.mark_completed(result)
+        TaskService.update_task(queued_task)
 
         return {
             "success": True,
@@ -124,6 +145,7 @@ def run_agent_task(
 
     except Exception as error:
         queued_task.mark_failed(str(error))
+        TaskService.update_task(queued_task)
 
         raise HTTPException(
             status_code=500,

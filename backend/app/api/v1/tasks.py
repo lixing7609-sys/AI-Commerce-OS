@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.runtime.task_queue import task_queue
+from app.services.task_service import TaskService
 
 
 router = APIRouter(
@@ -12,31 +12,43 @@ router = APIRouter(
 @router.get("")
 def list_tasks():
     """
-    获取全部任务记录。
+    获取 PostgreSQL 中保存的全部任务记录。
     """
 
+    tasks = TaskService.get_all_tasks()
+    stats = TaskService.get_stats()
+
     return {
-        "stats": task_queue.stats(),
-        "items": task_queue.list_status(),
+        "stats": {
+            **stats,
+            "queued": 0,
+        },
+        "items": [
+            TaskService.to_dict(task)
+            for task in tasks
+        ],
     }
 
 
 @router.get("/stats")
 def get_task_stats():
     """
-    获取任务状态统计。
+    获取 PostgreSQL 任务状态统计。
     """
 
-    return task_queue.stats()
+    return {
+        **TaskService.get_stats(),
+        "queued": 0,
+    }
 
 
 @router.get("/{task_id}")
 def get_task(task_id: str):
     """
-    根据任务编号查询任务详情。
+    根据任务编号查询 PostgreSQL 任务详情。
     """
 
-    task = task_queue.get(task_id)
+    task = TaskService.get_task(task_id)
 
     if task is None:
         raise HTTPException(
@@ -44,4 +56,4 @@ def get_task(task_id: str):
             detail=f"未找到任务：{task_id}",
         )
 
-    return task.to_dict()
+    return TaskService.to_dict(task)
