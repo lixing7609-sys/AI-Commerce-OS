@@ -14,6 +14,12 @@ from app.models.task_recovery import (
     TaskRecoveryCandidatesResponse,
     TaskRecoverySummary,
 )
+from app.models.task_recovery_actions import TaskMarkFailedRequest
+from app.services.task_recovery_action_service import (
+    InvalidTaskTransitionError,
+    TaskNotFoundError,
+    TaskRecoveryActionService,
+)
 from app.services.task_recovery_service import TaskRecoveryService
 from app.services.task_service import TaskService
 
@@ -133,6 +139,81 @@ def get_recovery_candidates(
         offset=offset,
         returned_count=len(candidates),
     )
+
+
+@router.post("/{task_id}/requeue", response_model=TaskItemResponse)
+def requeue_task(task_id: str):
+    """
+    人工把一个 running 任务重新排队为 pending。
+
+    只允许 running → pending；不允许对 pending/completed/failed
+    任务调用。清空 started_at/completed_at/result/error，保留
+    id/task_type/assigned_agent/priority/payload/created_at。
+    只写库，不重新执行任务，不调用 RuntimeEngine 或
+    AgentRegistry，不修改 system_runtime_state。
+    """
+
+    try:
+        task = TaskRecoveryActionService.requeue_task(task_id)
+    except TaskNotFoundError as error:
+        raise HTTPException(
+            status_code=404,
+            detail=f"未找到任务：{task_id}",
+        ) from error
+    except InvalidTaskTransitionError as error:
+        raise HTTPException(
+            status_code=409,
+            detail=error.detail,
+        ) from error
+    except Exception as error:
+        logger.error(
+            "requeue task failed: %s",
+            type(error).__name__,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"重新排队任务失败（{type(error).__name__}）",
+        ) from error
+
+    return task
+
+
+@router.post("/{task_id}/mark-failed", response_model=TaskItemResponse)
+def mark_task_failed(task_id: str, request: TaskMarkFailedRequest):
+    """
+    人工把一个 pending/running 任务标记为 failed。
+
+    只允许 pending/running → failed；不允许对 completed/failed
+    任务调用。写入 completed_at=当前时间、error=人工提供的安全
+    原因文本，清空 result；started_at 保留原值。不调用
+    RuntimeEngine 或 AgentRegistry，不修改 system_runtime_state。
+    """
+
+    try:
+        task = TaskRecoveryActionService.mark_task_failed(
+            task_id, request.reason
+        )
+    except TaskNotFoundError as error:
+        raise HTTPException(
+            status_code=404,
+            detail=f"未找到任务：{task_id}",
+        ) from error
+    except InvalidTaskTransitionError as error:
+        raise HTTPException(
+            status_code=409,
+            detail=error.detail,
+        ) from error
+    except Exception as error:
+        logger.error(
+            "mark task failed request errored: %s",
+            type(error).__name__,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"标记任务失败时发生错误（{type(error).__name__}）",
+        ) from error
+
+    return task
 
 
 @router.get("/{task_id}", response_model=TaskItemResponse)
