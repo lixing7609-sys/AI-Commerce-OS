@@ -166,13 +166,9 @@ button {
 
 .dashboard-workspace {
   display: grid;
-  grid-template-rows:
-    92px
-    auto
-    104px
-    minmax(260px, 1.35fr)
-    minmax(180px, 0.9fr);
-  gap: 12px;
+  grid-auto-rows: auto;
+  row-gap: 12px;
+  column-gap: 12px;
   min-width: 0;
   height: 100vh;
   padding: 18px 22px;
@@ -181,7 +177,7 @@ button {
 }
 
 /* =========================
-   顶部问候
+   页面标题（Task Center 等沿用）
 ========================= */
 
 .workspace-header {
@@ -208,17 +204,61 @@ button {
   font-weight: 550;
 }
 
-.workspace-header > div > span {
+/* =========================
+   顶部欢迎卡 + Runtime 控制卡
+========================= */
+
+.dashboard-top-control-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.3fr) minmax(0, 0.7fr);
+  align-items: stretch;
+  gap: 12px;
+  min-width: 0;
+}
+
+.welcome-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 14px 18px;
+  background: #ffffff;
+  border: 1px solid #dedee1;
+  border-radius: 16px;
+  /* 见 .runtime-panel 上的同款注释：重置继承自 index.css 的固定行高 */
+  line-height: 1.4;
+}
+
+.welcome-date {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: #929398;
   font-size: 11px;
 }
 
-.workspace-date {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 5px;
-  color: #8c8d92;
+.welcome-card h1 {
+  margin: 0 0 6px;
+  color: #171719;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.8px;
+}
+
+.welcome-card p {
+  margin: 0 0 6px;
+  color: #57585e;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.welcome-card > span {
+  color: #929398;
   font-size: 11px;
 }
 
@@ -293,9 +333,9 @@ button {
 .main-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(350px, 0.75fr);
+  align-items: stretch;
   gap: 12px;
   min-width: 0;
-  min-height: 0;
 }
 
 .ceo-command-card {
@@ -303,9 +343,7 @@ button {
   grid-template-columns: minmax(240px, 0.8fr) minmax(350px, 1.2fr);
   gap: 28px;
   min-width: 0;
-  min-height: 0;
   padding: 28px 30px;
-  overflow: hidden;
   color: #ffffff;
   background:
     radial-gradient(
@@ -361,9 +399,7 @@ button {
 
 .ceo-analysis-card {
   min-width: 0;
-  min-height: 0;
   padding: 22px 24px;
-  overflow: hidden;
   background: #2d2d31;
   border: 1px solid #48484d;
   border-radius: 12px;
@@ -431,9 +467,7 @@ button {
 .reminders-card,
 .quick-actions-card {
   min-width: 0;
-  min-height: 0;
   padding: 18px 20px;
-  overflow: hidden;
   background: #ffffff;
   border: 1px solid #dedee1;
   border-radius: 12px;
@@ -539,9 +573,9 @@ button {
 .lower-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.8fr) minmax(240px, 0.65fr);
+  align-items: stretch;
   gap: 12px;
   min-width: 0;
-  min-height: 0;
 }
 
 .trend-chart {
@@ -628,7 +662,7 @@ button {
   }
 
   .ceo-command-card {
-    grid-template-columns: minmax(205px, 0.7fr) minmax(320px, 1.3fr);
+    grid-template-columns: 1fr;
     gap: 20px;
     padding-left: 24px;
     padding-right: 24px;
@@ -904,19 +938,30 @@ button {
 .runtime-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 18px;
+  gap: 8px;
+  padding: 12px 16px;
   background: #ffffff;
   border: 1px solid #dedee1;
   border-radius: 16px;
+  /* index.css 的 :root 定义了 font: 18px/145%，145% 按 18px 计算出
+     固定的 26.1px 行高会被子元素继承，导致本面板里 11-14px 的小字号
+     文本行高远大于自身字号。这里按面板自身字号重置为比例行高。 */
+  line-height: 1.4;
 }
 
-.runtime-panel-header {
+.runtime-panel-main {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+}
+
+.runtime-panel-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
 .runtime-panel-title {
@@ -928,13 +973,20 @@ button {
   font-weight: 700;
 }
 
+.runtime-panel-actions-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
 .runtime-panel-actions {
   display: flex;
   gap: 8px;
 }
 
 .runtime-action-button {
-  padding: 7px 15px;
+  padding: 6px 14px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 650;
@@ -1028,14 +1080,14 @@ button {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .runtime-summary-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
+  gap: 6px;
+  padding: 6px 10px;
   background: #f7f7f8;
   border-radius: 10px;
   font-size: 12px;
@@ -1122,14 +1174,14 @@ button {
 }
 
 .runtime-details-toggle {
-  align-self: flex-start;
-  padding: 4px 0;
+  padding: 2px 0;
   color: #62636a;
   background: none;
   border: none;
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .runtime-details-toggle:hover {
@@ -1212,8 +1264,20 @@ button {
 }
 
 @media (max-width: 900px) {
-  .runtime-panel-header {
+  .dashboard-top-control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome-card {
+    justify-content: flex-start;
+  }
+
+  .runtime-panel-main {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .runtime-panel-actions-col {
     align-items: flex-start;
   }
 

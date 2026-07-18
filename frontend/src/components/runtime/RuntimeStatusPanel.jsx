@@ -260,33 +260,6 @@ function RuntimeStatusPanel() {
 
   return (
     <section className="runtime-panel">
-      <div className="runtime-panel-header">
-        <div className="runtime-panel-title">
-          <span>AI 运营系统</span>
-          <RuntimeStateBadge state={status?.actual_state} />
-        </div>
-
-        <div className="runtime-panel-actions">
-          <button
-            type="button"
-            className="runtime-action-button start"
-            onClick={handleStart}
-            disabled={isBusy}
-          >
-            {pendingAction === "start" ? "正在启动…" : "启动系统"}
-          </button>
-
-          <button
-            type="button"
-            className="runtime-action-button stop"
-            onClick={handleStop}
-            disabled={isBusy}
-          >
-            {pendingAction === "stop" ? "正在停止…" : "停止系统"}
-          </button>
-        </div>
-      </div>
-
       {alerts.length > 0 && (
         <div className="runtime-alerts">
           {alerts.map((alert) => (
@@ -301,45 +274,74 @@ function RuntimeStatusPanel() {
         <div className="runtime-panel-loading">正在加载 AI 运营系统状态…</div>
       ) : (
         <>
-          <div className="runtime-summary-row">
-            <div className="runtime-summary-item">
-              <span className="runtime-summary-label">AI 员工</span>
-              <strong>
-                {agentsHealthy}/{agents.total} 正常
-                {agents.error > 0 ? `，${agents.error} 异常` : ""}
-              </strong>
+          <div className="runtime-panel-main">
+            <div className="runtime-panel-status">
+              <div className="runtime-panel-title">
+                <span>AI 运营系统</span>
+                <RuntimeStateBadge state={status.actual_state} />
+              </div>
+
+              <div className="runtime-summary-row">
+                <div className="runtime-summary-item">
+                  <span className="runtime-summary-label">AI 员工</span>
+                  <strong>
+                    {agentsHealthy}/{agents.total} 正常
+                    {agents.error > 0 ? `，${agents.error} 异常` : ""}
+                  </strong>
+                </div>
+
+                <div className="runtime-summary-item">
+                  <span className="runtime-summary-label">服务连接</span>
+                  <strong className={`runtime-connection ${connectionStatus}`}>
+                    {connectionStatus === "normal" ? "正常" : "未知"}
+                  </strong>
+                </div>
+
+                <div className="runtime-summary-item runtime-auto-resume-item">
+                  <span className="runtime-summary-label">自动恢复</span>
+                  <AutoResumeToggle
+                    checked={Boolean(status.auto_resume_enabled)}
+                    disabled={isBusy}
+                    loading={pendingAction === "auto-resume"}
+                    onChange={handleAutoResumeChange}
+                  />
+                </div>
+              </div>
+
+              <p className="runtime-auto-resume-hint">后端重启时自动恢复</p>
             </div>
 
-            <div className="runtime-summary-item">
-              <span className="runtime-summary-label">服务连接</span>
-              <strong className={`runtime-connection ${connectionStatus}`}>
-                {connectionStatus === "normal" ? "正常" : "未知"}
-              </strong>
-            </div>
+            <div className="runtime-panel-actions-col">
+              <div className="runtime-panel-actions">
+                <button
+                  type="button"
+                  className="runtime-action-button start"
+                  onClick={handleStart}
+                  disabled={isBusy}
+                >
+                  {pendingAction === "start" ? "正在启动…" : "启动系统"}
+                </button>
 
-            <div className="runtime-summary-item runtime-auto-resume-item">
-              <span className="runtime-summary-label">自动恢复</span>
-              <AutoResumeToggle
-                checked={Boolean(status.auto_resume_enabled)}
-                disabled={isBusy}
-                loading={pendingAction === "auto-resume"}
-                onChange={handleAutoResumeChange}
-              />
+                <button
+                  type="button"
+                  className="runtime-action-button stop"
+                  onClick={handleStop}
+                  disabled={isBusy}
+                >
+                  {pendingAction === "stop" ? "正在停止…" : "停止系统"}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className="runtime-details-toggle"
+                onClick={() => setDetailsOpen((open) => !open)}
+                aria-expanded={detailsOpen}
+              >
+                {detailsOpen ? "收起运行详情 ▲" : "查看运行详情 ▼"}
+              </button>
             </div>
           </div>
-
-          <p className="runtime-auto-resume-hint">
-            后端重启后自动恢复 AI 运营系统
-          </p>
-
-          <button
-            type="button"
-            className="runtime-details-toggle"
-            onClick={() => setDetailsOpen((open) => !open)}
-            aria-expanded={detailsOpen}
-          >
-            {detailsOpen ? "收起运行详情 ▲" : "查看运行详情 ▼"}
-          </button>
 
           {detailsOpen && (
             <div className="runtime-details">

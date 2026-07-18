@@ -193,8 +193,13 @@ function Dashboard({ onNavigate = () => {} }) {
       </aside>
 
       <main className="dashboard-workspace">
-        <header className="workspace-header">
-          <div>
+        <div className="dashboard-top-control-grid">
+          <article className="welcome-card">
+            <div className="welcome-date">
+              <span>▢</span>
+              {dateText}
+            </div>
+
             <h1>上午好，立行 👋</h1>
 
             <p>
@@ -203,18 +208,11 @@ function Dashboard({ onNavigate = () => {} }) {
                 : "RuntimeEngine 尚未启动，AI 员工当前处于待机状态"}
             </p>
 
-            <span>
-              聚焦产品、营销、服务、财务，打造一人公司的高效增长引擎。
-            </span>
-          </div>
+            <span>聚焦产品、营销、服务与财务，驱动一人公司的高效增长。</span>
+          </article>
 
-          <div className="workspace-date">
-            <span>▢</span>
-            {dateText}
-          </div>
-        </header>
-
-        <RuntimeStatusPanel />
+          <RuntimeStatusPanel />
+        </div>
 
         <section className="metric-grid">
           <article className="metric-card">
