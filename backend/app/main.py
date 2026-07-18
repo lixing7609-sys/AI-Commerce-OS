@@ -10,6 +10,7 @@ from app.api.v1.products import router as products_router
 from app.api.v1.runtime import router as runtime_router
 from app.api.v1.stores import router as stores_router
 from app.api.v1.suppliers import router as suppliers_router
+from app.api.v1.tasks import router as tasks_router
 
 
 app = FastAPI(
@@ -72,6 +73,11 @@ app.include_router(
 
 app.include_router(
     agents_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    tasks_router,
     prefix="/api/v1",
 )
 

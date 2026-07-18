@@ -3,6 +3,8 @@ from fastapi import APIRouter, HTTPException
 from app.agents.agent_registry import AgentRegistry
 from app.models.agent_task_request import AgentTaskRequest
 from app.runtime.engine.runtime_engine import runtime_engine
+from app.runtime.task import Task
+from app.runtime.task_queue import task_queue
 
 
 router = APIRouter(
@@ -46,7 +48,10 @@ def run_agent_task(
     request: AgentTaskRequest,
 ):
     """
-    向指定 AI 员工发送并执行任务。
+    向指定 AI 员工发送并同步执行任务。
+
+    任务会先进入 TaskQueue，
+    再由当前同步执行流程取出并执行。
     """
 
     if not runtime_engine.running:
@@ -69,15 +74,58 @@ def run_agent_task(
         "priority": request.priority,
     }
 
-    result = agent.run(
-        context=context,
-        task_name=request.task,
+    task = Task(
+        task_type="agent_task",
+        payload=context,
+        assigned_agent=agent_name,
+        priority=request.priority,
     )
 
-    if not result["success"]:
+    task_queue.push(task)
+
+    queued_task = task_queue.pop()
+
+    if queued_task is None:
         raise HTTPException(
             status_code=500,
-            detail=result,
+            detail="任务队列读取失败",
         )
 
-    return result
+    queued_task.mark_running()
+
+    try:
+        result = agent.run(
+            context=context,
+            task_name=request.task,
+        )
+
+        if not result["success"]:
+            error_message = result.get(
+                "error",
+                "Agent 任务执行失败",
+            )
+
+            queued_task.mark_failed(error_message)
+
+            raise HTTPException(
+                status_code=500,
+                detail=queued_task.to_dict(),
+            )
+
+        queued_task.mark_completed(result)
+
+        return {
+            "success": True,
+            "task": queued_task.to_dict(),
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+        queued_task.mark_failed(str(error))
+
+        raise HTTPException(
+            status_code=500,
+            detail=queued_task.to_dict(),
+        ) from error
