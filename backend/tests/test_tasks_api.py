@@ -10,7 +10,7 @@ Tasks API 筛选、分页与响应结构测试。
 - GET /tasks/{task_id} 与 GET /tasks/stats
 
 测试产生的任务通过 TEST_MARKER 标记 task 名称和 context，
-允许保留在开发数据库中，不会与正常任务混淆。
+整个模块测试结束后按精确 task_id 删除，不永久遗留在开发数据库。
 """
 
 from datetime import datetime, timezone
@@ -22,6 +22,7 @@ from app.agents.agent_registry import AgentRegistry
 from app.database.db import SessionLocal
 from app.main import app
 from app.models.runtime_state_db import RuntimeStateDB
+from app.models.task_db import TaskDB
 from app.runtime.engine.runtime_engine import runtime_engine
 
 TEST_MARKER = "TASKS_API_TEST_MARKER"
@@ -131,6 +132,10 @@ def marked_task(client):
     """
     创建一条明确标记为测试数据的任务，
     用于 assigned_agent 筛选和单任务详情查询测试。
+
+    模块内所有依赖此 fixture 的测试结束后（无论断言是否失败），
+    按精确 task_id 删除该任务，不按 status/assigned_agent 做任何
+    批量删除，不影响其它真实任务。
     """
 
     client.post("/api/v1/runtime/start")
@@ -145,7 +150,17 @@ def marked_task(client):
     )
     assert response.status_code == 200
 
-    return response.json()["task"]
+    task = response.json()["task"]
+
+    yield task
+
+    db = SessionLocal()
+
+    try:
+        db.query(TaskDB).filter(TaskDB.id == task["id"]).delete()
+        db.commit()
+    finally:
+        db.close()
 
 
 def test_list_tasks_default_params(client):

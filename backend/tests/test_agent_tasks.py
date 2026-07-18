@@ -20,6 +20,7 @@ from app.agents.agent_registry import AgentRegistry
 from app.database.db import DATABASE_URL, SessionLocal
 from app.main import app
 from app.models.runtime_state_db import RuntimeStateDB
+from app.models.task_db import TaskDB
 from app.runtime.engine.runtime_engine import runtime_engine
 
 AGENT_NAME = "AI CEO"
@@ -93,6 +94,33 @@ def client():
         yield test_client
 
 
+@pytest.fixture
+def cleanup_task_ids():
+    """
+    记录测试过程中真实创建（写入 PostgreSQL）的任务 id，测试结束
+    后（无论断言是否失败）按精确 id 删除，避免每次运行本文件都
+    向开发库永久新增 completed 任务。只按调用方显式记录的 id
+    删除，不按 status、assigned_agent 做任何批量删除。
+    """
+
+    task_ids = []
+
+    yield task_ids
+
+    if not task_ids:
+        return
+
+    db = SessionLocal()
+
+    try:
+        db.query(TaskDB).filter(TaskDB.id.in_(task_ids)).delete(
+            synchronize_session=False
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
 @pytest.fixture(autouse=True)
 def _stopped_runtime(client):
     """
@@ -134,7 +162,7 @@ def test_agent_run_without_runtime_returns_409(client):
     assert response.status_code == 409
 
 
-def test_agent_run_persists_task_and_is_queryable(client):
+def test_agent_run_persists_task_and_is_queryable(client, cleanup_task_ids):
     start_response = client.post("/api/v1/runtime/start")
     assert start_response.status_code == 200
     assert start_response.json()["running"] is True
@@ -153,6 +181,7 @@ def test_agent_run_persists_task_and_is_queryable(client):
     assert task["assigned_agent"] == AGENT_NAME
 
     task_id = task["id"]
+    cleanup_task_ids.append(task_id)
 
     # Tasks API 能查询到刚执行的任务
     detail_response = client.get(f"/api/v1/tasks/{task_id}")
