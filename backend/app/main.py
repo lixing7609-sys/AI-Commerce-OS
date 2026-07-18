@@ -19,6 +19,7 @@ from app.services.database_readiness_service import (
     DatabaseReadinessError,
     DatabaseReadinessService,
 )
+from app.services.runtime_recovery_service import RuntimeRecoveryService
 from app.services.runtime_state_service import RuntimeStateService
 
 logging.basicConfig(
@@ -60,13 +61,18 @@ async def lifespan(app: FastAPI):
     数据库表结构统一由 Alembic 管理（`uv run alembic upgrade head`），
     应用启动时不再自动创建或修改表结构。启动前会执行一次只读的
     数据库就绪检查（连接是否可用、revision 是否与代码一致、
-    必需表是否存在），检查失败则阻止应用启动，且不会启动心跳任务。
+    必需表是否存在），检查失败则阻止应用启动，且不会尝试自动恢复
+    或启动心跳任务。
 
-    就绪检查通过后启动一个后台心跳任务，进程退出（无论
-    desired_state 当时是什么）时只记录一次"优雅关闭"，
-    不改变 desired_state，不调用 RuntimeEngine 或 AgentRegistry。
+    就绪检查通过后，先执行一次 startup 自动恢复决策
+    （RuntimeRecoveryService.attempt_startup_recovery()），
+    只有 desired_state=running 且 auto_resume_enabled=true 且
+    不存在未完成任务时才会自动启动 Runtime；恢复失败不会阻止
+    FastAPI 服务本身启动。
 
-    预留给后续阶段接入 startup 自动恢复。
+    随后启动一个后台心跳任务，进程退出（无论 desired_state 当时
+    是什么）时只记录一次"优雅关闭"，不改变 desired_state，
+    不调用 RuntimeEngine 或 AgentRegistry。
     """
 
     try:
@@ -74,6 +80,14 @@ async def lifespan(app: FastAPI):
     except DatabaseReadinessError as error:
         logger.error("application startup aborted: %s", error)
         raise
+
+    try:
+        RuntimeRecoveryService.attempt_startup_recovery()
+    except Exception as error:
+        logger.error(
+            "startup runtime recovery failed unexpectedly: %s",
+            type(error).__name__,
+        )
 
     heartbeat_task = asyncio.create_task(
         _heartbeat_loop(HEARTBEAT_INTERVAL_SECONDS)
