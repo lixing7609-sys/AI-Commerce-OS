@@ -19,6 +19,7 @@ class DashboardService:
         """
 
         runtime_status = runtime_engine.status()
+        agent_items = runtime_status["agents"]["items"]
 
         return Dashboard(
             cards=[
@@ -50,38 +51,11 @@ class DashboardService:
             ],
             agents=[
                 DashboardAgent(
-                    name="AI CEO",
-                    status=(
-                        "Running"
-                        if runtime_status["running"]
-                        else "Stopped"
-                    ),
-                    task=(
-                        "System Operating"
-                        if runtime_status["running"]
-                        else "Waiting For Startup"
-                    ),
-                ),
-                DashboardAgent(
-                    name="Product Agent",
-                    status="Idle",
-                    task="Waiting",
-                ),
-                DashboardAgent(
-                    name="Listing Agent",
-                    status="Idle",
-                    task="Waiting",
-                ),
-                DashboardAgent(
-                    name="Inventory Agent",
-                    status="Idle",
-                    task="Waiting",
-                ),
-                DashboardAgent(
-                    name="Order Agent",
-                    status="Idle",
-                    task="Waiting",
-                ),
+                    name=agent["name"],
+                    status=agent["status"],
+                    task=agent["current_task"] or "等待新任务",
+                )
+                for agent in agent_items
             ],
         )
 
@@ -90,7 +64,8 @@ class DashboardService:
         """
         获取 Dashboard 实时汇总数据。
 
-        数据库统计和 RuntimeEngine 状态统一从该接口返回。
+        数据库统计、Runtime 状态和 Agent 状态
+        统一从该接口返回。
         """
 
         db = SessionLocal()
@@ -109,6 +84,7 @@ class DashboardService:
                     "started_at": runtime_status["started_at"],
                     "stopped_at": runtime_status["stopped_at"],
                 },
+                "agents": runtime_status["agents"],
             }
 
         finally:

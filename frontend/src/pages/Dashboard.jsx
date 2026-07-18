@@ -14,6 +14,14 @@ function Dashboard() {
       started_at: null,
       stopped_at: null,
     },
+    agents: {
+      total: 0,
+      running: 0,
+      idle: 0,
+      stopped: 0,
+      error: 0,
+      items: [],
+    },
   });
 
   const today = new Date();
@@ -41,6 +49,16 @@ function Dashboard() {
             started_at: data.runtime?.started_at ?? null,
             stopped_at: data.runtime?.stopped_at ?? null,
           },
+          agents: {
+            total: data.agents?.total ?? 0,
+            running: data.agents?.running ?? 0,
+            idle: data.agents?.idle ?? 0,
+            stopped: data.agents?.stopped ?? 0,
+            error: data.agents?.error ?? 0,
+            items: Array.isArray(data.agents?.items)
+              ? data.agents.items
+              : [],
+          },
         });
       } catch (error) {
         console.error("Dashboard 数据加载失败：", error);
@@ -58,40 +76,39 @@ function Dashboard() {
 
   const runtimeRunning = summary.runtime.running;
 
-  const agents = [
-    {
-      name: "AI CEO",
-      description: runtimeRunning
-        ? "公司策略与决策支持"
-        : "等待 RuntimeEngine 启动",
-      status: runtimeRunning ? "运行中" : "已停止",
-      state: runtimeRunning ? "running" : "waiting",
-    },
-    {
-      name: "产品 Agent",
-      description: "产品规划与优化建议",
-      status: runtimeRunning ? "运行中" : "待机",
-      state: runtimeRunning ? "running" : "waiting",
-    },
-    {
-      name: "销售 Agent",
-      description: "客户跟进与成交支持",
-      status: runtimeRunning ? "运行中" : "待机",
-      state: runtimeRunning ? "running" : "waiting",
-    },
-    {
-      name: "财务 Agent",
-      description: "财务分析与报表生成",
-      status: "待机",
-      state: "waiting",
-    },
-    {
-      name: "行政 Agent",
-      description: "日程管理与文档处理",
-      status: "待机",
-      state: "waiting",
-    },
-  ];
+  function getAgentViewStatus(agentStatus) {
+    switch (agentStatus) {
+      case "running":
+        return {
+          label: "运行中",
+          className: "running",
+        };
+
+      case "idle":
+        return {
+          label: "待机",
+          className: "waiting",
+        };
+
+      case "stopped":
+        return {
+          label: "已停止",
+          className: "waiting",
+        };
+
+      case "error":
+        return {
+          label: "异常",
+          className: "waiting",
+        };
+
+      default:
+        return {
+          label: "未知",
+          className: "waiting",
+        };
+    }
+  }
 
   return (
     <div className="dashboard-shell">
@@ -209,9 +226,11 @@ function Dashboard() {
           </article>
 
           <article className="metric-card">
-            <span>待办任务</span>
-            <strong>3</strong>
-            <small>{runtimeRunning ? "进行中" : "暂停中"}</small>
+            <span>运行中员工</span>
+            <strong>
+              {summary.agents.running}/{summary.agents.total}
+            </strong>
+            <small>{runtimeRunning ? "系统运行中" : "系统待机中"}</small>
             <em>▤</em>
           </article>
         </section>
@@ -272,25 +291,52 @@ function Dashboard() {
 
           <article className="agents-card">
             <div className="panel-heading">
-              <span>AI 员工</span>
+              <span>
+                AI 员工（{summary.agents.running}/{summary.agents.total}）
+              </span>
+
               <button>查看全部</button>
             </div>
 
             <div className="agents-list">
-              {agents.map((agent) => (
-                <div className="agent-item" key={agent.name}>
-                  <div className="agent-avatar">
-                    {agent.name.slice(0, 1)}
-                  </div>
+              {summary.agents.items.length > 0 ? (
+                summary.agents.items.map((agent) => {
+                  const viewStatus = getAgentViewStatus(agent.status);
+
+                  return (
+                    <div className="agent-item" key={agent.name}>
+                      <div className="agent-avatar">
+                        {agent.name.slice(0, 1)}
+                      </div>
+
+                      <div className="agent-information">
+                        <strong>{agent.name}</strong>
+
+                        <span>
+                          {agent.current_task ||
+                            agent.description ||
+                            "等待新任务"}
+                        </span>
+                      </div>
+
+                      <em className={viewStatus.className}>
+                        {viewStatus.label}
+                      </em>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="agent-item">
+                  <div className="agent-avatar">AI</div>
 
                   <div className="agent-information">
-                    <strong>{agent.name}</strong>
-                    <span>{agent.description}</span>
+                    <strong>正在读取 AI 员工</strong>
+                    <span>等待后端返回 Agent 状态</span>
                   </div>
 
-                  <em className={agent.state}>{agent.status}</em>
+                  <em className="waiting">加载中</em>
                 </div>
-              ))}
+              )}
             </div>
           </article>
         </section>
@@ -336,9 +382,10 @@ function Dashboard() {
             <div className="reminder-item">
               <span>
                 {runtimeRunning
-                  ? "RuntimeEngine 正在运行"
-                  : "RuntimeEngine 当前已停止"}
+                  ? `RuntimeEngine 正在运行，${summary.agents.running} 名员工在线`
+                  : `RuntimeEngine 当前已停止，${summary.agents.idle} 名员工待机`}
               </span>
+
               <small>实时状态</small>
             </div>
 
