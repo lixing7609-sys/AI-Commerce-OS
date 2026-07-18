@@ -10,15 +10,81 @@ Agent 任务系统集成测试。
 - 任务通过独立数据库连接可读（验证持久化，等价于后端重启后任务仍存在）
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
-from app.database.db import DATABASE_URL
+from app.agents.agent_registry import AgentRegistry
+from app.database.db import DATABASE_URL, SessionLocal
 from app.main import app
+from app.models.runtime_state_db import RuntimeStateDB
 from app.runtime.engine.runtime_engine import runtime_engine
 
 AGENT_NAME = "AI CEO"
+
+
+def _snapshot_runtime_state_row():
+    db = SessionLocal()
+
+    try:
+        row = (
+            db.query(RuntimeStateDB)
+            .filter(RuntimeStateDB.id == 1)
+            .first()
+        )
+
+        if row is None:
+            return None
+
+        return {
+            "desired_state": row.desired_state,
+            "actual_state": row.actual_state,
+            "auto_resume_enabled": row.auto_resume_enabled,
+            "last_started_at": row.last_started_at,
+            "last_stopped_at": row.last_stopped_at,
+            "last_heartbeat_at": row.last_heartbeat_at,
+            "last_shutdown_type": row.last_shutdown_type,
+            "last_error": row.last_error,
+            "recovery_failure_count": row.recovery_failure_count,
+        }
+
+    finally:
+        db.close()
+
+
+def _restore_runtime_state_row(snapshot):
+    db = SessionLocal()
+
+    try:
+        row = (
+            db.query(RuntimeStateDB)
+            .filter(RuntimeStateDB.id == 1)
+            .first()
+        )
+
+        if snapshot is None:
+            if row is not None:
+                db.delete(row)
+                db.commit()
+            return
+
+        if row is None:
+            row = RuntimeStateDB(id=1, **snapshot)
+            db.add(row)
+            db.commit()
+            return
+
+        for key, value in snapshot.items():
+            setattr(row, key, value)
+
+        row.updated_at = datetime.now(timezone.utc)
+
+        db.commit()
+
+    finally:
+        db.close()
 
 
 @pytest.fixture(scope="module")
@@ -30,11 +96,33 @@ def client():
 @pytest.fixture(autouse=True)
 def _stopped_runtime(client):
     """
-    确保每个测试用例开始前 RuntimeEngine 处于停止状态。
+    确保每个测试用例开始前 RuntimeEngine 处于停止状态，
+    并在用例结束后把 system_runtime_state 和 RuntimeEngine
+    内存状态恢复为用例开始前的原值，避免本文件的调用
+    （现在会写入 system_runtime_state）污染开发数据库。
     """
 
+    db_snapshot = _snapshot_runtime_state_row()
+    memory_snapshot = {
+        "running": runtime_engine.running,
+        "started_at": runtime_engine.started_at,
+        "stopped_at": runtime_engine.stopped_at,
+    }
+
     client.post("/api/v1/runtime/stop")
+
     yield
+
+    runtime_engine.running = memory_snapshot["running"]
+    runtime_engine.started_at = memory_snapshot["started_at"]
+    runtime_engine.stopped_at = memory_snapshot["stopped_at"]
+
+    if memory_snapshot["running"]:
+        AgentRegistry.start_all()
+    else:
+        AgentRegistry.stop_all()
+
+    _restore_runtime_state_row(db_snapshot)
 
 
 def test_agent_run_without_runtime_returns_409(client):
