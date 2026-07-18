@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import RuntimeStatusPanel from "../components/runtime/RuntimeStatusPanel";
 import { getDashboardSummary } from "../services/api";
 
 function Dashboard({ onNavigate = () => {} }) {
@@ -212,6 +213,8 @@ function Dashboard({ onNavigate = () => {} }) {
             {dateText}
           </div>
         </header>
+
+        <RuntimeStatusPanel />
 
         <section className="metric-grid">
           <article className="metric-card">
