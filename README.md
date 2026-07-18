@@ -297,6 +297,19 @@ adr/
 
 ---
 
+# Database Setup
+
+Database schema is managed exclusively through Alembic migrations. The backend no longer creates or modifies tables on startup.
+
+Before starting the backend in any new environment, run:
+
+```bash
+cd backend
+uv run alembic upgrade head
+```
+
+---
+
 # License
 
 MIT

@@ -29,13 +29,3 @@ SessionLocal = sessionmaker(
     autoflush=False,
     bind=engine,
 )
-
-
-def create_database_tables() -> None:
-    """
-    创建当前系统已经注册的数据库表。
-
-    已存在的表不会重复创建。
-    """
-
-    Base.metadata.create_all(bind=engine)
