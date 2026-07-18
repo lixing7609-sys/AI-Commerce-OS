@@ -87,13 +87,24 @@ def run_agent_task(
         priority=request.priority,
     )
 
+    # 直接以 running 状态创建任务（而不是先提交 pending、再单独
+    # 提交一次 running），任务因此不会以 status=pending 的形式对
+    # 数据库短暂可见。这是为了避免后台 TaskConsumerService（阶段
+    # 4B）通过 SELECT ... FOR UPDATE SKIP LOCKED 把这条本应由本
+    # 请求同步执行的任务当成普通 pending 任务抢先领取，与本请求
+    # 并发执行同一个任务。响应结构和最终写库状态与此前完全一致。
+    task.mark_running()
+
     try:
         TaskService.create_task(task)
 
     except Exception as error:
+        # 首次写库失败：此时任务尚未落库、Agent 尚未执行，不留下
+        # 半完成的数据库记录；detail 只暴露安全的异常类型名，不
+        # 拼接 str(error)（可能包含数据库连接串等敏感信息）。
         raise HTTPException(
             status_code=500,
-            detail=f"任务写入数据库失败：{error}",
+            detail=f"任务写入数据库失败（{type(error).__name__}）",
         ) from error
 
     task_queue.push(task)
@@ -108,9 +119,6 @@ def run_agent_task(
             status_code=500,
             detail=task.to_dict(),
         )
-
-    queued_task.mark_running()
-    TaskService.update_task(queued_task)
 
     try:
         result = agent.run(

@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from app.models.runtime_api import AutoResumeUpdateRequest, RuntimeStatusResponse
 from app.runtime.engine.runtime_engine import runtime_engine
 from app.services.runtime_state_service import RuntimeStateService
+from app.services.task_consumer_service import task_consumer_service
 
 logger = logging.getLogger("app.runtime_api")
 
@@ -128,6 +129,29 @@ def start_runtime():
             detail="RuntimeEngine 已启动，但状态持久化失败，请检查数据库连接",
         ) from error
 
+    # 本路由是同步 def，FastAPI 会放到线程池工作线程执行，那里没有
+    # 运行中的事件循环，不能安全调用 asyncio.create_task()——因此
+    # 这里只 wake()，从不调用 task_consumer_service.start()。消费者
+    # 由 main.py lifespan 在 backend 启动时唯一创建一次、持续存在；
+    # 若它已经因未预期异常提前退出，wake() 是安全的空操作，这里
+    # 只记录一条明确日志、不在线程池线程里尝试重建，也不影响本
+    # 接口对 RuntimeEngine 状态本身的正常返回——避免调用方误以为
+    # "Runtime 已启动"等价于"待处理任务会被自动消费"。
+    try:
+        task_consumer_service.wake()
+
+        if not task_consumer_service.is_running():
+            logger.error(
+                "task consumer is not running after manual runtime "
+                "start; pending tasks will not be processed "
+                "automatically until backend restart"
+            )
+    except Exception as error:
+        logger.error(
+            "task consumer wake after manual runtime start failed: %s",
+            type(error).__name__,
+        )
+
     logger.info("manual runtime start completed")
 
     return _build_status_response()
@@ -141,6 +165,11 @@ def stop_runtime():
 
     这是应用层面的主动停止，与后端进程退出无关，
     不会在 FastAPI lifespan 中被调用。
+
+    对后台任务消费者是 graceful drain 语义：只停止领取新的
+    pending 任务，不强制中断当前已经进入 Agent 执行阶段的任务
+    ——允许其自然完成并写回结果。本接口不等待该任务执行完成，
+    不把它强制标记为 failed，也不把它重新改回 pending。
     """
 
     logger.info("manual runtime stop requested")
@@ -209,7 +238,18 @@ def stop_runtime():
             detail="RuntimeEngine 已停止，但状态持久化失败，请检查数据库连接",
         ) from error
 
-    logger.info("manual runtime stop completed")
+    try:
+        task_consumer_service.wake()
+    except Exception as error:
+        logger.error(
+            "task consumer wake after manual runtime stop failed: %s",
+            type(error).__name__,
+        )
+
+    logger.info(
+        "manual runtime stop completed (graceful drain: consumer stops "
+        "claiming new pending tasks, in-flight task allowed to finish)"
+    )
 
     return _build_status_response()
 

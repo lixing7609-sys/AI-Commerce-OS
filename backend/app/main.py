@@ -21,6 +21,7 @@ from app.services.database_readiness_service import (
 )
 from app.services.runtime_recovery_service import RuntimeRecoveryService
 from app.services.runtime_state_service import RuntimeStateService
+from app.services.task_consumer_service import task_consumer_service
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,8 +71,15 @@ async def lifespan(app: FastAPI):
     不存在未完成任务时才会自动启动 Runtime；恢复失败不会阻止
     FastAPI 服务本身启动。
 
-    随后启动一个后台心跳任务，进程退出（无论 desired_state 当时
-    是什么）时只记录一次"优雅关闭"，不改变 desired_state，
+    随后启动唯一一个后台任务消费者（TaskConsumerService）和一个
+    后台心跳任务。消费者进程内单例、生命周期与 backend 绑定：
+    Runtime 是否运行只影响它是否领取任务，不影响它是否存在——
+    业务层面的 Runtime start/stop 不会创建或销毁消费者，只会
+    唤醒它重新检查状态。消费者创建失败只记录 error，不阻止
+    FastAPI 服务本身启动。
+
+    进程退出（无论 desired_state 当时是什么）时依次停止消费者、
+    停止心跳，只记录一次"优雅关闭"，不改变 desired_state，
     不调用 RuntimeEngine 或 AgentRegistry。
     """
 
@@ -89,6 +97,14 @@ async def lifespan(app: FastAPI):
             type(error).__name__,
         )
 
+    try:
+        task_consumer_service.start()
+        task_consumer_service.wake()
+    except Exception as error:
+        logger.error(
+            "task consumer startup failed: %s", type(error).__name__
+        )
+
     heartbeat_task = asyncio.create_task(
         _heartbeat_loop(HEARTBEAT_INTERVAL_SECONDS)
     )
@@ -97,6 +113,13 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        try:
+            await task_consumer_service.stop()
+        except Exception as error:
+            logger.error(
+                "task consumer stop failed: %s", type(error).__name__
+            )
+
         heartbeat_task.cancel()
 
         try:

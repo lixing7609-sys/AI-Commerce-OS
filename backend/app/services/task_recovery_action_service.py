@@ -1,7 +1,11 @@
+import logging
 from datetime import datetime, timezone
 
 from app.database.db import SessionLocal
 from app.models.task_db import TaskDB
+from app.services.task_consumer_service import task_consumer_service
+
+logger = logging.getLogger("app.task_recovery_actions")
 
 
 class TaskNotFoundError(Exception):
@@ -29,6 +33,11 @@ class TaskRecoveryActionService:
     只有一次状态转换能成功；不调用 RuntimeEngine 或 AgentRegistry，
     不立即执行任务，不修改 system_runtime_state，不做批量操作，
     不做自动重试。
+
+    requeue 成功提交后会调用 task_consumer_service.wake()，只是
+    唤醒后台消费者提前重新检查一次（而不是等待其空闲轮询间隔），
+    本身不执行任务、不等待执行结果；消费者被唤醒后仍然只在
+    Runtime running 时才会真正领取该任务。
     """
 
     @staticmethod
@@ -102,6 +111,14 @@ class TaskRecoveryActionService:
 
             db.commit()
             db.refresh(task)
+
+            try:
+                task_consumer_service.wake()
+            except Exception as error:
+                logger.error(
+                    "task consumer wake after requeue failed: %s",
+                    type(error).__name__,
+                )
 
             return task
 
