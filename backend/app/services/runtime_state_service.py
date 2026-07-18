@@ -253,6 +253,7 @@ class RuntimeStateService:
             state.last_shutdown_type = "graceful"
             state.last_stopped_at = datetime.now(timezone.utc)
             state.actual_state = "stopped"
+            state.last_error = None
             state.updated_at = datetime.now(timezone.utc)
 
             db.commit()
