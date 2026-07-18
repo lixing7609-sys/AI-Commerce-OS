@@ -92,15 +92,43 @@ class TaskService:
             db.close()
 
     @staticmethod
-    def get_all_tasks() -> list[TaskDB]:
+    def get_all_tasks(
+        status: str | None = None,
+        assigned_agent: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[list[TaskDB], int]:
+        """
+        查询任务记录，支持按状态、执行 Agent 筛选和分页。
+
+        筛选和计数均在 SQL 层完成，返回本次筛选后（分页前）
+        的总数 filtered_total，供调用方构造分页信息。
+        """
+
         db = SessionLocal()
 
         try:
-            return (
-                db.query(TaskDB)
-                .order_by(TaskDB.created_at.desc())
-                .all()
-            )
+            query = db.query(TaskDB)
+
+            if status is not None:
+                query = query.filter(TaskDB.status == status)
+
+            if assigned_agent is not None:
+                query = query.filter(
+                    TaskDB.assigned_agent == assigned_agent
+                )
+
+            filtered_total = query.count()
+
+            query = query.order_by(TaskDB.created_at.desc())
+
+            if offset:
+                query = query.offset(offset)
+
+            if limit is not None:
+                query = query.limit(limit)
+
+            return query.all(), filtered_total
 
         finally:
             db.close()

@@ -1,5 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from typing import Literal
 
+from fastapi import APIRouter, HTTPException, Query
+
+from app.models.task_api import (
+    TaskItemResponse,
+    TaskListResponse,
+    TaskPaginationResponse,
+    TaskStatsResponse,
+)
 from app.services.task_service import TaskService
 
 
@@ -9,40 +17,57 @@ router = APIRouter(
 )
 
 
-@router.get("")
-def list_tasks():
+@router.get("", response_model=TaskListResponse)
+def list_tasks(
+    status: Literal["pending", "running", "completed", "failed"]
+    | None = None,
+    assigned_agent: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
     """
-    获取 PostgreSQL 中保存的全部任务记录。
+    获取 PostgreSQL 中保存的任务记录。
+
+    支持按 status、assigned_agent 筛选，并支持分页。
+    stats 始终表示全库任务统计，不受筛选和分页影响；
+    空字符串的 assigned_agent 按未传处理。
     """
 
-    tasks = TaskService.get_all_tasks()
+    normalized_agent = assigned_agent or None
+
+    items, filtered_total = TaskService.get_all_tasks(
+        status=status,
+        assigned_agent=normalized_agent,
+        limit=limit,
+        offset=offset,
+    )
+
     stats = TaskService.get_stats()
 
-    return {
-        "stats": {
-            **stats,
-            "queued": 0,
-        },
-        "items": [
-            TaskService.to_dict(task)
-            for task in tasks
-        ],
-    }
+    return TaskListResponse(
+        stats=TaskStatsResponse(**stats, queued=0),
+        items=items,
+        pagination=TaskPaginationResponse(
+            limit=limit,
+            offset=offset,
+            returned=len(items),
+            filtered_total=filtered_total,
+        ),
+    )
 
 
-@router.get("/stats")
+@router.get("/stats", response_model=TaskStatsResponse)
 def get_task_stats():
     """
     获取 PostgreSQL 任务状态统计。
     """
 
-    return {
-        **TaskService.get_stats(),
-        "queued": 0,
-    }
+    stats = TaskService.get_stats()
+
+    return TaskStatsResponse(**stats, queued=0)
 
 
-@router.get("/{task_id}")
+@router.get("/{task_id}", response_model=TaskItemResponse)
 def get_task(task_id: str):
     """
     根据任务编号查询 PostgreSQL 任务详情。
@@ -56,4 +81,4 @@ def get_task(task_id: str):
             detail=f"未找到任务：{task_id}",
         )
 
-    return TaskService.to_dict(task)
+    return task
