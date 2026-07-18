@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from app.models.runtime_api import RuntimeStatusResponse
+from app.models.runtime_api import AutoResumeUpdateRequest, RuntimeStatusResponse
 from app.runtime.engine.runtime_engine import runtime_engine
 from app.services.runtime_state_service import RuntimeStateService
 
@@ -210,5 +210,30 @@ def stop_runtime():
         ) from error
 
     logger.info("manual runtime stop completed")
+
+    return _build_status_response()
+
+
+@router.put("/auto-resume", response_model=RuntimeStatusResponse)
+def update_auto_resume(request: AutoResumeUpdateRequest):
+    """
+    设置自动恢复开关（auto_resume_enabled）。
+
+    只保存用户意图，不立即启动或停止 RuntimeEngine，不触发
+    startup 自动恢复，不改变 desired_state/actual_state/
+    recovery_failure_count/last_error。下一次 backend startup 时，
+    由现有的 RuntimeRecoveryService 读取该开关决定是否自动恢复。
+    """
+
+    logger.info("runtime auto-resume update requested")
+
+    try:
+        RuntimeStateService.set_auto_resume(request.enabled)
+    except Exception as error:
+        safe_message = f"自动恢复开关写入失败（{type(error).__name__}）"
+        logger.error("runtime auto-resume update failed: %s", safe_message)
+        raise HTTPException(status_code=500, detail=safe_message) from error
+
+    logger.info("runtime auto-resume update completed")
 
     return _build_status_response()

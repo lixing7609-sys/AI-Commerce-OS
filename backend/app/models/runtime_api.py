@@ -1,6 +1,17 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class AutoResumeUpdateRequest(BaseModel):
+    """
+    PUT /api/v1/runtime/auto-resume 的请求体。
+    """
+
+    enabled: bool = Field(
+        ...,
+        description="是否在下一次 backend startup 时尝试自动恢复 Runtime",
+    )
 
 
 class RuntimeAgentInfo(BaseModel):
