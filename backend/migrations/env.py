@@ -14,6 +14,7 @@ from app.models.supplier_db import SupplierDB
 from app.models.listing_db import ListingDB
 from app.models.inventory_db import InventoryDB
 from app.models.order_db import OrderDB
+from app.models.runtime_state_db import RuntimeStateDB
 from app.models.supplier_db import SupplierDB
 from app.models.task_db import TaskDB
 
