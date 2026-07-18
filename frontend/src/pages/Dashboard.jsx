@@ -22,6 +22,13 @@ function Dashboard() {
       error: 0,
       items: [],
     },
+    tasks: {
+      total: 0,
+      pending: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+    },
   });
 
   const today = new Date();
@@ -58,6 +65,13 @@ function Dashboard() {
             items: Array.isArray(data.agents?.items)
               ? data.agents.items
               : [],
+          },
+          tasks: {
+            total: data.tasks?.total ?? 0,
+            pending: data.tasks?.pending ?? 0,
+            running: data.tasks?.running ?? 0,
+            completed: data.tasks?.completed ?? 0,
+            failed: data.tasks?.failed ?? 0,
           },
         });
       } catch (error) {
@@ -390,13 +404,19 @@ function Dashboard() {
             </div>
 
             <div className="reminder-item">
-              <span>产品库存低于安全线</span>
-              <small>1 小时前</small>
+              <span>
+                待处理任务 {summary.tasks.pending} 个，执行中{" "}
+                {summary.tasks.running} 个
+              </span>
+              <small>实时统计</small>
             </div>
 
             <div className="reminder-item">
-              <span>本周财务报表已生成</span>
-              <small>3 小时前</small>
+              <span>
+                已完成任务 {summary.tasks.completed} 个，失败{" "}
+                {summary.tasks.failed} 个
+              </span>
+              <small>共 {summary.tasks.total} 个任务</small>
             </div>
           </article>
 

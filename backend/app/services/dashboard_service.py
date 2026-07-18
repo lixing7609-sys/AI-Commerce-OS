@@ -9,6 +9,7 @@ from app.models.order_db import OrderDB
 from app.models.product_db import ProductDB
 
 from app.runtime.engine.runtime_engine import runtime_engine
+from app.services.task_service import TaskService
 
 
 class DashboardService:
@@ -85,6 +86,7 @@ class DashboardService:
                     "stopped_at": runtime_status["stopped_at"],
                 },
                 "agents": runtime_status["agents"],
+                "tasks": TaskService.get_stats(),
             }
 
         finally:
