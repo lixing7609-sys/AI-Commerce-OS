@@ -132,6 +132,7 @@ RUNTIME_STATUS_RESPONSE_KEYS = {
     "last_error",
     "recovery_failure_count",
     "updated_at",
+    "consumer",
 }
 
 

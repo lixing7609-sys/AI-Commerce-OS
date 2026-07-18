@@ -3,7 +3,11 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from app.models.runtime_api import AutoResumeUpdateRequest, RuntimeStatusResponse
+from app.models.runtime_api import (
+    AutoResumeUpdateRequest,
+    RuntimeStatusResponse,
+    TaskConsumerStatusResponse,
+)
 from app.runtime.engine.runtime_engine import runtime_engine
 from app.services.runtime_state_service import RuntimeStateService
 from app.services.task_consumer_service import task_consumer_service
@@ -16,12 +20,41 @@ router = APIRouter(
 )
 
 
+def _build_consumer_status_response() -> TaskConsumerStatusResponse:
+    """
+    把 TaskConsumerService.get_status() 的内部字典转换成安全的
+    响应模型。healthy 定义为 healthy = running：见
+    TaskConsumerStatusResponse 的字段说明。
+
+    只读取内存状态，不访问数据库，不 wake/start/stop 消费者，
+    不触发任何任务执行，不改变任何计数。
+    """
+
+    status = task_consumer_service.get_status()
+
+    return TaskConsumerStatusResponse(
+        running=status["running"],
+        healthy=status["running"],
+        stop_requested=status["stop_requested"],
+        current_task_id=status["current_task_id"],
+        processed_count=status["processed_count"],
+        completed_count=status["completed_count"],
+        failed_count=status["failed_count"],
+        conflict_count=status["conflict_count"],
+        last_outcome=status["last_outcome"],
+        last_error_type=status["last_error_type"],
+        started_at=status["started_at"],
+        stopped_at=status["stopped_at"],
+    )
+
+
 def _build_status_response() -> RuntimeStatusResponse:
     """
-    合并 RuntimeEngine 内存状态与 system_runtime_state 持久化状态。
+    合并 RuntimeEngine 内存状态、system_runtime_state 持久化状态与
+    TaskConsumerService 内存状态。
 
     system_runtime_state 不存在时只补默认单行，不做任何自动恢复，
-    不改变任何 Agent 状态。
+    不改变任何 Agent 状态；consumer 部分同样只读，不产生副作用。
     """
 
     engine_status = runtime_engine.status()
@@ -43,6 +76,7 @@ def _build_status_response() -> RuntimeStatusResponse:
         last_error=persisted_state.last_error,
         recovery_failure_count=persisted_state.recovery_failure_count,
         updated_at=persisted_state.updated_at,
+        consumer=_build_consumer_status_response(),
     )
 
 
@@ -53,6 +87,19 @@ def get_runtime_status():
     """
 
     return _build_status_response()
+
+
+@router.get("/consumer-status", response_model=TaskConsumerStatusResponse)
+def get_consumer_status():
+    """
+    只读查看后台任务消费者（TaskConsumerService）的运行状态。
+
+    只调用 task_consumer_service.get_status()，不访问或修改数据库，
+    不 wake/start/stop 消费者，不修改 Runtime，不触发任何任务
+    执行，不改变任何计数。
+    """
+
+    return _build_consumer_status_response()
 
 
 @router.post("/start", response_model=RuntimeStatusResponse)
