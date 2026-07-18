@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1.agents import router as agents_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.inventories import router as inventories_router
 from app.api.v1.listings import router as listings_router
@@ -66,6 +67,11 @@ app.include_router(
 
 app.include_router(
     runtime_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    agents_router,
     prefix="/api/v1",
 )
 
