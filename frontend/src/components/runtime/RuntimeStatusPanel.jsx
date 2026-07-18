@@ -7,6 +7,11 @@ import {
   updateAutoResume,
 } from "../../services/runtimeApi";
 import AutoResumeToggle from "./AutoResumeToggle";
+import {
+  getConsumerStatusLevel,
+  getConsumerStatusLevelLabel,
+  getLastOutcomeLabel,
+} from "./consumerLabels";
 import RuntimeStateBadge from "./RuntimeStateBadge";
 import { RUNTIME_STATE_LABELS } from "./runtimeLabels";
 
@@ -223,6 +228,12 @@ function RuntimeStatusPanel() {
   const stateMismatch = status ? hasObviousStateMismatch(status) : false;
   const agentsHealthy = status ? agents.total - agents.error : 0;
 
+  // consumer 字段可能缺失（旧 backend 或临时响应）：统一按 null
+  // 处理，不因字段缺失导致轮询失败或页面崩溃。
+  const consumer = status?.consumer ?? null;
+  const consumerLevel = getConsumerStatusLevel(consumer);
+  const consumerLevelLabel = getConsumerStatusLevelLabel(consumerLevel);
+
   const alerts = [];
 
   if (statusError) {
@@ -235,6 +246,18 @@ function RuntimeStatusPanel() {
 
   if (status?.last_error) {
     alerts.push({ level: "error", text: `最近错误：${status.last_error}` });
+  }
+
+  // consumer 存在但 healthy=false 才提示；consumer 缺失（兼容旧
+  // backend）不触发红色故障横幅，只在摘要和详情里显示"未知"。
+  // healthy=true 但 last_error_type 非空（曾发生过已恢复的错误）
+  // 同样不触发横幅，只在运行详情里展示最近错误类型。
+  if (consumer && consumer.healthy === false) {
+    const text = consumer.last_error_type
+      ? `任务执行器当前未正常运行，请检查后端服务。最近错误类型：${consumer.last_error_type}`
+      : "任务执行器当前未正常运行，请检查后端服务。";
+
+    alerts.push({ level: "error", text });
   }
 
   if (recoveryFailureCount > 0) {
@@ -294,6 +317,13 @@ function RuntimeStatusPanel() {
                   <span className="runtime-summary-label">服务连接</span>
                   <strong className={`runtime-connection ${connectionStatus}`}>
                     {connectionStatus === "normal" ? "正常" : "未知"}
+                  </strong>
+                </div>
+
+                <div className="runtime-summary-item">
+                  <span className="runtime-summary-label">任务执行器</span>
+                  <strong className={`runtime-consumer-status ${consumerLevel}`}>
+                    {consumerLevelLabel}
                   </strong>
                 </div>
 
@@ -395,6 +425,69 @@ function RuntimeStatusPanel() {
               <p className="runtime-detail-hint">
                 服务心跳用于确认后端服务仍在正常运行。
               </p>
+
+              <div className="runtime-detail-group">
+                <div className="runtime-detail-group-title">任务执行器</div>
+
+                <div className="runtime-detail-row">
+                  <span>执行器状态</span>
+                  <strong className={`runtime-consumer-status ${consumerLevel}`}>
+                    {consumerLevelLabel}
+                  </strong>
+                </div>
+
+                <div className="runtime-detail-row">
+                  <span>消费循环</span>
+                  <strong>
+                    {consumer ? (consumer.running ? "运行中" : "已停止") : "暂无"}
+                  </strong>
+                </div>
+
+                <div className="runtime-detail-row">
+                  <span>最近处理任务</span>
+                  <strong>{consumer?.current_task_id ?? "暂无"}</strong>
+                </div>
+
+                <div className="runtime-detail-row">
+                  <span>已处理任务数</span>
+                  <strong>{consumer?.processed_count ?? "暂无"}</strong>
+                </div>
+
+                <div className="runtime-detail-row">
+                  <span>成功完成数</span>
+                  <strong>{consumer?.completed_count ?? "暂无"}</strong>
+                </div>
+
+                <div className="runtime-detail-row">
+                  <span>执行失败数</span>
+                  <strong>{consumer?.failed_count ?? "暂无"}</strong>
+                </div>
+
+                <div className="runtime-detail-row">
+                  <span>状态冲突数</span>
+                  <strong>{consumer?.conflict_count ?? "暂无"}</strong>
+                </div>
+
+                <div className="runtime-detail-row">
+                  <span>最近结果</span>
+                  <strong>{getLastOutcomeLabel(consumer?.last_outcome)}</strong>
+                </div>
+
+                <div className="runtime-detail-row">
+                  <span>最近错误类型</span>
+                  <strong>{consumer?.last_error_type ?? "暂无"}</strong>
+                </div>
+
+                <div className="runtime-detail-row">
+                  <span>执行器启动时间</span>
+                  <strong>{formatDateTime(consumer?.started_at)}</strong>
+                </div>
+
+                <div className="runtime-detail-row">
+                  <span>执行器停止时间</span>
+                  <strong>{formatDateTime(consumer?.stopped_at)}</strong>
+                </div>
+              </div>
 
               <div className="runtime-detail-agents">
                 {agents.items.map((agent) => (

@@ -1110,6 +1110,19 @@ button {
   color: #85868c;
 }
 
+.runtime-consumer-status.healthy {
+  color: #198447;
+}
+
+.runtime-consumer-status.unstarted,
+.runtime-consumer-status.unknown {
+  color: #85868c;
+}
+
+.runtime-consumer-status.unhealthy {
+  color: #9a2f24;
+}
+
 .runtime-auto-resume-item {
   gap: 10px;
 }
@@ -1219,6 +1232,21 @@ button {
   margin: 2px 0 0;
   color: #a3a4a9;
   font-size: 11px;
+}
+
+.runtime-detail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #e9e9eb;
+}
+
+.runtime-detail-group-title {
+  color: #46474c;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .runtime-detail-agents {
