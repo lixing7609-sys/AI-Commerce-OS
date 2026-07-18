@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { getDashboardSummary } from "../services/api";
 
-function Dashboard() {
+function Dashboard({ onNavigate = () => {} }) {
   const [summary, setSummary] = useState({
     products: 0,
     listings: 0,
@@ -148,7 +148,10 @@ function Dashboard() {
             AI 员工
           </button>
 
-          <button className="sidebar-link">
+          <button
+            className="sidebar-link"
+            onClick={() => onNavigate("tasks")}
+          >
             <span>☑</span>
             任务中心
           </button>
