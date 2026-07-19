@@ -359,3 +359,113 @@ def test_doc_exists_and_contains_required_security_notices():
 
     for pattern in SUSPICIOUS_SECRET_PATTERNS:
         assert not pattern.search(doc_text)
+
+
+# ---------------------------------------------------------------------------
+# 阶段 6C：n8n 凭据安全整改相关校验
+# ---------------------------------------------------------------------------
+
+
+def test_workflow_json_has_no_authorization_header_plaintext(workflow_data):
+    """
+    workflow 中不得出现任何硬编码的 Authorization 值——本工作流
+    自身不调用第三方模型 API，不应该有任何节点携带
+    Authorization/api_key/token/password/secret 这类字段的明文
+    字符串值（区别于字段名本身，例如 "X-Task-API-Key" 作为 Header
+    *名称* 出现是允许的，这里检查的是可疑的凭据类字段被赋予了
+    看起来像真实密钥的值）。
+    """
+
+    raw_text = json.dumps(workflow_data, ensure_ascii=False)
+
+    assert "Authorization" not in raw_text
+    for pattern in SUSPICIOUS_SECRET_PATTERNS:
+        assert not pattern.search(raw_text)
+
+
+def test_workflow_json_has_no_sk_pattern(workflow_data):
+    raw_text = json.dumps(workflow_data, ensure_ascii=False)
+    assert not re.search(r"sk-[A-Za-z0-9]{10,}", raw_text)
+
+
+def test_workflow_json_has_no_real_credential_id(workflow_data):
+    """
+    仓库交付的 workflow JSON 是可移植模板，不应该引用任何具体 n8n
+    实例上的真实 Credential ID——每个部署者需要在导入后自行在
+    n8n UI 里创建/绑定属于自己实例的 Credential。这里检查所有
+    节点均不包含 `credentials` 字段（如果需要凭据，应体现为
+    `authentication` 参数 + 部署者自行绑定，而不是硬编码一个
+    id/name 引用）。
+    """
+
+    for node in workflow_data["nodes"]:
+        assert "credentials" not in node, (
+            f"节点 {node['name']!r} 不应在仓库交付文件中包含具体 "
+            "credential 引用"
+        )
+
+
+def test_webhook_node_declares_header_auth_without_credential_reference(
+    workflow_data,
+):
+    webhook_nodes = _node_by_type(workflow_data, "n8n-nodes-base.webhook")
+    assert len(webhook_nodes) == 1
+
+    webhook_node = webhook_nodes[0]
+    assert webhook_node["parameters"].get("authentication") == "headerAuth"
+    assert "credentials" not in webhook_node
+
+
+def test_repo_workflow_json_stays_inactive_regardless_of_local_activation():
+    """
+    仓库交付文件必须始终 active=false；本地 n8n 实例上激活的副本
+    （active=true）是部署时的运行状态，不应该、也不会反映到仓库
+    文件里——这里直接重新读取磁盘上的文件验证，而不是复用可能
+    被测试过程修改过的内存对象。
+    """
+
+    with open(WORKFLOW_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+
+    assert data["active"] is False
+
+
+def test_verify_script_supports_optional_webhook_auth_header_without_logging_value():
+    script_text = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "N8N_WEBHOOK_AUTH_HEADER" in script_text
+    assert "N8N_WEBHOOK_AUTH_VALUE" in script_text
+
+    # 允许提及变量名本身（用于设置 Header），但不允许把值本身
+    # echo/print 出来。粗略检查：不存在
+    # `echo ... N8N_WEBHOOK_AUTH_VALUE` 这种直接打印的模式。
+    for line in script_text.splitlines():
+        if "echo" in line and "N8N_WEBHOOK_AUTH_VALUE" in line:
+            pytest.fail(f"脚本疑似直接打印了 Webhook 鉴权值所在行：{line!r}")
+
+
+def test_doc_mentions_key_rotation_and_no_real_webhook_url():
+    doc_text = DOC_PATH.read_text(encoding="utf-8")
+
+    assert "轮换" in doc_text or "吊销" in doc_text
+
+    # 不应该出现任何非 localhost/内网占位符形式的真实域名端口
+    # 组合（本文档只允许出现 localhost/host.docker.internal/
+    # <n8n-host>/backend 这类占位或 docker-compose 服务名写法，
+    # "backend" 是第 4 节 "同一 docker-compose 项目" 场景下的
+    # 服务名示例，不是真实域名）。
+    real_looking_hosts = re.findall(
+        r"https?://(?!localhost|host\.docker\.internal|backend|<)[a-zA-Z0-9.-]+",
+        doc_text,
+    )
+    assert real_looking_hosts == [], (
+        f"文档中疑似包含真实域名/公网地址：{real_looking_hosts}"
+    )
+
+
+def test_doc_documents_credentials_and_env_var_approach():
+    doc_text = DOC_PATH.read_text(encoding="utf-8")
+
+    assert "Credentials" in doc_text or "Credential" in doc_text
+    assert "N8N_BLOCK_ENV_ACCESS_IN_NODE" in doc_text
+    assert "execution" in doc_text.lower()

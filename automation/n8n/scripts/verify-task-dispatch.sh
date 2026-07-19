@@ -13,10 +13,18 @@
 #   ASSIGNED_AGENT    默认 "AI CEO"
 #   TASK_TEXT         默认 "生成今日经营分析"
 #   PRIORITY          默认 "normal"
+#   N8N_WEBHOOK_AUTH_HEADER   若 Webhook 启用了 Header
+#                             Authentication，设置该 Header 的名称
+#                             （例如 X-Secretariat-Webhook-Auth）
+#   N8N_WEBHOOK_AUTH_VALUE    对应的 Header 值。本脚本只会把它放进
+#                             请求 Header，绝不打印、绝不写入任何
+#                             输出或日志。
 #
-# 本脚本本身不持有、不读取、不输出任何 API Key——鉴权 Key 只存在于
-# n8n workflow 内部（EXTERNAL_TASK_API_KEY / AI_COMMERCE_TASK_API_KEY
-# 环境变量），本脚本只是外部调用方视角的黑盒验证。
+# 本脚本本身不持有、不读取、不输出任何后端 API Key——鉴权 Key 只
+# 存在于 n8n workflow 内部（EXTERNAL_TASK_API_KEY /
+# AI_COMMERCE_TASK_API_KEY 环境变量），本脚本只是外部调用方视角的
+# 黑盒验证；N8N_WEBHOOK_AUTH_VALUE 是 Webhook 自身的入口保护 Header
+# 值（如果启用），与后端 API Key 是两个完全独立的凭据。
 
 set -euo pipefail
 
@@ -71,9 +79,19 @@ PAYLOAD="$(build_payload)"
 RESPONSE_FILE="$(mktemp)"
 trap 'rm -f "$RESPONSE_FILE"' EXIT
 
+# Webhook Header Authentication 是可选的：只有同时设置了
+# N8N_WEBHOOK_AUTH_HEADER 和 N8N_WEBHOOK_AUTH_VALUE 才会附加该
+# Header；未设置时按无保护 Webhook 处理，行为与之前完全一致。
+AUTH_HEADER_ARGS=()
+if [ -n "${N8N_WEBHOOK_AUTH_HEADER:-}" ] && [ -n "${N8N_WEBHOOK_AUTH_VALUE:-}" ]; then
+  AUTH_HEADER_ARGS=(-H "${N8N_WEBHOOK_AUTH_HEADER}: ${N8N_WEBHOOK_AUTH_VALUE}")
+  echo "==> 已附加 Webhook 入口保护 Header：${N8N_WEBHOOK_AUTH_HEADER}（值不显示）"
+fi
+
 HTTP_STATUS="$(curl -sS -o "$RESPONSE_FILE" -w '%{http_code}' \
   -X POST "$N8N_TASK_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
+  "${AUTH_HEADER_ARGS[@]}" \
   --max-time 15 \
   -d "$PAYLOAD")"
 
@@ -103,6 +121,9 @@ case "$HTTP_STATUS" in
     ;;
   401)
     echo "结果：鉴权失败（401，AUTH_FAILED）"
+    ;;
+  403)
+    echo "结果：Webhook 入口鉴权失败（403，请检查 N8N_WEBHOOK_AUTH_HEADER/VALUE 是否正确）"
     ;;
   404)
     echo "结果：Agent 不存在（404，AGENT_NOT_FOUND）"
