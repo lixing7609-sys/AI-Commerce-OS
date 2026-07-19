@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 
 _TRUTHY_VALUES = {"true", "1", "yes", "on"}
 _FALSY_VALUES = {"false", "0", "no", "off"}
@@ -55,4 +56,84 @@ def get_sqlalchemy_echo() -> bool:
 
     return parse_bool_env(
         os.environ.get("SQLALCHEMY_ECHO"), default=False
+    )
+
+
+@dataclass(frozen=True)
+class WeComConfig:
+    """
+    企业微信自建应用配置。所有字段只从进程环境变量读取，不硬编码
+    默认值；本类实例本身不会被记录到任何日志——调用方也不应该
+    把它序列化后输出。
+    """
+
+    corp_id: str
+    agent_id: str
+    app_secret: str
+    callback_token: str
+    encoding_aes_key: str
+
+
+def get_wecom_config() -> WeComConfig | None:
+    """
+    读取企业微信自建应用的 5 项配置：
+    WECOM_CORP_ID / WECOM_AGENT_ID / WECOM_APP_SECRET /
+    WECOM_CALLBACK_TOKEN / WECOM_ENCODING_AES_KEY。
+
+    5 项必须同时配置，任一缺失都视为"未配置"（返回 None），由
+    调用方决定如何处理（本项目中即回调接口返回 503）——不允许
+    部分配置就尝试处理真实回调，那样任何一个字段用了错误的空
+    默认值都可能导致签名/解密静默出错或产生误导性行为。
+    """
+
+    corp_id = os.environ.get("WECOM_CORP_ID")
+    agent_id = os.environ.get("WECOM_AGENT_ID")
+    app_secret = os.environ.get("WECOM_APP_SECRET")
+    callback_token = os.environ.get("WECOM_CALLBACK_TOKEN")
+    encoding_aes_key = os.environ.get("WECOM_ENCODING_AES_KEY")
+
+    if not all(
+        [corp_id, agent_id, app_secret, callback_token, encoding_aes_key]
+    ):
+        return None
+
+    return WeComConfig(
+        corp_id=corp_id,
+        agent_id=agent_id,
+        app_secret=app_secret,
+        callback_token=callback_token,
+        encoding_aes_key=encoding_aes_key,
+    )
+
+
+@dataclass(frozen=True)
+class WeComN8nWebhookConfig:
+    """
+    backend 调用 n8n"AI秘书处｜企业微信指令入口" Webhook 所需的
+    地址与鉴权。该 Webhook 只允许被 backend 调用，不面向外部用户
+    公开，鉴权 Header 值只从环境变量读取。
+    """
+
+    webhook_url: str
+    auth_header_name: str
+    auth_header_value: str
+
+
+def get_wecom_n8n_webhook_config() -> WeComN8nWebhookConfig | None:
+    """
+    读取 WECOM_N8N_WEBHOOK_URL / WECOM_N8N_WEBHOOK_AUTH_HEADER /
+    WECOM_N8N_WEBHOOK_AUTH_VALUE。三项必须同时配置。
+    """
+
+    webhook_url = os.environ.get("WECOM_N8N_WEBHOOK_URL")
+    auth_header_name = os.environ.get("WECOM_N8N_WEBHOOK_AUTH_HEADER")
+    auth_header_value = os.environ.get("WECOM_N8N_WEBHOOK_AUTH_VALUE")
+
+    if not all([webhook_url, auth_header_name, auth_header_value]):
+        return None
+
+    return WeComN8nWebhookConfig(
+        webhook_url=webhook_url,
+        auth_header_name=auth_header_name,
+        auth_header_value=auth_header_value,
     )

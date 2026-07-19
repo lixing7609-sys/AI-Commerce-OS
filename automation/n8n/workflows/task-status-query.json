@@ -1,0 +1,151 @@
+{
+  "id": "ai-secretariat-task-status-query",
+  "name": "AI秘书处｜任务状态查询",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-secretariat/task-status-query",
+        "responseMode": "responseNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "c3b2d4e5-0001-4b22-9d22-2b3c4d5e6f01",
+      "name": "Webhook｜接收查询请求",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-460, 0],
+      "webhookId": "ai-secretariat-task-status-query-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const body = ($json && $json.body) || {};\nconst taskId = typeof body.task_id === 'string' ? body.task_id.trim() : '';\n\nif (!taskId || !/^TASK-[A-Za-z0-9]+$/.test(taskId)) {\n  return {\n    json: {\n      valid: false,\n      reply_text: '未能识别任务编号，请使用「查询 TASK-XXXXXXXXXXXX」格式。',\n    },\n  };\n}\n\nreturn {\n  json: {\n    valid: true,\n    task_id: taskId,\n  },\n};\n"
+      },
+      "id": "c3b2d4e5-0002-4b22-9d22-2b3c4d5e6f02",
+      "name": "Code｜校验 task_id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c3b2d4e5-0003-4b22-9d22-2b3c4d5e6f03",
+      "name": "IF｜task_id 是否合法",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [20, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.AI_COMMERCE_API_BASE_URL }}/api/v1/integrations/tasks/{{ $json.task_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "c3b2d4e5-0004-4b22-9d22-2b3c4d5e6f04",
+      "name": "HTTP Request｜查询任务状态",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, -140],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const STATUS_TEXT = { pending: '等待执行', running: '执行中', completed: '已完成', failed: '失败' };\n\nfunction extractStatusCode(errorLike) {\n  const error = (errorLike && errorLike.error) || {};\n  const candidates = [\n    error.httpCode,\n    error.statusCode,\n    error.status,\n    error.cause && error.cause.response && error.cause.response.status,\n  ];\n  for (const candidate of candidates) {\n    if (candidate === undefined || candidate === null) continue;\n    const parsed = parseInt(candidate, 10);\n    if (!Number.isNaN(parsed)) return parsed;\n  }\n  return null;\n}\n\nconst validateItem = $('Code｜校验 task_id').item.json;\n\nif (validateItem.valid === false) {\n  return {\n    json: {\n      ok: true,\n      task_id: null,\n      status: null,\n      status_text: null,\n      reply_text: validateItem.reply_text,\n    },\n  };\n}\n\nconst item = $input.first().json;\n\nif (item && typeof item === 'object' && item.id && item.status) {\n  const statusText = STATUS_TEXT[item.status] || item.status;\n  let reply = `任务编号：${item.id}\\n当前状态：${statusText}\\nAI 员工：${item.assigned_agent || '（未指定）'}\\n优先级：${item.priority}\\n创建时间：${item.created_at}`;\n  if (item.completed_at) {\n    reply += `\\n完成时间：${item.completed_at}`;\n  }\n  if (item.status === 'completed') {\n    reply += `\\n\\n执行结果：\\n${item.safe_result}`;\n  } else if (item.status === 'failed') {\n    reply += `\\n\\n错误信息：\\n${item.safe_error}`;\n  }\n  return {\n    json: {\n      ok: true,\n      task_id: item.id,\n      status: item.status,\n      status_text: statusText,\n      reply_text: reply,\n    },\n  };\n}\n\nconst statusCode = extractStatusCode(item);\n\nif (statusCode === 404) {\n  return {\n    json: {\n      ok: true,\n      task_id: validateItem.task_id,\n      status: null,\n      status_text: null,\n      reply_text: `未找到任务：${validateItem.task_id}，请检查任务编号是否正确。`,\n    },\n  };\n}\n\nif (statusCode === 401) {\n  return {\n    json: {\n      ok: false,\n      task_id: validateItem.task_id,\n      status: null,\n      status_text: null,\n      reply_text: '系统鉴权异常，请联系管理员。',\n    },\n  };\n}\n\nreturn {\n  json: {\n    ok: false,\n    task_id: validateItem.task_id,\n    status: null,\n    status_text: null,\n    reply_text: '查询暂时失败，请稍后重试。',\n  },\n};\n"
+      },
+      "id": "c3b2d4e5-0005-4b22-9d22-2b3c4d5e6f05",
+      "name": "Code｜格式化查询结果",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: $json.ok, task_id: $json.task_id, status: $json.status, status_text: $json.status_text, reply_text: $json.reply_text } }}",
+        "options": {}
+      },
+      "id": "c3b2d4e5-0006-4b22-9d22-2b3c4d5e6f06",
+      "name": "Respond｜返回查询结果",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [740, 0]
+    }
+  ],
+  "connections": {
+    "Webhook｜接收查询请求": {
+      "main": [
+        [
+          { "node": "Code｜校验 task_id", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Code｜校验 task_id": {
+      "main": [
+        [
+          { "node": "IF｜task_id 是否合法", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "IF｜task_id 是否合法": {
+      "main": [
+        [
+          { "node": "HTTP Request｜查询任务状态", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Code｜格式化查询结果", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "HTTP Request｜查询任务状态": {
+      "main": [
+        [
+          { "node": "Code｜格式化查询结果", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Code｜格式化查询结果", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Code｜格式化查询结果": {
+      "main": [
+        [
+          { "node": "Respond｜返回查询结果", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

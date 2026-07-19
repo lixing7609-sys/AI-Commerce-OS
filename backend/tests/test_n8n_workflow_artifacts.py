@@ -172,15 +172,29 @@ def test_only_builtin_n8n_nodes_used(workflow_data):
         )
 
 
-def test_only_one_workflow_delivered_in_repo():
+def test_at_most_three_workflows_delivered_in_repo():
     """
-    本轮只交付一个正式 workflow；automation/n8n/workflows/ 目录下
-    不应该出现第二份 workflow JSON。
+    截至阶段 7B，仓库最多交付 3 个正式 workflow：阶段 7A 的
+    "AI秘书处｜统一任务入口"，以及阶段 7B 新增的最多两个
+    （企业微信指令入口、任务状态查询）——不允许恢复"一名 AI 员工
+    一个 workflow"的旧模式，也不允许出现未知/多余的 workflow
+    文件。已知文件名单在 test_wecom_workflow_artifacts.py 中
+    与本文件共同维护。
     """
 
     workflow_dir = WORKFLOW_PATH.parent
-    json_files = list(workflow_dir.glob("*.json"))
-    assert json_files == [WORKFLOW_PATH]
+    json_files = sorted(p.name for p in workflow_dir.glob("*.json"))
+
+    known_names = {
+        "ai-secretariat-task-dispatch.json",
+        "wecom-command-intake.json",
+        "task-status-query.json",
+    }
+
+    assert set(json_files).issubset(known_names), (
+        f"发现未预期的 workflow 文件：{set(json_files) - known_names}"
+    )
+    assert len(json_files) <= 3
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,229 @@
+{
+  "id": "ai-secretariat-wecom-command-intake",
+  "name": "AI秘书处｜企业微信指令入口",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-secretariat/wecom-command",
+        "responseMode": "responseNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "b2a1c3d4-0001-4a11-9c11-1a2b3c4d5e01",
+      "name": "Webhook｜接收已解密企业微信消息",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-680, 0],
+      "webhookId": "ai-secretariat-wecom-command-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const MAX_TASK_LENGTH = 64;\nconst body = ($json && $json.body) || {};\nconst content = (typeof body.content === 'string' ? body.content : '').trim();\nconst requestId = typeof body.request_id === 'string' ? body.request_id.trim() : '';\nconst sender = typeof body.sender === 'string' ? body.sender.trim() : '';\n\nconst HELP_TEXT = '未能识别指令，请使用以下格式之一：\\n\\n结构化格式：\\n@AI秘书处\\n员工：AI CEO\\n任务：生成今日经营分析\\n优先级：普通\\n\\n简单格式：\\n让AI CEO生成今日经营分析\\n\\n查询任务：\\n查询 TASK-XXXXXXXXXXXX';\n\nfunction invalidResult() {\n  return {\n    json: {\n      type: 'invalid',\n      request_id: requestId,\n      reply_text: HELP_TEXT,\n    },\n  };\n}\n\nfunction priorityFromText(text) {\n  const t = (text || '').trim();\n  if (t === '高' || t === '紧急') return 'high';\n  if (t === '低') return 'low';\n  return 'normal';\n}\n\nif (!requestId) {\n  return invalidResult();\n}\n\n// 查询指令：查询/任务状态/查看 + TASK-xxxx（确定性正则匹配，\n// 不使用大模型猜测）。查询类消息不创建任务。\nconst queryMatch = content.match(/(?:查询|任务状态|查看)\\s*(TASK-[A-Za-z0-9]+)/);\nif (queryMatch) {\n  return {\n    json: {\n      type: 'query',\n      request_id: requestId,\n      task_id: queryMatch[1],\n    },\n  };\n}\n\n// 结构化提交格式：@AI秘书处 / 员工：xxx / 任务：xxx / 优先级：xxx（可选）。\nif (content.indexOf('@AI秘书处') !== -1 || /员工[：:]/.test(content)) {\n  const agentMatch = content.match(/员工[：:]\\s*([^\\n]+)/);\n  const taskMatch = content.match(/任务[：:]\\s*([^\\n]+)/);\n  const priorityMatch = content.match(/优先级[：:]\\s*([^\\n]+)/);\n\n  const assignedAgent = agentMatch ? agentMatch[1].trim() : '';\n  const task = taskMatch ? taskMatch[1].trim() : '';\n\n  if (!assignedAgent || !task || task.length > MAX_TASK_LENGTH) {\n    return invalidResult();\n  }\n\n  return {\n    json: {\n      type: 'submit',\n      request_id: requestId,\n      assigned_agent: assignedAgent,\n      task,\n      priority: priorityFromText(priorityMatch ? priorityMatch[1] : ''),\n      context: { channel: 'wecom', sender },\n    },\n  };\n}\n\n// 简单格式：让<Agent><动词><任务内容>，只做确定性结构切分，\n// 不猜测、不使用大模型、不在 n8n 中维护 Agent 名册——是否真的\n// 存在这个 Agent，由后端 AgentRegistry 在提交时校验。\nconst simpleMatch = content.match(/^让([^，,。]+?)(生成|执行|完成|处理|做|准备|制作)(.+)$/);\nif (simpleMatch) {\n  const assignedAgent = simpleMatch[1].trim();\n  const task = (simpleMatch[2] + simpleMatch[3]).trim();\n\n  if (!assignedAgent || !task || task.length > MAX_TASK_LENGTH) {\n    return invalidResult();\n  }\n\n  return {\n    json: {\n      type: 'submit',\n      request_id: requestId,\n      assigned_agent: assignedAgent,\n      task,\n      priority: 'normal',\n      context: { channel: 'wecom', sender },\n    },\n  };\n}\n\nreturn invalidResult();\n"
+      },
+      "id": "b2a1c3d4-0002-4a11-9c11-1a2b3c4d5e02",
+      "name": "Code｜解析指令",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "submit",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2a1c3d4-0003-4a11-9c11-1a2b3c4d5e03",
+      "name": "IF｜是否提交任务",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-200, -160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "query",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2a1c3d4-0004-4a11-9c11-1a2b3c4d5e04",
+      "name": "IF｜是否查询任务",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [40, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AI_COMMERCE_API_BASE_URL }}/api/v1/integrations/tasks/submit",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { request_id: $json.request_id, source: 'wecom', assigned_agent: $json.assigned_agent, task: $json.task, context: $json.context, priority: $json.priority } }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "b2a1c3d4-0005-4a11-9c11-1a2b3c4d5e05",
+      "name": "HTTP Request｜调用统一任务入口",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, -160],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.AI_COMMERCE_API_BASE_URL }}/api/v1/integrations/tasks/{{ $json.task_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "b2a1c3d4-0006-4a11-9c11-1a2b3c4d5e06",
+      "name": "HTTP Request｜查询任务状态",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 40],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const parseItem = $('Code｜解析指令').item.json;\nconst type = parseItem.type;\n\nfunction safeAgentText(agent) {\n  return agent || '（未指定）';\n}\n\nfunction extractStatusCode(errorLike) {\n  const error = (errorLike && errorLike.error) || {};\n  const candidates = [\n    error.httpCode,\n    error.statusCode,\n    error.status,\n    error.cause && error.cause.response && error.cause.response.status,\n  ];\n  for (const candidate of candidates) {\n    if (candidate === undefined || candidate === null) continue;\n    const parsed = parseInt(candidate, 10);\n    if (!Number.isNaN(parsed)) return parsed;\n  }\n  return null;\n}\n\nif (type === 'invalid') {\n  return { json: { ok: true, reply_text: parseItem.reply_text } };\n}\n\nconst item = $input.first().json;\n\nif (type === 'submit') {\n  if (item && typeof item === 'object' && item.id && item.duplicate !== undefined) {\n    const statusLabel = item.duplicate ? '该请求已收到，返回原有任务' : '任务已提交';\n    const reply = `${statusLabel}\\n任务编号：${item.id}\\nAI 员工：${safeAgentText(item.assigned_agent)}\\n当前状态：等待执行\\n\\n发送\"查询 ${item.id}\"可查看进度。`;\n    return { json: { ok: true, reply_text: reply } };\n  }\n\n  const statusCode = extractStatusCode(item);\n  if (statusCode === 404) {\n    return { json: { ok: true, reply_text: `指定的 AI 员工「${parseItem.assigned_agent}」不存在，请检查员工名称后重试。` } };\n  }\n  if (statusCode === 422 || statusCode === 400) {\n    return { json: { ok: true, reply_text: '任务内容不符合要求，请检查格式后重试。' } };\n  }\n  if (statusCode === 401) {\n    return { json: { ok: true, reply_text: '系统鉴权异常，请联系管理员。' } };\n  }\n  if (statusCode === 503) {\n    return { json: { ok: true, reply_text: '任务网关暂未配置，请联系管理员。' } };\n  }\n  return { json: { ok: true, reply_text: '任务提交暂时失败，请稍后重试。' } };\n}\n\nif (type === 'query') {\n  const STATUS_TEXT = { pending: '等待执行', running: '执行中', completed: '已完成', failed: '失败' };\n\n  if (item && typeof item === 'object' && item.id && item.status) {\n    const statusText = STATUS_TEXT[item.status] || item.status;\n    let reply = `任务编号：${item.id}\\n当前状态：${statusText}\\nAI 员工：${safeAgentText(item.assigned_agent)}\\n优先级：${item.priority}\\n创建时间：${item.created_at}`;\n    if (item.completed_at) {\n      reply += `\\n完成时间：${item.completed_at}`;\n    }\n    if (item.status === 'completed') {\n      reply += `\\n\\n执行结果：\\n${item.safe_result}`;\n    } else if (item.status === 'failed') {\n      reply += `\\n\\n错误信息：\\n${item.safe_error}`;\n    }\n    return { json: { ok: true, reply_text: reply } };\n  }\n\n  const statusCode = extractStatusCode(item);\n  if (statusCode === 404) {\n    return { json: { ok: true, reply_text: `未找到任务：${parseItem.task_id}，请检查任务编号是否正确。` } };\n  }\n  if (statusCode === 401) {\n    return { json: { ok: true, reply_text: '系统鉴权异常，请联系管理员。' } };\n  }\n  return { json: { ok: true, reply_text: '查询暂时失败，请稍后重试。' } };\n}\n\nreturn { json: { ok: true, reply_text: '系统异常，请稍后重试。' } };\n"
+      },
+      "id": "b2a1c3d4-0007-4a11-9c11-1a2b3c4d5e07",
+      "name": "Code｜格式化回复",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, reply_text: $json.reply_text } }}",
+        "options": {}
+      },
+      "id": "b2a1c3d4-0008-4a11-9c11-1a2b3c4d5e08",
+      "name": "Respond｜返回回复内容",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [800, 0]
+    }
+  ],
+  "connections": {
+    "Webhook｜接收已解密企业微信消息": {
+      "main": [
+        [
+          { "node": "Code｜解析指令", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Code｜解析指令": {
+      "main": [
+        [
+          { "node": "IF｜是否提交任务", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "IF｜是否提交任务": {
+      "main": [
+        [
+          { "node": "HTTP Request｜调用统一任务入口", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "IF｜是否查询任务", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "IF｜是否查询任务": {
+      "main": [
+        [
+          { "node": "HTTP Request｜查询任务状态", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Code｜格式化回复", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "HTTP Request｜调用统一任务入口": {
+      "main": [
+        [
+          { "node": "Code｜格式化回复", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Code｜格式化回复", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "HTTP Request｜查询任务状态": {
+      "main": [
+        [
+          { "node": "Code｜格式化回复", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Code｜格式化回复", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Code｜格式化回复": {
+      "main": [
+        [
+          { "node": "Respond｜返回回复内容", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

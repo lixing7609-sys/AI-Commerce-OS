@@ -7,7 +7,13 @@ from app.core.external_task_auth import verify_external_task_api_key
 from app.models.task_api import (
     ExternalTaskSubmitRequest,
     ExternalTaskSubmitResponse,
+    TaskSafeQueryResponse,
 )
+from app.services.task_result_sanitizer import (
+    format_safe_error,
+    format_safe_result,
+)
+from app.services.task_service import TaskService
 from app.services.task_submission_service import (
     AgentNotFoundError,
     TaskSubmissionService,
@@ -114,4 +120,49 @@ def submit_external_task(
         message=(
             "该请求已接收，返回已有任务" if duplicate else "任务已进入执行队列"
         ),
+    )
+
+
+@router.get(
+    "/{task_id}",
+    response_model=TaskSafeQueryResponse,
+)
+def get_external_task(
+    task_id: str,
+    _: None = Depends(verify_external_task_api_key),
+):
+    """
+    外部任务安全查询接口：供 n8n / 企业微信等外部调用方按
+    task_id 查询任务状态，使用与提交网关相同的 API Key 鉴权。
+
+    只返回安全的展示字段：不包含 payload、context、原始
+    result/error、traceback、数据库异常或任何 ORM 内部字段。
+    result/error 已经在后端脱敏和截断（见
+    app.services.task_result_sanitizer），调用方拿到的
+    safe_result/safe_error 可以直接展示。
+
+    与仅供内部 Dashboard 使用、返回完整 payload/result/error 的
+    GET /api/v1/tasks/{task_id} 是两个独立接口，本接口不复用
+    TaskItemResponse，避免任何字段被意外透出。
+    """
+
+    task = TaskService.get_task(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"未找到任务：{task_id}",
+        )
+
+    return TaskSafeQueryResponse(
+        id=task.id,
+        status=task.status,
+        assigned_agent=task.assigned_agent,
+        task_type=task.task_type,
+        priority=task.priority,
+        created_at=task.created_at,
+        started_at=task.started_at,
+        completed_at=task.completed_at,
+        safe_result=format_safe_result(task.result),
+        safe_error=format_safe_error(task.error),
     )

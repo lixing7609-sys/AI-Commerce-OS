@@ -216,3 +216,27 @@ class ExternalTaskSubmitResponse(BaseModel):
     created_at: datetime
     duplicate: bool
     message: str
+
+
+class TaskSafeQueryResponse(BaseModel):
+    """
+    GET /api/v1/integrations/tasks/{task_id} 的响应结构（阶段 7B）。
+
+    供 n8n / 企业微信等外部调用方安全查询任务状态；只返回安全的
+    展示字段，不包含 payload、context、原始 result/error、
+    traceback、数据库异常或任何 ORM 内部字段。result/error 已经
+    在后端完成脱敏和长度截断（见
+    app.services.task_result_sanitizer），调用方拿到的
+    safe_result/safe_error 可以直接展示，不需要再次过滤。
+    """
+
+    id: str
+    status: str
+    assigned_agent: str | None
+    task_type: str
+    priority: str
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    safe_result: str
+    safe_error: str
