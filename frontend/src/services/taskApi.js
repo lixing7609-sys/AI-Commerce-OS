@@ -83,3 +83,23 @@ export async function markTaskFailed(taskId, reason) {
 
   return response.json();
 }
+
+/**
+ * @param {import("../types/task").TaskSubmitRequest} request
+ * @returns {Promise<import("../types/task").TaskSubmitResponse>}
+ */
+export async function submitTask(request) {
+  const response = await fetch(`${BASE_URL}/tasks/submit`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw buildTaskApiError(response, "任务提交失败");
+  }
+
+  return response.json();
+}

@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 
 import RuntimeStatusPanel from "../components/runtime/RuntimeStatusPanel";
+import TaskSubmitPanel from "../components/tasks/TaskSubmitPanel";
 import { getDashboardSummary } from "../services/api";
 
 function Dashboard({ onNavigate = () => {} }) {
+  const [submitPanelOpen, setSubmitPanelOpen] = useState(false);
+
   const [summary, setSummary] = useState({
     products: 0,
     listings: 0,
@@ -193,6 +196,24 @@ function Dashboard({ onNavigate = () => {} }) {
       </aside>
 
       <main className="dashboard-workspace">
+        <div className="task-submit-trigger-row">
+          <button
+            type="button"
+            className="task-submit-trigger-button"
+            onClick={() => setSubmitPanelOpen((current) => !current)}
+            aria-expanded={submitPanelOpen}
+          >
+            {submitPanelOpen ? "收起提交任务 ▲" : "提交任务 ▼"}
+          </button>
+        </div>
+
+        <TaskSubmitPanel
+          open={submitPanelOpen}
+          agents={summary.agents.items}
+          runtimeRunning={runtimeRunning}
+          onViewTask={() => onNavigate("tasks")}
+        />
+
         <div className="dashboard-top-control-grid">
           <article className="welcome-card">
             <div className="welcome-date">
