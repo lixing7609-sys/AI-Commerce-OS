@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.core.config import get_sqlalchemy_echo
 from app.database.base import Base
 from app.models.inventory_db import InventoryDB
 from app.models.listing_db import ListingDB
@@ -20,7 +21,7 @@ DATABASE_URL = (
 
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
+    echo=get_sqlalchemy_echo(),
 )
 
 

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.agents import router as agents_router
 from app.api.v1.dashboard import router as dashboard_router
+from app.api.v1.integrations import router as integrations_router
 from app.api.v1.inventories import router as inventories_router
 from app.api.v1.listings import router as listings_router
 from app.api.v1.orders import router as orders_router
@@ -205,6 +206,11 @@ app.include_router(
 
 app.include_router(
     tasks_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    integrations_router,
     prefix="/api/v1",
 )
 

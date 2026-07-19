@@ -3,7 +3,6 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.agents.agent_registry import AgentRegistry
 from app.models.task_api import (
     TaskItemResponse,
     TaskListResponse,
@@ -18,7 +17,6 @@ from app.models.task_recovery import (
     TaskRecoverySummary,
 )
 from app.models.task_recovery_actions import TaskMarkFailedRequest
-from app.runtime.task import Task
 from app.services.task_consumer_service import task_consumer_service
 from app.services.task_recovery_action_service import (
     InvalidTaskTransitionError,
@@ -27,6 +25,10 @@ from app.services.task_recovery_action_service import (
 )
 from app.services.task_recovery_service import TaskRecoveryService
 from app.services.task_service import TaskService
+from app.services.task_submission_service import (
+    AgentNotFoundError,
+    TaskSubmissionService,
+)
 
 logger = logging.getLogger("app.tasks_api")
 
@@ -170,25 +172,13 @@ def submit_task(request: TaskSubmitRequest):
 
     logger.info("task submission requested")
 
-    agent = AgentRegistry.get(request.assigned_agent)
-
-    if agent is None:
+    try:
+        task_db = TaskSubmissionService.submit_internal_task(request)
+    except AgentNotFoundError as error:
         raise HTTPException(
             status_code=404,
-            detail=f"未找到 Agent：{request.assigned_agent}",
-        )
-
-    payload = {**request.context, "task": request.task}
-
-    task = Task(
-        task_type=request.task,
-        payload=payload,
-        assigned_agent=request.assigned_agent,
-        priority=request.priority,
-    )
-
-    try:
-        task_db = TaskService.create_task(task)
+            detail=f"未找到 Agent：{error.agent_name}",
+        ) from error
     except Exception as error:
         logger.error(
             "task submission database failure: error_type=%s",
@@ -198,15 +188,6 @@ def submit_task(request: TaskSubmitRequest):
             status_code=500,
             detail=f"任务提交失败（{type(error).__name__}）",
         ) from error
-
-    try:
-        task_consumer_service.wake()
-    except Exception as error:
-        logger.warning(
-            "task consumer wake failed: task_id=%s error_type=%s",
-            task_db.id,
-            type(error).__name__,
-        )
 
     logger.info(
         "task submitted: task_id=%s assigned_agent=%s priority=%s",

@@ -1,3 +1,5 @@
+from sqlalchemy.exc import IntegrityError
+
 from app.database.db import SessionLocal
 from app.models.task_db import TaskDB
 from app.runtime.task import Task
@@ -40,6 +42,84 @@ class TaskService:
             db.refresh(task_db)
 
             return task_db
+
+        finally:
+            db.close()
+
+    @staticmethod
+    def create_external_task(
+        task: Task,
+        *,
+        external_source: str,
+        external_request_id: str,
+    ) -> TaskDB | None:
+        """
+        创建带外部幂等字段的任务（阶段 6A 外部接入网关专用）。
+
+        若 (external_source, external_request_id) 命中数据库唯一
+        约束冲突，说明另一个并发请求已经先一步插入成功——这是
+        正常的并发竞争结果，不是错误：捕获 IntegrityError、
+        rollback 后返回 None，由调用方（TaskSubmissionService）
+        重新按 external_source/external_request_id 查询已存在的
+        任务并返回 duplicate=true，不在这里抛出异常、也不重试
+        插入。
+        """
+
+        db = SessionLocal()
+
+        try:
+            task_db = TaskDB(
+                id=task.id,
+                task_type=task.task_type,
+                assigned_agent=task.assigned_agent,
+                priority=task.priority,
+                status=task.status,
+                payload=task.payload,
+                result=task.result,
+                error=task.error,
+                created_at=task.created_at,
+                started_at=task.started_at,
+                completed_at=task.completed_at,
+                external_source=external_source,
+                external_request_id=external_request_id,
+            )
+
+            db.add(task_db)
+
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                return None
+
+            db.refresh(task_db)
+
+            return task_db
+
+        finally:
+            db.close()
+
+    @staticmethod
+    def find_by_external_request(
+        external_source: str,
+        external_request_id: str,
+    ) -> TaskDB | None:
+        """
+        按 (external_source, external_request_id) 精确查询已存在
+        的任务，用于外部接入网关的幂等去重。两个参数必须同时提供
+        非空值——内部任务两字段均为 NULL，不会被本方法意外匹配到
+        （SQL 中 NULL = NULL 恒为假）。
+        """
+
+        db = SessionLocal()
+
+        try:
+            return (
+                db.query(TaskDB)
+                .filter(TaskDB.external_source == external_source)
+                .filter(TaskDB.external_request_id == external_request_id)
+                .first()
+            )
 
         finally:
             db.close()

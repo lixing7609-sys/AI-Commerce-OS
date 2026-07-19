@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, String, Text
+from sqlalchemy import JSON, DateTime, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -13,6 +13,14 @@ class TaskDB(Base):
     """
 
     __tablename__ = "tasks"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "external_source",
+            "external_request_id",
+            name="uq_tasks_external_source_request_id",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(
         String(32),
@@ -74,5 +82,15 @@ class TaskDB(Base):
 
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
+        nullable=True,
+    )
+
+    external_source: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    external_request_id: Mapped[str | None] = mapped_column(
+        String(128),
         nullable=True,
     )
