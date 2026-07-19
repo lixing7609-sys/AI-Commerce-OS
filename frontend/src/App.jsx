@@ -6,12 +6,28 @@ import TaskCenter from "./pages/TaskCenter";
 
 function App() {
   const [activePage, setActivePage] = useState("dashboard");
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
 
-  if (activePage === "tasks") {
-    return <TaskCenter onNavigate={setActivePage} />;
+  function handleNavigateToTask(taskId) {
+    setSelectedTaskId(taskId);
+    setActivePage("tasks");
   }
 
-  return <Dashboard onNavigate={setActivePage} />;
+  if (activePage === "tasks") {
+    return (
+      <TaskCenter
+        onNavigate={setActivePage}
+        selectedTaskId={selectedTaskId}
+      />
+    );
+  }
+
+  return (
+    <Dashboard
+      onNavigate={setActivePage}
+      onNavigateToTask={handleNavigateToTask}
+    />
+  );
 }
 
 export default App;

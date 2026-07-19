@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import RecoveryCandidatesPanel from "../components/tasks/RecoveryCandidatesPanel";
-import { getTaskDetail, getTasks, getTaskStats } from "../services/api";
+import TaskDetailDrawer from "../components/tasks/TaskDetailDrawer";
+import { getTasks, getTaskStats } from "../services/api";
+import { getTask } from "../services/taskApi";
 
 const STATUS_LABELS = {
   pending: "待处理",
@@ -36,7 +38,7 @@ function formatDateTime(value) {
   return date.toLocaleString();
 }
 
-function TaskCenter({ onNavigate = () => {} }) {
+function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -59,17 +61,38 @@ function TaskCenter({ onNavigate = () => {} }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [selectedTask, setSelectedTask] = useState(null);
-  const [detailError, setDetailError] = useState(null);
+  // 任务详情抽屉：activeTaskId 决定"正在看哪个任务"（用于高亮，
+  // 抽屉关闭后仍保留，做轻微高亮）；drawerOpen 单独控制抽屉本身
+  // 是否展开——两者分离是为了满足"用户手动关闭后，后续 5 秒
+  // polling 不应再次强制打开"的要求：polling 只会更新任务列表，
+  // 从不触碰 drawerOpen。
+  //
+  // fetchedTaskData 只保存"在当前列表中找不到、单独 GET 回来"的
+  // 兜底结果；只要任务本身在列表里，展示数据始终直接从
+  // taskList.items 派生（渲染时计算，不额外存一份状态），避免和
+  // polling 更新的列表数据产生不同步。
+  const [activeTaskId, setActiveTaskId] = useState(null);
+  const [fetchedTaskData, setFetchedTaskData] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [fetchNotFound, setFetchNotFound] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const [refreshTick, setRefreshTick] = useState(0);
 
-  const selectedTaskIdRef = useRef(null);
+  // 只在父组件传入的 selectedTaskId 变化时自动定位并打开一次抽屉
+  // （Dashboard "查看任务" 跳转过来时触发）。用"渲染期间对比上一次
+  // prop 值"的方式实现，而不是在 useEffect 里同步 setState——避免
+  // 触发 react-hooks/set-state-in-effect（该模式是 React 官方推荐
+  // 的"根据 prop 变化重置 state"写法）。
+  const [prevSelectedTaskId, setPrevSelectedTaskId] = useState(null);
 
-  useEffect(() => {
-    selectedTaskIdRef.current = selectedTask?.id ?? null;
-  }, [selectedTask]);
+  if (selectedTaskId && selectedTaskId !== prevSelectedTaskId) {
+    setPrevSelectedTaskId(selectedTaskId);
+    setActiveTaskId(selectedTaskId);
+    setDrawerOpen(true);
+    setFetchedTaskData(null);
+    setFetchNotFound(false);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -89,8 +112,10 @@ function TaskCenter({ onNavigate = () => {} }) {
           return;
         }
 
+        const items = Array.isArray(tasksData.items) ? tasksData.items : [];
+
         setTaskList({
-          items: Array.isArray(tasksData.items) ? tasksData.items : [],
+          items,
           pagination: {
             limit: tasksData.pagination?.limit ?? 50,
             offset: tasksData.pagination?.offset ?? 0,
@@ -108,18 +133,6 @@ function TaskCenter({ onNavigate = () => {} }) {
         });
 
         setError(null);
-
-        const currentSelectedId = selectedTaskIdRef.current;
-
-        if (currentSelectedId) {
-          const refreshed = (tasksData.items ?? []).find(
-            (item) => item.id === currentSelectedId
-          );
-
-          if (refreshed) {
-            setSelectedTask(refreshed);
-          }
-        }
       } catch (err) {
         if (!cancelled) {
           console.error("任务中心数据加载失败：", err);
@@ -142,29 +155,89 @@ function TaskCenter({ onNavigate = () => {} }) {
     };
   }, [statusFilter, refreshTick]);
 
+  const listMatch = activeTaskId
+    ? taskList.items.find((item) => item.id === activeTaskId) ?? null
+    : null;
+
+  // activeTaskId 在当前列表中找不到时，最多单独 GET 一次；一旦
+  // 已经拿到明确结果（找到了，或确认 404）就不再重复请求——用
+  // fetchNotFound/fetchedTaskData 这两个 state 本身作为"是否已经
+  // 请求过"的判断依据，而不是额外的 ref 计数器：React 18
+  // StrictMode 开发模式下会把 effect 挂载-卸载-再挂载各跑一次，
+  // 如果用 ref 记录"已尝试过"，第一次（会被立即撤销的）调用会
+  // 抢先标记为"已尝试"，导致第二次（真正生效的）调用直接被guard
+  // 跳过，而第一次调用的结果又因为 cancelled 被丢弃，最终两次
+  // 都拿不到结果。用 state 判断则没有这个问题：第二次调用发起时
+  // state 还没被第一次调用更新，会正常请求并正确写回结果。
+  // 一旦任务出现在列表中，上面的 listMatch 会直接命中，这个
+  // effect 不再做任何事——不会陷入无限请求，也不会用旧的单独
+  // 请求结果覆盖新的列表数据。
+  useEffect(() => {
+    if (!activeTaskId || listMatch) {
+      return undefined;
+    }
+
+    if (fetchNotFound || fetchedTaskData?.id === activeTaskId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function fetchOnce() {
+      setDetailLoading(true);
+
+      try {
+        const detail = await getTask(activeTaskId);
+
+        if (cancelled) {
+          return;
+        }
+
+        setFetchedTaskData(detail);
+        setFetchNotFound(false);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error("任务详情单独获取失败：", err);
+        setFetchNotFound(true);
+      } finally {
+        if (!cancelled) {
+          setDetailLoading(false);
+        }
+      }
+    }
+
+    fetchOnce();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTaskId, listMatch, fetchNotFound, fetchedTaskData]);
+
   function refreshTaskCenterData() {
     setRefreshTick((tick) => tick + 1);
   }
 
-  async function handleSelectTask(taskId) {
-    setDetailError(null);
-    setDetailLoading(true);
-
-    try {
-      const detail = await getTaskDetail(taskId);
-      setSelectedTask(detail);
-    } catch (err) {
-      console.error("任务详情加载失败：", err);
-      setDetailError(err.message || "任务详情加载失败");
-    } finally {
-      setDetailLoading(false);
-    }
+  function handleSelectTask(taskId) {
+    setActiveTaskId(taskId);
+    setDrawerOpen(true);
+    setFetchedTaskData(null);
+    setFetchNotFound(false);
   }
 
-  function handleCloseDetail() {
-    setSelectedTask(null);
-    setDetailError(null);
+  function handleCloseDrawer() {
+    setDrawerOpen(false);
   }
+
+  const drawerTask =
+    listMatch ??
+    (fetchedTaskData && fetchedTaskData.id === activeTaskId
+      ? fetchedTaskData
+      : null);
+
+  const drawerNotFound = fetchNotFound && !drawerTask;
 
   return (
     <div className="dashboard-shell">
@@ -298,24 +371,28 @@ function TaskCenter({ onNavigate = () => {} }) {
             <div className="task-empty">暂无符合条件的任务</div>
           ) : (
             <div className="task-list">
-              {taskList.items.map((task) => (
-                <div
-                  key={task.id}
-                  className={`task-row${
-                    selectedTask?.id === task.id ? " active" : ""
-                  }`}
-                  onClick={() => handleSelectTask(task.id)}
-                >
-                  <span>{task.id}</span>
-                  <span>{task.task_type}</span>
-                  <span>{task.assigned_agent ?? "—"}</span>
-                  <span className={`task-status ${task.status}`}>
-                    {getStatusLabel(task.status)}
-                  </span>
-                  <span>{formatDateTime(task.created_at)}</span>
-                  <span>{formatDateTime(task.completed_at)}</span>
-                </div>
-              ))}
+              {taskList.items.map((task) => {
+                const isActive = activeTaskId === task.id;
+
+                return (
+                  <div
+                    key={task.id}
+                    className={`task-row${
+                      isActive && drawerOpen ? " active" : ""
+                    }${isActive && !drawerOpen ? " recently-viewed" : ""}`}
+                    onClick={() => handleSelectTask(task.id)}
+                  >
+                    <span>{task.id}</span>
+                    <span>{task.task_type}</span>
+                    <span>{task.assigned_agent ?? "—"}</span>
+                    <span className={`task-status ${task.status}`}>
+                      {getStatusLabel(task.status)}
+                    </span>
+                    <span>{formatDateTime(task.created_at)}</span>
+                    <span>{formatDateTime(task.completed_at)}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -323,70 +400,16 @@ function TaskCenter({ onNavigate = () => {} }) {
             当前显示 {taskList.pagination.returned} 条，共{" "}
             {taskList.pagination.filtered_total} 条
           </div>
-
-          {(selectedTask || detailLoading || detailError) && (
-            <div className="task-detail">
-              <div className="panel-heading">
-                <span>
-                  任务详情
-                  {selectedTask ? `：${selectedTask.id}` : ""}
-                </span>
-                <button onClick={handleCloseDetail}>关闭</button>
-              </div>
-
-              {detailLoading && (
-                <div className="task-loading">正在加载详情……</div>
-              )}
-
-              {detailError && (
-                <div className="task-error">{detailError}</div>
-              )}
-
-              {selectedTask && !detailLoading && (
-                <>
-                  <div className="task-detail-meta">
-                    <span>任务类型：{selectedTask.task_type}</span>
-                    <span>
-                      执行 Agent：{selectedTask.assigned_agent ?? "—"}
-                    </span>
-                    <span>优先级：{selectedTask.priority}</span>
-                    <span>
-                      状态：{getStatusLabel(selectedTask.status)}
-                    </span>
-                    <span>
-                      创建时间：{formatDateTime(selectedTask.created_at)}
-                    </span>
-                    <span>
-                      开始时间：{formatDateTime(selectedTask.started_at)}
-                    </span>
-                    <span>
-                      完成时间：
-                      {formatDateTime(selectedTask.completed_at)}
-                    </span>
-                  </div>
-
-                  <h4>Payload</h4>
-                  <pre className="task-json">
-                    {JSON.stringify(selectedTask.payload, null, 2)}
-                  </pre>
-
-                  <h4>Result</h4>
-                  <pre className="task-json">
-                    {selectedTask.result
-                      ? JSON.stringify(selectedTask.result, null, 2)
-                      : "—"}
-                  </pre>
-
-                  <h4>Error</h4>
-                  <pre className="task-json">
-                    {selectedTask.error ?? "—"}
-                  </pre>
-                </>
-              )}
-            </div>
-          )}
         </div>
       </main>
+
+      <TaskDetailDrawer
+        open={drawerOpen}
+        task={drawerTask}
+        loading={detailLoading}
+        notFound={drawerNotFound}
+        onClose={handleCloseDrawer}
+      />
     </div>
   );
 }

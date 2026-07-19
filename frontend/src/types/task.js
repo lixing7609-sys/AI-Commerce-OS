@@ -36,4 +36,24 @@
  * @property {string} message
  */
 
+/**
+ * GET /api/v1/tasks/{task_id}（以及 GET /api/v1/tasks 列表项）返回的
+ * 完整任务结构。展示到 UI 前必须先经过
+ * taskDetailHelpers.sanitizeTaskDetail() 处理，不得把该对象整体
+ * （尤其是 payload/context）直接传给界面。
+ *
+ * @typedef {Object} TaskDetail
+ * @property {string} id
+ * @property {string} task_type
+ * @property {Object.<string, any>} payload
+ * @property {string | null} assigned_agent
+ * @property {string} priority
+ * @property {string} status
+ * @property {string | null} created_at
+ * @property {string | null} started_at
+ * @property {string | null} completed_at
+ * @property {Object.<string, any> | null} result
+ * @property {string | null} error
+ */
+
 export {};

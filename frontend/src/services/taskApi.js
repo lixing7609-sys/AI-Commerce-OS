@@ -85,6 +85,22 @@ export async function markTaskFailed(taskId, reason) {
 }
 
 /**
+ * @param {string} taskId
+ * @returns {Promise<import("../types/task").TaskDetail>}
+ */
+export async function getTask(taskId) {
+  const response = await fetch(
+    `${BASE_URL}/tasks/${encodeURIComponent(taskId)}`
+  );
+
+  if (!response.ok) {
+    throw buildTaskApiError(response, "获取任务详情失败");
+  }
+
+  return response.json();
+}
+
+/**
  * @param {import("../types/task").TaskSubmitRequest} request
  * @returns {Promise<import("../types/task").TaskSubmitResponse>}
  */

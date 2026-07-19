@@ -200,7 +200,7 @@ function TaskSubmitPanel({
           <button
             type="button"
             className="task-submit-view-button"
-            onClick={onViewTask}
+            onClick={() => onViewTask(successInfo.id)}
           >
             查看任务
           </button>

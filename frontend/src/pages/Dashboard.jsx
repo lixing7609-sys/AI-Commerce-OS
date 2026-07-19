@@ -4,7 +4,7 @@ import RuntimeStatusPanel from "../components/runtime/RuntimeStatusPanel";
 import TaskSubmitPanel from "../components/tasks/TaskSubmitPanel";
 import { getDashboardSummary } from "../services/api";
 
-function Dashboard({ onNavigate = () => {} }) {
+function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
   const [submitPanelOpen, setSubmitPanelOpen] = useState(false);
 
   const [summary, setSummary] = useState({
@@ -211,7 +211,7 @@ function Dashboard({ onNavigate = () => {} }) {
           open={submitPanelOpen}
           agents={summary.agents.items}
           runtimeRunning={runtimeRunning}
-          onViewTask={() => onNavigate("tasks")}
+          onViewTask={onNavigateToTask}
         />
 
         <div className="dashboard-top-control-grid">
