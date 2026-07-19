@@ -1,0 +1,10 @@
+{
+  "request_id": "demo-command-001",
+  "source": "n8n",
+  "assigned_agent": "AI CEO",
+  "task": "生成今日经营分析",
+  "context": {
+    "channel": "manual-test"
+  },
+  "priority": "normal"
+}
