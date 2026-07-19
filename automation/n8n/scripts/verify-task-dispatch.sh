@@ -15,16 +15,17 @@
 #   PRIORITY          默认 "normal"
 #   N8N_WEBHOOK_AUTH_HEADER   若 Webhook 启用了 Header
 #                             Authentication，设置该 Header 的名称
-#                             （例如 X-Secretariat-Webhook-Auth）
+#                             （例如 X-AI-Secretariat-Key）
 #   N8N_WEBHOOK_AUTH_VALUE    对应的 Header 值。本脚本只会把它放进
 #                             请求 Header，绝不打印、绝不写入任何
 #                             输出或日志。
 #
 # 本脚本本身不持有、不读取、不输出任何后端 API Key——鉴权 Key 只
-# 存在于 n8n workflow 内部（EXTERNAL_TASK_API_KEY /
-# AI_COMMERCE_TASK_API_KEY 环境变量），本脚本只是外部调用方视角的
-# 黑盒验证；N8N_WEBHOOK_AUTH_VALUE 是 Webhook 自身的入口保护 Header
-# 值（如果启用），与后端 API Key 是两个完全独立的凭据。
+# 存在于 n8n 的 Credentials 存储中（"AI Commerce OS Task
+# Gateway"，backend 侧对应 EXTERNAL_TASK_API_KEY），本脚本只是
+# 外部调用方视角的黑盒验证；N8N_WEBHOOK_AUTH_VALUE 是 Webhook 自身
+# 的入口保护 Header 值（对应 n8n Credential "AI Secretariat
+# Webhook Auth"），与后端网关 Key 是两个完全独立、互不复用的凭据。
 
 set -euo pipefail
 
