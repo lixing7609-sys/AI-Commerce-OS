@@ -3,11 +3,14 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.agents.agent_registry import AgentRegistry
 from app.models.task_api import (
     TaskItemResponse,
     TaskListResponse,
     TaskPaginationResponse,
     TaskStatsResponse,
+    TaskSubmitRequest,
+    TaskSubmitResponse,
 )
 from app.models.task_recovery import (
     TaskRecoveryCandidate,
@@ -15,6 +18,8 @@ from app.models.task_recovery import (
     TaskRecoverySummary,
 )
 from app.models.task_recovery_actions import TaskMarkFailedRequest
+from app.runtime.task import Task
+from app.services.task_consumer_service import task_consumer_service
 from app.services.task_recovery_action_service import (
     InvalidTaskTransitionError,
     TaskNotFoundError,
@@ -138,6 +143,86 @@ def get_recovery_candidates(
         limit=limit,
         offset=offset,
         returned_count=len(candidates),
+    )
+
+
+@router.post(
+    "/submit",
+    response_model=TaskSubmitResponse,
+    status_code=202,
+)
+def submit_task(request: TaskSubmitRequest):
+    """
+    正式的 pending 任务提交入口：只把任务写入队列，不在本次 HTTP
+    请求内执行 Agent。
+
+    流程：校验请求 → 确认 assigned_agent 已在 AgentRegistry 注册
+    （只做存在性校验，不检查该 Agent 当前运行状态，也不启动它）
+    → 创建 status=pending 的任务并 commit → 仅在 commit 成功后
+    才唤醒后台 TaskConsumerService → 立即返回 202。
+
+    本接口完全不检查、不修改 Runtime 状态，不启动 Runtime；
+    Runtime stopped 时任务照常入队并保持 pending，由用户之后
+    手动启动 Runtime，或如果 Runtime 本来就 running，则由现有
+    后台 consumer 在其自身循环中异步领取执行——本接口本身绝不
+    调用 agent.run() 或 TaskExecutionService。
+    """
+
+    logger.info("task submission requested")
+
+    agent = AgentRegistry.get(request.assigned_agent)
+
+    if agent is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"未找到 Agent：{request.assigned_agent}",
+        )
+
+    payload = {**request.context, "task": request.task}
+
+    task = Task(
+        task_type=request.task,
+        payload=payload,
+        assigned_agent=request.assigned_agent,
+        priority=request.priority,
+    )
+
+    try:
+        task_db = TaskService.create_task(task)
+    except Exception as error:
+        logger.error(
+            "task submission database failure: error_type=%s",
+            type(error).__name__,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"任务提交失败（{type(error).__name__}）",
+        ) from error
+
+    try:
+        task_consumer_service.wake()
+    except Exception as error:
+        logger.warning(
+            "task consumer wake failed: task_id=%s error_type=%s",
+            task_db.id,
+            type(error).__name__,
+        )
+
+    logger.info(
+        "task submitted: task_id=%s assigned_agent=%s priority=%s",
+        task_db.id,
+        task_db.assigned_agent,
+        task_db.priority,
+    )
+
+    return TaskSubmitResponse(
+        id=task_db.id,
+        status=task_db.status,
+        assigned_agent=task_db.assigned_agent,
+        task_type=task_db.task_type,
+        priority=task_db.priority,
+        created_at=task_db.created_at,
+        message="任务已进入执行队列",
     )
 
 

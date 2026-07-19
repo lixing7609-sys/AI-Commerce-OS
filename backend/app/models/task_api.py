@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 TaskStatus = Literal["pending", "running", "completed", "failed"]
@@ -59,3 +59,72 @@ class TaskListResponse(BaseModel):
     stats: TaskStatsResponse
     items: list[TaskItemResponse]
     pagination: TaskPaginationResponse
+
+
+class TaskSubmitRequest(BaseModel):
+    """
+    POST /api/v1/tasks/submit 的请求体。
+
+    只负责把一条 pending 任务写入队列，不在请求中执行 Agent。
+    assigned_agent 只做"是否已在 AgentRegistry 注册"的存在性
+    校验，不检查该 Agent 当前的运行状态——Runtime stopped 时
+    Agent 本来就可能处于 stopped，必须仍然允许提前排队。
+    """
+
+    assigned_agent: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="目标 AI 员工名称，必须已在 AgentRegistry 注册",
+    )
+
+    task: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description=(
+            "任务描述文本；同时写入 TaskDB.task_type 与 "
+            "payload['task']（受 TaskDB.task_type 列宽 "
+            "VARCHAR(64) 限制，因此上限为 64 个字符）"
+        ),
+    )
+
+    context: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "附加业务上下文，必须是 JSON object；不接受数组、"
+            "字符串或 null。若其中包含 'task' 键，会被顶层 task "
+            "字段覆盖，不会影响 Agent 实际执行时使用的任务描述。"
+        ),
+    )
+
+    priority: Literal["high", "normal", "low"] = Field(
+        default="normal",
+        description="任务优先级，只允许 high/normal/low",
+    )
+
+    @field_validator("assigned_agent", "task", mode="before")
+    @classmethod
+    def _strip_string_fields(cls, value):
+        if isinstance(value, str):
+            return value.strip()
+
+        return value
+
+
+class TaskSubmitResponse(BaseModel):
+    """
+    POST /api/v1/tasks/submit 的响应结构（202 Accepted）。
+
+    只返回安全的任务接收信息：不包含 payload、context、result、
+    error 或任何内部 ORM 细节。status 恒为 "pending"（本接口只
+    入队，不执行）。
+    """
+
+    id: str
+    status: str
+    assigned_agent: str | None
+    task_type: str
+    priority: str
+    created_at: datetime
+    message: str
