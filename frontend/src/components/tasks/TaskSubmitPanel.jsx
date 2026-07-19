@@ -22,14 +22,26 @@ function TaskSubmitPanel({
   open,
   agents = [],
   runtimeRunning = false,
+  initialAgent = "",
   onViewTask = () => {},
 }) {
-  const [selectedAgent, setSelectedAgent] = useState("");
+  const [selectedAgent, setSelectedAgent] = useState(initialAgent);
   const [taskText, setTaskText] = useState("");
   const [priority, setPriority] = useState("normal");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [successInfo, setSuccessInfo] = useState(null);
+
+  // initialAgent 只在调用方指定的预选 Agent 发生变化时生效一次
+  // （渲染期间对比上一次值，而不是在 useEffect 里同步
+  // setState——写法与 TaskCenter 的 selectedTaskId 同步一致），
+  // 不会覆盖用户在面板打开后自行做出的选择。
+  const [appliedInitialAgent, setAppliedInitialAgent] = useState(initialAgent);
+
+  if (open && initialAgent && initialAgent !== appliedInitialAgent) {
+    setAppliedInitialAgent(initialAgent);
+    setSelectedAgent(initialAgent);
+  }
 
   if (!open) {
     return null;

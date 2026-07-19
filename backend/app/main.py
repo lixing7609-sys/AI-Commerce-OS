@@ -6,13 +6,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.agents import router as agents_router
+from app.api.v1.analytics import router as analytics_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.inventories import router as inventories_router
+from app.api.v1.knowledge import router as knowledge_router
 from app.api.v1.listings import router as listings_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.products import router as products_router
 from app.api.v1.runtime import router as runtime_router
+from app.api.v1.settings import router as settings_router
 from app.api.v1.stores import router as stores_router
 from app.api.v1.suppliers import router as suppliers_router
 from app.api.v1.tasks import router as tasks_router
@@ -217,6 +220,21 @@ app.include_router(
 
 app.include_router(
     wecom_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    analytics_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    knowledge_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    settings_router,
     prefix="/api/v1",
 )
 

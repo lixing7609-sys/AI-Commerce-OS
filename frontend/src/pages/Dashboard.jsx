@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 
+import Sidebar from "../components/layout/Sidebar";
 import RuntimeStatusPanel from "../components/runtime/RuntimeStatusPanel";
 import TaskSubmitPanel from "../components/tasks/TaskSubmitPanel";
 import { getDashboardSummary } from "../services/api";
+import { getTaskAnalytics } from "../services/analyticsApi";
 
 function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
   const [submitPanelOpen, setSubmitPanelOpen] = useState(false);
+  const [trend, setTrend] = useState([]);
+  const [trendError, setTrendError] = useState(null);
 
   const [summary, setSummary] = useState({
     products: 0,
@@ -92,7 +96,54 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTrend() {
+      try {
+        const data = await getTaskAnalytics("7d");
+
+        if (cancelled) {
+          return;
+        }
+
+        setTrend(Array.isArray(data.trend) ? data.trend : []);
+        setTrendError(null);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("任务趋势加载失败：", error);
+          setTrendError(error.message || "任务趋势加载失败");
+        }
+      }
+    }
+
+    loadTrend();
+
+    const timer = window.setInterval(loadTrend, 30000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const runtimeRunning = summary.runtime.running;
+
+  const trendMaxCount = Math.max(1, ...trend.map((point) => point.count));
+
+  const trendPolylinePoints = trend
+    .map((point, index) => {
+      const x =
+        trend.length > 1 ? (index / (trend.length - 1)) * 700 : 350;
+      const y = 150 - (point.count / trendMaxCount) * 130;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  function formatTrendLabel(dateText) {
+    const parts = dateText.split("-");
+    return parts.length === 3 ? `${parts[1]}-${parts[2]}` : dateText;
+  }
 
   function getAgentViewStatus(agentStatus) {
     switch (agentStatus) {
@@ -130,70 +181,12 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
 
   return (
     <div className="dashboard-shell">
-      <aside className="dashboard-sidebar">
-        <div className="sidebar-brand">
-          <span className="brand-mark">☀</span>
-          <strong>AI CEO</strong>
-        </div>
-
-        <nav className="sidebar-navigation">
-          <button className="sidebar-link active">
-            <span>⌂</span>
-            首页
-          </button>
-
-          <button className="sidebar-link">
-            <span>◎</span>
-            运营概览
-          </button>
-
-          <button className="sidebar-link">
-            <span>♙</span>
-            AI 员工
-          </button>
-
-          <button
-            className="sidebar-link"
-            onClick={() => onNavigate("tasks")}
-          >
-            <span>☑</span>
-            任务中心
-          </button>
-
-          <button className="sidebar-link">
-            <span>◔</span>
-            数据分析
-          </button>
-
-          <button className="sidebar-link">
-            <span>▣</span>
-            知识库
-          </button>
-
-          <button className="sidebar-link">
-            <span>⚙</span>
-            设置
-          </button>
-        </nav>
-
-        <div className="sidebar-account">
-          <div className="account-status">
-            <span
-              className="status-light"
-              style={{
-                background: runtimeRunning ? "#26b85d" : "#a7a8ad",
-              }}
-            />
-
-            {runtimeRunning ? "AI CEO 在线" : "AI CEO 离线"}
-          </div>
-
-          <div className="account-plan">
-            <span>一人公司</span>
-            <small>专业版</small>
-          </div>
-        </div>
-      </aside>
+      <Sidebar
+        activePage="dashboard"
+        onNavigate={onNavigate}
+        statusLabel={runtimeRunning ? "AI CEO 在线" : "AI CEO 离线"}
+        statusOk={runtimeRunning}
+      />
 
       <main className="dashboard-workspace">
         <div className="task-submit-trigger-row">
@@ -236,10 +229,10 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
         </div>
 
         <section className="metric-grid">
-          <article className="metric-card">
-            <span>今日收入</span>
-            <strong>¥186,000</strong>
-            <small>较昨日 +18%</small>
+          <article className="metric-card metric-card-not-integrated">
+            <span>经营收入</span>
+            <strong>尚未接入</strong>
+            <small>暂无真实经营数据</small>
             <em>⌁</em>
           </article>
 
@@ -293,7 +286,7 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
                   : "启动 RuntimeEngine 后，AI CEO 将开始生成经营建议。"}
               </p>
 
-              <button>
+              <button type="button" onClick={() => onNavigate("tasks")}>
                 {runtimeRunning ? "查看建议任务 →" : "等待系统启动"}
               </button>
             </div>
@@ -334,7 +327,9 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
                 AI 员工（{summary.agents.running}/{summary.agents.total}）
               </span>
 
-              <button>查看全部</button>
+              <button type="button" onClick={() => onNavigate("agents")}>
+                查看全部
+              </button>
             </div>
 
             <div className="agents-list">
@@ -383,34 +378,38 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
         <section className="lower-grid">
           <article className="trend-card">
             <div className="panel-heading">
-              <span>关键数据趋势</span>
-              <button>近 7 天⌄</button>
+              <span>近 7 天新增任务</span>
+              <button type="button" onClick={() => onNavigate("analytics")}>
+                查看数据分析 →
+              </button>
             </div>
 
-            <div className="trend-chart">
-              <svg
-                viewBox="0 0 700 160"
-                preserveAspectRatio="none"
-                aria-label="关键数据趋势"
-              >
-                <polyline
-                  points="0,135 90,58 180,73 270,55 360,45 450,36 540,25 620,16 700,48"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-              </svg>
+            {trendError ? (
+              <div className="trend-empty">加载失败：{trendError}</div>
+            ) : trend.length === 0 ? (
+              <div className="trend-empty">暂无任务数据</div>
+            ) : (
+              <div className="trend-chart">
+                <svg
+                  viewBox="0 0 700 160"
+                  preserveAspectRatio="none"
+                  aria-label="近 7 天新增任务趋势"
+                >
+                  <polyline
+                    points={trendPolylinePoints}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                </svg>
 
-              <div className="trend-labels">
-                <span>07-11</span>
-                <span>07-12</span>
-                <span>07-13</span>
-                <span>07-14</span>
-                <span>07-15</span>
-                <span>07-16</span>
-                <span>07-17</span>
+                <div className="trend-labels">
+                  {trend.map((point) => (
+                    <span key={point.date}>{formatTrendLabel(point.date)}</span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </article>
 
           <article className="reminders-card">
@@ -451,10 +450,21 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
             </div>
 
             <div className="quick-actions-grid">
-              <button>创建任务</button>
-              <button>添加客户</button>
-              <button>录入收入</button>
-              <button>生成报告</button>
+              <button
+                type="button"
+                onClick={() => setSubmitPanelOpen(true)}
+              >
+                创建任务
+              </button>
+              <button type="button" onClick={() => onNavigate("agents")}>
+                AI 员工
+              </button>
+              <button type="button" onClick={() => onNavigate("analytics")}>
+                数据分析
+              </button>
+              <button type="button" onClick={() => onNavigate("knowledge")}>
+                知识库
+              </button>
             </div>
           </article>
         </section>

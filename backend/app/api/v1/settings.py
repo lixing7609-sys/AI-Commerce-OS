@@ -1,0 +1,27 @@
+from fastapi import APIRouter
+
+from app.services.settings_service import SettingsService
+
+router = APIRouter(
+    prefix="/settings",
+    tags=["Settings"],
+)
+
+
+@router.get("/integration-status")
+def get_integration_status():
+    """
+    集成配置状态（只返回布尔值，从不返回真实配置值）。
+    """
+
+    return SettingsService.get_integration_status()
+
+
+@router.get("/system-info")
+def get_system_info():
+    """
+    系统信息（后端版本、数据库迁移版本、执行器健康状态、
+    运行环境、Agent 数量）。不包含任何 Secret 或连接串。
+    """
+
+    return SettingsService.get_system_info()

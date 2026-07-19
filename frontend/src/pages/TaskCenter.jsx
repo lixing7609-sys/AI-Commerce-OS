@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import Sidebar from "../components/layout/Sidebar";
 import RecoveryCandidatesPanel from "../components/tasks/RecoveryCandidatesPanel";
 import TaskDetailDrawer from "../components/tasks/TaskDetailDrawer";
 import { getTasks, getTaskStats } from "../services/api";
@@ -241,72 +242,12 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
 
   return (
     <div className="dashboard-shell">
-      <aside className="dashboard-sidebar">
-        <div className="sidebar-brand">
-          <span className="brand-mark">☀</span>
-          <strong>AI CEO</strong>
-        </div>
-
-        <nav className="sidebar-navigation">
-          <button
-            className="sidebar-link"
-            onClick={() => onNavigate("dashboard")}
-          >
-            <span>⌂</span>
-            首页
-          </button>
-
-          <button
-            className="sidebar-link"
-            onClick={() => onNavigate("dashboard")}
-          >
-            <span>◎</span>
-            运营概览
-          </button>
-
-          <button className="sidebar-link">
-            <span>♙</span>
-            AI 员工
-          </button>
-
-          <button className="sidebar-link active">
-            <span>☑</span>
-            任务中心
-          </button>
-
-          <button className="sidebar-link">
-            <span>◔</span>
-            数据分析
-          </button>
-
-          <button className="sidebar-link">
-            <span>▣</span>
-            知识库
-          </button>
-
-          <button className="sidebar-link">
-            <span>⚙</span>
-            设置
-          </button>
-        </nav>
-
-        <div className="sidebar-account">
-          <div className="account-status">
-            <span
-              className="status-light"
-              style={{
-                background: error ? "#a7a8ad" : "#26b85d",
-              }}
-            />
-            {error ? "任务数据异常" : "任务中心正常"}
-          </div>
-
-          <div className="account-plan">
-            <span>一人公司</span>
-            <small>专业版</small>
-          </div>
-        </div>
-      </aside>
+      <Sidebar
+        activePage="tasks"
+        onNavigate={onNavigate}
+        statusLabel={error ? "任务数据异常" : "任务中心正常"}
+        statusOk={!error}
+      />
 
       <main className="dashboard-workspace task-workspace">
         <header className="workspace-header">
