@@ -2193,6 +2193,206 @@ button {
 }
 
 /* =========================
+   销售 Agent 结构化结果展示（阶段 8C）
+========================= */
+
+.sales-analysis-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sales-analysis-summary {
+  margin: 0;
+  padding: 10px 12px;
+  color: #2e2f34;
+  background: #f7f7f8;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sales-analysis-text {
+  margin: 0;
+  color: #46474c;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sales-analysis-block h5 {
+  margin: 0 0 6px;
+  color: #2e2f34;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sales-analysis-block ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  color: #46474c;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sales-analysis-block small {
+  display: block;
+  margin: 6px 0 2px;
+  color: #85868c;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.sales-analysis-block > p {
+  margin: 0 0 6px;
+  color: #46474c;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sales-analysis-warning {
+  padding: 10px 12px;
+  background: #fdf6ec;
+  border: 1px solid #f2e2c4;
+  border-radius: 8px;
+}
+
+.sales-opportunity-list,
+.sales-action-list,
+.sales-day-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sales-opportunity-card {
+  padding: 10px 12px;
+  background: #f7f7f8;
+  border: 1px solid #e9e9eb;
+  border-radius: 8px;
+}
+
+.sales-opportunity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.sales-opportunity-header strong {
+  color: #2e2f34;
+  font-size: 12px;
+}
+
+.sales-opportunity-card p {
+  margin: 0;
+  color: #57585e;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sales-confidence-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.sales-confidence-badge.high {
+  color: #198447;
+  background: #e8f8ee;
+}
+
+.sales-confidence-badge.medium {
+  color: #8a6d1a;
+  background: #fdf1d6;
+}
+
+.sales-confidence-badge.low {
+  color: #68696f;
+  background: #efeff1;
+}
+
+.sales-action-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f7f7f8;
+  border: 1px solid #e9e9eb;
+  border-radius: 8px;
+}
+
+.sales-action-item strong {
+  display: block;
+  color: #2e2f34;
+  font-size: 12px;
+}
+
+.sales-action-item small {
+  display: block;
+  margin-top: 2px;
+  color: #85868c;
+  font-size: 11px;
+}
+
+.sales-priority-badge {
+  padding: 3px 8px;
+  text-align: center;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.sales-priority-badge.high {
+  color: #9a2f24;
+  background: #fdecea;
+}
+
+.sales-priority-badge.normal {
+  color: #68696f;
+  background: #efeff1;
+}
+
+.sales-priority-badge.low {
+  color: #1a5fb4;
+  background: #e8f0fd;
+}
+
+.sales-day-plan-item {
+  padding: 10px 12px;
+  background: #f7f7f8;
+  border: 1px solid #e9e9eb;
+  border-radius: 8px;
+}
+
+.sales-day-plan-item strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #2e2f34;
+  font-size: 12px;
+}
+
+.sales-day-plan-item ul {
+  margin: 0 0 4px;
+  padding-left: 16px;
+  color: #46474c;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sales-day-plan-item small {
+  color: #85868c;
+  font-size: 10px;
+}
+
+/* =========================
    管理后台新增模块（AI 员工 / 数据分析 / 知识库 / 设置 / 运营概览）
 ========================= */
 

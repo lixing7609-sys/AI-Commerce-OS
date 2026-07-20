@@ -1,0 +1,75 @@
+"""
+GET /api/v1/agents 安全性测试（阶段 8C：销售 Agent 真实接入）。
+
+覆盖：销售 Agent capability_ready=true 且带上安全的业务能力
+字段；其它未接入 Agent（产品/财务/行政）状态不变
+（capability_ready=false）；API 从不返回 Key/Prompt/Base URL
+凭据/完整模型响应。
+"""
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+
+def _client():
+    return TestClient(app)
+
+
+def _get_agent_items():
+    with _client() as client:
+        response = client.get("/api/v1/agents")
+    assert response.status_code == 200
+    return response.json()["items"]
+
+
+def test_sales_agent_capability_ready_true():
+    items = _get_agent_items()
+    sales_agent = next(item for item in items if item["name"] == "销售 Agent")
+
+    assert sales_agent["capability_ready"] is True
+    assert "llm_provider" in sales_agent
+    assert "llm_model" in sales_agent
+    assert set(sales_agent["supported_task_types"]) == {
+        "销售机会分析",
+        "商品销售策略",
+        "销售运营建议",
+    }
+    assert "last_llm_call_status" in sales_agent
+
+
+def test_other_unimplemented_agents_still_capability_ready_false():
+    items = _get_agent_items()
+
+    for name in ("产品 Agent", "财务 Agent", "行政 Agent"):
+        agent = next(item for item in items if item["name"] == name)
+        assert agent["capability_ready"] is False
+        assert "llm_provider" not in agent
+        assert "supported_task_types" not in agent
+
+
+def test_ai_ceo_still_capability_ready_true():
+    items = _get_agent_items()
+    ai_ceo = next(item for item in items if item["name"] == "AI CEO")
+
+    assert ai_ceo["capability_ready"] is True
+
+
+def test_agents_api_never_returns_secrets():
+    with _client() as client:
+        response = client.get("/api/v1/agents")
+
+    forbidden_substrings = [
+        "api_key",
+        "apikey",
+        "DEEPSEEK_API_KEY",
+        "Authorization",
+        "Bearer",
+        "Traceback",
+        "postgresql://",
+        "_sa_instance_state",
+    ]
+
+    response_text_lower = response.text.lower()
+    for substring in forbidden_substrings:
+        assert substring.lower() not in response_text_lower

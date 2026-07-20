@@ -314,8 +314,12 @@ function Agents({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
               </dl>
 
               <h4>业务能力</h4>
-              {selectedAgent.llm_provider !== undefined ? (
+              {selectedAgent.capability_ready ? (
                 <dl className="task-drawer-meta">
+                  <div>
+                    <dt>状态</dt>
+                    <dd>真实能力已接入</dd>
+                  </div>
                   <div>
                     <dt>当前执行 Provider</dt>
                     <dd>{selectedAgent.llm_provider ?? "未配置"}</dd>

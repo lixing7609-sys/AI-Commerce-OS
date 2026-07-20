@@ -91,6 +91,28 @@ function extractDelegationItems(result) {
   return Array.isArray(items) ? items : [];
 }
 
+// 从任务原始 result 里提取销售 Agent 的结构化/文本结果，供详情
+// 抽屉做可读展示（而不是只能看原始 JSON）；只在确实存在
+// sales_analysis 字段时返回非空对象，其它任何任务类型（包括
+// AI CEO）都返回 null，不影响它们原有的展示方式。提取失败一律
+// 安全返回 null。
+function extractSalesAnalysis(result) {
+  const inner = result?.result;
+
+  if (
+    !inner ||
+    typeof inner.sales_analysis !== "object" ||
+    inner.sales_analysis === null
+  ) {
+    return null;
+  }
+
+  return {
+    format: inner.format === "text" ? "text" : "structured",
+    data: inner.sales_analysis,
+  };
+}
+
 /**
  * 把后端返回的完整任务对象转换成安全的展示结构：只挑选允许
  * 展示的字段（不包含 payload/context），result 递归遮蔽敏感键并
@@ -128,6 +150,10 @@ export function sanitizeTaskDetail(task) {
     children: Array.isArray(task.children) ? task.children : [],
     parentSummary: task.parent_summary ?? null,
     delegationItems: extractDelegationItems(task.result),
+    // 阶段 8C：销售 Agent 结构化结果的可读展示，null 表示当前
+    // 任务不是销售分析结果（例如 AI CEO 或普通占位 Agent 的
+    // 任务），此时抽屉沿用原有的原始 JSON 展示，不受影响。
+    salesAnalysis: extractSalesAnalysis(task.result),
   };
 }
 

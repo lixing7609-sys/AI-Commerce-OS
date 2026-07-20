@@ -29,6 +29,7 @@ class ClaimedTask(BaseModel):
     started_at: datetime
     delegation_depth: int = 0
     root_task_id: str | None = None
+    parent_task_id: str | None = None
 
 
 class TaskExecutionResult(BaseModel):

@@ -212,6 +212,7 @@ class AICEOAgent(BaseAgent):
 
         base.update(
             {
+                "capability_ready": True,
                 "llm_provider": provider,
                 "llm_model": model,
                 "supported_task_types": list(SUPPORTED_TASK_KEYWORDS),

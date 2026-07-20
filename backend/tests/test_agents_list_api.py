@@ -45,8 +45,12 @@ def test_agent_items_only_contain_safe_fields():
         "current_task",
         "last_run_at",
         "last_error",
-        # AICEOAgent（阶段 8A）在基础字段之上追加的安全只读字段：
-        # 均为 Provider 名称/模型标识符/固定分类标签，不含凭据。
+        # BaseAgent（阶段 8C）新增的默认安全字段：只是布尔值，标记
+        # 该 Agent 是否已接入真实业务能力。
+        "capability_ready",
+        # AICEOAgent（阶段 8A）/SalesAgent（阶段 8C）在基础字段之上
+        # 追加的安全只读字段：均为 Provider 名称/模型标识符/固定
+        # 分类标签，不含凭据。
         "llm_provider",
         "llm_model",
         "supported_task_types",

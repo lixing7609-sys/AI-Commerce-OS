@@ -127,6 +127,7 @@ def run_agent_task(
             task_id=task.id,
             delegation_depth=task.delegation_depth,
             root_task_id=task.root_task_id,
+            parent_task_id=task.parent_task_id,
         )
 
         if not result["success"]:

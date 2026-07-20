@@ -62,18 +62,20 @@ class BaseAgent(ABC):
         task_id: str | None = None,
         delegation_depth: int = 0,
         root_task_id: str | None = None,
+        parent_task_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Agent 标准运行流程。
 
-        task_id/delegation_depth/root_task_id（阶段 8B）由调用方
-        （TaskExecutionService 或 POST /agents/{name}/run）根据
-        数据库中的任务行注入，只读、由后端生成——Agent 自身和
-        Task payload/context 都不能伪造这些字段。它们会被合并进
-        传给 think() 的 context 副本的保留键 "_task_meta" 下；
-        普通 Agent（如 OperationalAgent）会忽略这个键，只有需要
-        感知自身任务身份（例如判断是否允许发起委派）的 Agent 才
-        读取它。原始 context 对象本身不会被修改。
+        task_id/delegation_depth/root_task_id/parent_task_id（阶段
+        8B/8C）由调用方（TaskExecutionService 或
+        POST /agents/{name}/run）根据数据库中的任务行注入，只读、
+        由后端生成——Agent 自身和 Task payload/context 都不能伪造
+        这些字段。它们会被合并进传给 think() 的 context 副本的
+        保留键 "_task_meta" 下；普通 Agent（如 OperationalAgent）
+        会忽略这个键，只有需要感知自身任务身份（例如判断是否允许
+        发起委派、是否需要读取父任务安全摘要）的 Agent 才读取它。
+        原始 context 对象本身不会被修改。
         """
 
         self.status = "running"
@@ -86,6 +88,7 @@ class BaseAgent(ABC):
                 "task_id": task_id,
                 "delegation_depth": delegation_depth,
                 "root_task_id": root_task_id,
+                "parent_task_id": parent_task_id,
             },
         }
 
@@ -147,6 +150,11 @@ class BaseAgent(ABC):
     def to_dict(self) -> dict[str, Any]:
         """
         输出适用于 API 和 Dashboard 的 Agent 状态。
+
+        capability_ready 默认 False（占位 Agent 的既定语义）；
+        已接入真实业务能力的 Agent（AICEOAgent/SalesAgent）在各自
+        to_dict() 里覆盖为 True，不需要前端靠"是否存在
+        llm_provider 字段"这种隐式判断。
         """
 
         return {
@@ -161,4 +169,5 @@ class BaseAgent(ABC):
                 else None
             ),
             "last_error": self.last_error,
+            "capability_ready": False,
         }

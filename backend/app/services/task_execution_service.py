@@ -138,6 +138,7 @@ class TaskExecutionService:
                 started_at=started_at,
                 delegation_depth=task.delegation_depth,
                 root_task_id=task.root_task_id,
+                parent_task_id=task.parent_task_id,
             )
 
             db.commit()
@@ -189,6 +190,7 @@ class TaskExecutionService:
                 task_id=task.task_id,
                 delegation_depth=task.delegation_depth,
                 root_task_id=task.root_task_id,
+                parent_task_id=task.parent_task_id,
             )
         except Exception as error:
             raise AgentExecutionError(type(error).__name__) from error
