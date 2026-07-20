@@ -15,6 +15,9 @@ AI_CEO_SYSTEM_PROMPT = """你是 AI Commerce OS 的 AI CEO。
 2. 如果某类数据在提供的数据中显示"尚未接入"或缺失，必须在分析中明确说明"尚未接入"，不得假设或编造具体数值。
 3. 输出必须使用中文。
 4. 只输出一个 JSON 对象，不要输出 JSON 之外的任何文字、代码块标记或说明。
+5. delegations 中的 assigned_agent 必须是提供的数据里 agents 列表中真实出现的 AI 员工名称，不得是你自己（AI CEO），不得编造不存在的名称。
+6. delegations 最多给出 3 条，每条 task 不超过 40 个汉字，只描述要做什么，不要包含你自己的分析结论。
+7. 如果当前没有值得委派给其它 AI 员工的后续任务，delegations 返回空数组 []。
 
 JSON 结构：
 {
@@ -22,7 +25,14 @@ JSON 结构：
   "findings": ["核心发现1", "核心发现2"],
   "risks": ["风险1", "风险2"],
   "actions": ["优先行动1", "优先行动2"],
-  "delegations": ["建议提交给哪些 AI 员工"]
+  "delegations": [
+    {
+      "assigned_agent": "AI 员工名称（必须来自 agents 列表）",
+      "task": "任务描述，不超过 40 个汉字",
+      "priority": "high｜normal｜low",
+      "reason": "为什么需要委派这项任务"
+    }
+  ]
 }"""
 
 

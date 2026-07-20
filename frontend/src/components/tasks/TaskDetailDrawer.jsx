@@ -24,6 +24,7 @@ function TaskDetailDrawer({
   loading = false,
   notFound = false,
   onClose = () => {},
+  onNavigateToTask = () => {},
 }) {
   useEffect(() => {
     if (!open) {
@@ -128,6 +129,59 @@ function TaskDetailDrawer({
                   <dd>{formatDateTime(detail.updatedAt)}</dd>
                 </div>
               </dl>
+
+              {detail.parentSummary && (
+                <div className="task-drawer-delegation-section">
+                  <h4>父任务</h4>
+                  {detail.createdByAgent && (
+                    <p className="task-delegation-note">
+                      由 {detail.createdByAgent} 委派
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    className="task-drawer-link-button"
+                    onClick={() => onNavigateToTask(detail.parentSummary.id)}
+                  >
+                    <span className={`task-status ${detail.parentSummary.status}`}>
+                      {getTaskDetailStatusLabel(detail.parentSummary.status)}
+                    </span>
+                    <span>{detail.parentSummary.id}</span>
+                    <span>{detail.parentSummary.task_type}</span>
+                  </button>
+                </div>
+              )}
+
+              {detail.children.length > 0 && (
+                <div className="task-drawer-delegation-section">
+                  <h4>已委派子任务（{detail.children.length}）</h4>
+                  <div className="task-drawer-children-list">
+                    {detail.children.map((child) => {
+                      const delegationItem = detail.delegationItems.find(
+                        (item) => item.child_task_id === child.id
+                      );
+
+                      return (
+                        <button
+                          type="button"
+                          key={child.id}
+                          className="task-drawer-link-button"
+                          onClick={() => onNavigateToTask(child.id)}
+                        >
+                          <span className={`task-status ${child.status}`}>
+                            {getTaskDetailStatusLabel(child.status)}
+                          </span>
+                          <span>{child.assigned_agent ?? "—"}</span>
+                          <span>{child.task_type}</span>
+                          {delegationItem?.reason && (
+                            <small>{delegationItem.reason}</small>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <h4>执行结果</h4>
               <pre className="task-drawer-json">{detail.resultText}</pre>

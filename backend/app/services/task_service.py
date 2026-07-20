@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from app.database.db import SessionLocal
@@ -35,6 +36,11 @@ class TaskService:
                 created_at=task.created_at,
                 started_at=task.started_at,
                 completed_at=task.completed_at,
+                parent_task_id=task.parent_task_id,
+                root_task_id=task.root_task_id,
+                delegation_depth=task.delegation_depth,
+                created_by_agent=task.created_by_agent,
+                delegation_key=task.delegation_key,
             )
 
             db.add(task_db)
@@ -82,6 +88,11 @@ class TaskService:
                 completed_at=task.completed_at,
                 external_source=external_source,
                 external_request_id=external_request_id,
+                parent_task_id=task.parent_task_id,
+                root_task_id=task.root_task_id,
+                delegation_depth=task.delegation_depth,
+                created_by_agent=task.created_by_agent,
+                delegation_key=task.delegation_key,
             )
 
             db.add(task_db)
@@ -148,6 +159,11 @@ class TaskService:
             task_db.created_at = task.created_at
             task_db.started_at = task.started_at
             task_db.completed_at = task.completed_at
+            task_db.parent_task_id = task.parent_task_id
+            task_db.root_task_id = task.root_task_id
+            task_db.delegation_depth = task.delegation_depth
+            task_db.created_by_agent = task.created_by_agent
+            task_db.delegation_key = task.delegation_key
 
             db.commit()
             db.refresh(task_db)
@@ -209,6 +225,51 @@ class TaskService:
                 query = query.limit(limit)
 
             return query.all(), filtered_total
+
+        finally:
+            db.close()
+
+    @staticmethod
+    def get_children(parent_task_id: str) -> list[TaskDB]:
+        """
+        查询某个父任务下的全部子任务（阶段 8B），按创建时间升序。
+        """
+
+        db = SessionLocal()
+
+        try:
+            return (
+                db.query(TaskDB)
+                .filter(TaskDB.parent_task_id == parent_task_id)
+                .order_by(TaskDB.created_at.asc())
+                .all()
+            )
+
+        finally:
+            db.close()
+
+    @staticmethod
+    def get_child_task_counts(task_ids: list[str]) -> dict[str, int]:
+        """
+        批量查询一组任务各自的子任务数量，避免列表接口逐行查询
+        造成 N+1（阶段 8B，供 Task Center 列表"已委派 N 个子任务"
+        展示使用）。
+        """
+
+        if not task_ids:
+            return {}
+
+        db = SessionLocal()
+
+        try:
+            rows = (
+                db.query(TaskDB.parent_task_id, func.count(TaskDB.id))
+                .filter(TaskDB.parent_task_id.in_(task_ids))
+                .group_by(TaskDB.parent_task_id)
+                .all()
+            )
+
+            return {parent_id: count for parent_id, count in rows}
 
         finally:
             db.close()

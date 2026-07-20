@@ -58,17 +58,39 @@ class BaseAgent(ABC):
         self,
         context: dict[str, Any],
         task_name: str | None = None,
+        *,
+        task_id: str | None = None,
+        delegation_depth: int = 0,
+        root_task_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Agent 标准运行流程。
+
+        task_id/delegation_depth/root_task_id（阶段 8B）由调用方
+        （TaskExecutionService 或 POST /agents/{name}/run）根据
+        数据库中的任务行注入，只读、由后端生成——Agent 自身和
+        Task payload/context 都不能伪造这些字段。它们会被合并进
+        传给 think() 的 context 副本的保留键 "_task_meta" 下；
+        普通 Agent（如 OperationalAgent）会忽略这个键，只有需要
+        感知自身任务身份（例如判断是否允许发起委派）的 Agent 才
+        读取它。原始 context 对象本身不会被修改。
         """
 
         self.status = "running"
         self.current_task = task_name or "正在处理任务"
         self.last_error = None
 
+        enriched_context = {
+            **context,
+            "_task_meta": {
+                "task_id": task_id,
+                "delegation_depth": delegation_depth,
+                "root_task_id": root_task_id,
+            },
+        }
+
         try:
-            decision = self.think(context)
+            decision = self.think(enriched_context)
             result = self.execute(decision)
 
             self.status = "idle"

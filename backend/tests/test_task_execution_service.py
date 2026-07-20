@@ -97,7 +97,7 @@ class _RawRaisingAgent(BaseAgent):
     def execute(self, decision):
         return {}
 
-    def run(self, context, task_name=None):
+    def run(self, context, task_name=None, **kwargs):
         raise ValueError("raw exception bypassing run(), secret=XYZ789")
 
 

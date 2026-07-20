@@ -4,9 +4,11 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.task_api import (
+    TaskChildSummary,
     TaskItemResponse,
     TaskListResponse,
     TaskPaginationResponse,
+    TaskParentSummary,
     TaskStatsResponse,
     TaskSubmitRequest,
     TaskSubmitResponse,
@@ -65,9 +67,24 @@ def list_tasks(
 
     stats = TaskService.get_stats()
 
+    # 列表接口只附加 child_task_count（一次批量查询，不逐行
+    # N+1），不附加 children/parent_summary——那两个字段只在单条
+    # 详情接口才计算，避免既有 5 秒 polling 的列表接口新增高频
+    # 重查询（阶段 8B 明确要求"不新增额外高频轮询"）。
+    child_counts = TaskService.get_child_task_counts(
+        [item.id for item in items]
+    )
+
+    response_items = [
+        TaskItemResponse.model_validate(item).model_copy(
+            update={"child_task_count": child_counts.get(item.id, 0)}
+        )
+        for item in items
+    ]
+
     return TaskListResponse(
         stats=TaskStatsResponse(**stats, queued=0),
-        items=items,
+        items=response_items,
         pagination=TaskPaginationResponse(
             limit=limit,
             offset=offset,
@@ -286,6 +303,12 @@ def mark_task_failed(task_id: str, request: TaskMarkFailedRequest):
 def get_task(task_id: str):
     """
     根据任务编号查询 PostgreSQL 任务详情。
+
+    阶段 8B：额外附加 children（该任务作为父任务时的子任务轻量
+    列表）和 parent_summary（该任务作为子任务时指向父任务的轻量
+    摘要）；两者都只包含安全展示字段，不包含 payload/context/
+    result/error。只有单条详情接口才做这两次额外查询，不影响
+    列表接口的轮询频率。
     """
 
     task = TaskService.get_task(task_id)
@@ -296,4 +319,23 @@ def get_task(task_id: str):
             detail=f"未找到任务：{task_id}",
         )
 
-    return task
+    child_rows = TaskService.get_children(task_id)
+    children = [
+        TaskChildSummary.model_validate(child) for child in child_rows
+    ]
+
+    parent_summary = None
+
+    if task.parent_task_id:
+        parent_row = TaskService.get_task(task.parent_task_id)
+
+        if parent_row is not None:
+            parent_summary = TaskParentSummary.model_validate(parent_row)
+
+    return TaskItemResponse.model_validate(task).model_copy(
+        update={
+            "child_task_count": len(children),
+            "children": children,
+            "parent_summary": parent_summary,
+        }
+    )

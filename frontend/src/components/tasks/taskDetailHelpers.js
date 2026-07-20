@@ -82,6 +82,15 @@ function formatErrorForDisplay(error) {
   return truncateText(String(error), ERROR_MAX_LENGTH);
 }
 
+// 从任务原始 result（AI CEO 执行结果的完整结构）里提取委派摘要
+// 的 items 数组，只用于在父任务详情里把"委派原因"和子任务列表
+// 对应起来展示；提取失败（字段缺失/类型不符）一律安全返回空
+// 数组，不抛异常、不影响其它字段展示。
+function extractDelegationItems(result) {
+  const items = result?.result?.delegation?.items;
+  return Array.isArray(items) ? items : [];
+}
+
 /**
  * 把后端返回的完整任务对象转换成安全的展示结构：只挑选允许
  * 展示的字段（不包含 payload/context），result 递归遮蔽敏感键并
@@ -108,6 +117,17 @@ export function sanitizeTaskDetail(task) {
     updatedAt: task.completed_at ?? task.started_at ?? task.created_at ?? null,
     resultText: formatResultForDisplay(task.result),
     errorText: formatErrorForDisplay(task.error),
+    // 阶段 8B：父子任务委派展示字段。children/parentSummary 已经
+    // 是后端只挑选安全字段后的轻量结构，这里不再做脱敏，只做
+    // 缺省兜底。
+    parentTaskId: task.parent_task_id ?? null,
+    rootTaskId: task.root_task_id ?? null,
+    delegationDepth: task.delegation_depth ?? 0,
+    createdByAgent: task.created_by_agent ?? null,
+    childTaskCount: task.child_task_count ?? 0,
+    children: Array.isArray(task.children) ? task.children : [],
+    parentSummary: task.parent_summary ?? null,
+    delegationItems: extractDelegationItems(task.result),
   };
 }
 

@@ -78,6 +78,14 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
   const [fetchNotFound, setFetchNotFound] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // 父子任务委派信息（children/parent_summary）只存在于单条详情
+  // 接口的响应里，列表接口出于避免 5 秒轮询触发额外查询的考虑
+  // 故意不带这两个字段（只带轻量的 child_task_count）。因此这里
+  // 单独用一次性 GET（不随 5 秒轮询重复请求）获取这部分数据，
+  // 再与 listMatch/fetchedTaskData 提供的实时状态字段合并展示，
+  // 不影响原有"列表轮询驱动抽屉内容更新"的行为。
+  const [delegationExtras, setDelegationExtras] = useState(null);
+
   const [refreshTick, setRefreshTick] = useState(0);
 
   // 只在父组件传入的 selectedTaskId 变化时自动定位并打开一次抽屉
@@ -217,6 +225,42 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
     };
   }, [activeTaskId, listMatch, fetchNotFound, fetchedTaskData]);
 
+  useEffect(() => {
+    if (!activeTaskId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadDelegationExtras() {
+      try {
+        const detail = await getTask(activeTaskId);
+
+        if (cancelled) {
+          return;
+        }
+
+        setDelegationExtras({
+          taskId: activeTaskId,
+          children: detail.children,
+          parent_summary: detail.parent_summary,
+        });
+      } catch (err) {
+        if (!cancelled) {
+          // 委派关系是详情展示的增强信息，获取失败不影响主详情
+          // （状态/结果/错误信息）正常展示，只静默记录日志。
+          console.error("委派关系加载失败：", err);
+        }
+      }
+    }
+
+    loadDelegationExtras();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTaskId]);
+
   function refreshTaskCenterData() {
     setRefreshTick((tick) => tick + 1);
   }
@@ -232,11 +276,20 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
     setDrawerOpen(false);
   }
 
-  const drawerTask =
+  const drawerTaskBase =
     listMatch ??
     (fetchedTaskData && fetchedTaskData.id === activeTaskId
       ? fetchedTaskData
       : null);
+
+  const drawerTask =
+    drawerTaskBase && delegationExtras?.taskId === drawerTaskBase.id
+      ? {
+          ...drawerTaskBase,
+          children: delegationExtras.children,
+          parent_summary: delegationExtras.parent_summary,
+        }
+      : drawerTaskBase;
 
   const drawerNotFound = fetchNotFound && !drawerTask;
 
@@ -324,7 +377,19 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
                     onClick={() => handleSelectTask(task.id)}
                   >
                     <span>{task.id}</span>
-                    <span>{task.task_type}</span>
+                    <span>
+                      {task.task_type}
+                      {task.child_task_count > 0 && (
+                        <em className="task-delegation-badge">
+                          已委派 {task.child_task_count}
+                        </em>
+                      )}
+                      {task.created_by_agent && (
+                        <em className="task-delegation-badge child">
+                          由 {task.created_by_agent} 委派
+                        </em>
+                      )}
+                    </span>
                     <span>{task.assigned_agent ?? "—"}</span>
                     <span className={`task-status ${task.status}`}>
                       {getStatusLabel(task.status)}
@@ -350,6 +415,7 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
         loading={detailLoading}
         notFound={drawerNotFound}
         onClose={handleCloseDrawer}
+        onNavigateToTask={handleSelectTask}
       />
     </div>
   );

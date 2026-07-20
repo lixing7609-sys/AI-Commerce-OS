@@ -136,6 +136,8 @@ class TaskExecutionService:
                 payload=dict(task.payload) if task.payload else {},
                 created_at=task.created_at,
                 started_at=started_at,
+                delegation_depth=task.delegation_depth,
+                root_task_id=task.root_task_id,
             )
 
             db.commit()
@@ -181,7 +183,13 @@ class TaskExecutionService:
         task_name = task_name or task.task_type
 
         try:
-            result = agent.run(context=task.payload, task_name=task_name)
+            result = agent.run(
+                context=task.payload,
+                task_name=task_name,
+                task_id=task.task_id,
+                delegation_depth=task.delegation_depth,
+                root_task_id=task.root_task_id,
+            )
         except Exception as error:
             raise AgentExecutionError(type(error).__name__) from error
 

@@ -7,9 +7,48 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 TaskStatus = Literal["pending", "running", "completed", "failed"]
 
 
+class TaskChildSummary(BaseModel):
+    """
+    子任务的轻量展示摘要（阶段 8B），只用于父任务详情的子任务
+    列表——不包含 payload/context/result/error，避免详情响应体
+    随着子任务数量线性膨胀，也避免间接泄露子任务的执行细节。
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    assigned_agent: str | None
+    status: str
+    task_type: str
+    created_at: datetime | None
+    completed_at: datetime | None
+
+
+class TaskParentSummary(BaseModel):
+    """
+    父任务的轻量展示摘要（阶段 8B），只用于子任务详情里"返回
+    父任务"的展示，不包含 payload/context/result/error。
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    status: str
+    task_type: str
+    assigned_agent: str | None
+
+
 class TaskItemResponse(BaseModel):
     """
     单个任务的 API 响应结构。
+
+    parent_task_id/root_task_id/delegation_depth/created_by_agent
+    直接来自 TaskDB 对应列，对所有任务（包括 requeue_task/
+    mark_task_failed 直接返回 ORM 对象的场景）都能安全填充。
+    child_task_count/children/parent_summary 不是 TaskDB 的列，
+    只由路由层显式计算后通过 model_copy(update=...) 附加；未附加
+    时分别安全降级为 0/None/None（对应 from_attributes 校验裸
+    ORM 对象时，属性缺失会退回字段默认值，不会报错）。
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -25,6 +64,13 @@ class TaskItemResponse(BaseModel):
     completed_at: datetime | None
     result: dict[str, Any] | None
     error: str | None
+    parent_task_id: str | None = None
+    root_task_id: str | None = None
+    delegation_depth: int = 0
+    created_by_agent: str | None = None
+    child_task_count: int = 0
+    children: list[TaskChildSummary] | None = None
+    parent_summary: TaskParentSummary | None = None
 
 
 class TaskStatsResponse(BaseModel):

@@ -2128,6 +2128,71 @@ button {
 }
 
 /* =========================
+   任务委派（阶段 8B：父子任务展示）
+========================= */
+
+.task-delegation-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  color: #57585e;
+  background: #efeff1;
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 650;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.task-delegation-badge.child {
+  color: #1a5fb4;
+  background: #e8f0fd;
+}
+
+.task-drawer-delegation-section {
+  margin-top: 4px;
+}
+
+.task-delegation-note {
+  margin: 0 0 8px;
+  color: #85868c;
+  font-size: 11px;
+}
+
+.task-drawer-link-button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  color: #2e2f34;
+  background: #f7f7f8;
+  border: 1px solid #e9e9eb;
+  border-radius: 8px;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-drawer-link-button:hover {
+  background: #ededee;
+}
+
+.task-drawer-link-button small {
+  grid-column: 1 / -1;
+  color: #85868c;
+  font-size: 11px;
+}
+
+.task-drawer-children-list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* =========================
    管理后台新增模块（AI 员工 / 数据分析 / 知识库 / 设置 / 运营概览）
 ========================= */
 

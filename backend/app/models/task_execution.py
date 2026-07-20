@@ -27,6 +27,8 @@ class ClaimedTask(BaseModel):
     payload: dict[str, Any]
     created_at: datetime
     started_at: datetime
+    delegation_depth: int = 0
+    root_task_id: str | None = None
 
 
 class TaskExecutionResult(BaseModel):

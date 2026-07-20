@@ -32,6 +32,23 @@ class Task:
     result: dict[str, Any] | None = None
     error: str | None = None
 
+    # 阶段 8B：父子任务委派。普通（非委派）任务 parent_task_id 为
+    # None、delegation_depth=0；root_task_id 在 __post_init__ 里
+    # 统一默认回填为自身 id（不区分"根任务"和"普通任务"两套语义，
+    # 任何任务都能安全地用 root_task_id 查询整条委派链）。
+    # AI CEO 创建子任务时会显式传入 parent_task_id/root_task_id/
+    # delegation_depth=1/created_by_agent/delegation_key，不使用
+    # 这里的默认值。
+    parent_task_id: str | None = None
+    root_task_id: str | None = None
+    delegation_depth: int = 0
+    created_by_agent: str | None = None
+    delegation_key: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.root_task_id is None:
+            self.root_task_id = self.id
+
     def mark_running(self) -> None:
         """
         将任务标记为执行中。
@@ -92,4 +109,8 @@ class Task:
             ),
             "result": self.result,
             "error": self.error,
+            "parent_task_id": self.parent_task_id,
+            "root_task_id": self.root_task_id,
+            "delegation_depth": self.delegation_depth,
+            "created_by_agent": self.created_by_agent,
         }
