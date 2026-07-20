@@ -2,7 +2,30 @@ import { useEffect, useState } from "react";
 
 import Sidebar from "../components/layout/Sidebar";
 import RuntimeStatusPanel from "../components/runtime/RuntimeStatusPanel";
-import { getIntegrationStatus, getSystemInfo } from "../services/settingsApi";
+import {
+  getIntegrationStatus,
+  getLlmStatus,
+  getSystemInfo,
+} from "../services/settingsApi";
+
+const PROVIDER_LABELS = {
+  deepseek: "DeepSeek",
+  ollama: "Ollama",
+};
+
+function formatDateTime(value) {
+  if (!value) {
+    return "暂无";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "暂无";
+  }
+
+  return date.toLocaleString();
+}
 
 const INTEGRATION_LABELS = {
   external_task_api_key_configured: "AI Commerce Task API Key",
@@ -22,6 +45,7 @@ const CONFIGURED_TEXT = {
 
 function Settings({ onNavigate = () => {} }) {
   const [integrationStatus, setIntegrationStatus] = useState(null);
+  const [llmStatus, setLlmStatus] = useState(null);
   const [systemInfo, setSystemInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -31,8 +55,9 @@ function Settings({ onNavigate = () => {} }) {
 
     async function loadData() {
       try {
-        const [integration, system] = await Promise.all([
+        const [integration, llm, system] = await Promise.all([
           getIntegrationStatus(),
+          getLlmStatus(),
           getSystemInfo(),
         ]);
 
@@ -41,6 +66,7 @@ function Settings({ onNavigate = () => {} }) {
         }
 
         setIntegrationStatus(integration);
+        setLlmStatus(llm);
         setSystemInfo(system);
         setError(null);
       } catch (err) {
@@ -116,6 +142,51 @@ function Settings({ onNavigate = () => {} }) {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </article>
+
+          <article className="analytics-panel">
+            <div className="panel-heading">
+              <span>LLM Gateway</span>
+            </div>
+
+            {loading && !llmStatus ? (
+              <div className="task-loading">正在加载模型网关状态……</div>
+            ) : !llmStatus ? (
+              <div className="task-empty">暂无数据</div>
+            ) : (
+              <div className="settings-status-grid">
+                <div className="settings-status-item">
+                  <span>当前 Provider</span>
+                  <em>{PROVIDER_LABELS[llmStatus.llm_provider] ?? "未配置"}</em>
+                </div>
+                <div className="settings-status-item">
+                  <span>DeepSeek</span>
+                  <em className={llmStatus.deepseek_configured ? "running" : "waiting"}>
+                    {llmStatus.deepseek_configured ? "已配置" : "未配置"}
+                  </em>
+                </div>
+                <div className="settings-status-item">
+                  <span>Ollama</span>
+                  <em className={llmStatus.ollama_reachable ? "running" : "waiting"}>
+                    {llmStatus.ollama_reachable ? "可用" : "不可用"}
+                  </em>
+                </div>
+                <div className="settings-status-item">
+                  <span>当前模型</span>
+                  <em>{llmStatus.llm_model ?? "暂无"}</em>
+                </div>
+                <div className="settings-status-item">
+                  <span>网关就绪状态</span>
+                  <em className={llmStatus.llm_ready ? "running" : "waiting"}>
+                    {llmStatus.llm_ready ? "就绪" : "未就绪"}
+                  </em>
+                </div>
+                <div className="settings-status-item">
+                  <span>最近一次检查时间</span>
+                  <em>{formatDateTime(llmStatus.checked_at)}</em>
+                </div>
               </div>
             )}
           </article>

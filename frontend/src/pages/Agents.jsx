@@ -313,6 +313,33 @@ function Agents({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
                 </div>
               </dl>
 
+              <h4>业务能力</h4>
+              {selectedAgent.llm_provider !== undefined ? (
+                <dl className="task-drawer-meta">
+                  <div>
+                    <dt>当前执行 Provider</dt>
+                    <dd>{selectedAgent.llm_provider ?? "未配置"}</dd>
+                  </div>
+                  <div>
+                    <dt>当前模型</dt>
+                    <dd>{selectedAgent.llm_model ?? "暂无"}</dd>
+                  </div>
+                  <div>
+                    <dt>支持的任务类型</dt>
+                    <dd>
+                      {(selectedAgent.supported_task_types ?? []).join("、") ||
+                        "暂无"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>最近一次模型调用状态</dt>
+                    <dd>{selectedAgent.last_llm_call_status ?? "尚未调用"}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <p>业务能力将在后续阶段接入。</p>
+              )}
+
               <h4>近 30 天执行统计</h4>
               <dl className="task-drawer-meta">
                 <div>

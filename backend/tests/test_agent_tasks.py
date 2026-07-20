@@ -167,9 +167,14 @@ def test_agent_run_persists_task_and_is_queryable(client, cleanup_task_ids):
     assert start_response.status_code == 200
     assert start_response.json()["running"] is True
 
+    # 本测试只验证任务持久化管道（写库/可查询/独立连接可读），不
+    # 验证 AI CEO 的经营分析业务逻辑（阶段 8A 起需要真实配置的
+    # LLM Provider，见 test_ai_ceo_agent.py）；task 文本特意选用
+    # AICEOAgent 不识别的关键词，走 unsupported_task 安全成功路径
+    # （status=completed），不依赖任何 LLM 网络调用。
     run_response = client.post(
         f"/api/v1/agents/{AGENT_NAME}/run",
-        json={"task": "生成今日经营分析", "priority": "high"},
+        json={"task": "回归测试任务", "priority": "high"},
     )
     assert run_response.status_code == 200
 

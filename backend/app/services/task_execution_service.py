@@ -5,6 +5,7 @@ from sqlalchemy import case
 
 from app.agents.agent_registry import AgentRegistry
 from app.database.db import SessionLocal
+from app.llm.exceptions import SAFE_LLM_ERROR_TYPES
 from app.models.task_db import TaskDB
 from app.models.task_execution import ClaimedTask, TaskExecutionResult
 from app.runtime.engine.runtime_engine import runtime_engine
@@ -185,6 +186,23 @@ class TaskExecutionService:
             raise AgentExecutionError(type(error).__name__) from error
 
         if not isinstance(result, dict) or result.get("success") is not True:
+            # 大多数 Agent 的 error 字段是不可信的原始异常文本（见
+            # 上方类注释），因此默认仍归类为通用 "AgentReportedFailure"。
+            # 例外：LLM Gateway 定义的一小组固定安全分类标签（见
+            # app.llm.exceptions.SAFE_LLM_ERROR_TYPES）本身就是安全
+            # 的枚举值而非自由文本，命中时原样传递，让 Task.error
+            # 携带更精确的失败语义（configuration_error/
+            # authentication_failed/rate_limited/...）。
+            error_label = (
+                result.get("error") if isinstance(result, dict) else None
+            )
+
+            if (
+                isinstance(error_label, str)
+                and error_label in SAFE_LLM_ERROR_TYPES
+            ):
+                raise AgentExecutionError(error_label)
+
             raise AgentExecutionError("AgentReportedFailure")
 
         return result

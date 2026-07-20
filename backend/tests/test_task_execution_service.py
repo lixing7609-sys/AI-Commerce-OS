@@ -66,6 +66,23 @@ class _InternalFailureAgent(BaseAgent):
         )
 
 
+class _SafeCategorizedFailureAgent(BaseAgent):
+    """
+    execute 抛出 app.llm.exceptions 定义的安全分类异常（例如
+    ProviderUnavailableError）——用于验证 execute_claimed_task 会
+    把这一小组固定安全标签原样传递为 error_type，而不是收敛成
+    通用的 "AgentReportedFailure"。
+    """
+
+    def think(self, context):
+        return {"ok": True}
+
+    def execute(self, decision):
+        from app.llm.exceptions import ProviderUnavailableError
+
+        raise ProviderUnavailableError()
+
+
 class _RawRaisingAgent(BaseAgent):
     """
     run() 本身直接抛出异常，不符合 BaseAgent 正常"永不外抛"的
@@ -370,6 +387,29 @@ def test_agent_internal_failure_writes_failed_with_safe_error(
     assert row.error == "AgentExecutionError:AgentReportedFailure"
     assert "postgresql://" not in row.error
     assert "SECRET123" not in row.error
+
+
+def test_agent_safe_categorized_failure_preserves_specific_error_type(
+    cleanup_task_ids, registered_agent
+):
+    runtime_engine.running = True
+    agent_name = registered_agent(_SafeCategorizedFailureAgent)
+
+    task_id = _insert_task(
+        status="pending",
+        assigned_agent=agent_name,
+        payload={"task": "触发 Provider 不可用"},
+    )
+    cleanup_task_ids.append(task_id)
+
+    result = TaskExecutionService.process_next_pending_task()
+
+    assert result.outcome == "failed"
+    assert result.error_type == "provider_unavailable"
+
+    row = _get_task_row(task_id)
+    assert row.status == "failed"
+    assert row.error == "AgentExecutionError:provider_unavailable"
 
 
 def test_agent_raw_exception_captures_exception_type_only(

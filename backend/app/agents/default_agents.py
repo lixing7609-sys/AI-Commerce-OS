@@ -1,4 +1,5 @@
 from app.agents.agent_registry import AgentRegistry
+from app.agents.ai_ceo_agent import AICEOAgent
 from app.agents.operational_agent import OperationalAgent
 
 
@@ -8,10 +9,14 @@ def register_default_agents() -> list[dict]:
 
     重复调用时会使用相同名称覆盖原实例，
     不会产生重复员工。
+
+    AI CEO（阶段 8A）使用 AICEOAgent，具备通过统一 LLM Gateway
+    生成系统经营分析的真实能力；其余 Agent 仍是 OperationalAgent
+    占位实现，业务能力将在后续阶段接入。
     """
 
     agents = [
-        OperationalAgent(
+        AICEOAgent(
             name="AI CEO",
             role="chief_executive",
             description="负责公司策略、经营分析与任务协调",

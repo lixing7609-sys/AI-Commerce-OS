@@ -685,6 +685,28 @@ button {
    小屏适配
 ========================= */
 
+/* =========================
+   移动端导航（汉堡按钮 + 滑出抽屉）
+========================= */
+
+.mobile-nav-toggle {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 45;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  color: #202124;
+  background: #ffffff;
+  border: 1px solid #dedee1;
+  border-radius: 10px;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(23, 23, 25, 0.08);
+}
+
 @media (max-width: 900px) {
   body {
     overflow: auto;
@@ -705,6 +727,7 @@ button {
     flex-direction: column;
     height: auto;
     overflow: visible;
+    padding-top: 60px;
   }
 
   .metric-grid,
@@ -717,6 +740,64 @@ button {
     min-height: 320px;
     grid-template-columns: 1fr;
   }
+
+  .mobile-nav-toggle {
+    display: flex;
+  }
+}
+
+.mobile-nav-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  background: rgba(23, 23, 25, 0.32);
+}
+
+.mobile-nav-drawer {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  max-width: 82vw;
+  height: 100%;
+  padding: 16px 17px 18px;
+  background: #ffffff;
+  box-shadow: 4px 0 24px rgba(23, 23, 25, 0.14);
+  overflow-y: auto;
+}
+
+.mobile-nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.mobile-nav-header .sidebar-brand {
+  height: auto;
+  padding: 0;
+}
+
+.mobile-nav-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: #62636a;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.mobile-nav-close:hover {
+  color: #171719;
+  background: #f2f2f3;
+}
+
+.mobile-nav-drawer .sidebar-account {
+  margin-top: auto;
 }
 
 /* =========================

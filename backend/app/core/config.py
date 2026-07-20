@@ -137,3 +137,99 @@ def get_wecom_n8n_webhook_config() -> WeComN8nWebhookConfig | None:
         auth_header_name=auth_header_name,
         auth_header_value=auth_header_value,
     )
+
+
+_DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+_DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
+_DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+_DEFAULT_LLM_TIMEOUT_SECONDS = 60.0
+_DEFAULT_LLM_MAX_TOKENS = 2000
+
+
+def get_llm_provider() -> str | None:
+    """
+    读取 LLM_PROVIDER（deepseek|ollama）。未设置返回 None，由
+    LLMGateway 在解析阶段安全失败（configuration_error），不提供
+    默认 Provider。
+    """
+
+    return os.environ.get("LLM_PROVIDER")
+
+
+@dataclass(frozen=True)
+class DeepSeekLLMConfig:
+    """
+    DeepSeek Provider 配置。api_key 只在进程内存中传递给 httpx
+    请求头，不写入日志、不写入 Task 结果。
+    """
+
+    api_key: str
+    base_url: str
+    model: str
+
+
+def get_deepseek_llm_config() -> DeepSeekLLMConfig | None:
+    """
+    读取 DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL / DEEPSEEK_MODEL。
+    API Key 未配置时返回 None（视为"未配置"），不允许用空字符串
+    静默发起请求。
+    """
+
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+
+    if not api_key:
+        return None
+
+    return DeepSeekLLMConfig(
+        api_key=api_key,
+        base_url=os.environ.get("DEEPSEEK_BASE_URL", _DEFAULT_DEEPSEEK_BASE_URL),
+        model=os.environ.get("DEEPSEEK_MODEL", _DEFAULT_DEEPSEEK_MODEL),
+    )
+
+
+@dataclass(frozen=True)
+class OllamaLLMConfig:
+    base_url: str
+    model: str
+
+
+def get_ollama_llm_config() -> OllamaLLMConfig | None:
+    """
+    读取 OLLAMA_BASE_URL / OLLAMA_MODEL。OLLAMA_MODEL 未配置时
+    返回 None（视为"未配置"）——本项目不提供默认模型名，模型必须
+    由部署方根据实际已安装的 Ollama 模型显式指定。
+    """
+
+    model = os.environ.get("OLLAMA_MODEL")
+
+    if not model:
+        return None
+
+    return OllamaLLMConfig(
+        base_url=os.environ.get("OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL),
+        model=model,
+    )
+
+
+def get_llm_timeout_seconds() -> float:
+    raw = os.environ.get("LLM_TIMEOUT_SECONDS")
+
+    if not raw:
+        return _DEFAULT_LLM_TIMEOUT_SECONDS
+
+    try:
+        return float(raw)
+    except ValueError:
+        return _DEFAULT_LLM_TIMEOUT_SECONDS
+
+
+def get_llm_max_tokens() -> int:
+    raw = os.environ.get("LLM_MAX_TOKENS")
+
+    if not raw:
+        return _DEFAULT_LLM_MAX_TOKENS
+
+    try:
+        return int(raw)
+    except ValueError:
+        return _DEFAULT_LLM_MAX_TOKENS

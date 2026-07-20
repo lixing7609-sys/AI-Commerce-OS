@@ -17,6 +17,16 @@ def get_integration_status():
     return SettingsService.get_integration_status()
 
 
+@router.get("/llm-status")
+def get_llm_status():
+    """
+    LLM Gateway 配置与可达性状态。只返回 Provider 名称、模型
+    标识符和布尔可达性，从不返回 API Key 或 Base URL 凭据。
+    """
+
+    return SettingsService.get_llm_status()
+
+
 @router.get("/system-info")
 def get_system_info():
     """
