@@ -113,6 +113,26 @@ function extractSalesAnalysis(result) {
   };
 }
 
+// 阶段 8D：从任务原始 result 里提取产品 Agent 的结构化/文本结果，
+// 只在确实存在 product_analysis 字段时返回非空对象，其它任何
+// 任务类型都返回 null，提取失败一律安全返回 null。
+function extractProductAnalysis(result) {
+  const inner = result?.result;
+
+  if (
+    !inner ||
+    typeof inner.product_analysis !== "object" ||
+    inner.product_analysis === null
+  ) {
+    return null;
+  }
+
+  return {
+    format: inner.format === "text" ? "text" : "structured",
+    data: inner.product_analysis,
+  };
+}
+
 /**
  * 把后端返回的完整任务对象转换成安全的展示结构：只挑选允许
  * 展示的字段（不包含 payload/context），result 递归遮蔽敏感键并
@@ -154,6 +174,9 @@ export function sanitizeTaskDetail(task) {
     // 任务不是销售分析结果（例如 AI CEO 或普通占位 Agent 的
     // 任务），此时抽屉沿用原有的原始 JSON 展示，不受影响。
     salesAnalysis: extractSalesAnalysis(task.result),
+    // 阶段 8D：产品 Agent 结构化结果的可读展示，null 表示当前
+    // 任务不是产品分析结果，此时抽屉沿用原有的原始 JSON 展示。
+    productAnalysis: extractProductAnalysis(task.result),
   };
 }
 

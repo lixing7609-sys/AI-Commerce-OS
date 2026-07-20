@@ -249,6 +249,43 @@ class TaskService:
             db.close()
 
     @staticmethod
+    def get_recent_completed_by_root(
+        root_task_id: str,
+        assigned_agent: str,
+        *,
+        exclude_task_id: str | None = None,
+        limit: int = 3,
+    ) -> list[TaskDB]:
+        """
+        查询同一 root_task_id 下、指定 Agent 已完成的最近任务（阶段
+        8D：产品 Agent 安全读取销售 Agent 兄弟任务摘要），按完成
+        时间倒序，默认最多 3 条。exclude_task_id 用于排除调用方
+        自身（避免任务把自己当作"已完成兄弟任务"读取）。
+        """
+
+        db = SessionLocal()
+
+        try:
+            query = (
+                db.query(TaskDB)
+                .filter(TaskDB.root_task_id == root_task_id)
+                .filter(TaskDB.assigned_agent == assigned_agent)
+                .filter(TaskDB.status == "completed")
+            )
+
+            if exclude_task_id is not None:
+                query = query.filter(TaskDB.id != exclude_task_id)
+
+            return (
+                query.order_by(TaskDB.completed_at.desc())
+                .limit(limit)
+                .all()
+            )
+
+        finally:
+            db.close()
+
+    @staticmethod
     def get_child_task_counts(task_ids: list[str]) -> dict[str, int]:
         """
         批量查询一组任务各自的子任务数量，避免列表接口逐行查询

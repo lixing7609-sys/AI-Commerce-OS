@@ -2365,6 +2365,16 @@ button {
   background: #e8f0fd;
 }
 
+.sales-priority-badge.ready {
+  color: #1a7f4b;
+  background: #e6f6ec;
+}
+
+.sales-priority-badge.missing {
+  color: #9a2f24;
+  background: #fdecea;
+}
+
 .sales-day-plan-item {
   padding: 10px 12px;
   background: #f7f7f8;
