@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.edition import Edition, require_edition
 from app.services.settings_service import SettingsService
 
 router = APIRouter(
@@ -7,8 +8,13 @@ router = APIRouter(
     tags=["Settings"],
 )
 
+_DIAGNOSTIC_EDITIONS = Depends(require_edition(Edition.DEVELOPER, Edition.DEVICE_ADMIN))
+_OPERATOR_VISIBLE_EDITIONS = Depends(
+    require_edition(Edition.DEVELOPER, Edition.OPERATOR, Edition.DEVICE_ADMIN)
+)
 
-@router.get("/integration-status")
+
+@router.get("/integration-status", dependencies=[_DIAGNOSTIC_EDITIONS])
 def get_integration_status():
     """
     集成配置状态（只返回布尔值，从不返回真实配置值）。
@@ -17,7 +23,7 @@ def get_integration_status():
     return SettingsService.get_integration_status()
 
 
-@router.get("/llm-status")
+@router.get("/llm-status", dependencies=[_OPERATOR_VISIBLE_EDITIONS])
 def get_llm_status():
     """
     LLM Gateway 配置与可达性状态。只返回 Provider 名称、模型
@@ -27,7 +33,7 @@ def get_llm_status():
     return SettingsService.get_llm_status()
 
 
-@router.get("/system-info")
+@router.get("/system-info", dependencies=[_DIAGNOSTIC_EDITIONS])
 def get_system_info():
     """
     系统信息（后端版本、数据库迁移版本、执行器健康状态、

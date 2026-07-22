@@ -1,8 +1,9 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.core.config import get_wecom_config, get_wecom_n8n_webhook_config
+from app.core.edition import Edition, require_edition
 from app.services.wecom_callback_service import (
     WeComCallbackError,
     handle_incoming_message,
@@ -14,6 +15,7 @@ logger = logging.getLogger("app.wecom_api")
 router = APIRouter(
     prefix="/integrations/wecom",
     tags=["Integrations"],
+    dependencies=[Depends(require_edition(Edition.DEVELOPER, Edition.OPERATOR))],
 )
 
 _NOT_CONFIGURED_DETAIL = "企业微信回调当前不可用，请联系管理员"

@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.edition import Edition, require_edition
 from app.services.knowledge_service import KnowledgeService
 
 router = APIRouter(
     prefix="/knowledge",
     tags=["Knowledge"],
+    dependencies=[Depends(require_edition(Edition.DEVELOPER, Edition.OPERATOR))],
 )
 
 

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.agents.agent_registry import AgentRegistry
+from app.core.edition import Edition, require_edition
 from app.models.agent_task_request import AgentTaskRequest
 from app.runtime.engine.runtime_engine import runtime_engine
 from app.runtime.task import Task
@@ -11,6 +12,7 @@ from app.services.task_service import TaskService
 router = APIRouter(
     prefix="/agents",
     tags=["Agents"],
+    dependencies=[Depends(require_edition(Edition.DEVELOPER))],
 )
 
 

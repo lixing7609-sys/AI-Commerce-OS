@@ -1,8 +1,9 @@
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.edition import Edition, require_edition
 from app.models.task_api import (
     TaskChildSummary,
     TaskItemResponse,
@@ -37,6 +38,7 @@ logger = logging.getLogger("app.tasks_api")
 router = APIRouter(
     prefix="/tasks",
     tags=["Tasks"],
+    dependencies=[Depends(require_edition(Edition.DEVELOPER))],
 )
 
 

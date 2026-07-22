@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.edition import Edition, require_edition
 from app.models.inventory import Inventory
 from app.models.inventory_create import InventoryCreate
 from app.models.inventory_update import InventoryUpdate
@@ -8,6 +9,7 @@ from app.services.inventory_service import InventoryService
 router = APIRouter(
     prefix="/inventories",
     tags=["Inventories"],
+    dependencies=[Depends(require_edition(Edition.DEVELOPER, Edition.OPERATOR))],
 )
 
 

@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.edition import Edition, require_edition
 from app.models.listing import Listing
 from app.models.listing_create import ListingCreate
 from app.models.listing_update import ListingUpdate
@@ -8,6 +9,7 @@ from app.services.listing_service import ListingService
 router = APIRouter(
     prefix="/listings",
     tags=["Listings"],
+    dependencies=[Depends(require_edition(Edition.DEVELOPER, Edition.OPERATOR))],
 )
 
 

@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.edition import Edition, require_edition
 from app.models.runtime_api import (
     AutoResumeUpdateRequest,
     RuntimeStatusResponse,
@@ -11,6 +12,11 @@ from app.models.runtime_api import (
 from app.runtime.engine.runtime_engine import runtime_engine
 from app.services.runtime_state_service import RuntimeStateService
 from app.services.task_consumer_service import task_consumer_service
+
+_VIEW_STATUS_EDITIONS = Depends(
+    require_edition(Edition.DEVELOPER, Edition.OPERATOR, Edition.DEVICE_ADMIN)
+)
+_CONTROL_EDITIONS = Depends(require_edition(Edition.DEVELOPER))
 
 logger = logging.getLogger("app.runtime_api")
 
@@ -80,7 +86,11 @@ def _build_status_response() -> RuntimeStatusResponse:
     )
 
 
-@router.get("/status", response_model=RuntimeStatusResponse)
+@router.get(
+    "/status",
+    response_model=RuntimeStatusResponse,
+    dependencies=[_VIEW_STATUS_EDITIONS],
+)
 def get_runtime_status():
     """
     获取 RuntimeEngine 当前运行状态（内存）及持久化状态。
@@ -89,7 +99,11 @@ def get_runtime_status():
     return _build_status_response()
 
 
-@router.get("/consumer-status", response_model=TaskConsumerStatusResponse)
+@router.get(
+    "/consumer-status",
+    response_model=TaskConsumerStatusResponse,
+    dependencies=[_CONTROL_EDITIONS],
+)
 def get_consumer_status():
     """
     只读查看后台任务消费者（TaskConsumerService）的运行状态。
@@ -102,7 +116,11 @@ def get_consumer_status():
     return _build_consumer_status_response()
 
 
-@router.post("/start", response_model=RuntimeStatusResponse)
+@router.post(
+    "/start",
+    response_model=RuntimeStatusResponse,
+    dependencies=[_CONTROL_EDITIONS],
+)
 def start_runtime():
     """
     启动 RuntimeEngine，并将启停意图和结果持久化到
@@ -204,7 +222,11 @@ def start_runtime():
     return _build_status_response()
 
 
-@router.post("/stop", response_model=RuntimeStatusResponse)
+@router.post(
+    "/stop",
+    response_model=RuntimeStatusResponse,
+    dependencies=[_CONTROL_EDITIONS],
+)
 def stop_runtime():
     """
     停止 RuntimeEngine，并将启停意图和结果持久化到
@@ -301,7 +323,11 @@ def stop_runtime():
     return _build_status_response()
 
 
-@router.put("/auto-resume", response_model=RuntimeStatusResponse)
+@router.put(
+    "/auto-resume",
+    response_model=RuntimeStatusResponse,
+    dependencies=[_CONTROL_EDITIONS],
+)
 def update_auto_resume(request: AutoResumeUpdateRequest):
     """
     设置自动恢复开关（auto_resume_enabled）。

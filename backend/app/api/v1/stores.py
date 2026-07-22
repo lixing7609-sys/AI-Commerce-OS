@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.edition import Edition, require_edition
 from app.models.store import Store
 from app.models.store_create import StoreCreate
 from app.models.store_update import StoreUpdate
@@ -8,6 +9,7 @@ from app.services.store_service import StoreService
 router = APIRouter(
     prefix="/stores",
     tags=["Stores"],
+    dependencies=[Depends(require_edition(Edition.DEVELOPER, Edition.OPERATOR))],
 )
 
 

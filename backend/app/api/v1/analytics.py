@@ -1,10 +1,12 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.edition import Edition, require_edition
 from app.services.analytics_service import AnalyticsService
 
 router = APIRouter(
     prefix="/analytics",
     tags=["Analytics"],
+    dependencies=[Depends(require_edition(Edition.DEVELOPER))],
 )
 
 
