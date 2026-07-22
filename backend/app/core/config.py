@@ -59,6 +59,26 @@ def get_sqlalchemy_echo() -> bool:
     )
 
 
+def get_token_accounting_enabled() -> bool:
+    """
+    读取 TOKEN_ACCOUNTING_ENABLED 环境变量。
+
+    默认关闭（False）：Token Economy Phase 1A 目前没有任何任务/
+    Agent 执行路径接入记账，这个开关本身在本阶段还没有被任何
+    现有行为读取——先按既定约定加上 getter，保证未来 Phase 1B/1C
+    接入时行为默认不变（见 ADR-0003 Token Domain Model /
+    Token Economy Phase 1 Revision 3 §"Upgrade shadow metering
+    into shadow accounting"）。
+
+    这不是 TOKEN_ENFORCEMENT_ENABLED——是否用余额阻塞任务执行是
+    完全独立的、更晚期的开关，Phase 1A 不实现、不提供 getter。
+    """
+
+    return parse_bool_env(
+        os.environ.get("TOKEN_ACCOUNTING_ENABLED"), default=False
+    )
+
+
 @dataclass(frozen=True)
 class WeComConfig:
     """
