@@ -28,6 +28,14 @@ ADR-0002 Edition Boundary 检查器（Phase 0 脚手架）。
 这一版不会、也不需要生成真正的客户发行包（还没有 Docker / 打包
 流水线，见 ADR-0002 Build Boundary 一节），只验证"如果照这份清单
 打包，结果是安全的"。
+
+重要限制：`git ls-files` 只返回已经被 git 跟踪（已提交或已
+`git add` 到暂存区）的文件，未跟踪的新文件对这个检查器完全不可见。
+这意味着运行结果只能证明"已提交/已暂存的内容是安全的"，不能证明
+"当前工作目录整体是安全的"——如果一个新文件还没有 `git add`，它
+既不会被计入某个 Edition 的清单，也不会被当成违规上报，看起来
+"什么问题都没有"只是因为检查器根本看不见它。提交前请先确认要提交
+的文件已经 `git add`，再运行本脚本。
 """
 
 import argparse
@@ -66,15 +74,18 @@ def _matches_any_prefix(path: str, prefixes) -> bool:
     return False
 
 
-def _is_universally_forbidden(path: str) -> bool:
-    if _matches_any_prefix(path, manifest.UNIVERSAL_FORBIDDEN_PREFIXES):
-        return True
-
+def _is_forbidden_filename(path: str) -> bool:
     filename = Path(path).name
     return any(
         substring in filename
         for substring in manifest.UNIVERSAL_FORBIDDEN_FILENAME_SUBSTRINGS
     )
+
+
+def _is_universally_forbidden(path: str) -> bool:
+    return _matches_any_prefix(
+        path, manifest.UNIVERSAL_FORBIDDEN_PREFIXES
+    ) or _is_forbidden_filename(path)
 
 
 def check_manifest_self_consistency(edition: str) -> list[str]:
@@ -103,6 +114,16 @@ def resolve_edition_files(edition: str, all_files: list[str]) -> list[str]:
     模拟"如果现在按这份清单给这个 Edition 打包，会包含哪些文件"。
 
     纯字符串匹配，不要求文件真实存在，方便测试用假文件列表调用。
+
+    测试文件（test_*.py / *.test.js）即使物理上和被 include 的源码
+    放在同一目录（这在本仓库是正常约定，例如
+    frontend/src/editions/editionConfig.test.js 就挨着
+    editionConfig.js），也在这里被安静地排除，不算作"会被打进发行
+    包"——真正的构建工具（Vite/pytest 的收集规则）本来就不会把测试
+    文件当成生产代码的一部分。这与"目录级 include 前缀写得过宽"是
+    两类不同的问题：后者是清单作者的错误，需要在
+    check_no_forbidden_files_resolved() 里报错；前者只是测试文件
+    与源码同目录存放的正常仓库结构，不应该被当成错误。
     """
 
     include = manifest.FRONTEND_INCLUDE_PREFIXES[edition]
@@ -113,6 +134,8 @@ def resolve_edition_files(edition: str, all_files: list[str]) -> list[str]:
         if not _matches_any_prefix(path, include):
             continue
         if _matches_any_prefix(path, forbidden):
+            continue
+        if _is_forbidden_filename(path):
             continue
         resolved.append(path)
 

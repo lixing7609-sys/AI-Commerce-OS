@@ -71,16 +71,44 @@ class ResolveEditionFilesTests(unittest.TestCase):
 
 
 class NoForbiddenFilesResolvedTests(unittest.TestCase):
-    def test_catches_a_manifest_that_accidentally_includes_tests(self):
+    def test_catches_a_manifest_that_accidentally_includes_a_forbidden_directory(
+        self,
+    ):
+        # 用一个文件名本身不含 "test_"/".test.js" 的文件，专门测试
+        # "include 前缀扫到了 UNIVERSAL_FORBIDDEN_PREFIXES 目录" 这一
+        # 类问题，与下面 test_does_not_flag_a_colocated_test_file 测的
+        # 是两回事——不要用同一个文件名，否则两类问题会互相掩盖。
         with mock.patch.dict(
             manifest.FRONTEND_INCLUDE_PREFIXES,
             {"operator": ("backend/tests/",)},
         ):
             errors = check_boundary.check_no_forbidden_files_resolved(
-                "operator", ["backend/tests/test_leaked.py"]
+                "operator", ["backend/tests/conftest.py"]
             )
 
         self.assertTrue(errors)
+
+    def test_does_not_flag_a_colocated_test_file_as_an_error(self):
+        # frontend/src/editions/editionConfig.test.js 这种"测试文件和
+        # 源码放在同一个 include 目录里"是本仓库的正常约定（见
+        # navigation.test.js 等既有例子），resolve_edition_files() 会
+        # 安静地把它排除在"会被打进发行包"的结果之外，
+        # check_no_forbidden_files_resolved() 不应该把它当成错误
+        # ——这是 ADR-0002 post-commit 完整性审计发现的问题，本测试
+        # 锁定修复后的正确行为，防止回归。
+        with mock.patch.dict(
+            manifest.FRONTEND_INCLUDE_PREFIXES,
+            {"operator": ("frontend/src/editions/",)},
+        ):
+            errors = check_boundary.check_no_forbidden_files_resolved(
+                "operator",
+                [
+                    "frontend/src/editions/editionConfig.js",
+                    "frontend/src/editions/editionConfig.test.js",
+                ],
+            )
+
+        self.assertEqual(errors, [])
 
     def test_catches_a_manifest_that_accidentally_includes_docs(self):
         with mock.patch.dict(

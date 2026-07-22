@@ -8,7 +8,12 @@ ADR-0002 Edition Boundary 测试。
 
 不测试每一个端点，只覆盖 Permission Boundary 表里每一类的代表路由：
 developer-only（tasks/agents/analytics/runtime 控制面）、
-operator 可见（shops/deliverables/dashboard）、
+operator 可见（dashboard/knowledge——这两个路由文件本身已经提交，
+且已经挂载在 app.main 里；shops.py/deliverables.py 虽然在 ADR-0002
+的 Permission Boundary 表里也被记为 developer+operator，但截至本次
+提交尚未加入版本控制，也没有被 app.main 挂载，这里不测它们，避免
+测试只在"working tree 恰好有这些未提交文件"时才通过——见 ADR-0002
+post-commit 完整性审计）、
 device-admin 诊断面（settings/system-info、settings/integration-status）、
 三个 Edition 都可见的只读状态面（runtime/status、settings/llm-status）。
 """
@@ -28,8 +33,7 @@ _DEVELOPER_ONLY_ROUTES = [
 
 _OPERATOR_VISIBLE_ROUTES = [
     ("GET", "/api/v1/dashboard/summary"),
-    ("GET", "/api/v1/shops"),
-    ("GET", "/api/v1/deliverables"),
+    ("GET", "/api/v1/knowledge/documents"),
 ]
 
 _DEVICE_ADMIN_DIAGNOSTIC_ROUTES = [
