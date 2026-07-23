@@ -87,6 +87,7 @@ class AICEOAgent(BaseAgent):
         task_id = task_meta.get("task_id")
         delegation_depth = task_meta.get("delegation_depth", 0)
         root_task_id = task_meta.get("root_task_id")
+        shop_id = task_meta.get("shop_id")
 
         if not _is_supported_task(task_name):
             return {
@@ -96,6 +97,7 @@ class AICEOAgent(BaseAgent):
                 "task_id": task_id,
                 "delegation_depth": delegation_depth,
                 "root_task_id": root_task_id,
+                "shop_id": shop_id,
             }
 
         # 延迟导入：ai_ceo_context 依赖 DashboardService，
@@ -114,6 +116,7 @@ class AICEOAgent(BaseAgent):
             "task_id": task_id,
             "delegation_depth": delegation_depth,
             "root_task_id": root_task_id,
+            "shop_id": shop_id,
         }
 
     def execute(self, decision: dict[str, Any]) -> dict[str, Any]:
@@ -203,6 +206,7 @@ class AICEOAgent(BaseAgent):
             parent_depth=delegation_depth,
             root_task_id=root_task_id,
             delegations=raw_delegations,
+            shop_id=decision.get("shop_id"),
         )
 
     def to_dict(self) -> dict[str, Any]:

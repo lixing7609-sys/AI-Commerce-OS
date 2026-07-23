@@ -71,6 +71,14 @@ class TaskItemResponse(BaseModel):
     child_task_count: int = 0
     children: list[TaskChildSummary] | None = None
     parent_summary: TaskParentSummary | None = None
+    # 阶段 8E：店铺业务作用域。shop_id 直接来自 TaskDB 列；
+    # shop_name 不是 TaskDB 的列，只由路由层批量查询后通过
+    # model_copy(update=...) 附加，未附加时安全降级为 None（不代表
+    # "未绑定店铺"，需结合 shop_id 一起判断——shop_id 为 None 才是
+    # 真正的"未绑定店铺"）。
+    shop_id: int | None = None
+    shop_name: str | None = None
+    source_deliverable_id: int | None = None
 
 
 class TaskStatsResponse(BaseModel):
@@ -149,6 +157,14 @@ class TaskSubmitRequest(BaseModel):
         description="任务优先级，只允许 high/normal/low",
     )
 
+    shop_id: int | None = Field(
+        default=None,
+        description=(
+            "任务所属店铺 id；不传或为 null 表示未绑定店铺（阶段 "
+            "8E）。若提供，必须引用一个存在且状态允许创建任务的店铺"
+        ),
+    )
+
     @field_validator("assigned_agent", "task", mode="before")
     @classmethod
     def _strip_string_fields(cls, value):
@@ -172,6 +188,7 @@ class TaskSubmitResponse(BaseModel):
     assigned_agent: str | None
     task_type: str
     priority: str
+    shop_id: int | None = None
     created_at: datetime
     message: str
 

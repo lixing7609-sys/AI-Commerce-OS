@@ -139,6 +139,7 @@ class TaskExecutionService:
                 delegation_depth=task.delegation_depth,
                 root_task_id=task.root_task_id,
                 parent_task_id=task.parent_task_id,
+                shop_id=task.shop_id,
             )
 
             db.commit()
@@ -191,6 +192,7 @@ class TaskExecutionService:
                 delegation_depth=task.delegation_depth,
                 root_task_id=task.root_task_id,
                 parent_task_id=task.parent_task_id,
+                shop_id=task.shop_id,
             )
         except Exception as error:
             raise AgentExecutionError(type(error).__name__) from error
@@ -283,6 +285,8 @@ class TaskExecutionService:
                 assigned_agent,
             )
 
+            TaskExecutionService._generate_deliverable_best_effort(task_id)
+
             return TaskExecutionResult(
                 outcome="completed",
                 task_id=task_id,
@@ -311,6 +315,33 @@ class TaskExecutionService:
 
         finally:
             db.close()
+
+    @staticmethod
+    def _generate_deliverable_best_effort(task_id: str) -> None:
+        """
+        阶段 8E：任务成功写回 completed 之后，尽力生成正式成果。
+
+        只在任务真正 completed 之后调用（在上面 db.commit() 之后），
+        且发生在独立的、全新的数据库会话中——不与本方法所在的
+        complete_task 事务共享连接，不影响其提交/回滚。
+
+        任何异常（成果生成失败、幂等冲突以外的数据库错误等）都在
+        这里被完整捕获并只记录安全日志，绝不向上抛出、绝不把已经
+        成功 completed 的任务变回 failed 或其它状态。延迟导入
+        DeliverableService，避免其间接依赖在模块加载阶段形成循环
+        导入。
+        """
+
+        try:
+            from app.services.deliverable_service import DeliverableService
+
+            DeliverableService.generate_for_completed_task(task_id)
+        except Exception as error:
+            logger.error(
+                "deliverable auto-generation failed: task_id=%s error_type=%s",
+                task_id,
+                type(error).__name__,
+            )
 
     @staticmethod
     def fail_task(task_id: str, error_type: str) -> TaskExecutionResult:

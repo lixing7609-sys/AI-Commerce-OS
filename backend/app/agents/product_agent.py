@@ -121,6 +121,7 @@ class ProductAgent(BaseAgent):
         delegation_depth = task_meta.get("delegation_depth", 0)
         root_task_id = task_meta.get("root_task_id")
         parent_task_id = task_meta.get("parent_task_id")
+        shop_id = task_meta.get("shop_id")
 
         if not _is_supported_task(task_name):
             return {
@@ -149,6 +150,7 @@ class ProductAgent(BaseAgent):
                 parent_task_id=parent_task_id,
                 root_task_id=root_task_id,
                 delegation_depth=delegation_depth,
+                shop_id=shop_id,
             ),
         }
 

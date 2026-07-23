@@ -274,9 +274,12 @@ def test_submit_valid_request_returns_202(
         "assigned_agent",
         "task_type",
         "priority",
+        "shop_id",
         "created_at",
         "message",
     }
+    # 阶段 8E：未指定 shop_id 时默认视为"未绑定店铺"。
+    assert body["shop_id"] is None
     assert body["status"] == "pending"
     assert body["assigned_agent"] == agent_name
     assert body["task_type"] == f"{TEST_MARKER} basic"

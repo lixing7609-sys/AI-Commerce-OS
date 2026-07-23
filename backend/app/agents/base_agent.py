@@ -63,6 +63,7 @@ class BaseAgent(ABC):
         delegation_depth: int = 0,
         root_task_id: str | None = None,
         parent_task_id: str | None = None,
+        shop_id: int | None = None,
     ) -> dict[str, Any]:
         """
         Agent 标准运行流程。
@@ -89,6 +90,7 @@ class BaseAgent(ABC):
                 "delegation_depth": delegation_depth,
                 "root_task_id": root_task_id,
                 "parent_task_id": parent_task_id,
+                "shop_id": shop_id,
             },
         }
 

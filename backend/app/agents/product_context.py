@@ -201,7 +201,9 @@ def _safe_sales_sibling_summary(task_row) -> dict | None:
 
 
 def _safe_sales_agent_reference(
-    root_task_id: str | None, task_id: str | None
+    root_task_id: str | None,
+    task_id: str | None,
+    shop_id: int | None,
 ) -> list[dict]:
     """
     读取同一 root_task_id 下、销售 Agent 已完成的最近 3 条任务的
@@ -209,6 +211,9 @@ def _safe_sales_agent_reference(
     Agent 间直接调用，只是同一委派链下已经落库、已经安全摘要过的
     兄弟任务结果，产品 Agent 不会触发销售 Agent 执行、不读取其
     payload/context/usage。root_task_id 缺失时安全返回空列表。
+
+    阶段 8E：额外要求兄弟任务与当前任务 shop_id 完全一致（含双方
+    都是 None 的"未绑定店铺"情形），防止跨店铺读取。
     """
 
     if not root_task_id:
@@ -218,6 +223,8 @@ def _safe_sales_agent_reference(
         root_task_id,
         "销售 Agent",
         exclude_task_id=task_id,
+        shop_id=shop_id,
+        require_same_shop=True,
         limit=_MAX_SALES_SIBLINGS,
     )
 
@@ -239,11 +246,14 @@ def build_product_context(
     parent_task_id: str | None,
     root_task_id: str | None,
     delegation_depth: int,
+    shop_id: int | None = None,
 ) -> dict:
     source = "ai_ceo_delegation" if parent_task_id else "direct"
 
     parent_analysis = _safe_parent_analysis(parent_task_id, task_id)
-    sales_agent_reference = _safe_sales_agent_reference(root_task_id, task_id)
+    sales_agent_reference = _safe_sales_agent_reference(
+        root_task_id, task_id, shop_id
+    )
 
     summary = DashboardService.get_summary()
     analytics = AnalyticsService.get_task_analytics("30d")

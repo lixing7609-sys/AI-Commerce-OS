@@ -63,6 +63,7 @@ class TaskDelegationService:
         parent_depth: int,
         root_task_id: str,
         delegations: list[dict],
+        shop_id: int | None = None,
     ) -> dict:
         empty_summary = {
             "status": "none",
@@ -182,6 +183,7 @@ class TaskDelegationService:
                     assigned_agent=candidate["assigned_agent"],
                     task_text=candidate["task"],
                     priority=candidate["priority"],
+                    shop_id=shop_id,
                 )
             )
 
@@ -246,6 +248,7 @@ class TaskDelegationService:
         assigned_agent: str,
         task_text: str,
         priority: str,
+        shop_id: int | None = None,
     ) -> tuple[str | None, str | None]:
         """
         创建单条子任务并 commit；命中唯一约束（父任务重复执行导致
@@ -267,6 +270,11 @@ class TaskDelegationService:
             delegation_depth=_CHILD_DELEGATION_DEPTH,
             created_by_agent=parent_agent_name,
             delegation_key=delegation_key,
+            # 阶段 8E：子任务强制继承父任务 shop_id，由本服务（而非
+            # 模型输出的 delegations 列表）唯一决定，LLM 无法通过
+            # prompt 指定另一个店铺——delegations 字典本身就不包含
+            # shop_id 字段，调用方也不会从模型输出中读取它。
+            shop_id=shop_id,
         )
 
         db = SessionLocal()
@@ -285,6 +293,7 @@ class TaskDelegationService:
                 delegation_depth=task.delegation_depth,
                 created_by_agent=task.created_by_agent,
                 delegation_key=task.delegation_key,
+                shop_id=task.shop_id,
             )
 
             db.add(row)

@@ -45,6 +45,10 @@ class Task:
     created_by_agent: str | None = None
     delegation_key: str | None = None
 
+    # 阶段 8E：店铺业务作用域，None 表示"未绑定店铺"。
+    shop_id: int | None = None
+    source_deliverable_id: int | None = None
+
     def __post_init__(self) -> None:
         if self.root_task_id is None:
             self.root_task_id = self.id
@@ -113,4 +117,6 @@ class Task:
             "root_task_id": self.root_task_id,
             "delegation_depth": self.delegation_depth,
             "created_by_agent": self.created_by_agent,
+            "shop_id": self.shop_id,
+            "source_deliverable_id": self.source_deliverable_id,
         }

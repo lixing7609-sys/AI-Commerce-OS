@@ -134,3 +134,21 @@ class TaskDB(Base):
         String(64),
         nullable=True,
     )
+
+    # 阶段 8E：店铺业务作用域。旧任务（含既有 154 条历史任务）
+    # shop_id 恒为 NULL，代表"未绑定店铺"，不回填虚假店铺。子任务
+    # 由 TaskDelegationService 强制继承父任务 shop_id，模型输出
+    # 无法更改。
+    shop_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True,
+    )
+
+    # 阶段 8E：从成果详情"基于成果创建任务"时回填，标记该任务由
+    # 哪个成果派生；普通任务恒为 NULL。
+    source_deliverable_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True,
+    )

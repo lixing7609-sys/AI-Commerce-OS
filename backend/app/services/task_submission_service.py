@@ -20,6 +20,17 @@ class AgentNotFoundError(Exception):
         super().__init__(f"未找到 Agent：{agent_name}")
 
 
+class ShopNotAvailableError(Exception):
+    """
+    请求中的 shop_id 不存在，或店铺当前状态不允许创建新任务
+    （阶段 8E：停用/归档店铺默认不能创建新执行任务）。
+    """
+
+    def __init__(self, shop_id: int) -> None:
+        self.shop_id = shop_id
+        super().__init__(f"店铺不可用：{shop_id}")
+
+
 class TaskSubmissionService:
     """
     任务提交核心逻辑，供内部 POST /tasks/submit 与外部
@@ -40,12 +51,32 @@ class TaskSubmissionService:
             raise AgentNotFoundError(agent_name)
 
     @staticmethod
+    def validate_shop_for_task_creation(shop_id: int | None) -> None:
+        """
+        shop_id 为 None（未绑定店铺）永远合法。非 None 时必须引用一
+        个存在且 status="active" 的店铺——停用/归档店铺不能作为新
+        任务的目标。延迟导入 ShopService，避免模块加载阶段循环
+        导入。
+        """
+
+        if shop_id is None:
+            return
+
+        from app.services.shop_service import ShopService
+
+        shop = ShopService.get_shop(shop_id)
+
+        if shop is None or shop.status != "active":
+            raise ShopNotAvailableError(shop_id)
+
+    @staticmethod
     def build_task(
         *,
         assigned_agent: str,
         task_text: str,
         context: dict,
         priority: str,
+        shop_id: int | None = None,
     ) -> Task:
         payload = {**context, "task": task_text}
 
@@ -54,6 +85,7 @@ class TaskSubmissionService:
             payload=payload,
             assigned_agent=assigned_agent,
             priority=priority,
+            shop_id=shop_id,
         )
 
     @staticmethod
@@ -75,12 +107,14 @@ class TaskSubmissionService:
         """
 
         TaskSubmissionService.validate_agent_exists(request.assigned_agent)
+        TaskSubmissionService.validate_shop_for_task_creation(request.shop_id)
 
         task = TaskSubmissionService.build_task(
             assigned_agent=request.assigned_agent,
             task_text=request.task,
             context=request.context,
             priority=request.priority,
+            shop_id=request.shop_id,
         )
 
         task_db = TaskService.create_task(task)

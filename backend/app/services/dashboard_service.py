@@ -8,6 +8,8 @@ from app.models.listing_db import ListingDB
 from app.models.order_db import OrderDB
 from app.models.product_db import ProductDB
 
+from app.models.deliverable_db import DeliverableDB
+from app.models.shop_db import ShopDB
 from app.runtime.engine.runtime_engine import runtime_engine
 from app.services.task_service import TaskService
 
@@ -74,6 +76,43 @@ class DashboardService:
         try:
             runtime_status = runtime_engine.status()
 
+            shops_total = db.query(ShopDB).count()
+            shops_active = db.query(ShopDB).filter(ShopDB.status == "active").count()
+            shops_connected = (
+                db.query(ShopDB)
+                .filter(ShopDB.connection_status == "connected")
+                .count()
+            )
+            shops_pending_configuration = (
+                db.query(ShopDB)
+                .filter(ShopDB.status == "active")
+                .filter(ShopDB.connection_status == "not_configured")
+                .count()
+            )
+            shops_connector_not_implemented = (
+                db.query(ShopDB)
+                .filter(ShopDB.connection_status == "configured")
+                .count()
+            )
+
+            deliverables_pending_review = (
+                db.query(DeliverableDB)
+                .filter(DeliverableDB.status == "pending_review")
+                .count()
+            )
+            deliverables_approved = (
+                db.query(DeliverableDB)
+                .filter(DeliverableDB.status == "approved")
+                .count()
+            )
+
+            recent_deliverables = (
+                db.query(DeliverableDB)
+                .order_by(DeliverableDB.created_at.desc())
+                .limit(5)
+                .all()
+            )
+
             return {
                 "products": db.query(ProductDB).count(),
                 "listings": db.query(ListingDB).count(),
@@ -87,6 +126,32 @@ class DashboardService:
                 },
                 "agents": runtime_status["agents"],
                 "tasks": TaskService.get_stats(),
+                "shops": {
+                    "total": shops_total,
+                    "active": shops_active,
+                    "connected": shops_connected,
+                    "pending_configuration": shops_pending_configuration,
+                    "connector_not_implemented": shops_connector_not_implemented,
+                },
+                "deliverables": {
+                    "pending_review": deliverables_pending_review,
+                    "approved": deliverables_approved,
+                    "recent": [
+                        {
+                            "id": item.id,
+                            "deliverable_code": item.deliverable_code,
+                            "title": item.title,
+                            "deliverable_type": item.deliverable_type,
+                            "status": item.status,
+                            "created_at": (
+                                item.created_at.isoformat()
+                                if item.created_at
+                                else None
+                            ),
+                        }
+                        for item in recent_deliverables
+                    ],
+                },
             }
 
         finally:

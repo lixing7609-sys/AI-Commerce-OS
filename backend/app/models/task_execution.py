@@ -30,6 +30,7 @@ class ClaimedTask(BaseModel):
     delegation_depth: int = 0
     root_task_id: str | None = None
     parent_task_id: str | None = None
+    shop_id: int | None = None
 
 
 class TaskExecutionResult(BaseModel):

@@ -41,6 +41,8 @@ class TaskService:
                 delegation_depth=task.delegation_depth,
                 created_by_agent=task.created_by_agent,
                 delegation_key=task.delegation_key,
+                shop_id=task.shop_id,
+                source_deliverable_id=task.source_deliverable_id,
             )
 
             db.add(task_db)
@@ -93,6 +95,8 @@ class TaskService:
                 delegation_depth=task.delegation_depth,
                 created_by_agent=task.created_by_agent,
                 delegation_key=task.delegation_key,
+                shop_id=task.shop_id,
+                source_deliverable_id=task.source_deliverable_id,
             )
 
             db.add(task_db)
@@ -164,6 +168,8 @@ class TaskService:
             task_db.delegation_depth = task.delegation_depth
             task_db.created_by_agent = task.created_by_agent
             task_db.delegation_key = task.delegation_key
+            task_db.shop_id = task.shop_id
+            task_db.source_deliverable_id = task.source_deliverable_id
 
             db.commit()
             db.refresh(task_db)
@@ -191,14 +197,20 @@ class TaskService:
     def get_all_tasks(
         status: str | None = None,
         assigned_agent: str | None = None,
+        shop_id: int | None = None,
+        unassigned_shop: bool = False,
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[list[TaskDB], int]:
         """
-        查询任务记录，支持按状态、执行 Agent 筛选和分页。
+        查询任务记录，支持按状态、执行 Agent、店铺筛选和分页。
 
         筛选和计数均在 SQL 层完成，返回本次筛选后（分页前）
         的总数 filtered_total，供调用方构造分页信息。
+
+        shop_id 与 unassigned_shop 互斥：shop_id 非空时按具体店铺
+        精确过滤；unassigned_shop=True 时改为只返回 shop_id IS NULL
+        （未绑定店铺）的任务，二者同时提供时 shop_id 优先。
         """
 
         db = SessionLocal()
@@ -213,6 +225,11 @@ class TaskService:
                 query = query.filter(
                     TaskDB.assigned_agent == assigned_agent
                 )
+
+            if shop_id is not None:
+                query = query.filter(TaskDB.shop_id == shop_id)
+            elif unassigned_shop:
+                query = query.filter(TaskDB.shop_id.is_(None))
 
             filtered_total = query.count()
 
@@ -254,6 +271,8 @@ class TaskService:
         assigned_agent: str,
         *,
         exclude_task_id: str | None = None,
+        shop_id: int | None = None,
+        require_same_shop: bool = False,
         limit: int = 3,
     ) -> list[TaskDB]:
         """
@@ -261,6 +280,12 @@ class TaskService:
         8D：产品 Agent 安全读取销售 Agent 兄弟任务摘要），按完成
         时间倒序，默认最多 3 条。exclude_task_id 用于排除调用方
         自身（避免任务把自己当作"已完成兄弟任务"读取）。
+
+        阶段 8E：require_same_shop=True 时额外按 shop_id 精确过滤
+        （包括 shop_id 为 None 的情况，此时只匹配同样未绑定店铺的
+        兄弟任务），防止店铺 A 的任务读取到店铺 B 的兄弟任务摘要。
+        正常情况下同一 root_task_id 下的任务本来就通过委派强制继承
+        同一 shop_id，这里是应用层的额外防线，不依赖这一前提。
         """
 
         db = SessionLocal()
@@ -275,6 +300,9 @@ class TaskService:
 
             if exclude_task_id is not None:
                 query = query.filter(TaskDB.id != exclude_task_id)
+
+            if require_same_shop:
+                query = query.filter(TaskDB.shop_id == shop_id)
 
             return (
                 query.order_by(TaskDB.completed_at.desc())

@@ -30,6 +30,7 @@ from app.services.task_recovery_service import TaskRecoveryService
 from app.services.task_service import TaskService
 from app.services.task_submission_service import (
     AgentNotFoundError,
+    ShopNotAvailableError,
     TaskSubmissionService,
 )
 
@@ -47,15 +48,18 @@ def list_tasks(
     status: Literal["pending", "running", "completed", "failed"]
     | None = None,
     assigned_agent: str | None = None,
+    shop_id: int | None = None,
+    unassigned_shop: bool = False,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
     """
     获取 PostgreSQL 中保存的任务记录。
 
-    支持按 status、assigned_agent 筛选，并支持分页。
-    stats 始终表示全库任务统计，不受筛选和分页影响；
-    空字符串的 assigned_agent 按未传处理。
+    支持按 status、assigned_agent、shop_id（阶段 8E）筛选，并支持
+    分页。stats 始终表示全库任务统计，不受筛选和分页影响；空字符
+    串的 assigned_agent 按未传处理。unassigned_shop=true 时只返回
+    未绑定店铺的任务，与 shop_id 同时提供时 shop_id 优先。
     """
 
     normalized_agent = assigned_agent or None
@@ -63,6 +67,8 @@ def list_tasks(
     items, filtered_total = TaskService.get_all_tasks(
         status=status,
         assigned_agent=normalized_agent,
+        shop_id=shop_id,
+        unassigned_shop=unassigned_shop,
         limit=limit,
         offset=offset,
     )
@@ -72,14 +78,28 @@ def list_tasks(
     # 列表接口只附加 child_task_count（一次批量查询，不逐行
     # N+1），不附加 children/parent_summary——那两个字段只在单条
     # 详情接口才计算，避免既有 5 秒 polling 的列表接口新增高频
-    # 重查询（阶段 8B 明确要求"不新增额外高频轮询"）。
+    # 重查询（阶段 8B 明确要求"不新增额外高频轮询"）。shop_name
+    # 同样一次批量查询附加（阶段 8E）。
     child_counts = TaskService.get_child_task_counts(
         [item.id for item in items]
     )
 
+    from app.services.shop_service import ShopService
+
+    shop_names = ShopService.get_names_by_ids(
+        [item.shop_id for item in items if item.shop_id is not None]
+    )
+
     response_items = [
         TaskItemResponse.model_validate(item).model_copy(
-            update={"child_task_count": child_counts.get(item.id, 0)}
+            update={
+                "child_task_count": child_counts.get(item.id, 0),
+                "shop_name": (
+                    shop_names.get(item.shop_id)
+                    if item.shop_id is not None
+                    else None
+                ),
+            }
         )
         for item in items
     ]
@@ -198,6 +218,11 @@ def submit_task(request: TaskSubmitRequest):
             status_code=404,
             detail=f"未找到 Agent：{error.agent_name}",
         ) from error
+    except ShopNotAvailableError as error:
+        raise HTTPException(
+            status_code=400,
+            detail="所选店铺不存在或当前不可用，无法创建任务",
+        ) from error
     except Exception as error:
         logger.error(
             "task submission database failure: error_type=%s",
@@ -221,6 +246,7 @@ def submit_task(request: TaskSubmitRequest):
         assigned_agent=task_db.assigned_agent,
         task_type=task_db.task_type,
         priority=task_db.priority,
+        shop_id=task_db.shop_id,
         created_at=task_db.created_at,
         message="任务已进入执行队列",
     )
@@ -334,10 +360,19 @@ def get_task(task_id: str):
         if parent_row is not None:
             parent_summary = TaskParentSummary.model_validate(parent_row)
 
+    shop_name = None
+
+    if task.shop_id is not None:
+        from app.services.shop_service import ShopService
+
+        shop_names = ShopService.get_names_by_ids([task.shop_id])
+        shop_name = shop_names.get(task.shop_id)
+
     return TaskItemResponse.model_validate(task).model_copy(
         update={
             "child_task_count": len(children),
             "children": children,
             "parent_summary": parent_summary,
+            "shop_name": shop_name,
         }
     )
