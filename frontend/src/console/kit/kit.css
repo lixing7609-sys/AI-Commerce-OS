@@ -1,0 +1,412 @@
+/* Founder Operator 共享组件套件样式。所有类名使用 fdr- 前缀，
+   独立于 App.css（os-*）与 operatorPreview.css（op-*），避免冲突。
+   颜色/圆角/阴影全部读取 theme.css 里已有的 CSS 变量，不重新定义
+   一套新的设计令牌。 */
+
+.fdr-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.fdr-page-header__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px 0;
+}
+
+.fdr-page-header__subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.fdr-page-header__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.fdr-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.fdr-stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+
+.fdr-stat-card__label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 8px 0;
+}
+
+.fdr-stat-card__value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.fdr-stat-card__delta {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.fdr-stat-card__delta--up { color: var(--success); background: rgba(34,197,94,.12); }
+.fdr-stat-card__delta--down { color: var(--danger); background: rgba(239,68,68,.12); }
+.fdr-stat-card__delta--flat { color: var(--text-secondary); background: rgba(107,114,128,.12); }
+
+.fdr-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
+  margin-bottom: 16px;
+}
+
+.fdr-card__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 12px 0;
+}
+
+/* Buttons */
+
+.fdr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, opacity .12s ease;
+  white-space: nowrap;
+}
+
+.fdr-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.fdr-btn--primary { background: var(--primary); color: #fff; }
+.fdr-btn--primary:hover:not(:disabled) { background: var(--primary-hover); }
+
+.fdr-btn--secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
+.fdr-btn--secondary:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+
+.fdr-btn--ghost { background: transparent; color: var(--text-secondary); }
+.fdr-btn--ghost:hover:not(:disabled) { background: var(--bg); color: var(--text); }
+
+.fdr-btn--danger { background: var(--danger); color: #fff; }
+.fdr-btn--danger:hover:not(:disabled) { opacity: .9; }
+
+.fdr-btn--sm { padding: 5px 10px; font-size: 12px; }
+
+/* Status pill */
+
+.fdr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.fdr-pill--success { color: var(--success); background: rgba(34,197,94,.12); }
+.fdr-pill--warning { color: var(--warning); background: rgba(245,158,11,.14); }
+.fdr-pill--danger { color: var(--danger); background: rgba(239,68,68,.12); }
+.fdr-pill--neutral { color: var(--text-secondary); background: rgba(107,114,128,.12); }
+.fdr-pill--info { color: var(--primary); background: rgba(79,70,229,.12); }
+
+.fdr-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Demo data badge */
+
+.fdr-demo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--warning);
+  background: rgba(245,158,11,.12);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+/* Tabs */
+
+.fdr-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+
+.fdr-tabs__item {
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.fdr-tabs__item:hover { color: var(--text); }
+
+.fdr-tabs__item--active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* DataTable */
+
+.fdr-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.fdr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.fdr-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--text-secondary);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.fdr-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+
+.fdr-table tbody tr:last-child td { border-bottom: none; }
+
+.fdr-table tbody tr[data-clickable="true"] { cursor: pointer; }
+.fdr-table tbody tr[data-clickable="true"]:hover { background: var(--bg); }
+
+/* Empty state */
+
+.fdr-empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-secondary);
+}
+
+.fdr-empty__icon { font-size: 28px; margin-bottom: 8px; opacity: .6; }
+.fdr-empty__message { font-size: 14px; margin-bottom: 12px; }
+
+/* Modal */
+
+.fdr-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17,24,39,.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+}
+
+.fdr-modal {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  width: 100%;
+  max-width: 520px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fdr-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fdr-modal__title { font-size: 16px; font-weight: 700; margin: 0; }
+
+.fdr-modal__close {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+.fdr-modal__body { padding: 18px 20px; overflow-y: auto; }
+
+.fdr-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* Toasts */
+
+.fdr-toast-host {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 300;
+}
+
+.fdr-toast {
+  background: var(--text);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  box-shadow: var(--shadow);
+  min-width: 220px;
+}
+
+.fdr-toast--success { background: var(--success); }
+.fdr-toast--danger { background: var(--danger); }
+
+/* Chart frame */
+
+.fdr-chart-frame {
+  width: 100%;
+  height: 260px;
+}
+
+.fdr-chart-frame--sm { height: 160px; }
+
+/* Progress bar */
+
+.fdr-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fdr-progress__track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.fdr-progress__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width .2s ease;
+}
+
+.fdr-progress__fill--primary { background: var(--primary); }
+.fdr-progress__fill--success { background: var(--success); }
+.fdr-progress__fill--warning { background: var(--warning); }
+.fdr-progress__fill--danger { background: var(--danger); }
+
+.fdr-progress__label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 40px;
+  text-align: right;
+}
+
+/* Form controls (shared across module edit forms) */
+
+.fdr-field { margin-bottom: 14px; }
+
+.fdr-field__label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.fdr-input,
+.fdr-select,
+.fdr-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  font-family: inherit;
+}
+
+.fdr-input:focus,
+.fdr-select:focus,
+.fdr-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.fdr-textarea { resize: vertical; min-height: 90px; }
+
+.fdr-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fdr-slider-row input[type="range"] { flex: 1; }
+
+.fdr-slider-row__value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  width: 46px;
+  text-align: right;
+}

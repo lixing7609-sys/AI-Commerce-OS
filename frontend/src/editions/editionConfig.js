@@ -16,16 +16,26 @@
 
 const OPERATOR_PREVIEW_QUERY_PARAM = "mode";
 const OPERATOR_PREVIEW_QUERY_VALUE = "operator-preview";
+const FOUNDER_OPERATOR_QUERY_VALUE = "founder";
 
 function isOperatorPreviewQueryParam(search = window.location.search) {
   const params = new URLSearchParams(search);
   return params.get(OPERATOR_PREVIEW_QUERY_PARAM) === OPERATOR_PREVIEW_QUERY_VALUE;
 }
 
+function isFounderOperatorQueryParam(search = window.location.search) {
+  const params = new URLSearchParams(search);
+  return params.get(OPERATOR_PREVIEW_QUERY_PARAM) === FOUNDER_OPERATOR_QUERY_VALUE;
+}
+
 export const EDITIONS = Object.freeze({
   DEVELOPER: "developer",
   OPERATOR: "operator",
   DEVICE_ADMIN: "device-admin",
+  // Founder Operator：经营者（本人）在单台 Mac mini 上运行业务的
+  // 操作台。是未来受限 Operator 正式版的上游共享实现，不是独立的
+  // 一次性搭建——见 frontend/src/console/ 的 capabilities 说明。
+  FOUNDER_OPERATOR: "founder-operator",
 });
 
 const DEFAULT_EDITION = EDITIONS.DEVELOPER;
@@ -51,6 +61,10 @@ export function getActiveEdition(search = undefined) {
 
   if (isOperatorPreviewQueryParam(search)) {
     return EDITIONS.OPERATOR;
+  }
+
+  if (isFounderOperatorQueryParam(search)) {
+    return EDITIONS.FOUNDER_OPERATOR;
   }
 
   return DEFAULT_EDITION;

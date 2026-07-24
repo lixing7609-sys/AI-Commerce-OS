@@ -1,0 +1,481 @@
+import { createLocalRepository, nextMockId } from "./mockUtils.js";
+import { DEMO_STORES } from "./storesMock.js";
+
+/**
+ * Knowledge 资产库（阶段 Founder UX Review V3，P0-4）：与 Prompt/
+ * Skill 同级的第三类可复用 Agent 资产。绑定层级 scope 决定生效
+ * 优先级——store/category 级知识比 global 通用知识更具体，检索时
+ * 应该优先生效；agent 级知识（仅一个 Agent 使用）优先级最高。
+ * PRECEDENCE_RANK 只是演示排序用，不是真实的知识检索引擎。
+ */
+
+export const PRECEDENCE_RANK = { agent: 4, category: 3, store: 2, global: 1 };
+
+const SCOPE_LABEL = {
+  global: "全局系统知识",
+  store: "店铺专属知识",
+  category: "类目专属知识",
+  agent: "Agent 专属知识",
+};
+
+export function getScopeLabel(scope) {
+  return SCOPE_LABEL[scope] ?? scope;
+}
+
+/**
+ * Knowledge 类型分类扩展（阶段 Founder UX Review V4，P0-37）：不再
+ * 只是"商品知识/平台规则"两三种，覆盖内容/热点/直播/售后/供应链
+ * 等全部经营环节。已有资产的 type 字段沿用 V3 命名，新增资产按
+ * 这份分类补充。
+ */
+export const KNOWLEDGE_TYPES = [
+  "平台规则知识", "商品知识", "SKU知识", "行业知识", "内容知识", "热点知识", "品牌知识", "用户知识",
+  "直播知识", "售后知识", "物流知识", "供应商知识", "历史案例", "供应链知识", "合规知识", "流量知识",
+];
+
+function storeId(name) {
+  return DEMO_STORES.find((s) => s.name === name)?.id ?? null;
+}
+
+function seedKnowledgeAssets() {
+  return [
+    {
+      id: nextMockId("kb"),
+      name: "防晒服商品知识",
+      type: "商品知识",
+      scope: "category",
+      applicableStore: storeId("抖音店A"),
+      applicableCategory: "防晒服",
+      linkedAgentIds: ["产品 Agent"],
+      version: 2,
+      status: "published",
+      updatedAt: new Date(Date.now() - 6 * 86400000).toISOString(),
+      description: "防晒服面料工艺（UPF 防晒指数、冰丝/杀菌纤维等卖点术语）、常见客户疑问与标准答复口径。",
+      content: "UPF50+ 代表阻挡 98% 以上紫外线；「冰丝面料」强调凉感与轻薄，「杀菌纤维」需注明检测标准编号，不得使用「医用级」等违规宣称词。",
+      versionHistory: [
+        { version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 40 * 86400000).toISOString() },
+        { version: 2, note: "补充 UPF 指数话术与合规措辞要求", updatedAt: new Date(Date.now() - 6 * 86400000).toISOString() },
+      ],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "鞋服类目运营知识",
+      type: "类目运营知识",
+      scope: "category",
+      applicableStore: null,
+      applicableCategory: "鞋服",
+      linkedAgentIds: ["产品 Agent", "销售 Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 15 * 86400000).toISOString(),
+      description: "鞋服类目通用运营要点：尺码表规范、退换货率参考基线、当季主推风格标签。",
+      content: "鞋服类目退换货率基线约 8%-12%，超过 15% 需排查尺码描述是否准确；尺码表必须同时提供厘米与常规码数对照。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 15 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "LED灯带商品知识",
+      type: "商品知识",
+      scope: "category",
+      applicableStore: storeId("抖音店A"),
+      applicableCategory: "LED电工",
+      linkedAgentIds: ["产品 Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 20 * 86400000).toISOString(),
+      description: "LED 灯带电压/防水等级/色温参数说明，及常见安装场景问答。",
+      content: "IP65 表示防溅水，不可长期浸泡；色温 3000K 偏暖白，6500K 偏冷白；12V 灯带需搭配对应变压器，不可直接接 220V。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 20 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "抖音平台发布规则",
+      type: "平台规则",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["产品 Agent"],
+      version: 3,
+      status: "published",
+      updatedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+      description: "抖音商品发布标题字数限制、图片规格、禁用极限词清单，供发布前自检。",
+      content: "标题不超过 30 字；主图需 800x800 以上且无水印；标题/详情页禁止出现「最」「第一」「国家级」等极限词。",
+      versionHistory: [
+        { version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 60 * 86400000).toISOString() },
+        { version: 2, note: "更新图片规格要求", updatedAt: new Date(Date.now() - 25 * 86400000).toISOString() },
+        { version: 3, note: "补充极限词清单", updatedAt: new Date(Date.now() - 3 * 86400000).toISOString() },
+      ],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "广告投放规则",
+      type: "广告规则",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["销售 Agent", "AI CEO"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 10 * 86400000).toISOString(),
+      description: "广告止损线、追加预算门槛、审批触发条件等投放决策标准。",
+      content: "ROAS 低于 1.0 持续 24 小时建议暂停；ROAS 高于 2.0 且预算利用率超 60% 可建议追加预算；单次调整超过 ¥300 需转人工审批。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 10 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "客服售后规则",
+      type: "客服规则",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["销售 Agent"],
+      version: 2,
+      status: "published",
+      updatedAt: new Date(Date.now() - 8 * 86400000).toISOString(),
+      description: "退款审批权限、差评回复时效要求、常见售后场景标准话术。",
+      content: "差评需在 12 小时内回复；单笔退款金额 ≤ ¥20 可自动处理，超出转人工审批；退款理由为质量问题时同步创建质检工单。",
+      versionHistory: [
+        { version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 30 * 86400000).toISOString() },
+        { version: 2, note: "调整差评回复时效要求", updatedAt: new Date(Date.now() - 8 * 86400000).toISOString() },
+      ],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "店铺品牌语气",
+      type: "品牌语气",
+      scope: "store",
+      applicableStore: storeId("抖音店A"),
+      applicableCategory: null,
+      linkedAgentIds: ["产品 Agent", "销售 Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 18 * 86400000).toISOString(),
+      description: "该店铺对外文案的语气与用词偏好，用于统一 AI 生成内容的品牌调性。",
+      content: "语气年轻化、口语化，多用「姐妹们」「真的绝」等社媒化表达；避免使用过于正式的商务用语。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 18 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "禁限售词与合规规则",
+      type: "合规规则",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["产品 Agent", "销售 Agent", "AI CEO"],
+      version: 4,
+      status: "published",
+      updatedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
+      description: "全平台通用的禁限售词清单与合规底线，优先级高于任何店铺/类目专属知识。",
+      content: "禁止医疗功效宣称（如「治疗」「根治」）；禁止绝对化用语（「最」「第一」）；禁售品类需在发布前核查平台最新目录。",
+      versionHistory: [
+        { version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 90 * 86400000).toISOString() },
+        { version: 2, note: "补充禁售品类核查要求", updatedAt: new Date(Date.now() - 50 * 86400000).toISOString() },
+        { version: 3, note: "补充绝对化用语清单", updatedAt: new Date(Date.now() - 20 * 86400000).toISOString() },
+        { version: 4, note: "补充医疗功效宣称规则", updatedAt: new Date(Date.now() - 1 * 86400000).toISOString() },
+      ],
+    },
+    // ---- V4 新增：内容智能/直播/售后相关知识绑定示例 ----
+    {
+      id: nextMockId("kb"),
+      name: "热点匹配规则",
+      type: "热点知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["店铺机会匹配Agent", "热点评分Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+      platform: null,
+      source: "运营经验总结",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+      usageCount: 34,
+      description: "热点与店铺/类目/商品匹配的判断标准，供店铺机会匹配Agent 与热点评分Agent 使用。",
+      content: "优先匹配：类目直接相关 > 商品直接相关 > 受众画像重合。店铺在售商品越具体，匹配优先级越高；纯话题性热点若无可承接商品，机会分需下调。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 2 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "商品短视频脚本结构知识",
+      type: "内容知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["脚本Agent", "内容策略Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+      platform: null,
+      source: "内容团队沉淀",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+      usageCount: 21,
+      description: "商品短视频的标准脚本结构（钩子/痛点/演示/对比/行动号召），供脚本Agent 生成内容时参考。",
+      content: "前 3 秒必须出现强钩子（提问/反差/数字）；中段用「痛点-演示-对比」结构强化卖点；结尾必须有清晰的行动号召（下单/关注/进直播间）。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 5 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "原创度评分标准",
+      type: "合规知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["原创度检查Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+      platform: null,
+      source: "平台创作规范整理",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+      usageCount: 18,
+      description: "原创度评分的判断维度与及格线，供原创度检查Agent 输出评分与建议。",
+      content: "评分 ≥ 75 视为通过；60-74 建议修改后重新提交；< 60 视为不通过。参考依赖度越高、结构相似度越高，评分越低。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 3 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "抖音内容合规红线",
+      type: "平台规则知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      platform: "douyin",
+      linkedAgentIds: ["平台合规Agent", "内容发布Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+      source: "平台规则整理",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+      usageCount: 27,
+      description: "抖音平台内容合规审查要点，供平台合规Agent 与内容发布Agent 发布前自检。",
+      content: "禁止医疗功效宣称；AI 生成内容需在简介标注；数字人出镜需标注「数字人」；涉及敏感公共事件的话题一律转人工审核。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 4 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "直播话术风险清单",
+      type: "直播知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["直播脚本Agent", "直播风控Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 6 * 86400000).toISOString(),
+      source: "历史直播复盘沉淀",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 6 * 86400000).toISOString(),
+      usageCount: 15,
+      description: "直播讲解中容易触发风控的话术清单，供直播脚本Agent 生成脚本与直播风控Agent 实时监控使用。",
+      content: "避免绝对化承诺（「绝对不过敏」「100%有效」）；避免与竞品直接比较贬低；医疗/功效类话术需转为「个人体验分享」表述。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 6 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "运输破损理赔规则",
+      type: "物流知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["规则匹配Agent", "责任判定Agent"],
+      version: 1,
+      status: "published",
+      effectiveDate: new Date(Date.now() - 60 * 86400000).toISOString(),
+      expiryDate: null,
+      updatedAt: new Date(Date.now() - 36 * 3600000).toISOString(),
+      source: "平台物流理赔规则 + 历史案例沉淀",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 36 * 3600000).toISOString(),
+      usageCount: 9,
+      relatedCases: ["DY202407190032"],
+      description: "运输破损类售后的责任判定与理赔标准，供规则匹配Agent 与责任判定Agent 使用。",
+      content: "外包装破损且商品受损：优先判定物流责任，店铺可先行补发再向物流商索赔；破损理赔金额上限 ¥30，超出需人工审批。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 36 * 3600000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "售后沟通话术规范",
+      type: "售后知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["沟通Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 9 * 86400000).toISOString(),
+      source: "客服团队沉淀",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 9 * 86400000).toISOString(),
+      usageCount: 40,
+      description: "售后沟通的语气与用词规范，供沟通Agent 生成买家回复与平台申诉文本。",
+      content: "始终先致歉再说明处理方案；禁止使用生硬的拒绝措辞；涉及金额的表述必须精确到分，不使用「大概」「应该」等模糊词。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 9 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "面料供应商质检历史",
+      type: "供应商知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: "防晒服",
+      linkedAgentIds: ["售后风控Agent", "售后复盘Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 14 * 86400000).toISOString(),
+      source: "供应商质检记录",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 14 * 86400000).toISOString(),
+      usageCount: 6,
+      relatedCases: ["DY202407240001"],
+      description: "面料供应商历史质检与售后问题记录，供售后风控Agent 识别批次性问题。",
+      content: "华南面料供应商近 3 个月出现 2 次线头脱线投诉，均集中在同一批次；建议对该批次库存加强抽检。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 14 * 86400000).toISOString() }],
+    },
+    // ---- V4.1 新增：流量网络知识绑定示例 ----
+    {
+      id: nextMockId("kb"),
+      name: "流量网络分发策略",
+      type: "流量知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["流量规划Agent", "流量分发Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+      source: "运营经验总结",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+      usageCount: 12,
+      description: "内容资产一对多分发到官方/矩阵/运营者账号的优先级与节奏，供流量规划Agent 与流量分发Agent 使用。",
+      content: "高原创度、高历史 ROI 的资产优先分发给运营者账号；官方账号优先承接品牌调性内容；矩阵账号按类目匹配分发，避免同一账号短期内重复内容。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 2 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "平台推荐机制要点",
+      type: "流量知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["流量增长Agent", "矩阵账号Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 6 * 86400000).toISOString(),
+      source: "公开平台规则整理",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 6 * 86400000).toISOString(),
+      usageCount: 9,
+      description: "各平台推荐算法的公开规律总结，供流量增长Agent 判断账号增长健康度。",
+      content: "完播率与互动率是短视频推荐的核心信号；账号近期发布频率骤降会触发推荐降权；矩阵账号之间互相导流需控制频次，避免被判定为异常矩阵行为。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 6 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "高表现内容规律",
+      type: "流量知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["流量推荐Agent", "流量ROI Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+      source: "历史流量数据沉淀",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+      usageCount: 15,
+      description: "历史高表现内容资产的共性特征，供流量推荐Agent 向运营者推荐资产时参考。",
+      content: "前3秒强钩子 + 真实场景演示的内容复用率最高；带具体商品卖点的内容分发到运营者账号后转化率显著高于纯品牌向内容。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 3 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "AI短剧高表现规律",
+      type: "流量知识",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["流量推荐Agent", "流量增长Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
+      source: "《打工女孩逆袭记》复盘沉淀",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 1 * 86400000).toISOString(),
+      usageCount: 7,
+      description: "AI 短剧类内容的高表现规律，供流量推荐Agent / 流量增长Agent 判断是否值得追加短剧投入。",
+      content: "剧情反转点前后适合插入商品植入；单集时长控制在 3 分钟内完播率更高；每部短剧建议产出 2-3 条独立可分发切片而非仅整集发布。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 1 * 86400000).toISOString() }],
+    },
+    {
+      id: nextMockId("kb"),
+      name: "达人合作案例库",
+      type: "历史案例",
+      scope: "global",
+      applicableStore: null,
+      applicableCategory: null,
+      linkedAgentIds: ["达人合作Agent"],
+      version: 1,
+      status: "published",
+      updatedAt: new Date(Date.now() - 9 * 86400000).toISOString(),
+      source: "历史合作记录",
+      owner: "Founder",
+      lastVerifiedAt: new Date(Date.now() - 9 * 86400000).toISOString(),
+      usageCount: 5,
+      description: "历史达人 / KOC 合作的邀约话术与分成规则案例，供达人合作Agent 生成合作简报。",
+      content: "中腰部达人（1-10万粉丝）合作性价比通常优于头部达人；分成规则建议采用「基础坑位费 + 销售分成」组合模式，降低单次合作风险。",
+      versionHistory: [{ version: 1, note: "初始版本", updatedAt: new Date(Date.now() - 9 * 86400000).toISOString() }],
+    },
+  ];
+}
+
+const repository = createLocalRepository("knowledgeLibrary.state", () => ({
+  assets: seedKnowledgeAssets(),
+}));
+
+export function getKnowledgeState() {
+  return repository.get();
+}
+
+export function getKnowledgeAsset(id) {
+  return repository.get().assets.find((a) => a.id === id) ?? null;
+}
+
+export function duplicateKnowledgeAsset(id) {
+  return repository.update((state) => {
+    const source = state.assets.find((a) => a.id === id);
+    if (!source) return state;
+    const copy = {
+      ...source,
+      id: nextMockId("kb"),
+      name: `${source.name}（副本）`,
+      version: 1,
+      status: "draft",
+      updatedAt: new Date().toISOString(),
+      versionHistory: [{ version: 1, note: `从「${source.name}」复制`, updatedAt: new Date().toISOString() }],
+    };
+    return { ...state, assets: [copy, ...state.assets] };
+  });
+}
+
+export function updateKnowledgeContent(id, patch) {
+  return repository.update((state) => ({
+    ...state,
+    assets: state.assets.map((a) => {
+      if (a.id !== id) return a;
+      const nextVersion = a.version + 1;
+      return {
+        ...a,
+        ...patch,
+        version: nextVersion,
+        updatedAt: new Date().toISOString(),
+        versionHistory: [...a.versionHistory, { version: nextVersion, note: "手动编辑", updatedAt: new Date().toISOString() }],
+      };
+    }),
+  }));
+}

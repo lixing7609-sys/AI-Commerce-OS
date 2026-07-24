@@ -1,0 +1,192 @@
+/* Founder Operator 控制台外壳样式。Mission-control 观感：深色
+   侧边栏 + 浅色工作区，不套用通用后台管理系统的白底顶栏样式。 */
+
+/* index.css（Vite 模板全局样式）里的 h1/h2 { color: var(--text-h) }
+   规则没有作用域限制，且 --text-h 会随浏览器暗色模式变化——在
+   暗色模式下会变成接近白色，导致本控制台里从未显式设置颜色的
+   标题在浅色卡片背景上变得不可读。这里显式声明标题颜色覆盖它，
+   不依赖任何跨表单全局变量。 */
+.fdr-root h1,
+.fdr-root h2,
+.fdr-root h3,
+.fdr-root h4 {
+  color: var(--text);
+  font-family: inherit;
+  margin: 0;
+}
+
+.fdr-root {
+  --fdr-sidebar-bg: #0B1120;
+  --fdr-sidebar-text: #CBD5E1;
+  --fdr-sidebar-text-dim: #64748B;
+  --fdr-sidebar-active-bg: rgba(79, 70, 229, .28);
+  --fdr-sidebar-border: rgba(255,255,255,.08);
+
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+.fdr-sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background: var(--fdr-sidebar-bg);
+  color: var(--fdr-sidebar-text);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.fdr-sidebar__brand {
+  padding: 4px 20px 18px 20px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  border-bottom: 1px solid var(--fdr-sidebar-border);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdr-sidebar__brand-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--primary);
+  color: #fff;
+}
+
+.fdr-sidebar__group {
+  padding: 10px 20px 4px 20px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--fdr-sidebar-text-dim);
+}
+
+.fdr-sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fdr-sidebar-text);
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  background: none;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  width: 100%;
+  text-align: left;
+}
+
+.fdr-sidebar__item:hover {
+  background: rgba(255,255,255,.05);
+  color: #fff;
+}
+
+.fdr-sidebar__item--active {
+  background: var(--fdr-sidebar-active-bg);
+  color: #fff;
+  border-left-color: var(--primary);
+}
+
+.fdr-sidebar__icon {
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.fdr-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fdr-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  gap: 16px;
+}
+
+.fdr-topbar__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.fdr-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.fdr-topbar__clock {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.fdr-topbar__owner {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fdr-topbar__owner-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fdr-content {
+  flex: 1;
+  padding: 24px;
+  max-width: 1240px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.fdr-scope-select {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+@media (max-width: 900px) {
+  .fdr-sidebar { display: none; }
+  .fdr-content { padding: 16px; }
+}
