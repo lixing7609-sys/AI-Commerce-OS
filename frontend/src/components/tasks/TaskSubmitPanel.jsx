@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import ShopPicker from "../shops/ShopPicker";
+import { getShops } from "../../services/shopApi";
 import { submitTask } from "../../services/taskApi";
 import {
   PRIORITY_OPTIONS,
@@ -28,9 +30,38 @@ function TaskSubmitPanel({
   const [selectedAgent, setSelectedAgent] = useState(initialAgent);
   const [taskText, setTaskText] = useState("");
   const [priority, setPriority] = useState("normal");
+  const [shopId, setShopId] = useState(null);
+  const [shops, setShops] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [successInfo, setSuccessInfo] = useState(null);
+
+  // 店铺列表只在面板打开时拉取一次（不随 5 秒轮询重复请求）；
+  // 阶段 8E 要求创建任务时必须显式选择具体店铺或"未绑定店铺"，
+  // 因此这里需要真实店铺列表供用户选择。
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    let cancelled = false;
+
+    getShops({ status: "active" })
+      .then((data) => {
+        if (!cancelled) {
+          setShops(data.items ?? []);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("店铺列表加载失败：", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   // initialAgent 只在调用方指定的预选 Agent 发生变化时生效一次
   // （渲染期间对比上一次值，而不是在 useEffect 里同步
@@ -78,6 +109,7 @@ function TaskSubmitPanel({
         task: trimmedTask,
         context: {},
         priority,
+        shop_id: shopId,
       });
 
       setSuccessInfo(result);
@@ -169,6 +201,23 @@ function TaskSubmitPanel({
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="task-submit-field">
+          <label htmlFor="task-submit-shop">目标店铺</label>
+          <ShopPicker
+            id="task-submit-shop"
+            value={shopId}
+            onChange={(value) => {
+              setShopId(value);
+              setSuccessInfo(null);
+            }}
+            shops={shops}
+            disabled={submitting}
+          />
+          <p className="task-submit-field-hint">
+            必须明确选择具体店铺，或保持"未绑定店铺"。
+          </p>
         </div>
 
         <p className="task-submit-hint">

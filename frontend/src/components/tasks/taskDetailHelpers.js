@@ -164,6 +164,8 @@ export function sanitizeTaskDetail(task) {
     // 缺省兜底。
     parentTaskId: task.parent_task_id ?? null,
     rootTaskId: task.root_task_id ?? null,
+    shopId: task.shop_id ?? null,
+    shopName: task.shop_name ?? null,
     delegationDepth: task.delegation_depth ?? 0,
     createdByAgent: task.created_by_agent ?? null,
     childTaskCount: task.child_task_count ?? 0,

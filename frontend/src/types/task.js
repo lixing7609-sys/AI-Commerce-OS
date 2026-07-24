@@ -19,6 +19,7 @@
  * @property {string} task
  * @property {Object.<string, any>} context
  * @property {TaskPriority} priority
+ * @property {number | null} [shop_id] 阶段 8E：目标店铺 id，null 表示未绑定店铺
  */
 
 /**

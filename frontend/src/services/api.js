@@ -13,6 +13,8 @@ export async function getDashboardSummary() {
 export async function getTasks({
   status,
   assignedAgent,
+  shopId,
+  unassignedShop,
   limit = 50,
   offset = 0,
 } = {}) {
@@ -24,6 +26,14 @@ export async function getTasks({
 
   if (assignedAgent) {
     params.set("assigned_agent", assignedAgent);
+  }
+
+  if (shopId !== undefined && shopId !== null) {
+    params.set("shop_id", shopId);
+  }
+
+  if (unassignedShop) {
+    params.set("unassigned_shop", "true");
   }
 
   params.set("limit", limit);

@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 
+import { getDeliverableStatusLabel, getDeliverableTypeLabel } from "../components/deliverables/deliverableLabels";
 import Sidebar from "../components/layout/Sidebar";
 import RuntimeStatusPanel from "../components/runtime/RuntimeStatusPanel";
 import TaskSubmitPanel from "../components/tasks/TaskSubmitPanel";
 import { getDashboardSummary } from "../services/api";
 import { getTaskAnalytics } from "../services/analyticsApi";
 
-function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
+function Dashboard({
+  onNavigate = () => {},
+  onNavigateToTask = () => {},
+  onNavigateToDeliverable = () => {},
+}) {
   const [submitPanelOpen, setSubmitPanelOpen] = useState(false);
   const [trend, setTrend] = useState([]);
   const [trendError, setTrendError] = useState(null);
@@ -36,6 +41,18 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
       running: 0,
       completed: 0,
       failed: 0,
+    },
+    shops: {
+      total: 0,
+      active: 0,
+      connected: 0,
+      pending_configuration: 0,
+      connector_not_implemented: 0,
+    },
+    deliverables: {
+      pending_review: 0,
+      approved: 0,
+      recent: [],
     },
   });
 
@@ -73,6 +90,18 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
             items: Array.isArray(data.agents?.items)
               ? data.agents.items
               : [],
+          },
+          shops: {
+            total: data.shops?.total ?? 0,
+            active: data.shops?.active ?? 0,
+            connected: data.shops?.connected ?? 0,
+            pending_configuration: data.shops?.pending_configuration ?? 0,
+            connector_not_implemented: data.shops?.connector_not_implemented ?? 0,
+          },
+          deliverables: {
+            pending_review: data.deliverables?.pending_review ?? 0,
+            approved: data.deliverables?.approved ?? 0,
+            recent: Array.isArray(data.deliverables?.recent) ? data.deliverables.recent : [],
           },
           tasks: {
             total: data.tasks?.total ?? 0,
@@ -375,6 +404,101 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
           </article>
         </section>
 
+        <section className="shop-deliverable-summary-grid">
+          <article className="metric-card">
+            <span>已连接店铺</span>
+            <strong>{summary.shops.connected}</strong>
+            <small>共 {summary.shops.total} 个店铺</small>
+            <em>⛛</em>
+          </article>
+
+          <article className="metric-card">
+            <span>待配置店铺</span>
+            <strong>{summary.shops.pending_configuration}</strong>
+            <small>尚未填写凭据</small>
+            <em>◇</em>
+          </article>
+
+          <article className="metric-card">
+            <span>连接器未实现</span>
+            <strong>{summary.shops.connector_not_implemented}</strong>
+            <small>平台框架已就绪，尚未真实接入</small>
+            <em>⚙</em>
+          </article>
+
+          <article className="metric-card">
+            <span>待审核成果</span>
+            <strong>{summary.deliverables.pending_review}</strong>
+            <small>需要人工审核</small>
+            <em>☑</em>
+          </article>
+
+          <article className="metric-card">
+            <span>已批准成果</span>
+            <strong>{summary.deliverables.approved}</strong>
+            <small>已完成审核</small>
+            <em>✔</em>
+          </article>
+        </section>
+
+        <section className="main-grid">
+          <article className="agents-card">
+            <div className="panel-heading">
+              <span>最近成果</span>
+              <button type="button" onClick={() => onNavigate("deliverables")}>
+                查看全部 →
+              </button>
+            </div>
+
+            {summary.deliverables.recent.length === 0 ? (
+              <div className="task-empty">
+                尚无成果。AI 员工完成支持的任务后，成果会出现在成果中心。
+              </div>
+            ) : (
+              <div className="agents-list">
+                {summary.deliverables.recent.map((item) => (
+                  <div
+                    className="agent-item"
+                    key={item.id}
+                    onClick={() => onNavigateToDeliverable(item.id)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <div className="agent-information">
+                      <strong>{item.title}</strong>
+                      <span>
+                        {getDeliverableTypeLabel(item.deliverable_type)} ·{" "}
+                        {getDeliverableStatusLabel(item.status)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+
+          <article className="agents-card">
+            <div className="panel-heading">
+              <span>店铺范围</span>
+              <button type="button" onClick={() => onNavigate("shops")}>
+                店铺中心 →
+              </button>
+            </div>
+
+            {summary.shops.total === 0 ? (
+              <div className="task-empty">
+                尚未添加店铺。完成平台注册后，可以在店铺中心添加店铺资料和授权信息。
+              </div>
+            ) : (
+              <div className="reminder-item">
+                <span>
+                  共 {summary.shops.total} 个店铺，其中 {summary.shops.active} 个正常运行
+                </span>
+                <small>真实数据库统计</small>
+              </div>
+            )}
+          </article>
+        </section>
+
         <section className="lower-grid">
           <article className="trend-card">
             <div className="panel-heading">
@@ -456,14 +580,14 @@ function Dashboard({ onNavigate = () => {}, onNavigateToTask = () => {} }) {
               >
                 创建任务
               </button>
-              <button type="button" onClick={() => onNavigate("agents")}>
-                AI 员工
+              <button type="button" onClick={() => onNavigate("shops")}>
+                新增店铺
               </button>
-              <button type="button" onClick={() => onNavigate("analytics")}>
-                数据分析
+              <button type="button" onClick={() => onNavigate("deliverables")}>
+                查看成果
               </button>
-              <button type="button" onClick={() => onNavigate("knowledge")}>
-                知识库
+              <button type="button" onClick={() => onNavigate("tasks")}>
+                任务中心
               </button>
             </div>
           </article>

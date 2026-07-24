@@ -3,8 +3,15 @@ import { useEffect, useState } from "react";
 import Sidebar from "../components/layout/Sidebar";
 import RecoveryCandidatesPanel from "../components/tasks/RecoveryCandidatesPanel";
 import TaskDetailDrawer from "../components/tasks/TaskDetailDrawer";
+import ShopScopeSelector from "../components/shops/ShopScopeSelector";
 import { getTasks, getTaskStats } from "../services/api";
+import { getShops } from "../services/shopApi";
 import { getTask } from "../services/taskApi";
+import {
+  getStoredShopScope,
+  setStoredShopScope,
+  shopScopeToQueryParams,
+} from "../store/shopScopeStore";
 
 const STATUS_LABELS = {
   pending: "待处理",
@@ -62,6 +69,28 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // 全局店铺范围（阶段 8E）：初值来自 localStorage 偏好，切换后
+  // 立即持久化，影响本页任务列表的 shop_id/unassigned_shop 过滤。
+  const [shopScope, setShopScope] = useState(() => getStoredShopScope());
+  const [shops, setShops] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getShops({ status: "active" })
+      .then((data) => {
+        if (!cancelled) setShops(data.items ?? []);
+      })
+      .catch((err) => console.error("店铺列表加载失败：", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function handleShopScopeChange(nextScope) {
+    setShopScope(nextScope);
+    setStoredShopScope(nextScope);
+  }
+
   // 任务详情抽屉：activeTaskId 决定"正在看哪个任务"（用于高亮，
   // 抽屉关闭后仍保留，做轻微高亮）；drawerOpen 单独控制抽屉本身
   // 是否展开——两者分离是为了满足"用户手动关闭后，后续 5 秒
@@ -113,6 +142,7 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
             status: statusFilter === "all" ? undefined : statusFilter,
             limit: 50,
             offset: 0,
+            ...shopScopeToQueryParams(shopScope),
           }),
           getTaskStats(),
         ]);
@@ -162,7 +192,7 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [statusFilter, refreshTick]);
+  }, [statusFilter, refreshTick, shopScope]);
 
   const listMatch = activeTaskId
     ? taskList.items.find((item) => item.id === activeTaskId) ?? null
@@ -308,6 +338,7 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
             <h1>任务中心</h1>
             <p>查看全部 AI 员工任务的执行状态与结果</p>
           </div>
+          <ShopScopeSelector value={shopScope} onChange={handleShopScopeChange} shops={shops} />
         </header>
 
         <div className="task-scroll-area">
@@ -391,6 +422,9 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
                       )}
                     </span>
                     <span>{task.assigned_agent ?? "—"}</span>
+                    <span className="task-shop-cell">
+                      {task.shop_name || "未绑定店铺"}
+                    </span>
                     <span className={`task-status ${task.status}`}>
                       {getStatusLabel(task.status)}
                     </span>

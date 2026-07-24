@@ -5,6 +5,8 @@ const NAV_ITEMS = [
   { key: "overview", icon: "◎", label: "运营概览" },
   { key: "agents", icon: "♙", label: "AI 员工" },
   { key: "tasks", icon: "☑", label: "任务中心" },
+  { key: "deliverables", icon: "✔", label: "成果中心" },
+  { key: "shops", icon: "⛛", label: "店铺中心" },
   { key: "analytics", icon: "◔", label: "数据分析" },
   { key: "knowledge", icon: "▣", label: "知识库" },
   { key: "settings", icon: "⚙", label: "设置" },
