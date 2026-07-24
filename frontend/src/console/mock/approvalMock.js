@@ -1,4 +1,4 @@
-import { createLocalRepository } from "./mockUtils.js";
+import { createLocalRepository, nextMockId } from "./mockUtils.js";
 
 const TYPE_LABEL = {
   deliverable: "成果审核",
@@ -139,8 +139,47 @@ export function getApprovalRequests() {
   return repository.get();
 }
 
-export function decideRequest(requestId, decision) {
-  return repository.update((requests) =>
-    requests.map((r) => (r.id === requestId ? { ...r, status: decision } : r))
+export function getApprovalRequest(id) {
+  return repository.get().find((r) => r.id === id) ?? null;
+}
+
+/**
+ * 幂等保护：同一个 contentVersionId 只允许存在一条未处理完的审批
+ * 事项——重复点击"提交审批"不会在队列里堆出第二条一模一样的记录，
+ * 而是返回已存在的那一条并标记 alreadyExists:true。
+ */
+export function createApprovalRequest(payload) {
+  const existing = repository
+    .get()
+    .find((r) => payload.contentVersionId && r.contentVersionId === payload.contentVersionId && r.status === "pending");
+  if (existing) {
+    return { record: existing, alreadyExists: true };
+  }
+  const record = {
+    id: nextMockId("appr"),
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    ...payload,
+  };
+  repository.update((requests) => [record, ...requests]);
+  return { record, alreadyExists: false };
+}
+
+/**
+ * 决策一条审批事项——校验当前状态必须是 pending，避免对已通过/
+ * 已驳回的事项重复决策导致状态被覆盖。合法的 decision 取值沿用
+ * 现有 UI 已经在用的："approved" | "rejected" | "returned"（对应
+ * V4.3 任务书里的 Approved / Rejected / Revision Requested）。
+ */
+export function decideRequest(requestId, decision, note) {
+  const target = repository.get().find((r) => r.id === requestId);
+  if (!target) return { ok: false, error: "审批事项不存在" };
+  if (target.status !== "pending") {
+    return { ok: false, error: "该审批事项已处理，不能重复决策", alreadyProcessed: true, record: target };
+  }
+  const decidedAt = new Date().toISOString();
+  repository.update((requests) =>
+    requests.map((r) => (r.id === requestId ? { ...r, status: decision, decisionNote: note ?? null, decidedAt } : r))
   );
+  return { ok: true, record: { ...target, status: decision, decisionNote: note ?? null, decidedAt } };
 }

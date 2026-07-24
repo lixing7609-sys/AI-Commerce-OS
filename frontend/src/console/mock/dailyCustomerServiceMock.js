@@ -28,6 +28,7 @@ export const CONVERSATION_STATES = [
 ];
 
 export const TAKEOVER_ACTIONS = [
+  { key: "ai_reply", label: "AI 回复" },
   { key: "takeover_now", label: "立即接管" },
   { key: "hand_back_ai", label: "交还 AI" },
   { key: "ai_assist_reply", label: "AI 辅助回复" },
@@ -35,6 +36,7 @@ export const TAKEOVER_ACTIONS = [
   { key: "pause_auto_reply", label: "暂停自动回复" },
   { key: "transfer_agent", label: "转交其他客服" },
   { key: "escalate_founder", label: "升级 Founder" },
+  { key: "mark_complete", label: "标记完成" },
 ];
 
 function storeId(name) {
@@ -237,6 +239,29 @@ function updateConversation(id, patch, event) {
 export async function performTakeoverAction(id, actionKey) {
   await simulateLatency(300, 700);
   switch (actionKey) {
+    case "ai_reply": {
+      const conversation = getConversation(id);
+      const replyText = conversation?.suggestedReply ?? "已收到您的问题，正在为您核实，请稍等～";
+      const now = new Date().toISOString();
+      const next = repository.update((state) => ({
+        ...state,
+        conversations: state.conversations.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                status: "已完成",
+                lastMessageAt: now,
+                respondedAt: now,
+                resolvedBy: "ai",
+                messages: [...c.messages, { from: "agent", text: replyText, time: now }],
+              }
+            : c
+        ),
+      }));
+      return next;
+    }
+    case "mark_complete":
+      return updateConversation(id, { status: "已完成", completedAt: new Date().toISOString() }, "已标记为完成");
     case "takeover_now":
       return updateConversation(id, { status: "人工处理中", humanOwner: "Founder", automationMode: "human_ai_assist" }, "Founder 已立即接管");
     case "hand_back_ai":
@@ -254,4 +279,38 @@ export async function performTakeoverAction(id, actionKey) {
     default:
       return repository.get();
   }
+}
+
+/**
+ * 经营闭环订单归因后触发的售后跟进咨询——幂等保护：同一个
+ * orderNumber 只生成一条会话，重复触发不会堆出重复咨询。
+ */
+export function createConversationForOrder(order, payload) {
+  const existing = repository.get().conversations.find((c) => c.orderNumber === order.orderNumber);
+  if (existing) {
+    return { record: existing, alreadyExists: true };
+  }
+  const now = Date.now();
+  const record = {
+    id: nextMockId("csc"),
+    storeId: order.storeId,
+    platform: payload.platformLabel ?? order.platform,
+    customer: order.buyer,
+    product: order.product,
+    orderNumber: order.orderNumber,
+    conversationType: payload.conversationType ?? "使用指导",
+    responsibleAgent: payload.responsibleAgent ?? "商品问答Agent",
+    humanOwner: null,
+    automationMode: "ai_auto",
+    riskLevel: payload.riskLevel ?? "低",
+    responseDeadline: new Date(now + 2 * 3600000).toISOString(),
+    status: "AI 处理中",
+    sentiment: "中性",
+    lastMessageAt: new Date(now).toISOString(),
+    suggestedReply: payload.suggestedReply,
+    contentProjectId: payload.contentProjectId ?? null,
+    messages: [{ from: "customer", text: payload.customerQuestion, time: new Date(now).toISOString() }],
+  };
+  repository.update((state) => ({ ...state, conversations: [record, ...state.conversations] }));
+  return { record, alreadyExists: false };
 }

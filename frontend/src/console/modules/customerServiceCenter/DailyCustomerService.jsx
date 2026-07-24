@@ -5,6 +5,7 @@ import { StatCard, StatGrid } from "../../kit/StatCard.jsx";
 import { Button } from "../../kit/Button.jsx";
 import { EmptyState } from "../../kit/EmptyState.jsx";
 import { useToast } from "../../kit/useToast.js";
+import { useConsoleNavContext } from "../../nav/ConsoleNavContext.jsx";
 import { getStoreName } from "../../mock/storesMock.js";
 import {
   AUTOMATION_MODES,
@@ -114,21 +115,38 @@ function ConversationDetail({ conversation, onBack, onChange }) {
 }
 
 export function DailyCustomerService() {
+  const { entityId, navigate } = useConsoleNavContext();
   const [state, setState] = useState(() => getDailyCsState());
   const analytics = getDailyCsAnalytics();
-  const [selectedId, setSelectedId] = useState(null);
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
-  const selected = selectedId ? state.conversations.find((c) => c.id === selectedId) : null;
   const conversations = state.conversations.filter((c) => {
     if (typeFilter && c.conversationType !== typeFilter) return false;
     if (statusFilter && c.status !== statusFilter) return false;
     return true;
   });
 
-  if (selected) {
-    return <ConversationDetail conversation={selected} onBack={() => setSelectedId(null)} onChange={() => setState(getDailyCsState())} />;
+  if (entityId) {
+    const selected = state.conversations.find((c) => c.id === entityId);
+    if (!selected) {
+      return (
+        <div className="fdr-card">
+          <EmptyState
+            icon="⚠"
+            message="未找到该会话（链接可能已失效）"
+            action={<Button variant="secondary" onClick={() => navigate("customerServiceCenter", { subView: "daily" })}>返回日常客服列表</Button>}
+          />
+        </div>
+      );
+    }
+    return (
+      <ConversationDetail
+        conversation={selected}
+        onBack={() => navigate("customerServiceCenter", { subView: "daily" })}
+        onChange={() => setState(getDailyCsState())}
+      />
+    );
   }
 
   return (
@@ -174,7 +192,7 @@ export function DailyCustomerService() {
             { key: "status", label: "状态", render: (r) => <StatusPill tone={STATUS_TONE[r.status] ?? "neutral"}>{r.status}</StatusPill> },
           ]}
           rows={conversations}
-          onRowClick={(row) => setSelectedId(row.id)}
+          onRowClick={(row) => navigate("customerServiceCenter", { subView: "daily", entityId: row.id })}
           emptyMessage={<EmptyState icon="✦" message="当前筛选条件下暂无会话" />}
         />
       </div>

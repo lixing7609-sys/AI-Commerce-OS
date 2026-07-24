@@ -1,4 +1,7 @@
 import { tagDemo, nextMockId } from "./mockUtils.js";
+import { OPERATING_LOOP_PROJECT_ID, getContentProject } from "./contentMock.js";
+import { getConversation } from "./dailyCustomerServiceMock.js";
+import { getKnowledgeState } from "./knowledgeMock.js";
 
 /**
  * AI 秘书对话/关注事项的演示数据。所有条目都带 is_demo: true，UI
@@ -259,4 +262,73 @@ export function seedCrossSystemAlerts() {
     { id: "xsys-11", label: "AI短剧新切片已产出，建议推荐给运营者", targetModule: "trafficNetworkCenter", targetSubView: "supply" },
     { id: "xsys-12", label: "1 个矩阵账号流量下滑，建议关注", targetModule: "trafficNetworkCenter", targetSubView: "matrix" },
   ]);
+}
+
+/**
+ * 经营闭环简报卡片（阶段 Founder V4.3）——只反映当前 golden path
+ * 项目的真实状态，不是写死的静态卡片；每张卡片都直达具体业务
+ * 对象详情（entityId），不是模块首页。AI 秘书只做"提醒 + 直达"，
+ * 不展开成完整模块看板——所以这里最多产出 5 张卡片，不做分页/
+ * 筛选/详情展开。
+ */
+export function getOperatingLoopBriefCards() {
+  const project = getContentProject(OPERATING_LOOP_PROJECT_ID);
+  if (!project) return [];
+
+  const cards = [];
+
+  if (project.loopState === "Pending Approval" && project.approvalRequestId) {
+    cards.push({
+      id: "loop-approval",
+      label: "1 条内容等待审批",
+      targetModule: "approvalCenter",
+      targetEntityId: project.approvalRequestId,
+    });
+  }
+
+  if (["Published", "Monitoring", "Reviewed"].includes(project.loopState)) {
+    cards.push({
+      id: "loop-published",
+      label: "1 条内容已发布，播放增长高于预期",
+      targetModule: "contentCenter",
+      targetSubView: "projects",
+      targetEntityId: project.id,
+    });
+  }
+
+  if (project.orderId) {
+    cards.push({
+      id: "loop-order",
+      label: "1 个订单来自内容自然流量",
+      targetModule: "orderCenter",
+      targetEntityId: project.orderId,
+    });
+  }
+
+  if (project.conversationId) {
+    const conversation = getConversation(project.conversationId);
+    if (conversation && ["建议人工接管", "等待人工接管"].includes(conversation.status)) {
+      cards.push({
+        id: "loop-conversation",
+        label: "1 个客户咨询建议人工接管",
+        targetModule: "customerServiceCenter",
+        targetSubView: "daily",
+        targetEntityId: project.conversationId,
+      });
+    }
+  }
+
+  const pendingKnowledgeCandidates = getKnowledgeState().assets.filter(
+    (a) => a.status === "candidate" && a.sourceProjectId === project.id
+  );
+  if (pendingKnowledgeCandidates.length > 0) {
+    cards.push({
+      id: "loop-knowledge",
+      label: `${pendingKnowledgeCandidates.length} 条复盘知识候选等待确认`,
+      targetModule: "agentStudio",
+      targetSubView: project.storeId,
+    });
+  }
+
+  return cards;
 }

@@ -9,6 +9,7 @@ import { DemoBadge } from "../../kit/StatusPill.jsx";
 import { EmptyState } from "../../kit/EmptyState.jsx";
 import { TrendLineChart, ComparisonBarChart } from "../../kit/ChartFrame.jsx";
 import { Button } from "../../kit/Button.jsx";
+import { getOperatingLoopSummary, OPERATING_LOOP_PROJECT_ID } from "../../mock/contentMock.js";
 
 const RANGE_OPTIONS = [
   { key: "today", label: "今天" },
@@ -19,6 +20,7 @@ const RANGE_OPTIONS = [
 export function DashboardModule() {
   const { navigate } = useConsoleNavContext();
   const [range, setRange] = useState("7d");
+  const loopSummary = getOperatingLoopSummary();
   const [summary, setSummary] = useState({ connected: false, data: null });
   const [stats, setStats] = useState({ connected: false, data: null });
   const [analytics, setAnalytics] = useState({ connected: false, data: null });
@@ -94,6 +96,24 @@ export function DashboardModule() {
           <StatCard label="流量网络账号数" value="13" onClick={() => navigate("trafficNetworkCenter")} />
           <StatCard label="流量 ROI" value="3.6" onClick={() => navigate("trafficNetworkCenter", { subView: "analytics" })} />
           <StatCard label="Agent 健康度均值" value="88%" onClick={() => navigate("agentStudio")} />
+        </StatGrid>
+      </div>
+
+      <div className="fdr-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <h3 className="fdr-card__title" style={{ margin: 0 }}>经营闭环摘要（阶段 Founder V4.3）</h3>
+          <DemoBadge />
+        </div>
+        <StatGrid>
+          <StatCard label="进行中内容项目" value={loopSummary.activeContentProjects} onClick={() => navigate("contentCenter", { subView: "projects", entityId: OPERATING_LOOP_PROJECT_ID })} />
+          <StatCard label="待审批" value={loopSummary.pendingApprovals} onClick={() => navigate("approvalCenter")} />
+          <StatCard label="待发布" value={loopSummary.readyToPublish} onClick={() => navigate("contentCenter", { subView: "projects", entityId: OPERATING_LOOP_PROJECT_ID })} />
+          <StatCard label="今日已发布" value={loopSummary.publishedToday} onClick={() => navigate("contentCenter", { subView: "projects", entityId: OPERATING_LOOP_PROJECT_ID })} />
+          <StatCard label="归因订单数" value={loopSummary.attributedOrders} onClick={() => navigate("orderCenter")} />
+          <StatCard label="归因 GMV" value={`¥${loopSummary.attributedGmv}`} onClick={() => navigate("orderCenter")} />
+          <StatCard label="进行中客服会话" value={loopSummary.openConversations} onClick={() => navigate("customerServiceCenter", { subView: "daily" })} />
+          <StatCard label="待人工接管" value={loopSummary.humanTakeoverRequests} onClick={() => navigate("customerServiceCenter", { subView: "takeover" })} />
+          <StatCard label="待复盘" value={loopSummary.reviewPending} onClick={() => navigate("contentCenter", { subView: "projects", entityId: OPERATING_LOOP_PROJECT_ID })} />
         </StatGrid>
       </div>
 

@@ -6,6 +6,7 @@ import { safeCall } from "../../realDataSafe.js";
 import { simulateLatency, nextMockId } from "../../mock/mockUtils.js";
 import {
   QUICK_ACTIONS,
+  getOperatingLoopBriefCards,
   getRecommendationTypeLabel,
   matchReply,
   pickTopPriorityItem,
@@ -65,7 +66,7 @@ export function SecretaryModule() {
   const todayHighlights = useMemo(() => seedTodayHighlights(), []);
   const operatingGoals = useMemo(() => seedOperatingGoals(), []);
   const recommendations = useMemo(() => seedAiRecommendations(), []);
-  const crossSystemAlerts = useMemo(() => seedCrossSystemAlerts(), []);
+  const crossSystemAlerts = useMemo(() => [...seedCrossSystemAlerts(), ...getOperatingLoopBriefCards()], []);
 
   const [runtime, setRuntime] = useState({ connected: false, data: null });
   const [taskStats, setTaskStats] = useState({ connected: false, data: null });
@@ -303,7 +304,7 @@ export function SecretaryModule() {
               type="button"
               className="fdr-btn fdr-btn--secondary"
               style={{ fontSize: 12 }}
-              onClick={() => navigate(alert.targetModule, { subView: alert.targetSubView })}
+              onClick={() => navigate(alert.targetModule, { subView: alert.targetSubView, entityId: alert.targetEntityId })}
             >
               {alert.label}
             </button>

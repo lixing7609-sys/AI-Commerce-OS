@@ -1,5 +1,24 @@
 import { createLocalRepository, nextMockId, simulateLatency } from "./mockUtils.js";
-import { DEMO_STORES } from "./storesMock.js";
+import { DEMO_STORES, getStoreName } from "./storesMock.js";
+import { getProducts } from "./productMock.js";
+import {
+  canTransitionContentProject,
+  createPlatformExecution,
+  createPublishJob,
+  createReviewSnapshot,
+  createTrafficAttribution,
+  deterministicPerformanceFor,
+  getReviewSnapshotForProject,
+  getTrafficAttributionForProject,
+  platformExecutionContract,
+  updatePlatformExecution,
+  updatePublishJob,
+} from "./operatingLoopMock.js";
+import { appendReplayEvent } from "./replayMock.js";
+import { createApprovalRequest, decideRequest, getApprovalRequest, getApprovalRequests } from "./approvalMock.js";
+import { createAttributedOrder } from "./orderMock.js";
+import { createConversationForOrder, getConversation } from "./dailyCustomerServiceMock.js";
+import { createKnowledgeCandidate } from "./knowledgeMock.js";
 
 /**
  * 内容中心的核心 mock 数据（阶段 Founder UX Review V4）。内容中心
@@ -43,9 +62,59 @@ function storeId(name) {
   return DEMO_STORES.find((s) => s.name === name).id;
 }
 
+function productIdFor(sku) {
+  return getProducts().find((p) => p.sku === sku)?.id ?? null;
+}
+
+/**
+ * 经营闭环 golden path 使用的固定项目 id——种子数据首次生成时就
+ * 确定，供 operatingLoopMock 的编排函数、Approval/Order/客服/Replay
+ * 各处直接引用，不需要每次都从列表里按名称查找。
+ */
+export const OPERATING_LOOP_PROJECT_ID = "cproj-loop-led-strip";
+export const OPERATING_LOOP_REPLAY_RUN_ID = "run-loop-led-strip";
+
 function seedContentProjects() {
   const now = Date.now();
   return [
+    // ---- Founder V4.3 经营闭环 golden path：抖音店A / LED灯带套装 3米（家用智能感应灯带类目） ----
+    {
+      id: OPERATING_LOOP_PROJECT_ID,
+      name: "LED感应灯带 · 电视背景氛围感内容项目",
+      source: "商品运营",
+      storeId: storeId("抖音店A"),
+      productId: productIdFor("SKU-LED-005"),
+      category: "LED电工",
+      product: "LED灯带套装 3米 SKU-LED-005",
+      businessGoal: "拉动商品自然流量转化为订单",
+      marketingGoal: "拉动商品自然流量转化为订单",
+      targetPlatform: "抖音",
+      targetAudience: "18-35岁租房/宿舍改造人群",
+      contentTheme: "电视背后灯带氛围感安装展示",
+      contentType: "商品短视频",
+      contentFormats: ["商品短视频"],
+      plannedChannels: ["抖音"],
+      sourceTrend: "内部商品运营信号：LED灯带近7天商品详情页访问量上升",
+      relatedAgents: ["内容策略Agent", "脚本Agent", "视频生产Agent", "原创度检查Agent", "版权检查Agent", "平台合规Agent"],
+      contentOwner: "Founder",
+      automationLevel: "AI 生成 + Founder 审批 + 辅助执行发布",
+      costCeilingUsd: 3,
+      status: "策划中",
+      createdAt: new Date(now - 6 * 3600000).toISOString(),
+      updatedAt: new Date(now - 6 * 3600000).toISOString(),
+      dueAt: new Date(now + 72 * 3600000).toISOString(),
+      expectedResult: "商品详情页访问 +25%，本周新增成交 3-5 单",
+      actualResult: null,
+      // ---- 经营闭环字段（阶段 V4.3）----
+      loopState: "Draft",
+      contentVersions: [],
+      approvalRequestId: null,
+      publishJobId: null,
+      orderId: null,
+      conversationId: null,
+      reviewSnapshotId: null,
+      replayRunId: OPERATING_LOOP_REPLAY_RUN_ID,
+    },
     {
       id: nextMockId("cproj"),
       name: "夏季防晒衣内容矩阵",
@@ -666,4 +735,558 @@ export async function retryMockPublishing(taskId) {
     publishingTime: succeeded ? new Date().toISOString() : null,
     platformContentId: succeeded ? `MOCK-CT-${Math.floor(100000 + Math.random() * 900000)}` : null,
   });
+}
+
+/* ==================================================================
+ * 经营闭环编排（阶段 Founder V4.3：真实经营闭环预备）——把"店铺 →
+ * 商品 → 内容 → 审批 → 发布 → 订单 → 客服 → 复盘"这条链路串起来。
+ * 每个函数只做：校验前置条件 → 状态机跃迁校验 → 写入对应仓库 →
+ * 追加 Replay 事件，不重复实现各仓库自己的读写逻辑。所有写操作都
+ * 发生在事件处理函数内部，不在渲染期间调用 Date.now()。
+ * ================================================================== */
+
+export function getContentProject(id) {
+  return repository.get().contentProjects.find((p) => p.id === id) ?? null;
+}
+
+function updateProjectLoopState(projectId, patch) {
+  const updated = repository.update((state) => ({
+    ...state,
+    contentProjects: state.contentProjects.map((p) =>
+      p.id === projectId ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p
+    ),
+  }));
+  return updated.contentProjects.find((p) => p.id === projectId);
+}
+
+function buildContentVersion(project, versionNumber) {
+  return {
+    id: nextMockId("cver"),
+    version: versionNumber,
+    createdAt: new Date().toISOString(),
+    headline: "电视背后装这条灯带，追剧氛围感直接拉满",
+    caption: "3米长度覆盖大部分电视墙，可剪裁自由拼接，出租屋也能免打孔安装～",
+    script: [
+      "0-3秒：黑屏客厅，手指按下遥控器，灯带瞬间点亮——强钩子开场",
+      "3-10秒：展示灯带贴在电视背后的走线与3M背胶粘贴过程",
+      "10-18秒：16色氛围灯效切换，分别演示追剧/游戏/聚会三种场景",
+      "18-22秒：卖点字幕叠加（12V低压安全、可剪裁拼接、遥控可调），引导下单",
+    ].join("\n"),
+    shotPlan: ["远景：客厅全景开灯瞬间", "特写：灯带背胶粘贴电视背板", "特写：遥控器切换颜色", "远景：三种场景灯光效果对比"],
+    coverDirection: "封面：夜晚客厅电视背光点亮后的暖色调实拍，画面对比开灯前后的氛围差异",
+    sellingPoints: [
+      "12V 低压安全供电，家有老人小孩也能放心用",
+      "支持剪裁自由拼接，适配不同尺寸电视墙",
+      "3M 背胶免打孔安装，租房也能贴",
+      "16色遥控调节，一键切换追剧/游戏/聚会场景",
+    ],
+    cta: "点击下方商品卡，今晚就给电视墙加个氛围",
+    platformVariants: [
+      {
+        platform: "抖音",
+        aspectRatio: "9:16",
+        duration: "22秒",
+        title: "电视背后装这条灯带，追剧氛围感直接拉满",
+        caption: "出租屋免打孔安装教程，评论区告诉我你想要哪种颜色👇",
+      },
+    ],
+    generatedAssetRecords: [
+      { name: `LED灯带演示脚本 v${versionNumber}`, type: "脚本", generatedBy: "脚本Agent" },
+      { name: `LED灯带封面方向 v${versionNumber}`, type: "封面", generatedBy: "图片Agent" },
+      { name: "LED灯带渠道版本 · 抖音9:16", type: "渠道版本", generatedBy: "渠道适配Agent" },
+    ],
+    originalityScore: 91,
+    copyrightResult: "通过",
+    complianceResult: "通过",
+    relatedAgents: project.relatedAgents,
+    tokenCost: 2100,
+    modelUsed: "Claude Sonnet 5",
+  };
+}
+
+/**
+ * 生成内容方案——校验店铺/商品已选定，跃迁到 Generating → 生成一个
+ * 内容版本（含原创度/版权/合规结果、可复用的资产记录）→ 跃迁到
+ * Generated → 追加 Replay 事件。
+ */
+export function generateContentPackage(projectId) {
+  const project = getContentProject(projectId);
+  if (!project) return { ok: false, error: "内容项目不存在" };
+  if (!project.storeId) return { ok: false, error: "未选择店铺，无法生成内容" };
+  if (!project.productId) return { ok: false, error: "未选择商品，无法生成内容" };
+
+  const check = canTransitionContentProject(project.loopState, "Generating");
+  if (!check.ok) return { ok: false, error: check.error };
+
+  const previousState = project.loopState;
+  const versionNumber = project.contentVersions.length + 1;
+  const version = buildContentVersion(project, versionNumber);
+
+  const updated = updateProjectLoopState(projectId, {
+    loopState: "Generated",
+    contentVersions: [...project.contentVersions, version],
+  });
+
+  appendReplayEvent(project.replayRunId, {
+    module: "内容中心",
+    actor: "Founder",
+    agent: "脚本Agent",
+    promptVersion: "商品短视频脚本 Prompt v1",
+    skillVersion: "商品详情文案生成 v1",
+    knowledgeRefs: ["LED灯带商品知识", "商品短视频脚本结构知识"],
+    model: version.modelUsed,
+    tokenUsage: version.tokenCost,
+    inputSummary: `店铺=${getStoreName(project.storeId)}，商品=${project.product}，主题=${project.contentTheme}`,
+    outputSummary: `生成内容版本 v${versionNumber}：${version.headline}`,
+    businessObject: `ContentProject:${projectId}`,
+    previousState,
+    newState: "Generated",
+  });
+
+  return { ok: true, project: updated, version };
+}
+
+/**
+ * 提交审批——幂等：同一个内容版本已存在待处理审批时不重复创建，
+ * 直接返回已存在的审批事项。
+ */
+export function submitForApproval(projectId) {
+  const project = getContentProject(projectId);
+  if (!project) return { ok: false, error: "内容项目不存在" };
+  if (project.contentVersions.length === 0) return { ok: false, error: "尚未生成内容版本，无法提交审批" };
+
+  const check = canTransitionContentProject(project.loopState, "Pending Approval");
+  if (!check.ok) return { ok: false, error: check.error };
+
+  const latestVersion = project.contentVersions[project.contentVersions.length - 1];
+  const aiRecommendation =
+    latestVersion.originalityScore >= 85 && latestVersion.copyrightResult === "通过" && latestVersion.complianceResult === "通过"
+      ? "建议批准（原创度/版权/合规均通过）"
+      : "建议人工复核后再决定";
+
+  const { record: approvalRequest, alreadyExists } = createApprovalRequest({
+    type: "content_approval",
+    requestedBy: `内容中心：${project.name}`,
+    summary: `「${latestVersion.headline}」待审批发布`,
+    riskLevel: "low",
+    payload: {},
+    sourceModule: "内容中心",
+    store: getStoreName(project.storeId),
+    platform: project.targetPlatform,
+    object: `${project.contentType}内容 v${latestVersion.version}`,
+    amountOrCost: `Token ${latestVersion.tokenCost}`,
+    deadline: new Date(Date.now() + 8 * 3600000).toISOString(),
+    aiRecommendation,
+    evidence: "原创度检查报告 + 版权检查报告 + 合规检查报告",
+    relatedRules: "抖音平台发布规则",
+    contentProjectId: projectId,
+    contentVersionId: latestVersion.id,
+    originatingModule: "contentCenter",
+    originatingSubView: "projects",
+    originatingEntityId: projectId,
+    checks: { originality: latestVersion.originalityScore, copyright: latestVersion.copyrightResult, compliance: latestVersion.complianceResult },
+    tokenCost: latestVersion.tokenCost,
+  });
+
+  if (alreadyExists) {
+    return { ok: false, error: "该内容版本已提交审批，请勿重复提交", alreadyExists: true, approvalRequest };
+  }
+
+  const updated = updateProjectLoopState(projectId, {
+    loopState: "Pending Approval",
+    approvalRequestId: approvalRequest.id,
+    submittedAt: new Date().toISOString(),
+  });
+
+  appendReplayEvent(project.replayRunId, {
+    module: "审批中心",
+    actor: "Founder",
+    businessObject: `ContentProject:${projectId}`,
+    previousState: "Generated",
+    newState: "Pending Approval",
+    inputSummary: `提交审批：${latestVersion.headline}`,
+    outputSummary: `已创建审批事项 ${approvalRequest.id}`,
+  });
+
+  return { ok: true, project: updated, approvalRequest };
+}
+
+/**
+ * 决策一条内容审批事项：批准 → 内容项目跃迁 Approved；驳回/要求
+ * 修改 → 内容项目跃迁 Revision Requested（保留已生成的版本，不
+ * 删除），且都要求填写理由/修改说明。内部复用 approvalMock 的
+ * decideRequest，已经做了"该事项已处理"的幂等校验。
+ */
+export function decideContentApproval(approvalRequestId, decision, note) {
+  if ((decision === "rejected" || decision === "returned") && !note?.trim()) {
+    return { ok: false, error: decision === "rejected" ? "驳回需要填写理由" : "要求修改需要填写修改说明" };
+  }
+
+  const approvalBefore = getApprovalRequest(approvalRequestId);
+  if (!approvalBefore) return { ok: false, error: "审批事项不存在" };
+
+  const result = decideRequest(approvalRequestId, decision, note);
+  if (!result.ok) return result;
+
+  const projectId = approvalBefore.contentProjectId;
+  if (!projectId) return { ok: true, approvalRequest: result.record };
+
+  const project = getContentProject(projectId);
+  if (!project) return { ok: true, approvalRequest: result.record };
+
+  const nextLoopState = decision === "approved" ? "Approved" : "Revision Requested";
+  const check = canTransitionContentProject(project.loopState, nextLoopState);
+  if (!check.ok) return { ok: false, error: check.error };
+
+  const patch = { loopState: nextLoopState };
+  if (decision === "approved") patch.approvedAt = new Date().toISOString();
+  if (decision === "rejected") patch.rejectionReason = note;
+  if (decision === "returned") patch.revisionNote = note;
+
+  const updated = updateProjectLoopState(projectId, patch);
+
+  appendReplayEvent(project.replayRunId, {
+    module: "审批中心",
+    actor: "Founder",
+    businessObject: `ContentProject:${projectId}`,
+    previousState: "Pending Approval",
+    newState: nextLoopState,
+    approvalDecision: decision,
+    outputSummary: note ? `决策：${decision}，说明：${note}` : `决策：${decision}`,
+  });
+
+  return { ok: true, project: updated, approvalRequest: result.record };
+}
+
+/**
+ * 进入发布——Approved → Ready to Publish 的显式一步，对应"发布计划"
+ * 里的发布配置确认（店铺/平台/账号/发布模式/执行模式等在这一步
+ * 之后才允许模拟发布）。
+ */
+export function enterPublishing(projectId) {
+  const project = getContentProject(projectId);
+  if (!project) return { ok: false, error: "内容项目不存在" };
+
+  const check = canTransitionContentProject(project.loopState, "Ready to Publish");
+  if (!check.ok) return { ok: false, error: check.error };
+
+  const updated = updateProjectLoopState(projectId, { loopState: "Ready to Publish" });
+
+  appendReplayEvent(project.replayRunId, {
+    module: "内容中心",
+    actor: "Founder",
+    businessObject: `ContentProject:${projectId}`,
+    previousState: "Approved",
+    newState: "Ready to Publish",
+    outputSummary: "已确认发布配置，进入待发布",
+  });
+
+  return { ok: true, project: updated };
+}
+
+/**
+ * 模拟发布——完整链路：校验审批与连接器状态 → 创建 PublishJob/
+ * PlatformExecution 并推进 Queued → Executing → Succeeded → 内容
+ * 项目跃迁 Published → 生成流量归因（确定性表现数据）→ 生成归因
+ * 订单（幂等）→ 生成客服跟进会话（幂等）。任何一步失败都不会让
+ * 已写入的数据处于矛盾状态——发布任务本身幂等，重复点击不会创建
+ * 第二个 PublishJob/订单/会话。
+ */
+export async function simulatePublish(projectId) {
+  const project = getContentProject(projectId);
+  if (!project) return { ok: false, error: "内容项目不存在" };
+
+  if (project.loopState !== "Ready to Publish") {
+    if (["Published", "Monitoring", "Reviewed"].includes(project.loopState)) {
+      return { ok: false, error: "该内容已发布，请勿重复发布", alreadyExists: true };
+    }
+    if (project.loopState === "Approved") {
+      return { ok: false, error: "请先点击「进入发布」完成发布配置确认" };
+    }
+    return { ok: false, error: "内容尚未通过审批，无法发布" };
+  }
+
+  const latestVersion = project.contentVersions[project.contentVersions.length - 1];
+  const store = DEMO_STORES.find((s) => s.id === project.storeId);
+
+  const connection = await platformExecutionContract.validateConnection(project.storeId, project.targetPlatform);
+  if (!connection.ok) return { ok: false, error: "平台连接器不可用，无法发布" };
+
+  const payload = { storeId: project.storeId, productSku: project.product, contentVersionId: latestVersion.id, platform: project.targetPlatform };
+  const payloadCheck = platformExecutionContract.validatePayload(payload);
+  if (!payloadCheck.ok) return { ok: false, error: payloadCheck.error };
+
+  const { record: publishJob, alreadyExists } = createPublishJob({
+    contentProjectId: projectId,
+    contentVersionId: latestVersion.id,
+    storeId: project.storeId,
+    platform: project.targetPlatform,
+    account: `${store?.name ?? project.storeId} · 官方号`,
+    publishMode: "官方API",
+    executionMode: "assisted_execution",
+    approvalRequestId: project.approvalRequestId,
+  });
+  if (alreadyExists && publishJob.status === "Succeeded") {
+    return { ok: false, error: "该内容版本已发布，请勿重复发布", alreadyExists: true, publishJob };
+  }
+
+  updateProjectLoopState(projectId, { loopState: "Publishing" });
+  updatePublishJob(publishJob.id, { status: "Queued" });
+  const execution = createPlatformExecution({ publishJobId: publishJob.id, contentProjectId: projectId, status: "Queued" });
+
+  await platformExecutionContract.prepareExecution(payload);
+  updatePublishJob(publishJob.id, { status: "Executing" });
+  updatePlatformExecution(execution.id, { status: "Executing" });
+
+  const result = await platformExecutionContract.execute(payload);
+
+  updatePlatformExecution(execution.id, { status: "Succeeded", platformContentId: result.platformContentId, executedAt: result.executedAt });
+  const publishedAt = new Date().toISOString();
+  updatePublishJob(publishJob.id, { status: "Succeeded", publishedAt, platformContentId: result.platformContentId });
+
+  updateProjectLoopState(projectId, { loopState: "Published", publishJobId: publishJob.id, publishedAt });
+
+  appendReplayEvent(project.replayRunId, {
+    module: "内容中心",
+    actor: "系统（模拟发布）",
+    businessObject: `ContentProject:${projectId}`,
+    previousState: "Publishing",
+    newState: "Published",
+    platformExecution: { executionId: execution.id, platformContentId: result.platformContentId },
+    outputSummary: `模拟发布成功，平台内容ID：${result.platformContentId}`,
+  });
+
+  const performance = deterministicPerformanceFor(projectId);
+  createTrafficAttribution({
+    contentProjectId: projectId,
+    contentVersionId: latestVersion.id,
+    platformContentId: result.platformContentId,
+    storeId: project.storeId,
+    ...performance,
+  });
+
+  appendReplayEvent(project.replayRunId, {
+    module: "流量网络中心",
+    actor: "系统（模拟流量归因）",
+    businessObject: `ContentProject:${projectId}`,
+    outputSummary: `播放 ${performance.views}，商品点击 ${performance.productClicks}，归因订单 ${performance.ordersAttributed} 笔`,
+  });
+
+  const product = getProducts().find((p) => p.id === project.productId);
+  const { record: order, alreadyExists: orderAlreadyExists } = createAttributedOrder({
+    storeId: project.storeId,
+    platform: "douyin",
+    product: project.product.split(" ")[0],
+    sku: product?.sku ?? "SKU-LED-005",
+    amount: performance.gmvAttributed,
+    attribution: {
+      trafficSource: "内容自然流量",
+      contentProjectId: projectId,
+      contentVersionId: latestVersion.id,
+      platformContentId: result.platformContentId,
+      campaignSource: null,
+      conversionPath: "短视频 → 商品卡 → 详情页 → 下单",
+      attributedGmv: performance.gmvAttributed,
+    },
+  });
+
+  if (!orderAlreadyExists) {
+    appendReplayEvent(project.replayRunId, {
+      module: "订单中心",
+      actor: "系统（模拟订单归因）",
+      businessObject: `Order:${order.id}`,
+      outputSummary: `已生成归因订单 ${order.orderNumber}，金额 ¥${order.amount}`,
+    });
+  }
+
+  updateProjectLoopState(projectId, { orderId: order.id });
+
+  const { record: conversation, alreadyExists: conversationAlreadyExists } = createConversationForOrder(order, {
+    conversationType: "安装指导",
+    responsibleAgent: "商品问答Agent",
+    riskLevel: "低",
+    suggestedReply: "可以剪裁哦～灯带每3颗灯珠一个剪裁点，剪开后用配套连接头接线即可，电视背后走线建议贴3M背胶固定，不影响正常使用～",
+    customerQuestion: "请问这个灯带可以剪断安装在电视后面吗？会不会剪坏就不亮了？",
+    contentProjectId: projectId,
+    platformLabel: "抖音",
+  });
+
+  if (!conversationAlreadyExists) {
+    appendReplayEvent(project.replayRunId, {
+      module: "客服中心",
+      actor: "系统（模拟客服会话生成）",
+      businessObject: `Conversation:${conversation.id}`,
+      outputSummary: `已生成客户咨询会话：${conversation.customer} · ${conversation.conversationType}`,
+    });
+  }
+
+  updateProjectLoopState(projectId, { conversationId: conversation.id });
+
+  return {
+    ok: true,
+    project: getContentProject(projectId),
+    publishJob,
+    execution,
+    performance,
+    order,
+    conversation,
+  };
+}
+
+/**
+ * 生成复盘——要求发布/订单归因/客服跟进都已经存在，否则明确提示
+ * "还不能生成复盘"而不是渲染空白页。幂等：同一个项目只生成一份
+ * 复盘快照，重复点击返回已存在的快照。复盘会额外产出知识候选
+ * （createKnowledgeCandidate，status: "candidate"），但不会自动
+ * 写入生产 Knowledge——候选需要 Founder 在 Agent 工作室 Knowledge
+ * 资产库里逐条"采纳"或"驳回"。
+ */
+export function generateReview(projectId) {
+  const project = getContentProject(projectId);
+  if (!project) return { ok: false, error: "内容项目不存在" };
+
+  // 幂等：复盘生成后项目会跃迁到 Reviewed，不再满足下面的
+  // Published/Monitoring 前置状态——必须先检查是否已经有复盘快照，
+  // 否则第二次调用会被状态守卫拦在前面，报出一句和真实原因（已经
+  // 生成过复盘）不符的"尚未发布"提示。
+  if (project.reviewSnapshotId) {
+    return { ok: true, project, review: getReviewSnapshotForProject(projectId), alreadyExists: true };
+  }
+  if (!["Published", "Monitoring"].includes(project.loopState)) {
+    return { ok: false, error: "内容尚未发布，暂时无法生成复盘" };
+  }
+  if (!project.orderId || !project.conversationId) {
+    return { ok: false, error: "订单归因或客服跟进尚未完成，暂时无法生成复盘" };
+  }
+
+  const latestVersion = project.contentVersions[project.contentVersions.length - 1];
+  const performance = getTrafficAttributionForProject(projectId);
+  const approval = project.approvalRequestId ? getApprovalRequest(project.approvalRequestId) : null;
+  const trafficRoi = performance ? Number((performance.gmvAttributed / (latestVersion.tokenCost / 1000 * 0.02 + 3)).toFixed(2)) : null;
+
+  const { record: review, alreadyExists } = createReviewSnapshot({
+    contentProjectId: projectId,
+    contentVersionId: latestVersion.id,
+    contentGoal: project.businessGoal,
+    approvalResult: approval?.status ?? "—",
+    publishResult: project.loopState,
+    trafficPerformance: performance,
+    orderConversion: performance?.ordersAttributed ?? 0,
+    attributedGmv: performance?.gmvAttributed ?? 0,
+    customerServiceConversationId: project.conversationId,
+    tokenCost: latestVersion.tokenCost,
+    mockPlatformCostUsd: 0.8,
+    trafficRoi,
+    keyLearning: "开箱即用的安装场景演示能显著降低「是否能剪裁」这类咨询量",
+    recommendedNextAction: "建议追加一条安装 FAQ 切片，并将该演示复用到流量网络中心的运营者分发池",
+    recommendations: [
+      "保留开场前三秒的产品使用场景",
+      "制作一条安装 FAQ 切片",
+      "复用该内容到流量网络中心",
+      "准备一场直播讲解演示",
+      "把安装问答补充进商品知识",
+    ],
+  });
+
+  const updated = updateProjectLoopState(projectId, {
+    loopState: "Reviewed",
+    reviewSnapshotId: review.id,
+    actualResult: performance
+      ? `${performance.views} 播放，归因 ${performance.ordersAttributed} 单，GMV ¥${performance.gmvAttributed}`
+      : project.actualResult,
+  });
+
+  if (alreadyExists) {
+    return { ok: true, project: updated, review, alreadyExists: true };
+  }
+
+  appendReplayEvent(project.replayRunId, {
+    module: "内容中心 · 数据复盘",
+    actor: "Founder",
+    businessObject: `ContentProject:${projectId}`,
+    previousState: "Monitoring",
+    newState: "Reviewed",
+    outputSummary: "已生成业务复盘快照",
+  });
+
+  const candidates = [
+    {
+      candidateType: "内容表现洞察",
+      name: `LED灯带内容表现洞察 · ${new Date().toLocaleDateString("zh-CN")}`,
+      evidence: `播放 ${performance?.views}，完播率 ${Math.round((performance?.completionRate ?? 0) * 100)}%，商品点击 ${performance?.productClicks}`,
+      confidence: "高",
+      riskLevel: "低",
+    },
+    {
+      candidateType: "商品常见问题",
+      name: "LED灯带可剪裁安装 FAQ",
+      evidence: "客户咨询「能否剪断安装在电视后面」，AI 已给出可剪裁 + 3M 背胶固定的标准答复",
+      confidence: "高",
+      riskLevel: "低",
+    },
+    {
+      candidateType: "平台发布经验",
+      name: "抖音氛围感场景开场钩子经验",
+      evidence: "黑屏转亮灯开场的强钩子设计，配合场景化演示，完播率高于历史均值",
+      confidence: "中",
+      riskLevel: "低",
+    },
+  ];
+
+  candidates.forEach((c) => {
+    createKnowledgeCandidate({
+      name: c.name,
+      type: c.candidateType,
+      candidateType: c.candidateType,
+      scope: "category",
+      applicableStore: project.storeId,
+      applicableCategory: project.category,
+      description: c.evidence,
+      content: c.evidence,
+      sourceProjectId: projectId,
+      sourceProjectName: project.name,
+      evidence: c.evidence,
+      confidence: c.confidence,
+      riskLevel: c.riskLevel,
+    });
+  });
+
+  appendReplayEvent(project.replayRunId, {
+    module: "Agent 工作室 · Knowledge",
+    actor: "Founder",
+    businessObject: `ContentProject:${projectId}`,
+    outputSummary: `已从复盘生成 ${candidates.length} 条知识候选，待 Founder 逐条确认`,
+  });
+
+  return { ok: true, project: updated, review, alreadyExists: false };
+}
+
+function isToday(isoString) {
+  if (!isoString) return false;
+  const d = new Date(isoString);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+
+/**
+ * Dashboard 经营闭环摘要（阶段 Founder V4.3）——只统计带 loopState
+ * 的经营闭环项目，不影响旧演示项目的既有统计口径。当前只有一个
+ * golden path 项目，数字大多是 0/1，如实反映"闭环机制已打通"而
+ * 不是伪造一批虚假活跃度。
+ */
+export function getOperatingLoopSummary() {
+  const projects = repository.get().contentProjects.filter((p) => p.loopState);
+  const conversations = projects.filter((p) => p.conversationId).map((p) => getConversation(p.conversationId)).filter(Boolean);
+
+  return {
+    activeContentProjects: projects.filter((p) => !["Archived", "Reviewed"].includes(p.loopState)).length,
+    pendingApprovals: getApprovalRequests().filter((r) => r.type === "content_approval" && r.status === "pending").length,
+    readyToPublish: projects.filter((p) => p.loopState === "Ready to Publish").length,
+    publishedToday: projects.filter((p) => isToday(p.publishedAt)).length,
+    attributedOrders: projects.filter((p) => p.orderId).length,
+    attributedGmv: projects.reduce((sum, p) => sum + (getTrafficAttributionForProject(p.id)?.gmvAttributed ?? 0), 0),
+    openConversations: conversations.filter((c) => c.status !== "已完成").length,
+    humanTakeoverRequests: conversations.filter((c) => ["建议人工接管", "等待人工接管"].includes(c.status)).length,
+    reviewPending: projects.filter((p) => ["Published", "Monitoring"].includes(p.loopState) && !p.reviewSnapshotId).length,
+  };
 }

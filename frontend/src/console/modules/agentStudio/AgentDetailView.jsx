@@ -28,6 +28,7 @@ import {
   updatePromptContent,
 } from "../../mock/promptSkillMock.js";
 import {
+  decideKnowledgeCandidate,
   duplicateKnowledgeAsset,
   getKnowledgeState,
   getScopeLabel,
@@ -537,11 +538,61 @@ function SkillDetail({ skill, onBack }) {
  * Knowledge → Tools → Model 的第三类可复用资产。支持全局/店铺/
  * 类目/Agent 四级绑定，店铺级、类目级优先于全局通用知识。
  * ---------------------------------------------------------------- */
+/**
+ * 知识候选——复盘产出的建议，Founder 逐条"采纳为知识"或"驳回"，
+ * 不会自动写入生产 Knowledge（阶段 Founder V4.3）。采纳后状态变为
+ * published，与其它 Knowledge 资产没有区别；驳回后保留在列表里
+ * 供审计，不物理删除，也不能重复处理。
+ */
+function KnowledgeCandidates({ candidates, onChange, toast }) {
+  if (candidates.length === 0) return null;
+
+  function decide(id, decision) {
+    const result = decideKnowledgeCandidate(id, decision);
+    if (!result.ok) {
+      toast(result.error, "danger");
+      return;
+    }
+    onChange(getKnowledgeState());
+    toast(decision === "approved" ? "已采纳为知识" : "已驳回", "success");
+  }
+
+  return (
+    <div className="fdr-card" style={{ background: "rgba(79,70,229,.06)" }}>
+      <h3 className="fdr-card__title">知识候选（来自复盘，待确认）</h3>
+      <DataTable
+        columns={[
+          { key: "name", label: "名称" },
+          { key: "candidateType", label: "候选类型" },
+          { key: "sourceProjectName", label: "来源项目" },
+          { key: "applicableStore", label: "店铺", render: (r) => (r.applicableStore ? getStoreName(r.applicableStore) : "全部店铺") },
+          { key: "evidence", label: "证据" },
+          { key: "confidence", label: "置信度" },
+          { key: "riskLevel", label: "风险" },
+          {
+            key: "actions",
+            label: "操作",
+            render: (r) => (
+              <div style={{ display: "flex", gap: 6 }}>
+                <Button size="sm" variant="primary" onClick={() => decide(r.id, "approved")}>采纳为知识</Button>
+                <Button size="sm" variant="secondary" onClick={() => decide(r.id, "rejected")}>驳回</Button>
+              </div>
+            ),
+          },
+        ]}
+        rows={candidates}
+      />
+    </div>
+  );
+}
+
 function KnowledgeLibraryTab() {
   const [state, setState] = useState(() => getKnowledgeState());
   const [selectedId, setSelectedId] = useState(null);
   const toast = useToast();
   const selected = selectedId ? state.assets.find((a) => a.id === selectedId) : null;
+  const candidates = state.assets.filter((a) => a.status === "candidate");
+  const publishedAssets = state.assets.filter((a) => a.status !== "candidate" && a.status !== "rejected");
 
   if (selected) {
     return (
@@ -555,23 +606,26 @@ function KnowledgeLibraryTab() {
   }
 
   return (
-    <div className="fdr-card">
-      <DataTable
-        columns={[
-          { key: "name", label: "名称" },
-          { key: "type", label: "类型" },
-          { key: "scope", label: "绑定层级", render: (r) => <StatusPill tone={r.scope === "global" ? "neutral" : "info"}>{getScopeLabel(r.scope)}</StatusPill> },
-          { key: "applicableStore", label: "适用店铺", render: (r) => (r.applicableStore ? getStoreName(r.applicableStore) : "全部店铺") },
-          { key: "applicableCategory", label: "适用类目", render: (r) => r.applicableCategory ?? "不限类目" },
-          { key: "linked", label: "关联 Agent", render: (r) => { const linked = computeLinkedForKnowledge(r.id); return linked.length ? linked.join("、") : "暂无引用"; } },
-          { key: "version", label: "版本", render: (r) => `v${r.version}` },
-          { key: "status", label: "状态", render: (r) => <StatusPill tone={r.status === "published" ? "success" : "neutral"}>{r.status === "published" ? "已发布" : "草稿"}</StatusPill> },
-          { key: "updatedAt", label: "最近更新", render: (r) => new Date(r.updatedAt).toLocaleDateString("zh-CN") },
-        ]}
-        rows={state.assets}
-        onRowClick={(row) => setSelectedId(row.id)}
-        emptyMessage={<EmptyState icon="▤" message="暂无 Knowledge 资产" />}
-      />
+    <div>
+      <KnowledgeCandidates candidates={candidates} onChange={setState} toast={toast} />
+      <div className="fdr-card">
+        <DataTable
+          columns={[
+            { key: "name", label: "名称" },
+            { key: "type", label: "类型" },
+            { key: "scope", label: "绑定层级", render: (r) => <StatusPill tone={r.scope === "global" ? "neutral" : "info"}>{getScopeLabel(r.scope)}</StatusPill> },
+            { key: "applicableStore", label: "适用店铺", render: (r) => (r.applicableStore ? getStoreName(r.applicableStore) : "全部店铺") },
+            { key: "applicableCategory", label: "适用类目", render: (r) => r.applicableCategory ?? "不限类目" },
+            { key: "linked", label: "关联 Agent", render: (r) => { const linked = computeLinkedForKnowledge(r.id); return linked.length ? linked.join("、") : "暂无引用"; } },
+            { key: "version", label: "版本", render: (r) => `v${r.version}` },
+            { key: "status", label: "状态", render: (r) => <StatusPill tone={r.status === "published" ? "success" : "neutral"}>{r.status === "published" ? "已发布" : "草稿"}</StatusPill> },
+            { key: "updatedAt", label: "最近更新", render: (r) => new Date(r.updatedAt).toLocaleDateString("zh-CN") },
+          ]}
+          rows={publishedAssets}
+          onRowClick={(row) => setSelectedId(row.id)}
+          emptyMessage={<EmptyState icon="▤" message="暂无 Knowledge 资产" />}
+        />
+      </div>
     </div>
   );
 }
