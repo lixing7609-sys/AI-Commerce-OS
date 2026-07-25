@@ -49,9 +49,16 @@ UNIVERSAL_FORBIDDEN_FILENAME_SUBSTRINGS = (
 # 模块"。真正的按 Edition 拆分入口、产出独立 dist/，是 ADR-0002
 # Migration Plan Phase 3 的工作，不在这一轮范围内。
 FRONTEND_INCLUDE_PREFIXES = {
+    # frontend/src/shared/ 是阶段"Agent Evolution + 三版最终定位"新增
+    # 的公共层（Edition Policy、Agent Evolution 领域 mock、
+    # localRepository 基础设施）——Founder(console/)、Operator
+    # (operator-preview/)、Cloud(cloud/) 都被允许依赖它，所以三个
+    # Edition 的 include 清单都要显式列出它，而不是让 operator 的
+    # 发行包意外漏掉这一层。
     "operator": (
         "frontend/src/editions/",
         "frontend/src/operator-preview/",
+        "frontend/src/shared/",
         "frontend/src/index.css",
         "frontend/src/styles/",
     ),

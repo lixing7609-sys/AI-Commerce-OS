@@ -6,12 +6,20 @@ afterEach(() => {
 });
 
 describe("getActiveEdition", () => {
-  it("defaults to developer when nothing is configured (legacy behavior unchanged)", () => {
-    expect(getActiveEdition("")).toBe(EDITIONS.DEVELOPER);
+  it("defaults to Operator Cloud when nothing is configured (bare URL now represents the platform-owner console)", () => {
+    expect(getActiveEdition("")).toBe(EDITIONS.OPERATOR_CLOUD);
   });
 
   it("falls back to the existing ?mode=operator-preview URL override", () => {
     expect(getActiveEdition("?mode=operator-preview")).toBe(EDITIONS.OPERATOR);
+  });
+
+  it("resolves ?mode=founder to Founder Edition", () => {
+    expect(getActiveEdition("?mode=founder")).toBe(EDITIONS.FOUNDER_OPERATOR);
+  });
+
+  it("preserves explicit access to the legacy Developer/Task Center workspace via ?mode=developer", () => {
+    expect(getActiveEdition("?mode=developer")).toBe(EDITIONS.DEVELOPER);
   });
 
   it("prefers VITE_EDITION over the URL override when both are present", () => {
@@ -34,8 +42,12 @@ describe("getActiveEdition", () => {
     expect(getActiveEdition("")).toBe(EDITIONS.OPERATOR);
   });
 
-  it("safely falls back to developer for an unknown VITE_EDITION value", () => {
+  it("safely falls back to the Operator Cloud default for an unknown VITE_EDITION value", () => {
     vi.stubEnv("VITE_EDITION", "not-a-real-edition");
-    expect(getActiveEdition("")).toBe(EDITIONS.DEVELOPER);
+    expect(getActiveEdition("")).toBe(EDITIONS.OPERATOR_CLOUD);
+  });
+
+  it("safely falls back to the Operator Cloud default for an unknown ?mode= value", () => {
+    expect(getActiveEdition("?mode=not-a-real-mode")).toBe(EDITIONS.OPERATOR_CLOUD);
   });
 });
