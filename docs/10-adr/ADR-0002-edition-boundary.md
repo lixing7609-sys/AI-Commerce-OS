@@ -12,6 +12,16 @@ owner: Chief Software Architect
 
 Accepted
 
+**Product naming note (2026-07-25):** the *technical* boundary mechanism below (Core Principles,
+Permission Boundary, Build Boundary, Data Ownership Matrix, Prohibitions) remains fully in force
+unchanged. The *product-identity* layer — which edition is called what, and who it is for — is
+now maintained in
+[edition-architecture.md](../01-reference-architecture/edition-architecture.md), which adds the
+Founder Edition (created after this ADR was written) and repositions this ADR's Developer Edition
+toward its final identity as Operator Cloud. See that document's §0 for the exact mapping. This
+ADR's Four Edition Definitions below are kept as the historical record of this decision and remain
+accurate for Operator Edition and Device Admin Edition.
+
 ---
 
 ## Context
