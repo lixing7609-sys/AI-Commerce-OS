@@ -10,7 +10,10 @@ Date
 
 Status
 
-Frozen (product positioning)
+Frozen (product positioning), amended 2026-07-26 — see §12. The identity statements in §1–§9 are
+unchanged; §12 records what the "Agent Evolution + three-edition final positioning" task actually
+built on top of that identity (default route, Cloud Console, Agent Evolution Foundation, Edition
+Policy), superseding specific bullets in §11 without deleting them.
 
 Scope
 
@@ -269,22 +272,44 @@ Edition; it is explicitly not started by this task.
 
 ## 11. Deferred work
 
-Not implemented by this task, recorded here as direction only:
+Not implemented by this task (2026-07-25 revision), recorded here as direction only. **Update
+2026-07-26 (§12): the second and third bullets below are now implemented** — the historical
+bullets are kept for record, not deleted; see §12 for what actually shipped and what is still
+deferred after it.
 
 - The Core Domain / Agent Runtime / Workflow Engine / Platform Connectors / Shared Business UI /
   Edition Policy / Founder Shell / Operator Shell / Cloud Console split (§6). Today the three
   entry points (`App.jsx`, `OperatorPreviewApp.jsx`, `ConsoleApp.jsx`) are separate top-level
   React trees selected at runtime by `main.jsx`, not yet factored into shared shells over a common
-  Edition Policy layer.
+  Edition Policy layer. **Still deferred** — §12 adds a real `shared/editionPolicy.js` and a real
+  `shared/agentEvolution/` domain layer, but the full Core/Runtime/Connector split remains
+  direction-only.
 - Renaming the `/` entry point's code identity from Developer to Operator Cloud, or building any
-  Operator Cloud UI (Tenant/Device/License/Token Metering/OTA/Support domains, §7).
+  Operator Cloud UI (Tenant/Device/License/Token Metering/OTA/Support domains, §7). **Implemented**
+  — `/` now renders `frontend/src/cloud/CloudConsoleApp.jsx`; see §12.
 - Graduating `operator-preview/` out of prototype status (already tracked as Migration Plan Phase
-  1 in ADR-0002 — unchanged, still pending).
+  1 in ADR-0002 — unchanged, still pending). **Partially addressed** — a new AI Growth page was
+  added inside it (§12) without changing its overall prototype status.
 - The Device Admin frontend (ADR-0002 Migration Plan Phase 2 — unchanged, still pending).
 - Per-edition build/package pipeline and JS bundle splitting (ADR-0002 Migration Plan Phase 3 —
   unchanged, still pending).
 - Founder Edition real-store integration (Priority 1, §8) — the next active work, not started
   here.
+
+---
+
+## 12. Relationship to the Agent Evolution Foundation
+
+[agent-evolution-foundation.md](agent-evolution-foundation.md) records the concrete work done by
+the "Agent Evolution + three-edition final positioning" task (2026-07-26): a shared
+`editionPolicy.js` that actually gates UI actions per edition (not just a document), a shared
+`agentEvolution/evolutionMock.js` domain layer (memory, reflection, learning candidates,
+evaluation, experiment, promotion, rollback, purification, cost intelligence) consumed by Founder's
+Agent Studio, Operator's new AI Growth page, and — for device/OTA/support concerns — Operator
+Cloud's console. It also flips the default `/` route from Developer to Operator Cloud, per §3 and
+§11. It does not implement the full Core/Runtime/Connector split (§6, §11) — that remains direction
+only — but it does give Founder, Operator and Operator Cloud a first real, shared, tested
+foundation to derive future work from instead of three independent mock islands.
 
 ---
 
@@ -301,7 +326,11 @@ Not implemented by this task, recorded here as direction only:
 - `founder-v4-3-operating-loop.md` — Founder Edition's first real operating-loop demonstration
   (§10).
 - `frontend/src/editions/editionConfig.js` — the runtime edition-selection code this document
-  describes the product identity of, unchanged by this task.
+  describes the product identity of; modified by the 2026-07-26 task to make Operator Cloud the
+  default edition (§12).
+- [agent-evolution-foundation.md](agent-evolution-foundation.md) — the Agent Evolution Foundation,
+  memory model, controlled evolution levels, cost intelligence and Edition Policy implementation
+  (§12).
 
 ---
 
