@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# `npm run bootstrap:stop` — stops ONLY the processes this bootstrap
-# started itself, identified by the PID files it wrote. Never uses a
-# broad command like `pkill node` / `killall node` / broad Docker
-# shutdown, and never touches a process whose PID file is missing or
-# whose PID no longer matches a live process (that means it either was
-# never bootstrap-owned, or already exited).
+# `npm run bootstrap:stop` — stops ONLY the launchd jobs this bootstrap
+# registered (com.aicommerceos.dev.frontend/backend/testwatch), via
+# `launchctl bootout`. Never uses a broad command like `pkill node` /
+# `killall node` / broad Docker shutdown, and never touches a process
+# it does not own — an externally-owned service reusing the port is left
+# completely alone (there is no launchd job for it to bootout).
+#
+# Also cleans up legacy PID files from the pre-launchd nohup model, if
+# any are still lying around from before this revision — best-effort,
+# not the primary mechanism.
 
 set -euo pipefail
 
@@ -12,42 +16,68 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./developer-bootstrap-config.sh
 source "${SCRIPT_DIR}/developer-bootstrap-config.sh"
 
-stop_by_pid_file() {
-  # $1 = pid file, $2 = human label
-  local pid_file="$1" label="$2"
+stop_launchd_service() {
+  # $1 = label, $2 = human label
+  local label="$1" human="$2"
+  if ! launchd_loaded "${label}"; then
+    bootstrap_log INFO "${human}: nothing to stop (no bootstrap-owned launchd job registered)"
+    return 0
+  fi
+  bootstrap_log INFO "${human}: stopping launchd job '${label}'"
+  launchd_stop "${label}"
+  # `launchctl bootout` unregisters asynchronously — launchd_loaded can
+  # briefly still report the job as loaded for a moment afterwards, so
+  # poll a few times before treating that as a genuine problem.
+  local still_loaded=true i=0
+  for i in 1 2 3 4 5 6; do
+    if ! launchd_loaded "${label}"; then
+      still_loaded=false
+      break
+    fi
+    sleep 0.5
+  done
+  if $still_loaded; then
+    bootstrap_log WARN "${human}: job '${label}' still reports loaded after bootout — investigate manually with 'launchctl print ${LAUNCHD_DOMAIN}/${label}'"
+  else
+    bootstrap_log INFO "${human}: stopped"
+  fi
+}
+
+stop_legacy_pid_file() {
+  # $1 = pid file, $2 = human label. Best-effort cleanup only.
+  local pid_file="$1" human="$2"
   if ! pid_alive "${pid_file}"; then
-    bootstrap_log INFO "${label}: nothing to stop (no live bootstrap-owned process on record)"
     [ -f "${pid_file}" ] && rm -f "${pid_file}"
     return 0
   fi
   local pid
   pid="$(cat "${pid_file}")"
-  bootstrap_log INFO "${label}: stopping pid ${pid}"
+  bootstrap_log INFO "${human}: found a legacy (pre-launchd) process, pid ${pid} — stopping it"
   kill "${pid}" 2>/dev/null || true
   for _ in $(seq 1 10); do
     kill -0 "${pid}" >/dev/null 2>&1 || break
     sleep 0.5
   done
-  if kill -0 "${pid}" >/dev/null 2>&1; then
-    bootstrap_log WARN "${label}: pid ${pid} did not exit after SIGTERM — leaving it running rather than force-killing. Investigate manually if needed."
-  else
-    bootstrap_log INFO "${label}: stopped"
-    rm -f "${pid_file}"
-  fi
+  rm -f "${pid_file}"
 }
 
 echo "=============================================================="
 echo " AI Commerce OS — Developer Bootstrap stop"
 echo "=============================================================="
 
-stop_by_pid_file "${FRONTEND_PID_FILE}" "frontend"
-stop_by_pid_file "${BACKEND_PID_FILE}" "backend"
-stop_by_pid_file "${TESTWATCH_PID_FILE}" "test watcher"
+stop_launchd_service "${FRONTEND_LABEL}" "frontend"
+stop_launchd_service "${BACKEND_LABEL}" "backend"
+stop_launchd_service "${TESTWATCH_LABEL}" "test watcher"
+
+stop_legacy_pid_file "${FRONTEND_PID_FILE}" "frontend (legacy)"
+stop_legacy_pid_file "${BACKEND_PID_FILE}" "backend (legacy)"
+stop_legacy_pid_file "${TESTWATCH_PID_FILE}" "test watcher (legacy)"
 
 rm -f "${SESSION_FILE}"
 
 echo ""
-echo "Note: ports still showing a listener above (if any) belong to a"
-echo "process this bootstrap did not start (e.g. one you launched by hand,"
-echo "or a leftover from before you ran 'npm run bootstrap'). This script"
-echo "never stops processes it does not have a recorded PID for."
+echo "Note: a port still showing as occupied after this (check with"
+echo "'npm run bootstrap:status') belongs to a process this bootstrap"
+echo "does not own — e.g. one you started by hand outside launchd. This"
+echo "script never stops a process it does not have a launchd job or"
+echo "recorded PID for."

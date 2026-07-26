@@ -6,6 +6,8 @@
   "scripts": {
     "bootstrap": "bash scripts/developer-bootstrap.sh",
     "bootstrap:status": "bash scripts/developer-bootstrap-status.sh",
-    "bootstrap:stop": "bash scripts/developer-bootstrap-stop.sh"
+    "bootstrap:stop": "bash scripts/developer-bootstrap-stop.sh",
+    "bootstrap:restart": "bash scripts/developer-bootstrap-restart.sh",
+    "launcher:test": "bash scripts/developer-launcher-selftest.sh"
   }
 }
