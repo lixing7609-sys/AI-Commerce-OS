@@ -1001,13 +1001,17 @@ function RollbackPanel({ agentName, onChange, reason, setReason }) {
           { key: "status", label: "状态", render: (r) => <StatusPill tone={r.status === "stable" ? "success" : "neutral"}>{r.status}</StatusPill> },
           { key: "createdAt", label: "创建时间", render: (r) => new Date(r.createdAt).toLocaleString("zh-CN") },
           {
-            key: "actions", label: "操作", render: (r) => (
-              r.status === "archived"
-                ? hasPolicy(EDITIONS.FOUNDER, POLICY_KEYS.EVOLUTION_ROLLBACK)
+            key: "actions", label: "操作", render: (r) => {
+              if (r.status === "archived") {
+                return hasPolicy(EDITIONS.FOUNDER, POLICY_KEYS.EVOLUTION_ROLLBACK)
                   ? <Button size="sm" variant="secondary" onClick={() => handleRollback(r.id)}>回滚到此版本</Button>
-                  : <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>无回滚权限</span>
-                : <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>当前稳定</span>
-            ),
+                  : <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>无回滚权限</span>;
+              }
+              if (r.status === "stable") {
+                return <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>当前稳定</span>;
+              }
+              return <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>未晋升（{r.status}）</span>;
+            },
           },
         ]}
         rows={versions}
