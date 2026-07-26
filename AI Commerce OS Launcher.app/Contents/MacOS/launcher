@@ -1,0 +1,127 @@
+#!/bin/bash
+# AI Commerce OS Launcher — double-click entry point.
+#
+# Root cause of the previous version's "no visible effect": it called
+# `npm run dev` and `npm run test:watch` directly from the repository
+# root, but neither script exists in the root package.json (only
+# frontend/package.json has "dev" — the root package.json only defines
+# the canonical bootstrap commands). Those calls failed immediately with
+# "npm error Missing script".
+#
+# A second, real cause was found by testing this exact bundle via
+# `open` (the same LaunchServices path Finder uses for a double-click,
+# see docs/09-runbooks/developer-bootstrap.md for the full writeup):
+# this app bundle is unsigned and has never been granted macOS
+# Automation permission to control Terminal.app, so `tell application
+# "Terminal"` fails outright on a fresh machine — a real, by-design
+# macOS security boundary (System Settings > Privacy & Security >
+# Automation), not something to bypass in code. A silent failure here
+# is unacceptable, so this script does not depend on that permission
+# working: it always runs the canonical `npm run bootstrap` — the same
+# command documented in docs/09-runbooks/developer-bootstrap.md, no
+# separate startup logic lives here — and only *additionally* opens a
+# Terminal window with live progress if Automation permission allows
+# it. Either way, services end up running as launchd user LaunchAgents
+# (so they survive independent of this app and of Terminal), and this
+# script always ends with a native, visible success/failure notification
+# (Notification Center banner, not a blocking modal dialog — a modal
+# `display alert` would sit there requiring a click before this script
+# can finish, which is worse UX for a background launcher and made
+# automated verification of this exact bundle hang during development).
+
+set -u
+
+APP_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+PROJECT_DIR="$APP_DIR"
+LAUNCHER_LOG_DIR="$PROJECT_DIR/.runtime/dev-bootstrap/logs"
+LAUNCHER_LOG="$LAUNCHER_LOG_DIR/launcher.log"
+FRONTEND_URL="http://localhost:5173/"
+
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LAUNCHER_LOG" 2>/dev/null
+}
+
+notify() {
+  # $1 = title, $2 = message. Non-blocking Notification Center banner —
+  # never requires a click, so it can never hang the launcher or an
+  # automated test of it, and it stays in Notification Center if missed.
+  /usr/bin/osascript -e "display notification \"$2\" with title \"$1\"" >/dev/null 2>&1
+}
+
+mkdir -p "$LAUNCHER_LOG_DIR" 2>/dev/null
+log "Launcher invoked. resolved repository path: $PROJECT_DIR"
+
+if [ ! -f "$PROJECT_DIR/package.json" ] || [ ! -d "$PROJECT_DIR/scripts" ]; then
+  log "ERROR: resolved path does not look like the AI Commerce OS repository (missing package.json or scripts/): $PROJECT_DIR"
+  notify "AI Commerce OS Launcher — Error" "Could not find the repository at the resolved path. See .runtime/dev-bootstrap/logs/launcher.log."
+  exit 1
+fi
+
+# --- Attempt 1: open a visible Terminal window running the canonical
+# bootstrap command (best experience — live progress, stays open on
+# error). Requires macOS Automation permission for Terminal.app.
+ESCAPED_PROJECT_DIR=${PROJECT_DIR//\\/\\\\}
+ESCAPED_PROJECT_DIR=${ESCAPED_PROJECT_DIR//\"/\\\"}
+
+# Kept deliberately plain-ASCII and simple: an earlier version embedded
+# Chinese text and an em-dash directly in this AppleScript string and
+# hit a real (reproduced) AppleScript parse error, most likely from
+# multi-byte UTF-8 characters interacting with AppleScript's own string
+# escaping inside an already bash-heredoc-processed string. The actual
+# bootstrap script's own (Chinese-language) output is what the user
+# sees once it runs — this wrapper string only needs to invoke it.
+TERMINAL_OPENED=false
+if /usr/bin/osascript <<APPLESCRIPT >/dev/null 2>>"$LAUNCHER_LOG"
+set projectDir to "$ESCAPED_PROJECT_DIR"
+set quotedProjectDir to quoted form of projectDir
+tell application "Terminal"
+    activate
+    do script "cd " & quotedProjectDir & " && echo 'AI Commerce OS Launcher' && echo 'repo:' && pwd && echo '' && npm run bootstrap; echo ''; echo 'bootstrap exit status:' \$?; echo 'Press Enter to close this window'; read _"
+end tell
+APPLESCRIPT
+then
+  TERMINAL_OPENED=true
+  log "Terminal window opened, handed off to npm run bootstrap."
+else
+  log "osascript could not drive Terminal.app (likely Automation permission not yet granted: System Settings > Privacy & Security > Automation > AI Commerce OS Launcher > Terminal). Falling back to a headless bootstrap run so services start regardless."
+fi
+
+# --- Attempt 2 (fallback, always also useful as the "did it actually
+# work" source of truth): run bootstrap headlessly from here and wait
+# for readiness, so a double-click always starts the services even if
+# Terminal automation is blocked. `npm run bootstrap` is itself
+# idempotent, so if Attempt 1 already started everything, this either
+# no-ops (already running) or simply confirms readiness.
+if ! $TERMINAL_OPENED; then
+  ( cd "$PROJECT_DIR" && npm run bootstrap -- --no-claude >> "$LAUNCHER_LOG" 2>&1 )
+  BOOTSTRAP_STATUS=$?
+  log "Headless bootstrap run finished with status $BOOTSTRAP_STATUS."
+fi
+
+# --- Wait for frontend readiness (covers both attempts) and report a
+# clear, visible result either way — never a silent no-op.
+READY=false
+for _ in $(seq 1 30); do
+  if /usr/bin/curl -s -o /dev/null -m 2 "$FRONTEND_URL"; then
+    READY=true
+    break
+  fi
+  sleep 1
+done
+
+if $READY; then
+  log "Frontend confirmed ready at $FRONTEND_URL."
+  if $TERMINAL_OPENED; then
+    notify "AI Commerce OS" "Services starting — see the Terminal window for live progress. Frontend already responding at $FRONTEND_URL."
+  else
+    notify "AI Commerce OS" "Services started (headless — Terminal automation permission unavailable, see launcher.log). Frontend ready at $FRONTEND_URL."
+    /usr/bin/open "$FRONTEND_URL" >/dev/null 2>&1
+    /usr/bin/open "${FRONTEND_URL}?mode=operator-preview" >/dev/null 2>&1
+    /usr/bin/open "${FRONTEND_URL}?mode=founder&module=secretary" >/dev/null 2>&1
+  fi
+  exit 0
+else
+  log "ERROR: frontend did not become ready within 30s."
+  notify "AI Commerce OS Launcher — Error" "Startup did not finish in time. Check .runtime/dev-bootstrap/logs/launcher.log or run 'npm run bootstrap:status'."
+  exit 1
+fi
