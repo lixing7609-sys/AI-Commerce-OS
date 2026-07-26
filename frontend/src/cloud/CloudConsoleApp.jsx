@@ -12,6 +12,8 @@ import {
   retryOtaRelease,
 } from "./mock/cloudMock.js";
 import { EDITIONS, POLICY_KEYS, hasPolicy } from "../shared/editionPolicy.js";
+import { ErrorBoundary } from "../shared/ErrorBoundary.jsx";
+import { NAV_ITEMS } from "./navConfig.js";
 
 /**
  * Operator Cloud 控制台（阶段：三版最终定位）——裸 URL
@@ -25,15 +27,6 @@ import { EDITIONS, POLICY_KEYS, hasPolicy } from "../shared/editionPolicy.js";
  * 沿用仓库现有惯例：useState("activePage") 做导航，不引入路由库
  * （与 App.jsx / OperatorPreviewApp.jsx 一致）。
  */
-
-const NAV_ITEMS = [
-  { key: "overview", label: "总览", icon: "◆" },
-  { key: "operators", label: "经营者", icon: "◐" },
-  { key: "devices", label: "设备", icon: "▣" },
-  { key: "licenses", label: "许可与套餐", icon: "☑" },
-  { key: "tokenMetering", label: "Token 计量", icon: "◔" },
-  { key: "otaSupport", label: "OTA 与支持", icon: "⟲" },
-];
 
 const HEALTH_LABEL = { healthy: "健康", attention: "需关注", offline: "离线" };
 const HEALTH_TONE = { healthy: "success", attention: "warning", offline: "danger" };
@@ -339,6 +332,34 @@ function OtaSupportPage() {
   );
 }
 
+function cloudErrorFallback(error, retry) {
+  return (
+    <div className="cc-empty">
+      <div>该页面渲染失败</div>
+      {import.meta.env.DEV ? (
+        <div style={{ fontSize: 11, marginTop: 4, fontFamily: "monospace" }}>{String(error?.message ?? error)}</div>
+      ) : null}
+      <div style={{ marginTop: 10 }}>
+        <button type="button" className="cc-btn" onClick={retry}>重试</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * key -> 渲染函数的唯一映射，CloudConsoleShell 从这里查表渲染当前
+ * 页面——与 Founder 的 console/moduleRegistry.jsx、Operator 的
+ * pageRegistry.jsx 同一个原则，key 必须和上面 NAV_ITEMS 完全对应。
+ */
+const PAGE_COMPONENTS = {
+  overview: ({ navigate }) => <OverviewPage navigate={navigate} />,
+  operators: ({ navigate }) => <OperatorsPage navigate={navigate} />,
+  devices: ({ params }) => <DevicesPage filterOperatorId={params.operatorId} />,
+  licenses: () => <LicensesPage />,
+  tokenMetering: () => <TokenMeteringPage />,
+  otaSupport: () => <OtaSupportPage />,
+};
+
 function CloudConsoleShell() {
   const [activePage, setActivePage] = useState("overview");
   const [params, setParams] = useState({});
@@ -380,12 +401,16 @@ function CloudConsoleShell() {
           </div>
           <span className="cc-badge-demo">演示数据</span>
         </div>
-        {activePage === "overview" && <OverviewPage navigate={navigate} />}
-        {activePage === "operators" && <OperatorsPage navigate={navigate} />}
-        {activePage === "devices" && <DevicesPage filterOperatorId={params.operatorId} />}
-        {activePage === "licenses" && <LicensesPage />}
-        {activePage === "tokenMetering" && <TokenMeteringPage />}
-        {activePage === "otaSupport" && <OtaSupportPage />}
+        <ErrorBoundary key={activePage} renderFallback={cloudErrorFallback}>
+          {(() => {
+            const PageComponent = PAGE_COMPONENTS[activePage];
+            return PageComponent ? (
+              <PageComponent navigate={navigate} params={params} />
+            ) : (
+              <div className="cc-empty">未找到页面{activePage ? `“${activePage}”` : ""}</div>
+            );
+          })()}
+        </ErrorBoundary>
       </main>
     </div>
   );
