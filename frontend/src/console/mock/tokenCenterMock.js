@@ -70,6 +70,49 @@ function seedBurnTrend() {
   return days.map((date, idx) => ({ date, consumed: 900 + idx * 220 + (idx % 2 === 0 ? 300 : 0) }));
 }
 
+/**
+ * 成本智能——回答"哪个 Agent/任务/模型花得最多"，与上面的账本/
+ * 计费视图互补：账本回答"钱去哪了"，这里回答"值不值"。
+ */
+function seedUsageByAgent() {
+  return [
+    { agent: "脚本Agent", tokens: 9301, costUsd: 3.2, tasksToday: 56 },
+    { agent: "内容策略Agent", tokens: 6200, costUsd: 2.1, tasksToday: 88 },
+    { agent: "AI CEO", tokens: 4100, costUsd: 1.6, tasksToday: 10 },
+    { agent: "多模态生产Agent", tokens: 3900, costUsd: 1.4, tasksToday: 114 },
+    { agent: "直播策划Agent", tokens: 3600, costUsd: 3.9, tasksToday: 79 },
+  ];
+}
+
+function seedUsageByTaskType() {
+  return [
+    { taskType: "商品短视频脚本生成", tokens: 9301, avgCostUsd: 0.42, runsToday: 8 },
+    { taskType: "直播策划文案", tokens: 5400, avgCostUsd: 0.58, runsToday: 12 },
+    { taskType: "客服问答", tokens: 4460, avgCostUsd: 0.06, runsToday: 118 },
+    { taskType: "经营分析简报", tokens: 6200, avgCostUsd: 1.6, runsToday: 1 },
+  ];
+}
+
+function seedUsageByModel() {
+  return [
+    { model: "Claude Sonnet 5", tokens: 15600, costUsd: 5.9, share: 0.55 },
+    { model: "GPT-5", tokens: 6200, costUsd: 2.6, share: 0.22 },
+    { model: "DeepSeek V3", tokens: 4200, costUsd: 0.4, share: 0.15 },
+    { model: "本地模型（Ollama）", tokens: 2300, costUsd: 0, share: 0.08 },
+  ];
+}
+
+function seedExpensiveTaskWarnings() {
+  return [
+    {
+      id: "warn-1",
+      taskType: "商品短视频脚本生成",
+      detail: "固定路由到 Claude Sonnet 5，单次成本 $0.42，高于同类中低复杂度任务的合理区间",
+      relatedLearningCandidateAgent: "脚本Agent",
+    },
+  ];
+}
+
 function seedRechargeHistory() {
   return [
     { id: nextMockId("tkrc"), amount: 1500, method: "对公转账", createdAt: new Date(Date.now() - 12 * 86400000).toISOString(), note: "实付充值" },
@@ -80,11 +123,17 @@ function seedRefundHistory() {
   return [];
 }
 
-const repository = createLocalRepository("tokenCenter.state", () => ({
+// v2：新增成本智能相关字段（按 Agent/任务类型/模型的消耗、高成本
+// 任务提醒）。key 带版本号，理由同 adCenterMock.js 的同一模式。
+const repository = createLocalRepository("tokenCenter.state.v2", () => ({
   account: seedAccount(),
   ledger: seedLedger(),
   pricing: seedPricing(),
   burnTrend: seedBurnTrend(),
+  usageByAgent: seedUsageByAgent(),
+  usageByTaskType: seedUsageByTaskType(),
+  usageByModel: seedUsageByModel(),
+  expensiveTaskWarnings: seedExpensiveTaskWarnings(),
   rechargeHistory: seedRechargeHistory(),
   refundHistory: seedRefundHistory(),
   originalPaymentAccount: "对公账户 · 招商银行（尾号 6688）",
