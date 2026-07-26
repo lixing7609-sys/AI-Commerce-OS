@@ -310,6 +310,19 @@ uv run alembic upgrade head
 
 ---
 
+# Daily Development Startup
+
+```bash
+npm run bootstrap
+```
+
+Run from the repository root after any Mac restart — starts the frontend (and the backend, if
+Postgres is reachable), a test watcher, opens a four-terminal workflow, and opens all three
+edition URLs. See [docs/09-runbooks/developer-bootstrap.md](docs/09-runbooks/developer-bootstrap.md)
+for the full guide, `npm run bootstrap:status` / `npm run bootstrap:stop`, and troubleshooting.
+
+---
+
 # License
 
 MIT
