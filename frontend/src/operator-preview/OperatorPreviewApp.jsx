@@ -5,18 +5,34 @@ import OperatorNav from "./components/OperatorNav";
 import SecretaryPanel from "./components/SecretaryPanel";
 import { PreviewProvider } from "./helpers/PreviewContext";
 import { usePreview } from "./helpers/previewContextCore";
-import { getNavItemByKey } from "./helpers/navigation";
+import { getNavItemByKey, isValidNavKey } from "./helpers/navigation";
 import { scopeLabelFor } from "./helpers/formatters";
-
-import DashboardPage from "./pages/DashboardPage";
-import ShopsPage from "./pages/ShopsPage";
-import SecretaryPage from "./pages/SecretaryPage";
-import DeliverablesPage from "./pages/DeliverablesPage";
-import BusinessMemoryPage from "./pages/BusinessMemoryPage";
-import AIGrowthPage from "./pages/AIGrowthPage";
-import SettingsPage from "./pages/SettingsPage";
+import { ErrorBoundary } from "../shared/ErrorBoundary.jsx";
+import { PAGE_COMPONENTS } from "./pageRegistry.jsx";
 
 const COMPANY_NAME = "一人公司";
+
+function renderErrorFallback(error, retry) {
+  return (
+    <div className="op-empty-state large">
+      <div>页面渲染失败</div>
+      {import.meta.env.DEV ? (
+        <div style={{ fontSize: 12, marginTop: 4, fontFamily: "monospace" }}>{String(error?.message ?? error)}</div>
+      ) : null}
+      <div style={{ marginTop: 12 }}>
+        <button type="button" className="op-btn" onClick={retry}>重试</button>
+      </div>
+    </div>
+  );
+}
+
+function UnknownPageState({ pageKey }) {
+  return (
+    <div className="op-empty-state large">
+      <div>未找到页面{pageKey ? `“${pageKey}”` : ""}</div>
+    </div>
+  );
+}
 
 function OperatorPreviewShell() {
   const [activePage, setActivePage] = useState("dashboard");
@@ -34,14 +50,10 @@ function OperatorPreviewShell() {
 
   const scopeLabel = scopeLabelFor(shopScope, shops);
   const activeNavItem = getNavItemByKey(activePage);
+  const PageComponent = isValidNavKey(activePage) ? PAGE_COMPONENTS[activePage] : null;
 
   return (
     <div className="op-shell">
-      <div className="op-preview-banner">
-        <strong>经营者版产品原型</strong>
-        <span>当前为产品原型，部分经营数据仅用于界面体验，不代表真实店铺数据。</span>
-      </div>
-
       <div className="op-body">
         <OperatorNav
           activePage={activePage}
@@ -53,19 +65,13 @@ function OperatorPreviewShell() {
         />
 
         <main className="op-main" aria-label={activeNavItem?.label}>
-          {activePage === "dashboard" && (
-            <DashboardPage onNavigate={navigate} />
-          )}
-          {activePage === "shops" && <ShopsPage onNavigate={navigate} />}
-          {activePage === "secretary" && (
-            <SecretaryPage onNavigate={navigate} initialDetail={detailRoute} />
-          )}
-          {activePage === "deliverables" && (
-            <DeliverablesPage onNavigate={navigate} initialDetail={detailRoute} />
-          )}
-          {activePage === "memory" && <BusinessMemoryPage />}
-          {activePage === "growth" && <AIGrowthPage />}
-          {activePage === "settings" && <SettingsPage />}
+          <ErrorBoundary key={activePage} renderFallback={renderErrorFallback}>
+            {PageComponent ? (
+              <PageComponent navigate={navigate} detailRoute={detailRoute} />
+            ) : (
+              <UnknownPageState pageKey={activePage} />
+            )}
+          </ErrorBoundary>
         </main>
       </div>
 

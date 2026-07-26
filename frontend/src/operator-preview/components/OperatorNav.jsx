@@ -2,10 +2,15 @@ import { useState } from "react";
 import { OPERATOR_NAV_ITEMS } from "../helpers/navigation";
 
 /**
- * 经营者版一级导航（阶段：产品原型）。
+ * 经营者版一级导航（阶段：路由/页面修复 + 品牌统一）。
  *
- * 桌面端左侧竖排导航；480px 下改为底部导航（复用同一份
- * OPERATOR_NAV_ITEMS，不维护第二份菜单列表）。
+ * 视觉语言与 Founder 的 console/shell/ConsoleSidebar.jsx 对齐（深色
+ * 侧边栏、同一套品牌区块结构"AI Commerce OS + 版本徽章"）——只是
+ * 视觉对齐，不是权限对齐：这里的导航项、可见能力完全由
+ * OPERATOR_NAV_ITEMS 和 Operator 自己的 Edition Policy 决定，不会
+ * 因为视觉像 Founder 就多出 Founder 的权限。桌面端左侧竖排导航；
+ * 480px 下改为底部导航（复用同一份 OPERATOR_NAV_ITEMS，不维护第二
+ * 份菜单列表）。
  */
 function OperatorNav({ activePage, onNavigate, companyName, scopeLabel, statusOk, onBackToLegacy }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -24,6 +29,7 @@ function OperatorNav({ activePage, onNavigate, companyName, scopeLabel, statusOk
     >
       <span className="op-nav-icon">{item.icon}</span>
       {item.label}
+      {item.status === "comingSoon" ? <span className="op-nav-soon">即将上线</span> : null}
     </button>
   ));
 
@@ -31,8 +37,8 @@ function OperatorNav({ activePage, onNavigate, companyName, scopeLabel, statusOk
     <>
       <aside className="op-sidebar">
         <div className="op-brand">
-          <span className="op-brand-mark">◐</span>
-          <strong>经营者版</strong>
+          AI Commerce OS
+          <span className="op-brand-badge">OPERATOR</span>
         </div>
 
         <nav className="op-nav">{navButtons}</nav>
@@ -99,7 +105,7 @@ function OperatorNav({ activePage, onNavigate, companyName, scopeLabel, statusOk
             onClick={(event) => event.stopPropagation()}
           >
             <div className="op-drawer-header">
-              <strong>经营者版</strong>
+              <strong>AI Commerce OS <span className="op-brand-badge">OPERATOR</span></strong>
               <button
                 type="button"
                 className="op-drawer-close"

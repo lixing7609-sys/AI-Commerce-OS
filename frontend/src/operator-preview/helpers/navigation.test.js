@@ -7,16 +7,28 @@ import {
 } from "./navigation";
 
 describe("OPERATOR_NAV_ITEMS", () => {
-  it("has the seven required top-level entries, including AI Growth", () => {
+  it("has the finalized 13-item customer-facing structure, in order", () => {
     expect(OPERATOR_NAV_ITEMS.map((item) => item.key)).toEqual([
       "dashboard",
-      "shops",
       "secretary",
-      "deliverables",
-      "memory",
+      "shops",
+      "products",
+      "content",
+      "orders",
+      "customerService",
+      "approvals",
       "growth",
+      "costToken",
+      "deviceUpdates",
+      "dataPrivacy",
       "settings",
     ]);
+  });
+
+  it("every item has a status of either ready or comingSoon", () => {
+    for (const item of OPERATOR_NAV_ITEMS) {
+      expect(["ready", "comingSoon"]).toContain(item.status);
+    }
   });
 
   it("only exposes Chinese business labels, no developer jargon", () => {
@@ -39,7 +51,7 @@ describe("OPERATOR_NAV_ITEMS", () => {
 
 describe("getNavItemByKey / isValidNavKey", () => {
   it("resolves a known key", () => {
-    expect(getNavItemByKey("dashboard")?.label).toBe("经营驾驶舱");
+    expect(getNavItemByKey("dashboard")?.label).toBe("今日经营");
     expect(isValidNavKey("dashboard")).toBe(true);
   });
 
@@ -57,6 +69,6 @@ describe("containsForbiddenDevTerms", () => {
   });
 
   it("does not flag ordinary business text", () => {
-    expect(containsForbiddenDevTerms("经营驾驶舱")).toBe(false);
+    expect(containsForbiddenDevTerms("今日经营")).toBe(false);
   });
 });

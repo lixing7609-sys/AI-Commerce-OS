@@ -21,6 +21,16 @@
   --op-radius: 14px;
   --op-radius-sm: 10px;
 
+  /* 侧边栏视觉与 Founder 的 console.css 里 .fdr-sidebar 使用同一套
+     取值——同一产品家族的视觉语言，只影响侧边栏，不影响下面内容区
+     的浅色配色（内容区保持原有黑白灰体系不变）。 */
+  --op-sidebar-bg: #0B1120;
+  --op-sidebar-text: #CBD5E1;
+  --op-sidebar-text-dim: #64748B;
+  --op-sidebar-active-bg: rgba(79, 70, 229, .28);
+  --op-sidebar-border: rgba(255,255,255,.08);
+  --op-sidebar-accent: #4F46E5;
+
   min-height: 100vh;
   background: var(--op-bg);
   color: var(--op-text);
@@ -41,28 +51,6 @@
   color: var(--op-text);
 }
 
-/* ---- 顶部原型标识条 ---- */
-
-.op-preview-banner {
-  background: #16171a;
-  color: #ffffff;
-  padding: 8px 20px;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-size: 12px;
-  flex-wrap: wrap;
-}
-
-.op-preview-banner strong {
-  font-size: 13px;
-  letter-spacing: 0.5px;
-}
-
-.op-preview-banner span {
-  color: #c7c8cc;
-}
-
 /* ---- 整体布局 ---- */
 
 .op-body {
@@ -74,11 +62,13 @@
 .op-sidebar {
   width: 220px;
   flex-shrink: 0;
-  background: var(--op-surface);
-  border-right: 1px solid var(--op-border);
+  background: var(--op-sidebar-bg);
+  color: var(--op-sidebar-text);
+  border-right: 1px solid var(--op-sidebar-border);
   display: flex;
   flex-direction: column;
-  padding: 20px 14px;
+  padding: 18px 0;
+  overflow-y: auto;
 }
 
 .op-brand {
@@ -86,13 +76,20 @@
   align-items: center;
   gap: 8px;
   font-size: 15px;
-  font-weight: 800;
-  margin-bottom: 22px;
-  padding: 0 6px;
+  font-weight: 700;
+  color: #fff;
+  padding: 4px 20px 18px 20px;
+  border-bottom: 1px solid var(--op-sidebar-border);
+  margin-bottom: 12px;
 }
 
-.op-brand-mark {
-  font-size: 18px;
+.op-brand-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--op-sidebar-accent);
+  color: #fff;
 }
 
 .op-nav {
@@ -100,30 +97,34 @@
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  padding: 0 10px;
 }
 
 .op-nav-link {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 9px 10px;
   border: none;
+  border-left: 3px solid transparent;
   background: none;
   border-radius: var(--op-radius-sm);
   font-size: 14px;
   font-weight: 600;
-  color: var(--op-text-secondary);
+  color: var(--op-sidebar-text);
   cursor: pointer;
   text-align: left;
 }
 
 .op-nav-link:hover {
-  background: #f0f0f2;
+  background: rgba(255,255,255,.06);
+  color: #fff;
 }
 
 .op-nav-link.active {
-  background: var(--op-primary);
-  color: var(--op-primary-contrast);
+  background: var(--op-sidebar-active-bg);
+  color: #fff;
+  border-left-color: var(--op-sidebar-accent);
 }
 
 .op-nav-icon {
@@ -131,9 +132,20 @@
   text-align: center;
 }
 
+.op-nav-soon {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.08);
+  color: var(--op-sidebar-text-dim);
+  white-space: nowrap;
+}
+
 .op-sidebar-footer {
-  border-top: 1px solid var(--op-border);
-  padding-top: 12px;
+  border-top: 1px solid var(--op-sidebar-border);
+  padding: 12px 20px 0 20px;
   margin-top: 12px;
   display: flex;
   flex-direction: column;
@@ -149,12 +161,13 @@
 }
 
 .op-footer-label {
-  color: var(--op-text-secondary);
+  color: var(--op-sidebar-text-dim);
 }
 
 .op-footer-value {
   font-weight: 700;
   text-align: right;
+  color: var(--op-sidebar-text);
 }
 
 .op-status-dot {
@@ -172,9 +185,10 @@
 .op-back-legacy {
   margin-top: 6px;
   padding: 8px 10px;
-  border: 1px solid var(--op-border);
+  border: 1px solid var(--op-sidebar-border);
   border-radius: var(--op-radius-sm);
-  background: #ffffff;
+  background: rgba(255,255,255,.04);
+  color: var(--op-sidebar-text);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -217,7 +231,8 @@
 
 .op-drawer {
   width: 260px;
-  background: var(--op-surface);
+  background: var(--op-sidebar-bg);
+  color: var(--op-sidebar-text);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -229,11 +244,13 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  color: #fff;
 }
 
 .op-drawer-close {
   border: none;
   background: none;
+  color: var(--op-sidebar-text);
   font-size: 16px;
   cursor: pointer;
 }

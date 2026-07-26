@@ -21,29 +21,23 @@ import {
 } from "../helpers/deviceMock.js";
 
 /**
- * AI 成长（阶段：三版最终定位）。
- *
- * 经营者版的这一页不是重新做一份 Agent 演化 UI，而是复用 Founder
- * 也在用的同一个 shared/agentEvolution/evolutionMock.js——经营者
- * 看到的是同一份数据的受限视图（只读反思/成本摘要，只能批准"已被
- * Founder 评测过的低风险候选"），不是另建一套演化状态机。哪些操作
- * 经营者能做，来自 shared/editionPolicy.js 的 OPERATOR_POLICY，不是
- * 这个文件里硬编码的判断。
+ * AI 成长 / 成本与 Token / 设备与更新 / 数据与隐私（阶段：路由修复 +
+ * 品牌统一）——四个独立的一级导航页面，都复用 Founder 也在用的同一
+ * 个 shared/agentEvolution/evolutionMock.js（经营者看到的是受限
+ * 视图，不是另建一套演化状态机），以及 operator-preview 自己的
+ * 设备/隐私 mock。之前这四块内容合并在一个 AIGrowthPage 的内部
+ * Tabs 里；经营者最终导航结构把它们列成四个平级入口，这里拆成四个
+ * 具名页面组件，内部小节逻辑不变，只是不再共享一层 Tabs 外壳。
  */
-
-const SECTIONS = [
-  { key: "growth", label: "AI 成长" },
-  { key: "cost", label: "成本优化" },
-  { key: "device", label: "设备与更新" },
-  { key: "privacy", label: "数据与隐私" },
-];
 
 const STATUS_LABEL = {
   candidate: "待 Founder 评测", evaluating: "评测中·待批准", experimenting: "灰度实验中",
   promoted: "已采纳", rejected: "已驳回", rolledBack: "已回滚",
 };
 
-function GrowthSection({ onChange }) {
+export function AIGrowthPage({ onChangeSignal } = {}) {
+  const [, forceRerender] = useState(0);
+  const onChange = onChangeSignal ?? (() => forceRerender((n) => n + 1));
   const { showPrototypeNotice } = usePreview();
   const canApproveLowRisk = hasPolicy(EDITIONS.OPERATOR, POLICY_KEYS.EVOLUTION_CANDIDATE_APPROVE_LOW_RISK);
   const stable = getStableVersion(CONTENT_AGENT_ID);
@@ -66,7 +60,14 @@ function GrowthSection({ onChange }) {
   }
 
   return (
-    <div>
+    <div className="op-page">
+      <header className="op-page-header">
+        <div>
+          <h1>AI 成长</h1>
+          <p>AI 如何在你的店铺里持续变强——最近学到了什么、当前稳定版本、还有哪些改进等你确认。</p>
+        </div>
+      </header>
+
       <section className="op-panel">
         <div className="op-panel-heading">
           <h3>当前稳定版本</h3>
@@ -130,13 +131,19 @@ function GrowthSection({ onChange }) {
   );
 }
 
-function CostSection() {
+export function CostTokenPage() {
   const cost = getCostIntelligenceSummary(CONTENT_AGENT_ID);
   return (
-    <div>
+    <div className="op-page">
+      <header className="op-page-header">
+        <div>
+          <h1>成本与 Token</h1>
+          <p>AI 花了多少 Token、多少钱，以及省了多少。</p>
+        </div>
+      </header>
       <section className="op-metric-grid">
         <article className="op-metric-card">
-          <span className="op-metric-label">累计 Token 消耗对应运行次数</span>
+          <span className="op-metric-label">累计运行次数</span>
           <strong className="op-metric-value">{cost.totalRuns}</strong>
         </article>
         <article className="op-metric-card">
@@ -162,7 +169,9 @@ function CostSection() {
   );
 }
 
-function DeviceSection({ onChange }) {
+export function DeviceUpdatesPage({ onChangeSignal } = {}) {
+  const [, forceRerender] = useState(0);
+  const onChange = onChangeSignal ?? (() => forceRerender((n) => n + 1));
   const { showPrototypeNotice } = usePreview();
   const canApproveOta = hasPolicy(EDITIONS.OPERATOR, POLICY_KEYS.OTA_RECEIVE);
   const device = getDeviceSummary();
@@ -178,35 +187,45 @@ function DeviceSection({ onChange }) {
   }
 
   return (
-    <section className="op-panel">
-      <div className="op-panel-heading">
-        <h3>{device.model}</h3>
-        <em className="op-demo-badge">{DEMO_DATA_LABEL}</em>
-      </div>
-      <dl className="op-detail-meta">
-        <div><dt>系统版本</dt><dd>{device.systemVersion}</dd></div>
-        <div><dt>Agent Runtime 版本</dt><dd>{device.agentRuntimeVersion}</dd></div>
-        <div><dt>最近心跳</dt><dd>{new Date(device.lastHeartbeatAt).toLocaleString("zh-CN")}</dd></div>
-        <div><dt>健康状态</dt><dd>{device.health === "healthy" ? "正常" : device.health}</dd></div>
-        <div><dt>更新通道</dt><dd>{device.updateChannel === "stable" ? "稳定版" : device.updateChannel}</dd></div>
-      </dl>
-      {device.availableUpdate ? (
-        <div className="op-card-actions">
-          <span>可用更新 v{device.availableUpdate.version} · {device.availableUpdate.notes}</span>
-          {device.availableUpdate.status === "ready_to_install" && canApproveOta ? (
-            <button type="button" className="op-btn" onClick={handleApprove}>批准安装窗口</button>
-          ) : (
-            <span className="op-status-badge approved">{device.availableUpdate.status === "scheduled" ? "已安排" : device.availableUpdate.status}</span>
-          )}
+    <div className="op-page">
+      <header className="op-page-header">
+        <div>
+          <h1>设备与更新</h1>
+          <p>这台 Mac mini 的运行状态、系统版本与可用更新。</p>
         </div>
-      ) : (
-        <p className="op-empty-inline">当前已是最新版本。</p>
-      )}
-    </section>
+      </header>
+      <section className="op-panel">
+        <div className="op-panel-heading">
+          <h3>{device.model}</h3>
+          <em className="op-demo-badge">{DEMO_DATA_LABEL}</em>
+        </div>
+        <dl className="op-detail-meta">
+          <div><dt>系统版本</dt><dd>{device.systemVersion}</dd></div>
+          <div><dt>Agent Runtime 版本</dt><dd>{device.agentRuntimeVersion}</dd></div>
+          <div><dt>最近心跳</dt><dd>{new Date(device.lastHeartbeatAt).toLocaleString("zh-CN")}</dd></div>
+          <div><dt>健康状态</dt><dd>{device.health === "healthy" ? "正常" : device.health}</dd></div>
+          <div><dt>更新通道</dt><dd>{device.updateChannel === "stable" ? "稳定版" : device.updateChannel}</dd></div>
+        </dl>
+        {device.availableUpdate ? (
+          <div className="op-card-actions">
+            <span>可用更新 v{device.availableUpdate.version} · {device.availableUpdate.notes}</span>
+            {device.availableUpdate.status === "ready_to_install" && canApproveOta ? (
+              <button type="button" className="op-btn" onClick={handleApprove}>批准安装窗口</button>
+            ) : (
+              <span className="op-status-badge approved">{device.availableUpdate.status === "scheduled" ? "已安排" : device.availableUpdate.status}</span>
+            )}
+          </div>
+        ) : (
+          <p className="op-empty-inline">当前已是最新版本。</p>
+        )}
+      </section>
+    </div>
   );
 }
 
-function PrivacySection({ onChange }) {
+export function DataPrivacyPage({ onChangeSignal } = {}) {
+  const [, forceRerender] = useState(0);
+  const onChange = onChangeSignal ?? (() => forceRerender((n) => n + 1));
   const { showPrototypeNotice } = usePreview();
   const privacy = getPrivacySummary();
 
@@ -227,60 +246,31 @@ function PrivacySection({ onChange }) {
   }
 
   return (
-    <section className="op-panel">
-      <h3>本地优先与隐私边界</h3>
-      <dl className="op-detail-meta">
-        <div><dt>数据存放位置</dt><dd>{privacy.localFirst ? "本地优先（本 Mac mini）" : "—"}</dd></div>
-        <div><dt>云端遥测范围</dt><dd>{privacy.cloudTelemetryScope}</dd></div>
-        <div><dt>远程诊断授权</dt><dd>{privacy.diagnosticAuthorized ? `已授权，至 ${new Date(privacy.diagnosticExpiresAt).toLocaleString("zh-CN")}` : "未授权"}</dd></div>
-        <div><dt>业务数据上传（会话/订单细节/店铺策略）</dt><dd>{privacy.businessDataUploadEnabled ? "已开启" : "默认关闭"}</dd></div>
-        <div><dt>最近一次授权变更</dt><dd>{new Date(privacy.consentUpdatedAt).toLocaleString("zh-CN")}</dd></div>
-      </dl>
-      <div className="op-card-actions">
-        <button type="button" className="op-btn" onClick={toggleDiagnostics}>
-          {privacy.diagnosticAuthorized ? "撤回远程诊断授权" : "授权远程诊断（24小时）"}
-        </button>
-        <button type="button" className="op-btn" onClick={toggleBusinessUpload}>
-          {privacy.businessDataUploadEnabled ? "关闭业务数据上传" : "开启业务数据上传"}
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function AIGrowthPage() {
-  const [activeSection, setActiveSection] = useState("growth");
-  const [, forceRerender] = useState(0);
-  const onChange = () => forceRerender((n) => n + 1);
-
-  return (
     <div className="op-page">
       <header className="op-page-header">
         <div>
-          <h1>AI 成长</h1>
-          <p>AI 如何在你的店铺里持续变强、花了多少成本、设备状态如何、数据边界在哪——都在这一页。</p>
+          <h1>数据与隐私</h1>
+          <p>本地优先，你的业务数据默认只留在这台设备上。</p>
         </div>
       </header>
-
-      <div className="op-tab-bar wrap">
-        {SECTIONS.map((section) => (
-          <button
-            type="button"
-            key={section.key}
-            className={`op-tab-button${activeSection === section.key ? " active" : ""}`}
-            onClick={() => setActiveSection(section.key)}
-          >
-            {section.label}
+      <section className="op-panel">
+        <h3>本地优先与隐私边界</h3>
+        <dl className="op-detail-meta">
+          <div><dt>数据存放位置</dt><dd>{privacy.localFirst ? "本地优先（本 Mac mini）" : "—"}</dd></div>
+          <div><dt>云端遥测范围</dt><dd>{privacy.cloudTelemetryScope}</dd></div>
+          <div><dt>远程诊断授权</dt><dd>{privacy.diagnosticAuthorized ? `已授权，至 ${new Date(privacy.diagnosticExpiresAt).toLocaleString("zh-CN")}` : "未授权"}</dd></div>
+          <div><dt>业务数据上传（会话/订单细节/店铺策略）</dt><dd>{privacy.businessDataUploadEnabled ? "已开启" : "默认关闭"}</dd></div>
+          <div><dt>最近一次授权变更</dt><dd>{new Date(privacy.consentUpdatedAt).toLocaleString("zh-CN")}</dd></div>
+        </dl>
+        <div className="op-card-actions">
+          <button type="button" className="op-btn" onClick={toggleDiagnostics}>
+            {privacy.diagnosticAuthorized ? "撤回远程诊断授权" : "授权远程诊断（24小时）"}
           </button>
-        ))}
-      </div>
-
-      {activeSection === "growth" && <GrowthSection onChange={onChange} />}
-      {activeSection === "cost" && <CostSection />}
-      {activeSection === "device" && <DeviceSection onChange={onChange} />}
-      {activeSection === "privacy" && <PrivacySection onChange={onChange} />}
+          <button type="button" className="op-btn" onClick={toggleBusinessUpload}>
+            {privacy.businessDataUploadEnabled ? "关闭业务数据上传" : "开启业务数据上传"}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
-
-export default AIGrowthPage;
