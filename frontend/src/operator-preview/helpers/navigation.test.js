@@ -7,13 +7,14 @@ import {
 } from "./navigation";
 
 describe("OPERATOR_NAV_ITEMS", () => {
-  it("has the finalized 13-item customer-facing structure, in order", () => {
+  it("has the finalized 14-item customer-facing structure, in order", () => {
     expect(OPERATOR_NAV_ITEMS.map((item) => item.key)).toEqual([
       "dashboard",
       "secretary",
       "shops",
       "products",
       "content",
+      "adOps",
       "orders",
       "customerService",
       "approvals",
@@ -23,6 +24,11 @@ describe("OPERATOR_NAV_ITEMS", () => {
       "dataPrivacy",
       "settings",
     ]);
+  });
+
+  it("advertising (adOps) is a real, ready destination, not a coming-soon skeleton", () => {
+    expect(getNavItemByKey("adOps")?.status).toBe("ready");
+    expect(getNavItemByKey("adOps")?.label).toBe("广告投放");
   });
 
   it("every item has a status of either ready or comingSoon", () => {

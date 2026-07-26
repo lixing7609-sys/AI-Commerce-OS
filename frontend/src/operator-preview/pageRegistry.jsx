@@ -3,6 +3,7 @@ import ShopsPage from "./pages/ShopsPage";
 import SecretaryPage from "./pages/SecretaryPage";
 import SettingsPage from "./pages/SettingsPage";
 import { AIGrowthPage, CostTokenPage, DeviceUpdatesPage, DataPrivacyPage } from "./pages/AIGrowthPage";
+import { AdOpsPage } from "./pages/AdOpsPage";
 import { ComingSoonPage } from "./pages/ComingSoonPage";
 
 /**
@@ -33,6 +34,7 @@ export const PAGE_COMPONENTS = {
       plannedFeatures={["内容项目列表", "AI 内容生成与审核", "多渠道发布状态", "内容表现数据"]}
     />
   ),
+  adOps: () => <AdOpsPage />,
   orders: () => (
     <ComingSoonPage
       title="订单"

@@ -1299,6 +1299,65 @@
   color: #3d4ed8;
 }
 
+/* 广告投放审批工作流状态——draft/pending_approval 复用已有的中性/
+   警示配色，running 复用 approved 的绿色，rejected/paused 各自区分。 */
+.op-status-badge.draft {
+  background: #eeeef0;
+  color: var(--op-text-secondary);
+}
+
+.op-status-badge.pending_approval {
+  background: var(--op-warning-bg);
+  color: var(--op-warning);
+}
+
+.op-status-badge.running {
+  background: var(--op-success-bg);
+  color: var(--op-success);
+}
+
+.op-status-badge.paused {
+  background: #eeeef0;
+  color: var(--op-text-secondary);
+}
+
+.op-status-badge.completed {
+  background: #e7ecff;
+  color: #3d4ed8;
+}
+
+/* ---- 简单表格（广告投放等模块用）---- */
+
+.op-table-wrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.op-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.op-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--op-text-secondary);
+  font-weight: 600;
+  border-bottom: 1px solid var(--op-border);
+  white-space: nowrap;
+}
+
+.op-table td {
+  padding: 10px 10px;
+  border-bottom: 1px solid var(--op-border);
+  vertical-align: top;
+}
+
+.op-table tr:last-child td {
+  border-bottom: none;
+}
+
 .op-deliverable-detail-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 240px;
