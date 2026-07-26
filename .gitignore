@@ -35,6 +35,9 @@ htmlcov/
 # Logs
 *.log
 
+# Developer Bootstrap runtime state (PID files, session metadata, logs)
+.runtime/
+
 # Environment
 .env
 .env.*

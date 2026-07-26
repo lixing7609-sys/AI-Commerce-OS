@@ -1,0 +1,11 @@
+{
+  "name": "ai-commerce-os",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Repository-root scripts for AI Commerce OS. The actual application lives in frontend/ and backend/ — this file exists only to expose the Developer Bootstrap commands from the repo root.",
+  "scripts": {
+    "bootstrap": "bash scripts/developer-bootstrap.sh",
+    "bootstrap:status": "bash scripts/developer-bootstrap-status.sh",
+    "bootstrap:stop": "bash scripts/developer-bootstrap-stop.sh"
+  }
+}
