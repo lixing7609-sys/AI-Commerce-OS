@@ -1,19 +1,20 @@
-# Edition Architecture — Founder, Operator, Operator Cloud
+# Edition Architecture — Founder, Operator, Operator Cloud, Studio
 
 Version
 
-1.0
+2.0
 
 Date
 
-2026-07-25
+2026-07-27
 
 Status
 
-Frozen (product positioning), amended 2026-07-26 — see §12. The identity statements in §1–§9 are
-unchanged; §12 records what the "Agent Evolution + three-edition final positioning" task actually
-built on top of that identity (default route, Cloud Console, Agent Evolution Foundation, Edition
-Policy), superseding specific bullets in §11 without deleting them.
+Frozen (product positioning). §1–§12 (the three-edition freeze, amended 2026-07-26) are unchanged.
+§13–§16 record the 2026-07-27 "AI Commerce OS Four-Product Architecture V1" freeze: **AI Commerce
+OS Studio** is added as the fourth formal product end, alongside Founder, Operator Cloud and
+Operator. Nothing in §1–§12 is superseded by this — Studio is additive, not a replacement for any
+existing edition's identity or boundary.
 
 Scope
 
@@ -313,6 +314,240 @@ foundation to derive future work from instead of three independent mock islands.
 
 ---
 
+## 13. AI Commerce OS Studio
+
+**Formal definition:** AI Commerce OS Studio = the content production and traffic/advertising
+operations platform. English architectural label: **Content Plane**.
+
+**Entry point:** `http://localhost:5173/studio` (path alias) or `?mode=studio` (query override) →
+`frontend/src/studio/` (`StudioApp`). See §14.4 for the routing mechanism.
+
+**Primary users:** Content producers, matrix-account operators, and internal/external advertising
+buyers. Can be operated as an independent content/media business, or as a supplier to Operator.
+
+**Deployment location:** Same distribution model as Founder/Cloud today (local development now,
+its own operating environment later) — Studio is not shipped to a customer's Mac mini as part of
+the Operator install; it is a separate product surface.
+
+**Responsibilities:**
+- **Content production** — AI short dramas, AI video, AI live streaming, AI digital humans, AI
+  images/audio, scripts, storyboards, editing, subtitles, voiceover, covers.
+- **Content operations** — content projects, production pipeline, content calendar, review,
+  publishing, versioning, the asset library, IP assets, copyright status.
+- **Matrix operations** — matrix accounts across Douyin/Xiaohongshu/Kuaishou/Video-号/Bilibili/etc,
+  account grouping, positioning, health, follower scale, content volume, traffic data, account
+  revenue.
+- **Traffic operations** — the traffic pool, advertising resources/inventory, advertising quotes,
+  advertising orders, delivery, performance, settlement; selling traffic to Operator and to
+  external customers.
+
+**Core value:** use AI to create content → let content accumulate into content assets → let
+accounts accumulate into matrix assets → let traffic accumulate into advertising resources →
+monetize through advertising, revenue share, licensing, or content services.
+
+**Product-language rule (extends §9's "no raw Connector in customer-facing copy"):** Studio's
+user-facing copy uses **平台账号 / 账号授权 / 发布连接 / 账号健康** (platform account / account
+authorization / publish connection / account health), never the bare word "Connector" — the
+underlying code may still use `ConnectorDefinition` (`shared/domainTypes.js`), this rule is about
+UI copy only, identical in spirit to Founder's "电商平台连接器" / Operator's "店铺接入" / Cloud's
+"Operator Cloud 连接" conventions.
+
+---
+
+## 14. Four-Product Architecture V1
+
+### 14.1 Top-level relationship
+
+```
+AI Commerce OS Founder
+  creates and validates capability
+        ↓
+AI Commerce OS Operator Cloud
+  manages, authorizes, publishes, distributes and schedules capability
+        ↓
+AI Commerce OS Operator
+  operates products, customers, orders, advertising and profit
+        ↕
+AI Commerce OS Studio
+  produces content, operates matrix traffic, and supplies advertising resources to Operator
+```
+
+All four belong to one internal system, AI Commerce OS, but face different users, carry different
+responsibilities, and use different business language (§9, extended by §13's Studio rule).
+
+### 14.2 Product Responsibility Matrix
+
+| | Founder | Operator Cloud | Operator | Studio |
+|---|---|---|---|---|
+| Architectural label | Innovation Plane | Control Plane | Business Plane | Content Plane |
+| Primary responsibility | Create and validate capability | Manage, authorize, publish, distribute, meter, schedule capability | Operate the business (products/customers/orders/advertising/profit) | Produce content, operate matrix traffic, operate advertising resources |
+| Owns capability packages | Produces `CapabilityPackage` (Agent/Prompt/Skill/Workflow/Knowledge/Connector/UI) | Reviews, versions (`ReleasePackage`), gray-releases, distributes, rolls back | Installs and uses released capability | Installs and uses released capability |
+| Owns business data | Founder's own stores (full access) | None — only tenant/device/license/Token/OTA metadata, never raw business data | Each operator's own device-local business data | Studio's own content/matrix/traffic/advertising data |
+| Owns money flow | N/A (validation environment) | Token purchase/allocation/metering (platform-owner side) | Advertising spend is a **cost** (demand side); product/platform/logistics/after-sales costs; contribution profit | Advertising revenue is **revenue** (supply side); content/traffic monetization |
+| Must never expose | — (has full technical access by design) | Store-operating UI (§3) | Prompt authoring, Skill development, Connector internals, Webhook retries, Model Router config, Agent evaluation (§2, extended by 四端 V1 §2) | Same technical internals as Operator — Studio's business users see 平台账号/账号授权, not Connector/API/Webhook/Rate Limit (§13) |
+
+### 14.3 Founder / Cloud / Operator / Studio boundary
+
+- **Founder** — creates and validates capability. Must contain the complete superset of Operator's
+  functionality (unchanged principle from §1 — "Founder must include all of Operator's
+  capabilities; Founder is not a premium tier of Operator").
+- **Operator Cloud** — manages, authorizes, publishes, distributes and schedules capability (§3,
+  §7), extended in this freeze to include the distributed-compute control plane (§15).
+- **Operator** — uses capability to operate its own business and generate profit. The operator
+  does not need to understand how Prompts are written, how Skills are built, how Connectors are
+  implemented, how webhooks retry, how the Model Router is configured, or how Agents are
+  evaluated — they see AI recommendations, approve/reject, adjust budgets, see results, costs,
+  profit and exceptions (§2, unchanged; restated because Studio's boundary depends on it).
+  **AI 广告投放 (AI advertising placement) remains a first-class Operator business capability**,
+  distinct from **AI 广告素材 (AI advertising creative)**: creative production (images/video/copy/
+  live materials) is a production capability; advertising placement (product/audience/platform/
+  budget/timing/bid/optimization/pause/profit-attribution selection) is a decision-and-execution
+  capability. The placement flow is fixed: AI generates a placement plan → operator reviews →
+  approve / reject / adjust budget → system executes within the approved envelope → AI keeps
+  monitoring → over-budget or material changes require re-approval. Advertising spend always
+  flows into operating cost and contribution-profit accounting (see
+  `shared/agentEvolution/evolutionMock.js`'s `computeContributionProfit`, reused by Operator's
+  广告投放 module — see [operator-advertising.md](../09-runbooks/operator-advertising.md)).
+- **Studio** — uses capability to produce content, accumulate traffic, and operate advertising
+  resources (§13).
+
+**Operator vs. Studio content boundary:** content Operator produces is primarily for that
+operator's own product sales, store operations and brand marketing. Content Studio produces can be
+independently published, operated and monetized, forming traffic and advertising resources that
+can be sold externally.
+
+**Operator vs. Studio advertising boundary:** Operator is the **advertising demand side** — it
+places ads for its own products; advertising spend is an operating cost. Studio is the
+**advertising supply side** — it builds a traffic pool and sells advertising resources; advertising
+revenue is operating revenue.
+
+**Future closed loop (data-model-only in this freeze — no live cross-product settlement exists
+yet):**
+
+```
+Operator's advertising Agent raises a traffic need
+  → compares commerce-platform advertising vs. Studio traffic resources
+  → estimates cost and contribution profit
+  → operator approves
+  → placement executes
+  → Operator records advertising cost
+  → Studio records advertising revenue
+```
+
+This freeze only establishes this product relationship and its data shapes
+(`AdvertisingResource`, `AdvertisingOrder` in `shared/domainTypes.js`) — it does not implement real
+cross-product advertising settlement.
+
+### 14.4 Routing
+
+Four independent entry points, each with its own home page and its own left-hand navigation, none
+overriding another:
+
+| Product | Path alias | Legacy query override | Entry component |
+|---|---|---|---|
+| Operator Cloud | `/cloud` | bare `/` (default), `?mode=` unset | `frontend/src/cloud/CloudConsoleApp.jsx` |
+| Founder | `/founder` | `?mode=founder` | `frontend/src/console/ConsoleApp.jsx` |
+| Operator | `/operator` | `?mode=operator-preview` | `frontend/src/operator-preview/OperatorPreviewApp.jsx` |
+| Studio | `/studio` | `?mode=studio` | `frontend/src/studio/StudioApp.jsx` |
+
+Resolution order (`frontend/src/editions/editionConfig.js`, `getActiveEdition()`): build-time
+`VITE_EDITION` → path alias (`/cloud`, `/founder`, `/operator`, `/studio`) → legacy `?mode=` query
+param → default (Operator Cloud). Path aliases and the legacy query mechanism are fully backward
+compatible with each other — no old link is broken, and path aliases were added rather than
+replacing the query mechanism specifically so existing bookmarks/links (`?mode=operator-preview`
+etc.) keep working unchanged.
+
+**Deployment note:** path aliases rely on the dev/production server falling back to `index.html`
+for unmatched paths (SPA history fallback) — verified working today under Vite's dev server
+(`npm run bootstrap`'s `vite dev`, the only serving mode this repository currently uses). If a
+future production deployment serves the built `dist/` from a plain static file server without SPA
+fallback configured, the path aliases need an explicit rewrite rule (e.g. nginx `try_files ...
+/index.html`); the legacy `?mode=` query mechanism has no such dependency since it always loads
+`index.html` for `/` and reads the query client-side.
+
+Every one of the four root apps renders under a shared top-level `ErrorBoundary`
+(`frontend/src/main.jsx`) in addition to each product's own per-page/per-module `ErrorBoundary` —
+a render failure in one module or in a Shell's own top-level render path never blanks the whole
+page.
+
+### 14.5 Release and distribution flow
+
+```
+Founder
+  → produces a candidate CapabilityPackage
+  → Operator Cloud reviews it, versions it into a ReleasePackage, gray-releases and distributes it
+  → Operator and Studio install and use it
+  → run summaries and cost data (TokenUsage, ComputeUsageRecord) flow back to Cloud
+  → Founder iterates further based on real operating results
+```
+
+This is the same lifecycle §5/§6 already established for Founder→Operator; this freeze extends it
+to formally include Studio as an equal consumer of Operator Cloud's release pipeline, and adds the
+explicit "usage/cost data flows back to Cloud" closing step. See `shared/domainTypes.js` for the
+`CapabilityPackage` / `ReleasePackage` shapes this flow is built on.
+
+### 14.6 Shared domain model
+
+`frontend/src/shared/domainTypes.js` defines the cross-product core domain concepts (JSDoc
+typedefs — this repository has no TypeScript build, so these are documentation-and-editor-hint
+typedefs, not compiler-checked types) that all four products should reference rather than each
+inventing an incompatible shape: `ProductApp`, `CapabilityPackage`, `ReleasePackage`, `Device`,
+`License`, `TokenAccount`, `TokenUsage`, `AgentDefinition`, `PromptVersion`, `SkillDefinition`,
+`WorkflowDefinition`, `ConnectorDefinition`, `BusinessUnit`, `Store`, `ContentProject`,
+`ContentAsset`, `MatrixAccount`, `TrafficResource`, `AdvertisingResource`, `AdvertisingOrder`.
+Distributed-compute types (`ComputeTask`, `ComputeAssignment`, etc.) live in their own file — see
+§15 and `shared/distributedCompute/types.js`.
+
+Each product may still build its own page-level ViewModels on top of these shapes; the requirement
+is that the underlying domain concept and field names are shared, not that every UI reuses one
+literal data structure.
+
+**`Device` note (four-端 V1 hard requirement):** the five device-timing/status concepts are kept as
+five distinct fields, never collapsed into one: `lastHeartbeatAt` (most recent heartbeat time) ≠
+`onlineStatus` (current online/offline/degraded status, inferable from heartbeat recency but stored
+independently) ≠ `currentSessionStartedAt` (when the current online session began) ≠
+`uptimeSeconds` (this session's continuous uptime) ≠ `availabilityRate` (a rolling availability
+ratio, its own independent statistic, not derived in real time from heartbeat alone).
+
+---
+
+## 15. Distributed compute — pointer
+
+The Mac-mini idle-compute distributed-scheduling capability (Operator Runtime → Business
+Scheduler / Local AI Runtime / Resource Monitor / Platform Compute Agent / Task Sandbox; the
+`distributedCompute.enabled` feature flag defaulting to `false`; the P0–P4 priority model; the
+`DeviceResourceProfile` / `ComputeParticipationPolicy` / `ComputeTask` / `ComputeAssignment` /
+`ComputeUsageRecord` domain types; the security/sandboxing/kill-switch requirements) is documented
+in full in its own file to keep this document from growing an unrelated, fast-moving appendix:
+
+→ [distributed-compute-architecture.md](distributed-compute-architecture.md)
+
+Summary for this document's purposes only: Cloud's "分布式调度" nav item, Studio's "算力任务" page,
+and Operator's "设备资源" card (§13's Studio page, §2's Operator constraints) all read from the same
+`shared/distributedCompute/` mock repository and the same feature flag — no product invents its own
+parallel notion of "is distributed compute on."
+
+---
+
+## 16. Studio and distributed-compute deferred work
+
+Recorded here in the same spirit as §11 (deferred work), for the 2026-07-27 four-product freeze:
+
+- Real cross-product advertising settlement between Operator and Studio (§14.3's "future closed
+  loop") — data shapes exist (`AdvertisingResource`, `AdvertisingOrder`), no live settlement.
+- Real platform-account OAuth/publish integration for Studio's matrix accounts — mock only, see
+  [studio-domain-overview.md](studio-domain-overview.md).
+- Any real distributed-compute dispatch — see
+  [distributed-compute-architecture.md](distributed-compute-architecture.md) for the complete list
+  of what is deliberately not implemented and why.
+- Per-edition build/package pipeline extended to Studio (ADR-0002 Migration Plan Phase 3, already
+  deferred for the other three editions — unchanged).
+- The full Core/Runtime/Connector split (§6, §11) remains direction-only; Studio was added as a
+  fourth top-level React tree selected by `main.jsx`, following the exact same pattern as the
+  other three, not a new architecture.
+
+---
+
 ## References
 
 - ADR-0002 Edition Boundary (`docs/10-adr/ADR-0002-edition-boundary.md`) — technical enforcement
@@ -327,10 +562,17 @@ foundation to derive future work from instead of three independent mock islands.
   (§10).
 - `frontend/src/editions/editionConfig.js` — the runtime edition-selection code this document
   describes the product identity of; modified by the 2026-07-26 task to make Operator Cloud the
-  default edition (§12).
+  default edition (§12), and by the 2026-07-27 four-product freeze to add Studio and path aliases
+  (§13–14).
 - [agent-evolution-foundation.md](agent-evolution-foundation.md) — the Agent Evolution Foundation,
   memory model, controlled evolution levels, cost intelligence and Edition Policy implementation
   (§12).
+- [studio-domain-overview.md](studio-domain-overview.md) — Studio's content/matrix/traffic/
+  advertising domain detail (§13).
+- [distributed-compute-architecture.md](distributed-compute-architecture.md) — the distributed
+  Mac-mini compute future architecture, security model and resource policy (§15).
+- [operator-advertising.md](../09-runbooks/operator-advertising.md) — Operator's 广告投放 module,
+  referenced by §14.3's Operator/Studio advertising boundary.
 
 ---
 
