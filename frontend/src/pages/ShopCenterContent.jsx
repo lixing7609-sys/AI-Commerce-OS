@@ -22,6 +22,7 @@ import {
 } from "../services/shopApi";
 import { getTasks } from "../services/api";
 import { getShopLink, isValidHttpUrl, setShopLink } from "../store/shopLinksStore";
+import { buildDetailTabs } from "./shopDetailTabs.js";
 
 /**
  * ShopCenter 的内容部分，从 ShopCenter.jsx 抽出（阶段：Founder
@@ -288,7 +289,7 @@ function ShopListView({ onOpenShop, onCreateShop }) {
   );
 }
 
-function ShopDetailView({ shopId, onBack }) {
+function ShopDetailView({ shopId, onBack, extraDetailTabs }) {
   const [shop, setShop] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -450,13 +451,16 @@ function ShopDetailView({ shopId, onBack }) {
         )}
 
         <div className="shop-detail-tabs">
-          {[
-            ["overview", "概览"],
-            ["auth", "连接与授权"],
-            ["tasks", "任务"],
-            ["deliverables", "成果"],
-            ["sync", "同步日志"],
-          ].map(([key, label]) => (
+          {buildDetailTabs(
+            [
+              ["overview", "概览"],
+              ["auth", "连接与授权"],
+              ["tasks", "任务"],
+              ["deliverables", "成果"],
+              ["sync", "同步日志"],
+            ],
+            extraDetailTabs
+          ).map(([key, label]) => (
             <button
               type="button"
               key={key}
@@ -598,12 +602,25 @@ function ShopDetailView({ shopId, onBack }) {
         {activeTab === "sync" && (
           <div className="task-empty">尚未接入真实平台同步。</div>
         )}
+
+        {(extraDetailTabs ?? [])
+          .filter((extra) => extra.key === activeTab)
+          .map((extra) => (
+            <div key={extra.key}>{extra.render(shop, { switchTab: setActiveTab })}</div>
+          ))}
       </div>
     </>
   );
 }
 
-function ShopCenterContent() {
+/**
+ * $1 = extraDetailTabs（可选）：让调用方（目前只有 Founder 的
+ * StoreCenterModule）在不修改本组件默认标签页的前提下，往店铺详情
+ * 页插入额外标签——[{ key, label, insertAfter, render(shop, {
+ * switchTab }) }]。不传时（Developer 版的 ShopCenter.jsx 就是不传）
+ * 行为和标签页列表与之前完全一致。
+ */
+function ShopCenterContent({ extraDetailTabs } = {}) {
   const [view, setView] = useState("list");
   const [selectedShopId, setSelectedShopId] = useState(null);
 
@@ -637,7 +654,7 @@ function ShopCenterContent() {
 
   if (view === "detail" && selectedShopId) {
     return (
-      <ShopDetailView shopId={selectedShopId} onBack={() => setView("list")} />
+      <ShopDetailView shopId={selectedShopId} onBack={() => setView("list")} extraDetailTabs={extraDetailTabs} />
     );
   }
 
