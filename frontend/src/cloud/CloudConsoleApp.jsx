@@ -14,6 +14,15 @@ import {
 import { EDITIONS, POLICY_KEYS, hasPolicy } from "../shared/editionPolicy.js";
 import { ErrorBoundary } from "../shared/ErrorBoundary.jsx";
 import { NAV_ITEMS } from "./navConfig.js";
+import {
+  COMPUTE_TASK_PRIORITIES,
+  COMPUTE_TASK_TYPES,
+  cancelComputeTask,
+  getComputeOverview,
+  getDistributedComputeState,
+  isDistributedComputeEnabled,
+  setGlobalPause,
+} from "../shared/distributedCompute/mockComputeRepository.js";
 
 /**
  * Operator Cloud 控制台（阶段：三版最终定位）——裸 URL
@@ -332,6 +341,171 @@ function OtaSupportPage() {
   );
 }
 
+/**
+ * 分布式调度（阶段"四端产品体系 V1"§7）——展示未来由 Operator Cloud
+ * 调度经营者 Mac mini 空闲算力的架构预留能力。7 个区块：算力总览、
+ * 设备资源池、调度任务、任务分配、资源策略、异常与暂停、成本节省
+ * 统计。全部使用 shared/distributedCompute 的只读模拟数据，
+ * distributedCompute.enabled 恒为 false——本页面任何按钮都只修改
+ * mock 展示状态，不派发/执行任何真实任务。
+ */
+const TASK_TYPE_LABEL = Object.fromEntries(COMPUTE_TASK_TYPES.map((t) => [t.key, t.label]));
+const TASK_PRIORITY_LABEL = Object.fromEntries(COMPUTE_TASK_PRIORITIES.map((p) => [p.key, p.label]));
+const COMPUTE_TASK_STATUS_LABEL = { queued: "排队中", assigned: "已分配", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" };
+const COMPUTE_TASK_STATUS_TONE = { queued: "neutral", assigned: "info", running: "info", completed: "success", failed: "danger", cancelled: "neutral" };
+const NETWORK_STATE_LABEL = { online: "在线", offline: "离线", unstable: "不稳定" };
+const NETWORK_STATE_TONE = { online: "success", offline: "danger", unstable: "warning" };
+const THERMAL_LABEL = { normal: "正常", warm: "偏热", throttling: "降频中" };
+
+function DistributedSchedulingPage() {
+  const [, forceRerender] = useState(0);
+  const refresh = () => forceRerender((n) => n + 1);
+  const enabled = isDistributedComputeEnabled();
+  const overview = getComputeOverview();
+  const { devicePool, participationPolicies, computeTasks, globalPauseActive } = getDistributedComputeState();
+
+  async function handleTogglePause() {
+    await setGlobalPause(!globalPauseActive);
+    refresh();
+  }
+
+  async function handleCancelTask(taskId) {
+    await cancelComputeTask(taskId);
+    refresh();
+  }
+
+  return (
+    <div>
+      <div className="cc-card" style={{ borderColor: "#f59e0b", background: "rgba(245,158,11,.08)" }}>
+        <Pill tone="warning">架构预留</Pill>{" "}
+        <span style={{ fontSize: 13 }}>
+          分布式算力尚未启用，当前为架构预留状态。distributedCompute.enabled = {String(enabled)}。
+        </span>
+      </div>
+
+      {/* 1. 算力总览 */}
+      <div className="cc-card">
+        <h3 className="cc-card-title">算力总览</h3>
+        <StatGrid
+          items={[
+            { label: "注册设备数", value: overview.registeredDevices },
+            { label: "在线设备数", value: overview.onlineDevices },
+            { label: "当前可调度设备数", value: overview.schedulableDevices },
+            { label: "可用 CPU 核心", value: overview.availableCpuCores },
+            { label: "可用内存 (MB)", value: overview.availableMemoryMB.toLocaleString() },
+            { label: "当前任务", value: overview.activeTasks },
+            { label: "今日完成任务", value: overview.completedTasksToday },
+            { label: "异常任务", value: overview.failedTasks },
+            { label: "预计节省云端算力成本", value: `¥${overview.estimatedCloudCostSavedRmb}` },
+          ]}
+        />
+      </div>
+
+      {/* 2. 设备资源池 */}
+      <div className="cc-card">
+        <h3 className="cc-card-title">设备资源池</h3>
+        <Table
+          columns={[
+            { key: "deviceId", label: "设备名称" },
+            { key: "operatorName", label: "所属经营者" },
+            { key: "region", label: "地区" },
+            { key: "networkState", label: "当前在线状态", render: (r) => <Pill tone={NETWORK_STATE_TONE[r.networkState]}>{NETWORK_STATE_LABEL[r.networkState]}</Pill> },
+            { key: "currentLoad", label: "本地经营负载", render: (r) => `${Math.round(r.currentLoad * 100)}%` },
+            { key: "cpuCores", label: "可用 CPU", render: (r) => `${(r.cpuCores * (1 - r.currentLoad)).toFixed(1)} / ${r.cpuCores} 核` },
+            { key: "memoryAvailable", label: "可用内存", render: (r) => `${r.memoryAvailable.toLocaleString()} MB` },
+            { key: "thermalState", label: "温度状态", render: (r) => THERMAL_LABEL[r.thermalState] },
+            { key: "currentTask", label: "当前平台任务", render: () => "无（尚未启用）" },
+            { key: "scheduleStatus", label: "调度状态", render: () => <Pill tone="neutral">未参与调度</Pill> },
+            { key: "lastReportedAt", label: "最后心跳", render: (r) => new Date(r.lastReportedAt).toLocaleString("zh-CN") },
+          ]}
+          rows={devicePool}
+        />
+      </div>
+
+      {/* 3. 调度任务 */}
+      <div className="cc-card">
+        <h3 className="cc-card-title">调度任务</h3>
+        <Table
+          columns={[
+            { key: "taskId", label: "任务名称" },
+            { key: "taskType", label: "任务类型", render: (r) => TASK_TYPE_LABEL[r.taskType] ?? r.taskType },
+            { key: "source", label: "来源" },
+            { key: "priority", label: "优先级", render: (r) => TASK_PRIORITY_LABEL[r.priority] ?? r.priority },
+            { key: "requiredCpu", label: "预计 CPU 用量", render: (r) => `${r.requiredCpu} 核` },
+            { key: "requiredMemory", label: "预计内存用量", render: (r) => `${r.requiredMemory.toLocaleString()} MB` },
+            { key: "estimatedDuration", label: "预计运行时间", render: (r) => `${Math.round(r.estimatedDuration / 60)} 分钟` },
+            { key: "status", label: "状态", render: (r) => <Pill tone={COMPUTE_TASK_STATUS_TONE[r.status]}>{COMPUTE_TASK_STATUS_LABEL[r.status]}</Pill> },
+            { key: "sandboxed", label: "沙箱", render: (r) => (r.sandboxed ? <Pill tone="success">已启用</Pill> : <Pill tone="danger">未启用</Pill>) },
+            {
+              key: "actions", label: "操作", render: (r) => (
+                r.status === "queued" ? <button className="cc-btn" onClick={() => handleCancelTask(r.taskId)}>取消任务</button> : "—"
+              ),
+            },
+          ]}
+          rows={computeTasks}
+        />
+      </div>
+
+      {/* 4. 任务分配 */}
+      <div className="cc-card">
+        <h3 className="cc-card-title">任务分配</h3>
+        <div className="cc-empty">尚无任务分配记录——分布式算力未启用，任务不会被分配到任何设备。</div>
+      </div>
+
+      {/* 5. 资源策略 */}
+      <div className="cc-card">
+        <h3 className="cc-card-title">资源策略</h3>
+        <Table
+          columns={[
+            { key: "deviceId", label: "设备" },
+            { key: "maxCpuPercent", label: "最大 CPU 占用", render: (r) => `${r.maxCpuPercent}%` },
+            { key: "maxMemoryMB", label: "最大内存占用", render: (r) => `${r.maxMemoryMB.toLocaleString()} MB` },
+            { key: "allowedTaskTypes", label: "允许任务类型", render: (r) => (r.allowedTaskTypes.length ? r.allowedTaskTypes.map((k) => TASK_TYPE_LABEL[k] ?? k).join("、") : "无") },
+            { key: "pauseWhenBusinessBusy", label: "经营繁忙时暂停", render: (r) => (r.pauseWhenBusinessBusy ? "是" : "否") },
+            { key: "pauseWhenThermalHigh", label: "高温暂停", render: (r) => (r.pauseWhenThermalHigh ? "是" : "否") },
+            { key: "pauseWhenOnBattery", label: "网络异常/电池供电暂停", render: (r) => (r.pauseWhenOnBattery ? "是" : "否") },
+            { key: "policyStatus", label: "策略状态", render: (r) => <Pill tone="neutral">{{ active: "生效中", paused: "已暂停", disabled: "未启用" }[r.policyStatus]}</Pill> },
+          ]}
+          rows={participationPolicies}
+        />
+      </div>
+
+      {/* 6. 异常与暂停 */}
+      <div className="cc-card">
+        <h3 className="cc-card-title">异常与暂停</h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <Pill tone={globalPauseActive ? "danger" : "success"}>{globalPauseActive ? "全局 Kill Switch：已启用（暂停中）" : "全局 Kill Switch：未启用"}</Pill>
+          <button className="cc-btn" onClick={handleTogglePause}>
+            {globalPauseActive ? "模拟解除全局暂停" : "模拟触发全局暂停"}
+          </button>
+        </div>
+        <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>
+          分布式算力总开关（distributedCompute.enabled）恒为 false 期间，全局 Kill Switch 的实际效果不变——不会有任何真实任务被派发，此开关仅用于演示未来的紧急暂停机制。
+        </p>
+        <Table
+          columns={[
+            { key: "taskId", label: "任务" },
+            { key: "status", label: "状态", render: (r) => <Pill tone={COMPUTE_TASK_STATUS_TONE[r.status]}>{COMPUTE_TASK_STATUS_LABEL[r.status]}</Pill> },
+          ]}
+          rows={computeTasks.filter((t) => t.status === "failed" || t.status === "cancelled")}
+          empty="暂无异常或已取消的任务"
+        />
+      </div>
+
+      {/* 7. 成本节省统计 */}
+      <div className="cc-card">
+        <h3 className="cc-card-title">成本节省统计</h3>
+        <p style={{ fontSize: 13, margin: 0 }}>
+          预计节省云端算力成本：<strong>¥{overview.estimatedCloudCostSavedRmb}</strong>
+        </p>
+        <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>
+          该数值恒为 0，直到分布式算力真正启用并产生真实执行记录——不编造任何节省成本数字。
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function cloudErrorFallback(error, retry) {
   return (
     <div className="cc-empty">
@@ -358,6 +532,7 @@ const PAGE_COMPONENTS = {
   licenses: () => <LicensesPage />,
   tokenMetering: () => <TokenMeteringPage />,
   otaSupport: () => <OtaSupportPage />,
+  distributedScheduling: () => <DistributedSchedulingPage />,
 };
 
 function CloudConsoleShell() {

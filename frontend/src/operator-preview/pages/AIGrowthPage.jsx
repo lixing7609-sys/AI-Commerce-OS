@@ -19,6 +19,7 @@ import {
   revokeDiagnostics,
   setBusinessDataUpload,
 } from "../helpers/deviceMock.js";
+import { isDistributedComputeEnabled } from "../../shared/distributedCompute/mockComputeRepository.js";
 
 /**
  * AI 成长 / 成本与 Token / 设备与更新 / 数据与隐私（阶段：路由修复 +
@@ -218,6 +219,27 @@ export function DeviceUpdatesPage({ onChangeSignal } = {}) {
         ) : (
           <p className="op-empty-inline">当前已是最新版本。</p>
         )}
+      </section>
+      <section className="op-panel">
+        {/* 阶段"四端产品体系 V1"§8——设备资源卡片，只用简单业务语言，
+            不出现 ComputeAssignment / Scheduler Node / Sandbox Runtime /
+            CPU Time Slice 等技术词（这些只允许出现在 Founder/Cloud）。 */}
+        <div className="op-panel-heading">
+          <h3>设备资源</h3>
+          <em className="op-demo-badge">{DEMO_DATA_LABEL}</em>
+        </div>
+        <dl className="op-detail-meta">
+          <div><dt>设备运行状态</dt><dd>{device.health === "healthy" ? "正常" : device.health}</dd></div>
+          <div><dt>当前软件版本</dt><dd>{device.systemVersion}</dd></div>
+          <div><dt>最近心跳</dt><dd>{new Date(device.lastHeartbeatAt).toLocaleString("zh-CN")}</dd></div>
+          <div><dt>本地经营负载</dt><dd>较低</dd></div>
+          <div><dt>可用算力</dt><dd>{isDistributedComputeEnabled() ? "可参与平台协同" : "未开放平台协同"}</dd></div>
+          <div><dt>平台任务状态</dt><dd>无</dd></div>
+          <div><dt>今日平台后台任务运行时间</dt><dd>0 分钟</dd></div>
+          <div><dt>是否影响经营任务</dt><dd>否</dd></div>
+          <div><dt>当前分布式调度功能</dt><dd>{isDistributedComputeEnabled() ? "已启用" : "未启用"}</dd></div>
+        </dl>
+        <p className="op-empty-inline">平台算力协同尚未启用。</p>
       </section>
     </div>
   );

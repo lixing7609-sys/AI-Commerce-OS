@@ -12,6 +12,10 @@ export const NAV_ITEMS = [
   { key: "licenses", label: "许可与套餐", icon: "☑" },
   { key: "tokenMetering", label: "Token 计量", icon: "◔" },
   { key: "otaSupport", label: "OTA 与支持", icon: "⟲" },
+  // 阶段"四端产品体系 V1"§7 新增：分布式调度——展示未来由 Operator
+  // Cloud 调度经营者 Mac mini 空闲算力的架构预留能力，本轮全部只读
+  // 模拟数据，distributedCompute.enabled 恒为 false。
+  { key: "distributedScheduling", label: "分布式调度", icon: "⟁" },
 ];
 
 export function isValidCloudNavKey(key) {
