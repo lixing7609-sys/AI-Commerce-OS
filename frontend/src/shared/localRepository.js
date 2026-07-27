@@ -1,11 +1,11 @@
 /**
- * 三个 Edition（Founder / Operator / Cloud）共用的最小 mock 基础设施
- * ——延迟模拟、演示数据标记、localStorage 仓库。刻意从
+ * 四个产品端（Founder / Operator / Cloud / Studio）共用的最小 mock
+ * 基础设施——延迟模拟、演示数据标记、localStorage 仓库。刻意从
  * frontend/src/console/mock/mockUtils.js 里独立出一份，而不是让
- * operator-preview/ 或 cloud/ 反向 import console/ 内部实现：
- * console/ 是 Founder Edition 专属目录（scripts/editions/manifest.py
- * 从未把它列入任何客户发行包），Operator/Cloud 引用它会破坏既有
- * Edition 边界。frontend/src/shared/ 是三者都被允许依赖的公共层
+ * operator-preview/ / cloud/ / studio/ 反向 import console/ 内部
+ * 实现：console/ 是 Founder Edition 专属目录（scripts/editions/
+ * manifest.py 从未把它列入任何客户发行包），其它端引用它会破坏既有
+ * Edition 边界。frontend/src/shared/ 是四者都被允许依赖的公共层
  * （manifest.py 已相应更新 operator 的 include 前缀）。
  */
 

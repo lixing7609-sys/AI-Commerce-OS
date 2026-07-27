@@ -19,6 +19,11 @@ export const EDITIONS = Object.freeze({
   FOUNDER: "founder",
   OPERATOR: "operator",
   CLOUD: "cloud",
+  // Studio：内容生产与流量运营平台（阶段"四端产品体系 V1"）。是
+  // 自己的域（内容资产/矩阵账号/流量池/广告资源），不是 Operator
+  // 的子集，也不继承 Cloud 的平台管理权限——见
+  // edition-architecture.md 的四端边界。
+  STUDIO: "studio",
 });
 
 export const POLICY_KEYS = Object.freeze({
@@ -104,10 +109,24 @@ const CLOUD_POLICY = Object.freeze({
   // edition-architecture.md §11.
 });
 
+/**
+ * Studio 是内容/流量域，不是 Operator 的经营域子集，也不继承 Cloud
+ * 的平台管理权限——只授予它自己真正需要的少量跨域读权限（查看自己
+ * 设备的算力协同状态），不隐式获得 Operator 的默认授权（尤其是
+ * PRIVATE_BUSINESS_DATA_ACCESS：Studio 不应该默认能看到经营者的店铺
+ * 私有业务数据）。
+ */
+const STUDIO_POLICY = Object.freeze({
+  [POLICY_KEYS.DEVICE_OWN_VIEW]: true,
+  [POLICY_KEYS.OTA_RECEIVE]: true,
+  [POLICY_KEYS.SUPPORT_REQUEST]: true,
+});
+
 export const EDITION_POLICIES = Object.freeze({
   [EDITIONS.FOUNDER]: FOUNDER_POLICY,
   [EDITIONS.OPERATOR]: OPERATOR_POLICY,
   [EDITIONS.CLOUD]: CLOUD_POLICY,
+  [EDITIONS.STUDIO]: STUDIO_POLICY,
 });
 
 export function getEditionPolicy(edition) {
