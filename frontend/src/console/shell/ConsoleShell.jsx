@@ -49,7 +49,9 @@ export function ConsoleShell() {
       <ConsoleSidebar />
       <div className="fdr-main">
         <ConsoleTopBar />
-        <main className="fdr-content">{content}</main>
+        <main className="fdr-content">
+          <div className="fdr-content__inner">{content}</div>
+        </main>
       </div>
     </div>
   );
