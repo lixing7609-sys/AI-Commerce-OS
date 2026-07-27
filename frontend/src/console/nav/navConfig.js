@@ -144,6 +144,27 @@ export const FOUNDER_MODULES = [
     icon: "⚙⚙",
     requiredCapability: CAPABILITY_KEYS.SYSTEM_CENTER_VIEW,
   },
+  {
+    key: "storeConnectionCenter",
+    label: "真实店铺接入",
+    group: "researchLab",
+    icon: "⛓",
+    requiredCapability: CAPABILITY_KEYS.STORE_CONNECTION_CENTER_VIEW,
+  },
+  {
+    key: "operatorLab",
+    label: "Operator 实验室",
+    group: "researchLab",
+    icon: "▣",
+    requiredCapability: CAPABILITY_KEYS.OPERATOR_LAB_VIEW,
+  },
+  {
+    key: "studioLab",
+    label: "Studio 实验室",
+    group: "researchLab",
+    icon: "◆",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_VIEW,
+  },
 ];
 
 export const NAV_GROUPS = [
@@ -152,6 +173,7 @@ export const NAV_GROUPS = [
   { key: "growth", label: "增长与资金" },
   { key: "aiAutomation", label: "AI 与自动化" },
   { key: "analysisSystem", label: "分析与系统" },
+  { key: "researchLab", label: "全栈研发与真实店铺试运行" },
 ];
 
 export const DEFAULT_MODULE_KEY =

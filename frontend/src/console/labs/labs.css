@@ -1,0 +1,59 @@
+/*
+ * Founder Lab 包裹层——只负责"给被复用的产品端一个安全的、有界的
+ * 容器"，不重新定义 Operator/Studio 内部任何视觉样式（那些继续用
+ * 各自的 operatorPreview.css / studioConsole.css）。
+ *
+ * 复用的教训（本会话 Founder 滚动回归修复留下的规则）：被嵌入的
+ * 产品端自己的最外层 shell 用的是 `min-height:100vh`（Operator
+ * .op-shell）或 `height:100vh`（Studio .st-shell）——这两种写法在
+ * "作为独立整页"时都对，但嵌进 Founder 已经有界的 .fdr-content 里
+ * 会撑破容器或造成双重滚动条。所以这里从不渲染 .op-shell/.st-shell，
+ * 只复用它们内部的导航/内容 registry。
+ *
+ * 实测踩过的坑：Founder 的 `.fdr-content__inner` 本身是
+ * `overflow-y:visible` 的自适应高度容器（所有 Founder 模块共用这个
+ * 约定，让 Founder 自己的 `.fdr-content` 统一滚动）——在这种父级下
+ * `height:100%` 会被当成 `auto` 处理，完全不产生"有界容器"效果，
+ * 内层 `.op-main`/`.st-content` 的 `overflow-y:auto` 永远不会真正
+ * 触发，整块内容反而会把 Founder 页面撑得很高。改用 vh 单位的
+ * `max-height`（不依赖父级是否有 definite height）+ `position:sticky`
+ * 才能让 Operator/Studio 自己的侧边栏在 Founder 页面滚动时保持可见，
+ * 内容区在自己的有界高度内滚动——不撑高 Founder 页面，也不产生
+ * 双重滚动条。
+ */
+.fdr-lab-shell {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 140px);
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius, 10px);
+  background: var(--surface, #fff);
+}
+
+.fdr-lab-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-secondary, #64748b);
+  background: var(--bg-subtle, #f8fafc);
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.fdr-lab-banner strong {
+  color: var(--text, #0f172a);
+}
+
+.fdr-lab-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}

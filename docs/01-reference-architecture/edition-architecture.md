@@ -548,6 +548,24 @@ Recorded here in the same spirit as §11 (deferred work), for the 2026-07-27 fou
 
 ---
 
+## 17. Founder superset + first real store live pilot — pointer
+
+Founder's fifth nav group ("全栈研发与真实店铺试运行": Operator Lab, Studio Lab, 真实店铺接入) and
+the layered real-store access-mode model (`MODE_MOCK`→`MODE_SANDBOX`→`MODE_LIVE_READONLY`→
+`MODE_LIVE_APPROVAL`→`MODE_LIVE_AUTOMATED`, the last never default-enabled) are documented in their
+own file, in the same spirit as §15:
+
+→ [founder-superset-live-pilot.md](founder-superset-live-pilot.md)
+
+Summary for this document's purposes only: this is a **P0+P1 slice**, not the full phase — Founder
+now structurally contains Operator's and Studio's real page registries (zero forked page code), and
+`frontend/src/shared/storePlatform/` adds the adapter/credential/sync layer the real backend shop
+service (§14.3, Stage 8E) deliberately left out. P2–P5 (Prompt/Model Arena, Real Operation Task
+Workbench, Token Cost Ledger extensions, Marketplace cross-product skeleton) remain unbuilt — see
+that document's §5 for the explicit list.
+
+---
+
 ## References
 
 - ADR-0002 Edition Boundary (`docs/10-adr/ADR-0002-edition-boundary.md`) — technical enforcement

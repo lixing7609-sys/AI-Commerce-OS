@@ -17,6 +17,9 @@ import { BenchmarkCenterModule } from "./modules/benchmarkCenter/BenchmarkCenter
 import { ReplayCenterModule } from "./modules/replayCenter/ReplayCenterModule.jsx";
 import { EvaluationCenterModule } from "./modules/evaluationCenter/EvaluationCenterModule.jsx";
 import { SystemCenterModule } from "./modules/systemCenter/SystemCenterModule.jsx";
+import { StoreConnectionCenter } from "./labs/StoreConnectionCenter.jsx";
+import { OperatorLabWithExit } from "./labs/OperatorLabWithExit.jsx";
+import StudioLab from "./labs/StudioLab.jsx";
 
 /**
  * 模块 key -> 组件的唯一映射，ConsoleShell 从这里查表渲染当前
@@ -43,4 +46,7 @@ export const MODULE_COMPONENTS = {
   replayCenter: ReplayCenterModule,
   evaluationCenter: EvaluationCenterModule,
   systemCenter: SystemCenterModule,
+  storeConnectionCenter: StoreConnectionCenter,
+  operatorLab: OperatorLabWithExit,
+  studioLab: StudioLab,
 };

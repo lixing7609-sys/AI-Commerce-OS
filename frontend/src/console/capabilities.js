@@ -39,6 +39,10 @@ export const CAPABILITY_KEYS = Object.freeze({
   EVALUATION_CENTER_VIEW: "evaluationCenter.view",
   SYSTEM_CENTER_VIEW: "systemCenter.view",
   SYSTEM_CENTER_CONTROL: "systemCenter.control",
+  STORE_CONNECTION_CENTER_VIEW: "storeConnectionCenter.view",
+  STORE_CONNECTION_CENTER_MANAGE: "storeConnectionCenter.manage",
+  OPERATOR_LAB_VIEW: "operatorLab.view",
+  STUDIO_LAB_VIEW: "studioLab.view",
 });
 
 function allTrue(keys) {
