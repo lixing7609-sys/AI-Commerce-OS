@@ -1,5 +1,5 @@
 import "../../../App.css";
-import ShopCenterContent from "../../../pages/ShopCenterContent.jsx";
+import ShopCenterContent from "../../../shared/products/operator/ShopCenterContent.jsx";
 import { STORE_DETAIL_EXTRA_TABS } from "./storeDetailExtraTabs.jsx";
 
 /**

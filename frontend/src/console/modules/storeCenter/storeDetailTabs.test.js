@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDetailTabs } from "../../../pages/shopDetailTabs.js";
+import { buildDetailTabs } from "../../../shared/products/operator/shopDetailTabs.js";
 import { STORE_DETAIL_EXTRA_TABS } from "./storeDetailExtraTabs.jsx";
 
 /**

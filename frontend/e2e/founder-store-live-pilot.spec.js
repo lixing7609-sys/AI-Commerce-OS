@@ -93,6 +93,38 @@ test.describe("Founder: Operator Lab (研发实验室内嵌 Operator)", () => {
     // Founder 自己的顶层导航必须仍然存在（说明没有整页跳转/重新加载）
     await expect(page.getByRole("button", { name: "AI 秘书处" })).toBeVisible();
   });
+
+  test("店铺 page inside Operator Lab is the same real ShopCenterContent as standalone Operator, plus the Founder-only 平台连接器 overlay tab", async ({ page }) => {
+    const errors = collectPageErrors(page);
+    await page.goto("/?mode=founder&module=operatorLab");
+    await page.locator(".op-nav-link", { hasText: "店铺" }).click();
+    const firstCard = page.locator("article").first();
+    const hasStore = await firstCard.isVisible().catch(() => false);
+    test.skip(!hasStore, "no real store in the dev database");
+
+    await firstCard.click();
+    await expect(page.getByRole("button", { name: "平台连接器" })).toBeVisible();
+    const authTabIndex = await page.evaluate(() =>
+      [...document.querySelectorAll(".shop-detail-tabs button")].map((b) => b.textContent.trim())
+    );
+    expect(authTabIndex).toContain("平台连接器");
+    expect(authTabIndex.indexOf("平台连接器")).toBe(authTabIndex.indexOf("连接与授权") + 1);
+    expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
+  });
+
+  test("standalone Operator's 店铺 page never shows the Founder-only 平台连接器 tab", async ({ page }) => {
+    await page.goto("/operator");
+    await page.locator(".op-nav-link", { hasText: "店铺" }).click();
+    const firstCard = page.locator("article").first();
+    await expect
+      .poll(async () => (await firstCard.isVisible().catch(() => false)) || (await page.getByText("尚未添加店铺").count()) > 0, { timeout: 5000 })
+      .toBe(true);
+    const hasStore = await firstCard.isVisible().catch(() => false);
+    test.skip(!hasStore, "no real store in the dev database");
+
+    await firstCard.click();
+    await expect(page.getByRole("button", { name: "平台连接器" })).toHaveCount(0);
+  });
 });
 
 test.describe("Founder: Studio Lab (研发实验室内嵌 Studio)", () => {

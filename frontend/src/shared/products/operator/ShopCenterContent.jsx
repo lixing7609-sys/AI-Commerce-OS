@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
-import ShopCredentialsForm from "../components/shops/ShopCredentialsForm";
-import ShopFormDialog from "../components/shops/ShopFormDialog";
+import ShopCredentialsForm from "../../../components/shops/ShopCredentialsForm";
+import ShopFormDialog from "../../../components/shops/ShopFormDialog";
 import {
   getAuthTypeLabel,
   getConnectionStatusLabel,
@@ -9,8 +9,8 @@ import {
   getPlatformLabel,
   getShopStatusLabel,
   PLATFORM_OPTIONS,
-} from "../components/shops/shopLabels";
-import { getDeliverables } from "../services/deliverableApi";
+} from "../../../components/shops/shopLabels";
+import { getDeliverables } from "../../../services/deliverableApi";
 import {
   archiveShop,
   disableShop,
@@ -19,17 +19,24 @@ import {
   getShops,
   startShopOAuth,
   testShopConnection,
-} from "../services/shopApi";
-import { getTasks } from "../services/api";
-import { getShopLink, isValidHttpUrl, setShopLink } from "../store/shopLinksStore";
+} from "../../../services/shopApi";
+import { getTasks } from "../../../services/api";
+import { getShopLink, isValidHttpUrl, setShopLink } from "../../../store/shopLinksStore";
 import { buildDetailTabs } from "./shopDetailTabs.js";
 
 /**
- * ShopCenter 的内容部分，从 ShopCenter.jsx 抽出（阶段：Founder
- * Operator Edition，经 owner 授权的机械抽取，逻辑/API 调用/状态
- * 管理完全不变，只是不再自带 Sidebar/dashboard-shell 外壳——由
- * 调用方决定外壳，避免在 Founder 控制台里出现双重导航。
- * ShopCenter.jsx 本身保留原有外壳，供 Developer 版继续使用。
+ * 店铺经营的唯一真源内容组件（阶段 M8 Founder Product Shell
+ * Consolidation）——最初从 Developer 版 ShopCenter.jsx 抽出（机械
+ * 抽取，逻辑/API 调用/状态管理完全不变，只是不自带 Sidebar/
+ * dashboard-shell 外壳，外壳由调用方决定），现在从 frontend/src/
+ * pages/（Developer Edition 专属、operator/studio 发行包禁止依赖）
+ * 迁移到 frontend/src/shared/products/operator/ ——三个宿主共用
+ * 同一份实现，不允许任何一方 fork：
+ *   - Developer 版：pages/ShopCenter.jsx（保留原有外壳）
+ *   - Founder：console/modules/storeCenter/StoreCenterModule.jsx
+ *   - Operator：operator-preview/pageRegistry.jsx 的 shops key
+ * `extraDetailTabs` prop 是唯一允许的宿主差异化点——Founder 借此
+ * 注入研发增强标签页（平台连接器等），不修改本组件默认行为。
  */
 
 const STATUS_FILTERS = [

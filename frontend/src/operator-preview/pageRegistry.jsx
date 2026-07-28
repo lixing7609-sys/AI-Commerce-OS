@@ -1,10 +1,10 @@
 import DashboardPage from "./pages/DashboardPage";
-import ShopsPage from "./pages/ShopsPage";
 import SecretaryPage from "./pages/SecretaryPage";
 import SettingsPage from "./pages/SettingsPage";
 import { AIGrowthPage, CostTokenPage, DeviceUpdatesPage, DataPrivacyPage } from "./pages/AIGrowthPage";
 import { AdOpsPage } from "./pages/AdOpsPage";
 import { ComingSoonPage } from "./pages/ComingSoonPage";
+import ShopCenterContent from "../shared/products/operator/ShopCenterContent.jsx";
 
 /**
  * 模块 key -> 渲染函数的唯一映射，OperatorPreviewApp 从这里查表
@@ -15,11 +15,20 @@ import { ComingSoonPage } from "./pages/ComingSoonPage";
  * 每一项接收 (props) => ReactNode，props 里包含 onNavigate/
  * initialDetail 等页面各自需要的东西；ComingSoonPage 那几项直接
  * 用箭头函数包一层，把标题/说明/计划功能列表固定下来。
+ *
+ * 阶段 M8 Founder Product Shell Consolidation：这份注册表现在是
+ * Operator 唯一真源——Founder 的 Operator 实验室
+ * （console/labs/OperatorLab.jsx）和这里的独立 Operator
+ * （OperatorPreviewApp.jsx）渲染完全相同的组件，不允许 Founder 另外
+ * fork 一份。唯一允许的宿主差异是 `founderOverlay` prop——只有
+ * OperatorLab.jsx 会传入它，用来注入 Founder 专属的研发/诊断增强层
+ * （例如店铺详情页的"平台连接器"标签页），独立 Operator 永远拿到
+ * `undefined`，行为不变。
  */
 export const PAGE_COMPONENTS = {
   dashboard: ({ navigate }) => <DashboardPage onNavigate={navigate} />,
   secretary: ({ navigate, detailRoute }) => <SecretaryPage onNavigate={navigate} initialDetail={detailRoute} />,
-  shops: ({ navigate }) => <ShopsPage onNavigate={navigate} />,
+  shops: ({ founderOverlay }) => <ShopCenterContent extraDetailTabs={founderOverlay?.storeExtraDetailTabs} />,
   products: () => (
     <ComingSoonPage
       title="商品"
