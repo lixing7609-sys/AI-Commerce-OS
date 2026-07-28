@@ -42,8 +42,8 @@ const FOUNDER_OVERLAY = {
  * Founder 自己的导航"而不是重新加载整个页面——语义上仍然成立
  * （相对于这个内嵌预览，Founder 自身控制台确实是"外层后台"）。
  */
-function OperatorLabShell({ onExit }) {
-  const [activePage, setActivePage] = useState("dashboard");
+function OperatorLabShell({ onExit, initialPage }) {
+  const [activePage, setActivePage] = useState(initialPage && isValidNavKey(initialPage) ? initialPage : "dashboard");
   const [detailRoute, setDetailRoute] = useState(null);
   const { shopScope, shops } = usePreview();
 
@@ -86,10 +86,10 @@ function OperatorLabShell({ onExit }) {
   );
 }
 
-function OperatorLab({ onExit = () => {} }) {
+function OperatorLab({ onExit = () => {}, initialPage }) {
   return (
     <PreviewProvider>
-      <OperatorLabShell onExit={onExit} />
+      <OperatorLabShell onExit={onExit} initialPage={initialPage} />
     </PreviewProvider>
   );
 }

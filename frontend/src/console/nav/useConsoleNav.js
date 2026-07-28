@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { DEFAULT_MODULE_KEY, getModuleConfig } from "./navConfig.js";
+import { DEFAULT_MODULE_KEY, getModuleConfig, resolveModuleRedirect } from "./navConfig.js";
 
 /**
  * 结构化导航状态 {module, subView, entityId, params}，不引入
@@ -18,10 +18,20 @@ import { DEFAULT_MODULE_KEY, getModuleConfig } from "./navConfig.js";
 
 function parseSearch(search) {
   const params = new URLSearchParams(search);
-  const module = params.get("module");
+  const requestedModule = params.get("module");
+  const redirect = resolveModuleRedirect(requestedModule);
+
+  if (redirect) {
+    return {
+      module: redirect.module,
+      subView: redirect.subView ?? null,
+      entityId: params.get("entityId") || null,
+      tab: params.get("tab") || null,
+    };
+  }
 
   return {
-    module: getModuleConfig(module) ? module : DEFAULT_MODULE_KEY,
+    module: getModuleConfig(requestedModule) ? requestedModule : DEFAULT_MODULE_KEY,
     subView: params.get("subView") || null,
     entityId: params.get("entityId") || null,
     tab: params.get("tab") || null,
@@ -51,12 +61,20 @@ export function useConsoleNav() {
 
   const navigate = useCallback((module, opts = {}) => {
     setState((prev) => {
-      const next = {
-        module: getModuleConfig(module) ? module : prev.module,
-        subView: opts.subView ?? null,
-        entityId: opts.entityId ? String(opts.entityId) : null,
-        tab: opts.tab ?? null,
-      };
+      const redirect = resolveModuleRedirect(module);
+      const next = redirect
+        ? {
+            module: redirect.module,
+            subView: redirect.subView ?? null,
+            entityId: opts.entityId ? String(opts.entityId) : null,
+            tab: opts.tab ?? null,
+          }
+        : {
+            module: getModuleConfig(module) ? module : prev.module,
+            subView: opts.subView ?? null,
+            entityId: opts.entityId ? String(opts.entityId) : null,
+            tab: opts.tab ?? null,
+          };
       const url = buildSearch(next);
       if (opts.replace) {
         window.history.replaceState(next, "", url);

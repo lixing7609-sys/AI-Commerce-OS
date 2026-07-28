@@ -8,8 +8,11 @@ import { DEFAULT_MODULE_KEY } from "../nav/navConfig.js";
  * 的默认模块——用这个薄适配器把 ConsoleNavContext 接进去，而不是让
  * OperatorLab.jsx 本身依赖 Founder 的导航上下文（保持 OperatorLab
  * 可以被未来任何宿主复用，不和 Founder 的路由耦合）。
+ *
+ * `subView` 同时承担"旧 storeCenter 路由重定向到 Operator 实验室的
+ * 店铺页"这个职责——见 navConfig.js 的 MODULE_REDIRECTS。
  */
 export function OperatorLabWithExit() {
-  const { navigate } = useConsoleNavContext();
-  return <OperatorLab onExit={() => navigate(DEFAULT_MODULE_KEY)} />;
+  const { navigate, subView } = useConsoleNavContext();
+  return <OperatorLab onExit={() => navigate(DEFAULT_MODULE_KEY)} initialPage={subView} />;
 }

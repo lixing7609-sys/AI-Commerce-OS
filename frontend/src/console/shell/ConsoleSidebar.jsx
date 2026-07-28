@@ -31,9 +31,15 @@ export function ConsoleSidebar() {
                   (item.key === activeModule ? " fdr-sidebar__item--active" : "")
                 }
                 onClick={() => navigate(item.key)}
+                title={item.pendingOperatorParity ? "该模块尚未和 Operator 实验室完成单一真源合并" : undefined}
               >
                 <span className="fdr-sidebar__icon">{item.icon}</span>
                 {item.label}
+                {item.pendingOperatorParity ? (
+                  <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.6, border: "1px solid currentColor", borderRadius: 4, padding: "0 4px" }}>
+                    待同步
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>

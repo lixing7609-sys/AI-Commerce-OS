@@ -107,7 +107,7 @@ test.describe("Founder Store Center: platform connector moved into store detail"
     // 店铺列表，这里只验证"没有变成空白页/没有未捕获异常"，不假设
     // 深链接会保留在同一个店铺的同一个标签页。
     await page.reload();
-    await expect(page.locator("main")).not.toBeEmpty();
+    await expect(page.locator("main").last()).not.toBeEmpty();
     await expect(page.locator(".shop-card").first()).toBeVisible();
 
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);

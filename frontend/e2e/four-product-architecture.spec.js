@@ -148,9 +148,18 @@ test.describe("Operator: device resource card and advertising", () => {
 });
 
 test.describe("Founder: core navigation intact", () => {
-  test("Founder's Secretary and Store Center are still reachable", async ({ page }) => {
+  test("Founder's Secretary and Store Center (via Operator Lab) are still reachable", async ({ page }) => {
+    // 阶段 M8 Founder Product Shell Consolidation：Founder 不再单独有
+    // 一个顶级"店铺中心"菜单——店铺业务已经单一真源合并进 Operator
+    // 实验室（真实店铺接入模块 + Operator 实验室内嵌的
+    // ShopCenterContent），旧的 ?module=storeCenter 链接会自动重定向
+    // 到 Operator 实验室的店铺页，不会变成 404 或空白页。
     await page.goto("/founder");
     await expect(page.getByText("和 AI 秘书说点什么")).toBeVisible();
-    await expect(page.getByRole("button", { name: "店铺中心" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Operator 实验室" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "真实店铺接入" })).toBeVisible();
+
+    await page.goto("/?mode=founder&module=storeCenter");
+    await expect(page.locator(".op-nav-link", { hasText: "店铺" })).toBeVisible();
   });
 });

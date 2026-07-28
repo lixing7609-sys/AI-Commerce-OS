@@ -1,7 +1,7 @@
 import { useState } from "react";
 import "../../studio/studioConsole.css";
 import "./labs.css";
-import { NAV_ITEMS, DEFAULT_NAV_KEY } from "../../studio/navConfig.js";
+import { NAV_ITEMS, DEFAULT_NAV_KEY, isValidStudioNavKey } from "../../studio/navConfig.js";
 import { PAGE_COMPONENTS } from "../../studio/pages/index.jsx";
 import { ErrorBoundary } from "../../shared/ErrorBoundary.jsx";
 
@@ -13,9 +13,15 @@ import { ErrorBoundary } from "../../shared/ErrorBoundary.jsx";
  * 这里改用 `.fdr-lab-shell`（`height:100%`）把同一套内部结构装进
  * Founder 已经有界的内容区，避免嵌套视口高度导致的双重滚动（本会话
  * Founder 滚动回归修复留下的教训，见 labs.css 顶部注释）。
+ *
+ * `initialPage`：Founder 旧的 内容中心/AI直播中心/流量网络中心 一级
+ * 菜单已经收口，通过 navConfig.js 的 MODULE_REDIRECTS 落到这里对应
+ * 的 Studio 子页面，不让旧收藏夹链接失效。
  */
-function StudioLab() {
-  const [activePage, setActivePage] = useState(DEFAULT_NAV_KEY);
+function StudioLab({ initialPage }) {
+  const [activePage, setActivePage] = useState(
+    initialPage && isValidStudioNavKey(initialPage) ? initialPage : DEFAULT_NAV_KEY
+  );
   const [params, setParams] = useState({});
 
   function navigate(pageKey, opts = {}) {
