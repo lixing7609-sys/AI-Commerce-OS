@@ -636,8 +636,106 @@ Founder's `console/labs/MarketplaceCenter.jsx` sees every `CapabilityPackage` re
 state (production/review/pricing/license/release-channel/version/rollback/developer-directory
 management); Operator's and Studio's own nav gained a "能力市场" item rendering the same
 `shared/marketplace/MarketplaceBrowser.jsx` component (`theme="operator"|"studio"`), filtered to
-`status===APPROVED` packages whose `targetProducts` include that product or `"shared"`. Full field
-list and verification: [founder-superset-live-pilot.md](founder-superset-live-pilot.md) §9-§10.
+`status===APPROVED` packages whose `targetProducts` include that product or `"shared"`. §19.4
+refines Marketplace's *authoritative-owner* framing (Operator Cloud) — this section's
+three-view-sharing description is still accurate and unchanged.
+
+## 19. Founder Unified Product Navigation and Cloud Marketplace Consolidation (M8c)
+
+The owner reviewed M8b's result via real screenshots and rejected one specific implementation
+choice: clicking "Operator 实验室"/"Studio 实验室" in Founder's sidebar re-rendered a **second,
+nested product sidebar** (`OperatorNav`/Studio's own `.st-sidebar`) inside Founder's content area —
+"Founder 左侧的 Operator 实验室下面又出现了一整套 Operator 侧边栏." This section documents the fix,
+plus two related corrections requested in the same round: distinguishing the three products'
+"secretary" concept, and correcting Marketplace's deployment-authority framing. Full detail:
+[founder-superset-live-pilot.md](founder-superset-live-pilot.md) §11-§14.
+
+### 19.1 contentOnly rendering — no nested product shell, ever
+
+`console/labs/OperatorLab.jsx` and `console/labs/StudioLab.jsx` no longer render `OperatorNav` or
+Studio's `.st-sidebar` at all. They are now pure **controlled content renderers**: given
+`activePage`/`subView` and an `onNavigate` callback, they render exactly one page component from
+`operator-preview/pageRegistry.jsx` / `studio/pages/index.jsx` — nothing else. All product
+navigation state (`activePage`) lives in Founder's own `ConsoleNavContext`
+(`{module:"operatorLab"|"studioLab", subView}`), not in a separate `useState` inside the Lab
+component — `OperatorLabConnected.jsx` / `StudioLabConnected.jsx` are the only place translating
+between the two. This is why "current sub-item highlighted," "refresh restores state," and "browser
+back/forward work" all fall out of the *existing* URL-synced nav mechanism (`useConsoleNav.js`) for
+free — nothing new had to be built for those requirements.
+
+### 19.2 Operator's and Studio's full navigation renders directly inside Founder's one sidebar
+
+`console/shell/ConsoleSidebar.jsx` imports `OPERATOR_NAV_ITEMS`
+(`operator-preview/helpers/navigation.js`) and Studio's `NAV_ITEMS` (`studio/navConfig.js`)
+**directly** and renders them as an expandable sub-list under each product's accordion header —
+still literally the same arrays standalone Operator/Studio render from, so there is no second
+navigation array to keep in sync (§18.2's single-source rule, now enforced one level deeper: not
+just "same page registry" but "same nav item list, rendered in the same host"). Founder-only
+siblings in the Operator group (真实店铺接入, and the four `pendingOperatorParity` modules from
+§18.1) render above a visual divider, ahead of Operator's own unmodified item list — this is the
+concrete shape of "Founder增强层通过...slot...注入," not a fork of Operator's nav.
+
+### 19.3 Founder sidebar: collapsible accordion, single expansion
+
+`产品研发中心` / `Operator 实验室` / `Studio 实验室` / `Marketplace 中心` / `系统与发布` are each a
+collapsible section (`aria-expanded`/`aria-controls` on the toggle button); `Founder 总览` stays
+always-visible. Exactly one section is expanded at a time (clicking a second section collapses the
+first). The section containing the currently-active module is force-expanded on every render
+(state adjustment during render, not a `useEffect`, per
+[React's documented pattern](https://react.dev/learn/you-might-not-need-an-effect) — avoids an
+extra cascading render and the `react-hooks/set-state-in-effect` lint rule this repo enforces).
+Expansion state persists across reloads via `console/nav/sidebarExpansionStore.js`
+(localStorage, no credentials). The brand/logo row is a non-scrolling flex child
+(`.fdr-sidebar__brand`); only `.fdr-sidebar__scroll` scrolls, so expanding a long section can never
+push the logo out of view or create two competing scrollbars.
+
+**Accessibility note found and fixed during this work:** the expand/collapse arrow and each nav
+icon are `<span aria-hidden="true">` — without this, a button's accessible name concatenates the
+arrow/icon glyph with the label (e.g. `"▸Operator 实验室"`), breaking exact-name lookups (both
+Playwright's `getByRole` and real assistive-tech users benefit from the same fix).
+
+### 19.4 Three secretaries, formally distinguished
+
+"AI 秘书处" (Founder), "Operator秘书" (renamed from "AI 秘书"), and "Studio秘书" (new) are three
+different pages with three different scopes — not the same concept relabeled three times:
+
+| | Scope | Sees | Never shows |
+|---|---|---|---|
+| Founder's AI 秘书处 | Cross-product chief secretary | Research state, first real store + first content project status, Operator/Studio secretary summaries, cross-product reports | — (has full access by design) |
+| Operator秘书 (`operator-preview/pages/SecretaryPage.jsx`) | Business Runtime only | Shop/product/order/customer/service/inventory/ad/live-commerce/profit/Token-cost tasks | Founder R&D globals, Studio content projects, full Prompt/Skill management, Release management, developer review, global Marketplace operations |
+| Studio秘书 (new: `studio/pages/SecretaryPage.jsx`) | Content Runtime only | Content projects pending review, at-risk matrix accounts, content economics summary | Founder R&D globals, full store/order/customer-service management, global Marketplace review, global Release Candidate management |
+
+Relationship: Founder's secretary calls/aggregates Operator's and Studio's — it is not a fourth
+independent secretary duplicating either. Studio previously had **no** secretary page at all
+(`studio/navConfig.js` had 14 items, none named secretary); it is now the first nav item, backed by
+real data from `studio/mock/studioMock.js` (`getStudioOverview`/`getStudioState`), not new fake
+data.
+
+### 19.5 Marketplace authority reframed as Operator Cloud, not per-Mac-mini local storage
+
+§18.4 already established Marketplace as a shared module, not a fifth product end; this round
+corrects a framing gap the owner flagged: nothing in the UI or code comments made clear that the
+*authoritative* Marketplace service belongs to Operator Cloud, not each Mac mini. Fixes:
+
+- `shared/marketplace/cloudMarketplaceMockApi.js` (renamed from `mockMarketplaceRepository.js`) —
+  its top comment now explains it is a **mock stand-in for calling Operator Cloud's Marketplace
+  API**, including an explicit note on *why* it still physically lives under `shared/` rather than
+  `cloud/`: `cloud/` is forbidden for the `operator`/`studio` customer packages (§18.3), but
+  Operator's and Studio's own Marketplace-browsing pages need runtime access to this data — in a
+  real deployment that access is a network call to Operator Cloud and isn't subject to this
+  boundary; in this mock-only codebase, client and server can't be physically separated into
+  different deployment units, so the boundary is maintained by comment/convention until a real
+  Operator Cloud backend exists.
+- `console/labs/MarketplaceCenter.jsx`'s subtitle now reads "云端 Marketplace 的 Founder 管理/发布
+  入口——权威数据归属 Operator Cloud，本地为 Cloud Mock" (was: generic "AI 能力市场管理").
+- Founder's Marketplace 中心 gained a 10-item collapsible sub-nav (`MARKETPLACE_SUBNAV` in
+  `console/nav/navConfig.js`) mirroring the requested IA (概览/我的能力包/上架审核/Release
+  Candidate 提交/版本与灰度/定价与 License/销售与下载/开发者中心/分成与结算/Cloud Marketplace 控制
+  台) — each item honestly marked `implemented`/`planned`/`cloudMock`; unimplemented items
+  (Release Candidate submission pipeline, real settlement) render a labeled "规划中" notice, never
+  fabricated functionality. The "Cloud Marketplace 控制台" tab explicitly states no real Operator
+  Cloud backend is connected and disables its own "open console" button rather than linking
+  anywhere.
 
 ---
 

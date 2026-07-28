@@ -2,22 +2,24 @@
 
 Version
 
-2.0 (M8 P0+P1 slice, then M8b Founder Product Shell Consolidation)
+3.0 (M8 P0+P1, then M8b Founder Product Shell Consolidation, then M8c Unified Navigation + Cloud
+Marketplace)
 
 Date
 
-2026-07-27 (P0+P1), 2026-07-28 (M8b)
+2026-07-27 (P0+P1), 2026-07-28 (M8b, M8c)
 
 Status
 
-**Partially implemented, two phases merged into this one document to avoid duplicate architecture
+**Partially implemented, three phases merged into this one document to avoid duplicate architecture
 files.** Phase 1 ("M8 Founder First Real Store Live Pilot") shipped P0 (Founder-superset nav +
 Operator/Studio Lab reuse) and P1 (Store Platform Adapter + Store Connection Center) — §1-§5 below.
 Phase 2 ("M8b Founder Product Shell Consolidation") collapsed Founder's duplicate top-level business
-menus, made the Operator/Studio Lab reuse pattern the enforced single-source-of-truth architecture
-(not just an initial prototype), and added the cross-product Marketplace — §6-§10 below. Phase 1's
-P2-P5 items remain **not done** — see §5 for what's still outstanding (Marketplace is no longer in
-that list; it shipped in M8b, see §9).
+menus and added the cross-product Marketplace — §6-§10 below. Phase 3 ("M8c Founder Unified Product
+Navigation and Cloud Marketplace Consolidation") corrected Phase 2's nested-sidebar implementation
+after owner review of real screenshots, formally distinguished the three products' "secretary"
+concept, and reframed Marketplace's authoritative owner as Operator Cloud — §11-§14 below. Phase 1's
+P2-P5 items remain **not done** — see §5.
 
 ---
 
@@ -282,6 +284,100 @@ never leak into either consumer view. `e2e/marketplace.spec.js` (4 tests) and 9 
 - `python3 scripts/editions/check_boundary.py --edition all` — clean for `operator`/`studio`/
   `device-admin` throughout every commit in this phase.
 - `python3 -m pytest scripts/editions` — 17/17 (up from 12, +5 boundary-hardening tests).
+
+## 11. M8c — Founder Unified Product Navigation and Cloud Marketplace Consolidation
+
+The owner reviewed M8b's result via real screenshots and issued a binding follow-up rejecting one
+specific implementation choice, plus two related corrections. This phase does **not** freeze
+anything — it is a live correction of the just-shipped M8b work. Frozen-rule summary lives in
+[edition-architecture.md](edition-architecture.md) §19; this section is the implementation record.
+
+## 12. What was wrong with M8b's Operator/Studio Lab
+
+Clicking "Operator 实验室" in Founder's sidebar rendered `OperatorLab.jsx`, which then rendered the
+*entire* `OperatorNav` component (Operator's own full sidebar) inside Founder's already-bounded
+content area — a second, nested product shell, visually confirmed via screenshot as "Founder 左侧的
+Operator 实验室下面又出现了一整套 Operator 侧边栏." Same problem for Studio (`.st-sidebar`). The
+`.fdr-lab-shell`/`.fdr-lab-banner` CSS from M8b existed specifically to give that nested shell a
+bounded, non-double-scrolling container — solving a problem created by an architecture decision that
+should not have existed in the first place.
+
+## 13. The fix: contentOnly rendering + accordion sidebar
+
+- **`console/labs/OperatorLab.jsx` / `StudioLab.jsx` rewritten as pure controlled content
+  renderers.** They accept `activePage`/`subView` and an `onNavigate` callback and render exactly
+  one page component from `operator-preview/pageRegistry.jsx` / `studio/pages/index.jsx` — no
+  `OperatorNav`, no `.st-sidebar`, no outer shell CSS. `labs.css` (the M8b bounded-container
+  workaround) is deleted entirely — nothing needs it once there's no nested shell to bound.
+- **`console/shell/ConsoleSidebar.jsx` rewritten as a collapsible accordion tree** that imports
+  `OPERATOR_NAV_ITEMS` (`operator-preview/helpers/navigation.js`) and Studio's `NAV_ITEMS`
+  (`studio/navConfig.js`) directly and renders them as expandable sub-lists — the literal same
+  arrays standalone Operator/Studio read from. `产品研发中心`/`Operator 实验室`/`Studio 实验室`/
+  `Marketplace 中心`/`系统与发布` are single-expansion accordion sections;
+  `console/nav/sidebarExpansionStore.js` (new, localStorage) persists which one; the section
+  containing the active module force-expands via render-time state adjustment (not `useEffect`,
+  avoiding the `react-hooks/set-state-in-effect` lint rule and an extra cascading render — see
+  [React's docs on this pattern](https://react.dev/learn/you-might-not-need-an-effect)).
+- **All navigation state now lives in Founder's own `ConsoleNavContext`** (`{module:"operatorLab"|
+  "studioLab", subView}`) — `OperatorLabConnected.jsx` (renamed from `OperatorLabWithExit.jsx`, no
+  more "exit" concept needed since there's no second shell to exit) / `StudioLabConnected.jsx` are
+  the only translation layer. This is why refresh-restore, deep-linking, and browser back/forward
+  all work for free — they're the same `useConsoleNav.js` URL-sync mechanism every other Founder
+  module already relies on.
+- **Accessibility fix found while building this:** the accordion arrow and nav icons are
+  `<span aria-hidden="true">` — without it, a button's accessible name became `"▸Operator 实验室"`
+  (glyph concatenated with label), which silently breaks exact accessible-name lookups for both
+  assistive technology and Playwright's `getByRole`.
+- **Studio page-title regression found and fixed:** independent Studio's per-page `<h1>` was
+  rendered by `StudioApp.jsx`'s own topbar shell, not by individual page components (unlike
+  Operator, where e.g. `SecretaryPage.jsx` renders its own `<h1>`). Removing Studio's shell from the
+  Founder-embedded path silently removed every Studio page's title inside Founder. Fixed by adding
+  an equivalent `<h1>{activeItem.label}</h1>` directly in `StudioLab.jsx`, looked up from the same
+  `studio/navConfig.js` registry — both hosts now show a page title, from one source.
+
+## 14. Three secretaries + Marketplace authority reframe
+
+**Secretaries** — full detail in [edition-architecture.md](edition-architecture.md) §19.4. Summary:
+Operator's `secretary` nav item renamed "AI 秘书" → "Operator秘书"
+(`operator-preview/helpers/navigation.js`, `SecretaryPage.jsx`, `SecretaryPanel.jsx`); Studio gained
+a **new** `secretary` nav item and page (`studio/pages/SecretaryPage.jsx`, first item in
+`studio/navConfig.js`'s `NAV_ITEMS`) built from real `studio/mock/studioMock.js` data (pending
+in-review content projects, at-risk matrix accounts, revenue summary) — Studio had no secretary
+concept at all before this phase. Founder's own "AI 秘书处" is unchanged in code, clarified in
+comments as the cross-product chief secretary that calls/aggregates the other two, not a fourth
+independent one.
+
+**Marketplace authority** — `shared/marketplace/mockMarketplaceRepository.js` renamed
+`cloudMarketplaceMockApi.js`, its top comment rewritten to frame it as a mock stand-in for calling
+Operator Cloud's Marketplace API (the architecturally-intended authoritative owner), including an
+explicit explanation of why it still physically lives under `shared/` rather than `cloud/`: the
+`operator`/`studio` edition manifests forbid importing `cloud/` (§18.3's boundary hardening), but
+Operator's and Studio's Marketplace-browsing pages need runtime access to this data — a real
+deployment would reach it over the network, not subject to a frontend source-tree boundary; this
+mock-only codebase can't physically separate client and server into different deployment units, so
+the boundary is maintained by documented convention pending a real Operator Cloud backend.
+`console/labs/MarketplaceCenter.jsx` gained a 10-item collapsible sub-nav
+(`MARKETPLACE_SUBNAV` in `console/nav/navConfig.js`) — each item honestly marked `implemented`/
+`planned`/`cloudMock`; the "Cloud Marketplace 控制台" tab explicitly states no real backend is
+connected and disables its own action button rather than linking anywhere fake.
+
+## 15. M8c verification
+
+- `npx vitest run` — 303/303 (unchanged from M8b; this phase was a rendering/framing correction, no
+  new domain logic).
+- `npx playwright test` — 67/67 (1 pre-existing environment-dependent skip; up from 53 in M8b, +14
+  in `founder-nav-consolidation.spec.js` rewritten for the accordion/contentOnly model, +4 in
+  `marketplace.spec.js` for Cloud framing, existing `founder-store-live-pilot.spec.js` and
+  `four-product-architecture.spec.js` assertions updated to match).
+- `npx eslint` — clean (same 4 pre-existing warnings, untouched by this phase).
+- `npm run build` — clean.
+- `python3 scripts/editions/check_boundary.py --edition all` — clean.
+- Manual browser verification (this session): confirmed live — accordion starts collapsed;
+  expanding Operator 实验室 shows the real Operator dashboard directly in Founder's content area
+  with zero nested sidebar and zero console errors; expanding Studio 实验室 auto-collapses Operator
+  (single-expansion accordion); a hard reload at a deep Studio Lab link auto-re-expands the correct
+  group and highlights the correct sub-item; Marketplace 中心's 10-item sub-nav renders with correct
+  规划中/Cloud Mock badges and the review tab correctly filters to only in-review packages.
 
 ## References
 

@@ -369,6 +369,38 @@ detail: `docs/01-reference-architecture/edition-architecture.md` §18,
 
 ---
 
+# 13. Founder Sidebar & Cross-Product Secretary Standards
+
+Added 2026-07-28 (阶段 M8c Founder Unified Product Navigation and Cloud Marketplace Consolidation).
+Full rationale: `docs/01-reference-architecture/edition-architecture.md` §19,
+`docs/01-reference-architecture/founder-superset-live-pilot.md` §11-§14.
+
+1. Founder's Operator Lab / Studio Lab render **content only** — never a second copy of that
+   product's own nav/sidebar component. If a shared product's page registry is reused inside
+   Founder, only the page component renders; the product's own navigation chrome does not.
+2. A shared product's full navigation (e.g. `OPERATOR_NAV_ITEMS`, Studio's `NAV_ITEMS`) may be
+   rendered directly inside Founder's own sidebar component — this is not a rule 1 violation, since
+   it's Founder's *one* sidebar reading an external registry, not a rendered copy of the other
+   product's sidebar component.
+3. Any decorative icon or expand/collapse arrow glyph placed inside a nav button must be
+   `aria-hidden="true"` — otherwise it pollutes the button's accessible name for both assistive
+   technology and automated test locators.
+4. A page's `<h1>` title must be visible regardless of which host renders it. If a product's title
+   is normally rendered by its own outer shell (not by the page component itself), any host that
+   omits that shell must render an equivalent title from the same nav-item registry — never leave a
+   page with no visible title once its normal shell is not in the render path.
+5. Founder ("AI 秘书处"), Operator ("Operator秘书"), and Studio ("Studio秘书") each have their own
+   secretary page, scoped to that product's Runtime — never a shared/generic "AI 秘书" label reused
+   across products. Founder's secretary calls/aggregates the other two; it does not replace or
+   duplicate their scope.
+6. Mock data backing a capability whose real authoritative owner is a different service (e.g.
+   Marketplace's real owner is intended to be Operator Cloud) must be documented as a **mock client
+   for that remote service**, not presented as an independent local data store — including an
+   explicit note on why the file physically lives where it does if that differs from the intended
+   final architecture (e.g. an edition-boundary constraint blocking the "correct" location for now).
+
+---
+
 # Engineering Statement
 
 AI Commerce OS is developed as a long-term software engineering project.

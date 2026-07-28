@@ -38,21 +38,25 @@ position in this pipeline, independent of its coarser `status`
 
 ## 3. Navigation and pages
 
-`frontend/src/studio/navConfig.js` defines 14 nav items; `frontend/src/studio/pages/index.jsx`
+`frontend/src/studio/navConfig.js` defines 15 nav items; `frontend/src/studio/pages/index.jsx`
 maps each to a real page component (`PAGE_COMPONENTS`, same registry pattern as Founder's
 `moduleRegistry.jsx`, Operator's `pageRegistry.jsx`, Cloud's inline `PAGE_COMPONENTS`).
 
 **This registry is now the single source of truth**, not just for standalone Studio
 (`StudioApp.jsx`) — Founder's Studio Lab (`console/labs/StudioLab.jsx`/`StudioLabConnected.jsx`)
-imports these exact `NAV_ITEMS`/`PAGE_COMPONENTS`, never a copy (阶段 M8b Founder Product Shell
-Consolidation — see [edition-architecture.md](edition-architecture.md) §18.2 for the frozen rule).
-A new Studio business page is always added here first; it becomes reachable from both hosts
-automatically. Founder's old standalone `contentCenter`/`liveCenter`/`trafficNetworkCenter` menus
-were retired in the same phase in favor of this registry via `MODULE_REDIRECTS` — see
-[founder-superset-live-pilot.md](founder-superset-live-pilot.md) §9.
+imports these exact `NAV_ITEMS`/`PAGE_COMPONENTS` directly and renders them **inside Founder's own
+sidebar** (阶段 M8c — no nested Studio sidebar renders in Founder's content area; see
+[edition-architecture.md](edition-architecture.md) §19.1-§19.2). A new Studio business page is
+always added here first; it becomes reachable from both hosts automatically. Founder's old
+standalone `contentCenter`/`liveCenter`/`trafficNetworkCenter` menus were retired in favor of this
+registry via `MODULE_REDIRECTS` — see [founder-superset-live-pilot.md](founder-superset-live-pilot.md)
+§9. Per-page `<h1>` titles are rendered by `StudioApp.jsx`'s topbar for standalone Studio and by
+`StudioLab.jsx` for Founder-embedded — both look up the same `NAV_ITEMS` label, not two separate
+copies.
 
 | Key | Label | Content |
 |---|---|---|
+| `secretary` | Studio秘书 | Content-Runtime-scoped secretary (阶段 M8c) — content projects awaiting review, at-risk matrix accounts, monthly content-economics summary, all from real `studioMock.js` data. Distinct from Founder's cross-product "AI 秘书处" and Operator's business-scoped "Operator秘书" — see [edition-architecture.md](edition-architecture.md) §19.4 |
 | `overview` | Studio 概览 | Today/week production+publishing counts, matrix account/follower/traffic stats, sellable ad resources, monthly ad revenue, content-share revenue, compute usage; the production pipeline; the Studio↔Operator collaboration model |
 | `contentProjects` | 内容项目 | All content projects (short drama/short video/live/ad creative/brand column/matrix content), filterable by type, with stage/owner/budget/Token+compute usage/monetization model |
 | `shortDrama` | AI 短剧 | Short-drama projects, cast/voice profiles, per-episode script/storyboard/voiceover/generation/editing/review progress, distribution+revenue by platform |
