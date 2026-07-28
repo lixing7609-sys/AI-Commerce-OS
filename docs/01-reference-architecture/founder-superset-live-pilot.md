@@ -2,20 +2,22 @@
 
 Version
 
-1.0 (P0 + P1 slice)
+2.0 (M8 P0+P1 slice, then M8b Founder Product Shell Consolidation)
 
 Date
 
-2026-07-27
+2026-07-27 (P0+P1), 2026-07-28 (M8b)
 
 Status
 
-**Partially implemented.** This document describes the M8 "Founder First Real Store Live Pilot"
-phase. Of the six priorities the phase defines (P0–P5), **P0 and P1 are implemented and tested**;
-P2 (Prompt/Model Arena + Agent config extensions), P3 (Real Operation Task Workbench + Token Cost
-Ledger + Release Candidate), P4 (Studio-lab R&D view depth) and P5 (Marketplace cross-product
-skeleton) are **not yet implemented** — see §5. This document only describes what actually exists
-in the codebase today; it is not a spec for future work.
+**Partially implemented, two phases merged into this one document to avoid duplicate architecture
+files.** Phase 1 ("M8 Founder First Real Store Live Pilot") shipped P0 (Founder-superset nav +
+Operator/Studio Lab reuse) and P1 (Store Platform Adapter + Store Connection Center) — §1-§5 below.
+Phase 2 ("M8b Founder Product Shell Consolidation") collapsed Founder's duplicate top-level business
+menus, made the Operator/Studio Lab reuse pattern the enforced single-source-of-truth architecture
+(not just an initial prototype), and added the cross-product Marketplace — §6-§10 below. Phase 1's
+P2-P5 items remain **not done** — see §5 for what's still outstanding (Marketplace is no longer in
+that list; it shipped in M8b, see §9).
 
 ---
 
@@ -123,14 +125,13 @@ concept and no real backend calls; this page is the new access-mode/sync layer, 
   sync and confirmed the recorded `SyncJob` honestly shows `recordsProcessed: 0`,
   `status: succeeded`, with the "尚未接入真实后端" note.
 
-## 5. Explicitly not done in this pass
+## 5. Explicitly not done in Phase 1 (M8 P0+P1)
 
 - **P2** — Prompt/Model Arena, Agent Studio config field extensions for the live-pilot workflow.
 - **P3** — Real Operation Task Workbench, Token Cost Ledger extensions for real-store tasks,
   Release Candidate pipeline recording.
 - **P4** — Deeper Studio-lab R&D-specific view beyond the P0 reuse wrapper.
-- **P5** — Marketplace cross-product shared-module skeleton (Founder dev/test/review, Operator
-  Cloud package/license/OTA infrastructure, Operator/Studio browse-and-install surfaces).
+- ~~P5 — Marketplace cross-product shared-module skeleton~~ — **done in M8b, see §9.**
 - **MODE_LIVE_APPROVAL real action** (the phase's explicit stretch goal) — not attempted, because
   no real platform write channel exists in the backend yet; attempting it would have required
   either faking a write (prohibited) or building real platform API integration (out of scope for
@@ -143,10 +144,153 @@ concept and no real backend calls; this page is the new access-mode/sync layer, 
   top-of-file comment for why they are a distinct, non-duplicating projection of the same
   `storeId`).
 
+## 6. M8b — Founder Product Shell Consolidation: what changed
+
+The user issued a follow-up, more binding instruction after Phase 1: **Founder becomes the single
+daily development and acceptance entry point.** The owner will no longer open standalone Operator
+or Studio to validate work — but standalone Operator/Studio must keep working, because they are the
+future per-Mac-mini deployment shape. The concrete requirement: Founder's Operator Lab and Studio
+Lab must be **provably** the same code as the standalone products (not just "reuses the registry at
+the time it was written" — enforced going forward), and Founder must stop showing a second,
+parallel set of business menus (店铺/商品/内容/直播/订单/客服/广告) alongside the Lab entries.
+
+## 7. Edition boundary hardening (closes a real blind spot)
+
+`scripts/editions/manifest.py`'s `FRONTEND_FORBIDDEN_PREFIXES` previously only forbade
+`operator`'s customer package from containing `frontend/src/pages/` (the Developer edition's own
+tree) — it never forbade `frontend/src/console/` (Founder's exclusive R&D shell). That meant
+nothing would have caught it if a future change had made `operator-preview/` import from `console/`
+directly — the UI could look collapsed while the code still secretly depended on Founder-only
+logic. Fixed:
+
+- `frontend/src/console/` added to the forbidden list for **operator**, **studio**, and
+  **device-admin**.
+- A new `studio` entry added to the manifest (`FRONTEND_INCLUDE_PREFIXES`/`FRONTEND_FORBIDDEN_PREFIXES`)
+  — it didn't exist before this pass, meaning Studio's own customer-package boundary was previously
+  unchecked entirely.
+- Cross-product isolation: `operator` now also forbids `frontend/src/studio/` and
+  `frontend/src/cloud/`; `studio` forbids `frontend/src/operator-preview/` and `frontend/src/cloud/`.
+- `scripts/editions/test_check_boundary.py` gained a `M8FounderConsolidationBoundaryTests` class
+  (4 tests) asserting these forbidden entries exist and that an `operator-preview/` file importing
+  `console/modules/productCenter/...` is actually flagged by `check_import_boundary()`.
+
+Running `python3 scripts/editions/check_boundary.py --edition all` against the real repo passes
+clean both before and after every subsequent M8b change in this section — the hardening did not
+break anything that already existed, it only closes a future gap.
+
+## 8. Single-source Store/Shop: the reference pattern for every future shared module
+
+`frontend/src/pages/ShopCenterContent.jsx` (real backend CRUD/OAuth/credential management, Stage
+8E) used to live under `pages/` — forbidden for the `operator` customer package — so
+`operator-preview/`'s own `shops` page was a **separate, thinner** implementation
+(`ShopsPage.jsx`, no OAuth, different tabs). This was exactly the kind of drift the user's new
+instruction is about. Fixed by establishing the pattern every future Operator/Studio shared page
+must follow:
+
+1. **Move, don't fork.** `ShopCenterContent.jsx` (already portable — takes `onNavigate`/
+   `extraDetailTabs` props, never called `useConsoleNavContext()`/`useToast()` internally) moved
+   from `pages/` to `frontend/src/shared/products/operator/ShopCenterContent.jsx`. `shared/` is
+   allowed in every edition's include list.
+2. **Retire the duplicate.** `operator-preview/pages/ShopsPage.jsx` deleted; `pageRegistry.jsx`'s
+   `shops` key now renders the same `ShopCenterContent` Founder and the Developer edition
+   (`pages/ShopCenter.jsx`) use.
+3. **The one allowed difference is a `founderOverlay` prop**, not a fork. `pageRegistry.jsx`'s
+   `shops` entry accepts `({ founderOverlay }) => <ShopCenterContent extraDetailTabs={founderOverlay?.storeExtraDetailTabs} />`.
+   Only `OperatorLab.jsx` passes a non-`undefined` `founderOverlay` (injecting the "平台连接器"
+   Founder-only diagnostic tab, see `console/modules/storeCenter/storeDetailExtraTabs.jsx`);
+   standalone `OperatorPreviewApp.jsx` never does, so it renders the plain business view.
+   Verified live and in `e2e/founder-store-live-pilot.spec.js`: the tab appears inside Founder's
+   Operator Lab and never appears on `/operator`.
+
+This is the concrete, working instance of the abstract "FounderOperatorOverlay" pattern the task
+spec asked for — a props-based injection point, not a second page.
+
+**Not yet migrated to this pattern (a real, tracked gap, not silently dropped):**
+`console/modules/productCenter/`, `orderCenter/`, `customerServiceCenter/`, `approvalCenter/` are
+still Founder-only implementations. `operator-preview/`'s own `products`/`orders`/
+`customerService`/`approvals` pages remain the honest `ComingSoonPage` placeholders they already
+were. These four Founder modules call `useConsoleNavContext()`/`useToast()` (Founder-only context)
+directly inside their body — not just at the top like `ShopCenterContent` avoided doing — so
+promoting them to shared status requires the same kind of Page/Content extraction Store went
+through, done four more times, which is real follow-up work, not a trivial rename. Until that
+lands: they stay registered in Founder (nothing is deleted or broken), grouped next to "Operator
+实验室" in the nav, and each sidebar entry renders a visible "待同步" badge (see
+`console/shell/ConsoleSidebar.jsx`) so the gap is honest in the UI rather than hidden. `adCenter` is
+a different case — it was already, deliberately, Founder-only before this pass (see
+`operator-preview/pages/AdOpsPage.jsx`'s own pre-existing code comment about not exposing "Founder
+才有的无限制广告开发/策略配置工具" to Operator) — it is reclassified into 产品研发中心
+("广告策略研发") rather than migrated, since Operator's real, safe "广告投放" already exists and is
+untouched.
+
+## 9. Founder nav collapse + Marketplace across three views
+
+Founder's `FOUNDER_MODULES` (`console/nav/navConfig.js`) collapsed from an unstructured 5-group
+list into the requested six groups: **Founder 总览 / 产品研发中心 / Operator 实验室 / Studio 实验室 /
+Marketplace 中心 / 系统与发布**. `storeCenter`/`contentCenter`/`liveCenter`/`trafficNetworkCenter`
+removed as standalone top-level entries — their real capability now lives only in Operator Lab
+(店铺, via §8) and Studio Lab (`studio/`, already real for content/live/traffic, not a stub). A new
+`MODULE_REDIRECTS` table (same file) means every old `?module=` bookmark still resolves correctly
+— `contentCenter`→Studio Lab's `contentProjects`, `liveCenter`→`aiLive`,
+`trafficNetworkCenter`→`matrixAccounts`, `storeCenter`→Operator Lab's `shops` — instead of 404ing
+or silently falling back to the default module. `OperatorLab`/`StudioLab` gained an `initialPage`
+prop (via new `OperatorLabWithExit`/`StudioLabConnected` adapters reading `subView` from
+`ConsoleNavContext`) to land on the right sub-page after a redirect.
+
+**Marketplace** (`frontend/src/shared/marketplace/`) is the new cross-product AI capability market
+— not a fifth product end, a shared module three views read through:
+
+- `types.js` — the full `CapabilityPackage` model from the task spec (`packageType` incl. `BUNDLE`,
+  `targetProducts`, `PricingPolicy`/`LicensePolicy`/`TokenPolicy`, `PackageDependency`/
+  `PackageCompatibility`, `permissions`, `riskLevel`, `EvaluationSummary`, `PackageVersion[]`,
+  `DeveloperProfile`, `ReviewState`), plus Operator's and Studio's category lists from the spec.
+- `mockMarketplaceRepository.js` — localStorage-backed, 13 seed packages deliberately spanning
+  operator-only/studio-only/shared targeting, every `packageType` including one `BUNDLE`, and
+  draft/in_review/third-party-submitted review states (needed real variety to prove the filtering
+  actually filters, not just render an empty list correctly).
+- `marketplaceService.js` — the single query boundary: `listConsumablePackages(viewProduct)`
+  (approved + target-matches-product-or-shared, used by Operator/Studio) vs.
+  `listAllPackagesForManagement()` (everything, Founder only) — one filter written once.
+- `MarketplaceBrowser.jsx` — **one** browse/install component, `theme="operator"|"studio"` prop.
+  Operator's and Studio's existing CSS aren't a simple prefix swap (`op-panel` vs `st-card`,
+  `op-btn primary` vs `st-btn st-btn--primary`), so a small `THEME_CLASSES` lookup table handles
+  that — the data, filtering, and install/uninstall logic are one implementation, not two. Wired
+  into `operator-preview/pageRegistry.jsx`'s new `marketplace` key and `studio/pages/index.jsx`'s
+  new `marketplace` key — both nav lists gained a "能力市场" item (`helpers/navigation.js`,
+  `studio/navConfig.js`).
+- `console/labs/MarketplaceCenter.jsx` — Founder's management view (`marketplaceCenter` module,
+  new `marketplace` nav group): full package list regardless of review state, per-package review
+  (submit/in-review/approve/reject), release-channel switch (灰度), version publish/rollback, and a
+  developer directory tab. Reads the same `marketplaceService.js`, not a separate data source.
+
+Verified live in-browser in all three hosts (screenshots taken this session, not reproduced here):
+Founder sees all 13 packages including the draft/in-review/third-party ones; Operator's 能力市场
+shows exactly the 6 approved operator-or-shared packages; Studio's shows exactly the 6 approved
+studio-or-shared packages — draft/in-review packages and the other product's exclusive packages
+never leak into either consumer view. `e2e/marketplace.spec.js` (4 tests) and 9 new
+`marketplaceService.test.js` unit tests lock this in.
+
+## 10. M8b verification
+
+- `npx vitest run` — 303/303 (up from 294; +9 marketplace service tests).
+- `npx playwright test` — 53/53 (1 pre-existing environment-dependent skip; up from 40, +8
+  `founder-store-live-pilot.spec.js` extensions, +8 `founder-nav-consolidation.spec.js`, +4
+  `marketplace.spec.js`).
+- `npx eslint` — clean (4 pre-existing warnings in files this pass didn't touch the logic of).
+- `npm run build` — clean; bundle actually shrank (~1475KB→~1304KB) since the four retired Founder
+  modules (`contentCenter`/`liveCenter`/`trafficNetworkCenter`/old `storeCenter` wiring) are no
+  longer imported into the graph.
+- `python3 scripts/editions/check_boundary.py --edition all` — clean for `operator`/`studio`/
+  `device-admin` throughout every commit in this phase.
+- `python3 -m pytest scripts/editions` — 17/17 (up from 12, +5 boundary-hardening tests).
+
 ## References
 
 - [edition-architecture.md](edition-architecture.md) — four-product top-level architecture this
-  phase builds on without adding a fifth product end.
+  phase builds on without adding a fifth product end; §18 points here for the M8b nav-collapse and
+  single-source-registry rules.
+- [studio-domain-overview.md](studio-domain-overview.md) — Studio's own nav/page list, now 14 items
+  after Marketplace, and its role as the real (not stub) destination for Founder's retired
+  content/live/traffic menus.
 - [distributed-compute-architecture.md](distributed-compute-architecture.md) — the precedent this
   phase's `featureFlags.js`/honest-mock-data conventions follow.
 - `backend/app/models/shop_db.py`, `shop_api.py`, `shop_service.py` — the real backend this

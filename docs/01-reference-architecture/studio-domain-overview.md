@@ -38,9 +38,18 @@ position in this pipeline, independent of its coarser `status`
 
 ## 3. Navigation and pages
 
-`frontend/src/studio/navConfig.js` defines 13 nav items; `frontend/src/studio/pages/index.jsx`
+`frontend/src/studio/navConfig.js` defines 14 nav items; `frontend/src/studio/pages/index.jsx`
 maps each to a real page component (`PAGE_COMPONENTS`, same registry pattern as Founder's
-`moduleRegistry.jsx`, Operator's `pageRegistry.jsx`, Cloud's inline `PAGE_COMPONENTS`):
+`moduleRegistry.jsx`, Operator's `pageRegistry.jsx`, Cloud's inline `PAGE_COMPONENTS`).
+
+**This registry is now the single source of truth**, not just for standalone Studio
+(`StudioApp.jsx`) — Founder's Studio Lab (`console/labs/StudioLab.jsx`/`StudioLabConnected.jsx`)
+imports these exact `NAV_ITEMS`/`PAGE_COMPONENTS`, never a copy (阶段 M8b Founder Product Shell
+Consolidation — see [edition-architecture.md](edition-architecture.md) §18.2 for the frozen rule).
+A new Studio business page is always added here first; it becomes reachable from both hosts
+automatically. Founder's old standalone `contentCenter`/`liveCenter`/`trafficNetworkCenter` menus
+were retired in the same phase in favor of this registry via `MODULE_REDIRECTS` — see
+[founder-superset-live-pilot.md](founder-superset-live-pilot.md) §9.
 
 | Key | Label | Content |
 |---|---|---|
@@ -56,6 +65,7 @@ maps each to a real page component (`PAGE_COMPONENTS`, same registry pattern as 
 | `adOrders` | 广告订单 | Advertising orders, distinguishing Operator-originated demand (`customerType: "operator"`) from external customers, contract/collected amount, delivery/exposure progress, settlement status |
 | `computeTasks` | 算力任务 | Read-only view into the shared distributed-compute mock state — see [distributed-compute-architecture.md](distributed-compute-architecture.md) |
 | `dataAnalytics` | 数据分析 | Cross-cutting rollups (content-type distribution, platform play distribution, ad-order settlement) derived from the same mock state, not separately maintained numbers |
+| `marketplace` | 能力市场 | Studio's consumer view into the cross-product AI capability market — renders `shared/marketplace/MarketplaceBrowser.jsx` (`theme="studio"`), filtered to approved packages targeting Studio or shared; same component Operator uses with `theme="operator"`, same data Founder's Marketplace 中心 manages. See [edition-architecture.md](edition-architecture.md) §18.4 |
 | `settings` | 设置 | Product identity, relationship to the other three products, quick links |
 
 ## 4. Data layer

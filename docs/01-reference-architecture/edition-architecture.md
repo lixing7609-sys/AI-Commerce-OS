@@ -550,19 +550,94 @@ Recorded here in the same spirit as §11 (deferred work), for the 2026-07-27 fou
 
 ## 17. Founder superset + first real store live pilot — pointer
 
-Founder's fifth nav group ("全栈研发与真实店铺试运行": Operator Lab, Studio Lab, 真实店铺接入) and
-the layered real-store access-mode model (`MODE_MOCK`→`MODE_SANDBOX`→`MODE_LIVE_READONLY`→
-`MODE_LIVE_APPROVAL`→`MODE_LIVE_AUTOMATED`, the last never default-enabled) are documented in their
-own file, in the same spirit as §15:
+Founder's real-store access-mode model (`MODE_MOCK`→`MODE_SANDBOX`→`MODE_LIVE_READONLY`→
+`MODE_LIVE_APPROVAL`→`MODE_LIVE_AUTOMATED`, the last never default-enabled) and the Store Platform
+Adapter that implements it are documented in their own file, in the same spirit as §15:
 
 → [founder-superset-live-pilot.md](founder-superset-live-pilot.md)
 
-Summary for this document's purposes only: this is a **P0+P1 slice**, not the full phase — Founder
-now structurally contains Operator's and Studio's real page registries (zero forked page code), and
-`frontend/src/shared/storePlatform/` adds the adapter/credential/sync layer the real backend shop
-service (§14.3, Stage 8E) deliberately left out. P2–P5 (Prompt/Model Arena, Real Operation Task
-Workbench, Token Cost Ledger extensions, Marketplace cross-product skeleton) remain unbuilt — see
-that document's §5 for the explicit list.
+Summary for this document's purposes only: `frontend/src/shared/storePlatform/` adds the adapter/
+credential/sync layer the real backend shop service (§14.3, Stage 8E) deliberately left out. Prompt/
+Model Arena, the Real Operation Task Workbench, and Token Cost Ledger extensions remain unbuilt —
+see that document's §5 for the explicit list. Founder's nav structure and its single-source
+relationship with Operator/Studio is now governed by §18 below, superseding the "fifth nav group"
+description this section used to carry.
+
+## 18. Founder Product Shell Consolidation (M8b) — single-source architecture, frozen rules
+
+Following Phase 1 (§17), the user issued a binding follow-up: **Founder is the sole daily
+development and acceptance entry point going forward.** The owner will not open standalone
+Operator/Studio to validate day-to-day work, but standalone Operator/Studio must keep working
+unmodified, because they are the future per-Mac-mini customer deployment shape (§8 already
+established Operator's `frontend/src/operator-preview/` packaging; Studio now has its own manifest
+entry too, see below). Full detail: [founder-superset-live-pilot.md](founder-superset-live-pilot.md)
+§6-§10. This section freezes the resulting rules as permanent architecture, not phase-scoped notes.
+
+### 18.1 Founder nav: six groups, no duplicate business menus
+
+Founder's `console/nav/navConfig.js` is collapsed into exactly six top-level groups: **Founder
+总览 / 产品研发中心 / Operator 实验室 / Studio 实验室 / Marketplace 中心 / 系统与发布**. Founder must
+never again show a standalone top-level "店铺中心"/"内容中心"/"AI直播中心"/"流量网络中心"-style menu
+that duplicates capability Operator Lab or Studio Lab already renders — if such capability exists,
+it belongs inside one of those two groups (or, for content/live/traffic, purely inside Studio's own
+registry, reached via Studio Lab). A `MODULE_REDIRECTS` table in the same file means any old
+`?module=` bookmark for a retired key still lands on the correct page instead of 404ing.
+
+**Known, tracked exception (not silently dropped):** `productCenter`/`orderCenter`/
+`customerServiceCenter`/`approvalCenter` remain Founder-only for now — promoting them requires the
+same Page/Content extraction Store went through (§18.2), not yet done for these four. They are
+grouped next to "Operator 实验室" and each carries a visible "待同步" badge in the sidebar
+(`console/shell/ConsoleSidebar.jsx`) rather than being hidden.
+
+### 18.2 Single-source rule (enforced, not aspirational)
+
+**Operator's and Studio's own registries are the only source of their business pages.**
+`operator-preview/helpers/navigation.js` + `operator-preview/pageRegistry.jsx` for Operator;
+`studio/navConfig.js` + `studio/pages/index.jsx` for Studio. Founder's `OperatorLab`/`StudioLab`
+import these exact registries — never a copy. The one allowed per-host difference is a
+**`founderOverlay` prop** (Operator) — only Founder's host passes a non-empty value, injecting a
+Founder-only diagnostic tab (e.g. "平台连接器"); standalone Operator always gets `undefined` and
+renders the plain business view. This is the concrete instance of "FounderOperatorOverlay" — a
+props-based injection point, never a forked page.
+
+**Hard rules going forward** (enforced by §18.3's boundary checker, not just documented intent):
+
+1. A new Operator business page is added to `operator-preview/`'s own registry — never only inside
+   `console/labs/OperatorLab.jsx`.
+2. A new Studio business page is added to `studio/`'s own registry — never only inside
+   `console/labs/StudioLab.jsx`.
+3. Founder-exclusive R&D pages (Agent/Prompt/Skill/Workflow/Model Router/Evaluation/Replay/Release
+   Candidate/Risk Policy/Feature Flag) stay under `console/modules/` and the 产品研发中心 nav group;
+   they never leak into `operator-preview/` or `studio/`'s registries.
+4. Anything genuinely shared across Operator and Studio (e.g. Marketplace browsing, §19) lives under
+   `frontend/src/shared/` as one component filtered by a `theme`/`targetProduct` parameter — never
+   two separately-maintained implementations.
+5. Shared components under `frontend/src/shared/` must never import from `console/` or depend on
+   Founder-only context (`ConsoleNavContext`, Founder's `ToastProvider`) to render — they take plain
+   props instead, so any host (Founder, standalone Operator, standalone Studio) can render them.
+
+### 18.3 Edition boundary checker: closed a real blind spot
+
+`scripts/editions/manifest.py` previously only forbade `frontend/src/pages/` (Developer-only) for
+the `operator` customer package — it never forbade `frontend/src/console/` (Founder-only), so
+nothing would have caught a future `operator-preview/` file importing Founder R&D code even if the
+UI looked correctly collapsed. Fixed: `console/` is now forbidden for `operator`, `studio`, and
+`device-admin`; a `studio` manifest entry was added (it didn't exist before — Studio's customer
+package boundary was previously unchecked); `operator`/`studio` also forbid importing each other's
+product tree and `cloud/`. `python3 scripts/editions/check_boundary.py --edition all` must stay
+clean — it is part of the required verification sweep for any change touching `console/`,
+`operator-preview/`, or `studio/`.
+
+### 18.4 Marketplace — cross-product module, not a fifth product end
+
+Marketplace (`frontend/src/shared/marketplace/`) is a shared AI-capability-market module read by
+three different views, not a fifth product end (the four-product roster in §14.1 is unchanged):
+Founder's `console/labs/MarketplaceCenter.jsx` sees every `CapabilityPackage` regardless of review
+state (production/review/pricing/license/release-channel/version/rollback/developer-directory
+management); Operator's and Studio's own nav gained a "能力市场" item rendering the same
+`shared/marketplace/MarketplaceBrowser.jsx` component (`theme="operator"|"studio"`), filtered to
+`status===APPROVED` packages whose `targetProducts` include that product or `"shared"`. Full field
+list and verification: [founder-superset-live-pilot.md](founder-superset-live-pilot.md) §9-§10.
 
 ---
 

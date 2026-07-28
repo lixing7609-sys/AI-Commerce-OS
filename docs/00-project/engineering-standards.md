@@ -330,6 +330,45 @@ The repository should remain understandable even after ten years.
 
 ---
 
+# 12. Frontend Edition & Product Registry Standards
+
+Added 2026-07-28 (阶段 M8b Founder Product Shell Consolidation). Full rationale and enforcement
+detail: `docs/01-reference-architecture/edition-architecture.md` §18,
+`docs/01-reference-architecture/founder-superset-live-pilot.md` §6-§10.
+
+1. A new Operator business page is registered in `frontend/src/operator-preview/`'s own
+   navigation/page registry — never only inside Founder's `console/labs/OperatorLab.jsx`.
+2. A new Studio business page is registered in `frontend/src/studio/`'s own registry — never only
+   inside Founder's `console/labs/StudioLab.jsx`.
+3. Founder's Operator Lab / Studio Lab render pages by importing the standalone product's own
+   registry. Copying, forking, or re-implementing a page for Founder's benefit is not permitted.
+4. Founder-exclusive R&D pages (Agent/Prompt/Skill/Workflow/Model Router/Evaluation/Replay/Release
+   Candidate/Risk Policy/Feature Flag/Capability Package authoring) live under `console/modules/`
+   and the 产品研发中心 nav group; they never leak into Operator's or Studio's own registries.
+5. The only allowed Founder-vs-standalone difference for a shared page is a props-based
+   "overlay" (e.g. `founderOverlay`) injected only by the Founder host — never a second
+   implementation with different fields, state, or interactions.
+6. Marketplace-consumption components (Operator/Studio browsing, installing, upgrading) share one
+   component parameterized by `targetProduct`/`theme` — never two separately maintained UIs.
+7. `scripts/editions/check_boundary.py` must stay green for every edition after any change touching
+   `console/`, `operator-preview/`, or `studio/` — it checks real import statements, not just the
+   visible nav.
+8. Founder can see and reach every module. Operator can only see Operator-owned pages plus
+   `frontend/src/shared/`. Studio can only see Studio-owned pages plus `frontend/src/shared/`.
+9. Operator Cloud (`frontend/src/cloud/`) never renders per-tenant business pages — it is the
+   Package/License/Token/OTA/metering/distribution control plane, not a fifth consumer surface.
+10. Code under `frontend/src/shared/` must never import from `console/` and must never require
+    Founder-only React context (`ConsoleNavContext`, Founder's `ToastProvider`) to render — it takes
+    plain props, so any host can use it.
+11. Retiring a Founder top-level menu in favor of a shared registry requires a
+    `MODULE_REDIRECTS`-style compatibility entry so existing bookmarks/tests keep resolving, not a
+    silent 404 or fallback-to-default.
+12. A capability that exists only in Founder and has not yet been promoted to a shared registry must
+    be visibly marked as such in the UI (e.g. a "待同步" badge) — never presented as if parity with
+    Operator/Studio already existed.
+
+---
+
 # Engineering Statement
 
 AI Commerce OS is developed as a long-term software engineering project.
