@@ -160,6 +160,13 @@ export const FOUNDER_MODULES = [
     requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_VIEW,
   },
   {
+    key: "marketplaceCenter",
+    label: "Marketplace 中心",
+    group: "marketplace",
+    icon: "⛁",
+    requiredCapability: CAPABILITY_KEYS.MARKETPLACE_CENTER_VIEW,
+  },
+  {
     key: "systemCenter",
     label: "系统中心",
     group: "system",

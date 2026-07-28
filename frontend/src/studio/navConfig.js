@@ -5,10 +5,17 @@
  * 独立文件，方便 StudioApp.jsx 同时导出组件和这份纯数据而不触发
  * React Fast Refresh 的 lint 规则，也方便被测试单独 import。
  *
- * 13 项导航对应 §5 要求的核心页面——内容生产（内容项目/AI短剧/
+ * 14 项导航对应 §5 要求的核心页面——内容生产（内容项目/AI短剧/
  * AI视频/AI直播）、矩阵与资产（矩阵账号/内容资产）、流量与广告
  * （流量池/广告资源/广告订单）、平台协同（算力任务）、经营视图
- * （Studio概览/数据分析）、设置。全部是真实可点击页面，不是占位。
+ * （Studio概览/数据分析）、Marketplace、设置。全部是真实可点击页面，
+ * 不是占位。
+ *
+ * 阶段 M8 Founder Product Shell Consolidation §9：新增 marketplace——
+ * Studio 消费视角的 AI 能力市场，和 Founder Marketplace 中心、
+ * Operator 的 marketplace 页面共用同一份
+ * shared/marketplace/marketplaceService.js，只按
+ * targetProduct==="studio"|"shared" 过滤，不是独立实现。
  */
 export const NAV_ITEMS = [
   { key: "overview", label: "Studio 概览", icon: "◆" },
@@ -23,6 +30,7 @@ export const NAV_ITEMS = [
   { key: "adOrders", label: "广告订单", icon: "▩" },
   { key: "computeTasks", label: "算力任务", icon: "⟲" },
   { key: "dataAnalytics", label: "数据分析", icon: "◔" },
+  { key: "marketplace", label: "能力市场", icon: "⛁" },
   { key: "settings", label: "设置", icon: "⚙" },
 ];
 

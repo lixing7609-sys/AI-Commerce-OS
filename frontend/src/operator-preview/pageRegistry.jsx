@@ -5,6 +5,7 @@ import { AIGrowthPage, CostTokenPage, DeviceUpdatesPage, DataPrivacyPage } from 
 import { AdOpsPage } from "./pages/AdOpsPage";
 import { ComingSoonPage } from "./pages/ComingSoonPage";
 import ShopCenterContent from "../shared/products/operator/ShopCenterContent.jsx";
+import { MarketplaceBrowser } from "../shared/marketplace/MarketplaceBrowser.jsx";
 
 /**
  * 模块 key -> 渲染函数的唯一映射，OperatorPreviewApp 从这里查表
@@ -67,6 +68,7 @@ export const PAGE_COMPONENTS = {
   ),
   growth: () => <AIGrowthPage />,
   costToken: () => <CostTokenPage />,
+  marketplace: () => <MarketplaceBrowser theme="operator" />,
   deviceUpdates: () => <DeviceUpdatesPage />,
   dataPrivacy: () => <DataPrivacyPage />,
   settings: () => <SettingsPage />,

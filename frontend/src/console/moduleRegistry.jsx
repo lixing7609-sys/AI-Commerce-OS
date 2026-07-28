@@ -16,6 +16,7 @@ import { SystemCenterModule } from "./modules/systemCenter/SystemCenterModule.js
 import { StoreConnectionCenter } from "./labs/StoreConnectionCenter.jsx";
 import { OperatorLabWithExit } from "./labs/OperatorLabWithExit.jsx";
 import { StudioLabConnected } from "./labs/StudioLabConnected.jsx";
+import { MarketplaceCenter } from "./labs/MarketplaceCenter.jsx";
 
 /**
  * 模块 key -> 组件的唯一映射，ConsoleShell 从这里查表渲染当前
@@ -50,4 +51,5 @@ export const MODULE_COMPONENTS = {
   storeConnectionCenter: StoreConnectionCenter,
   operatorLab: OperatorLabWithExit,
   studioLab: StudioLabConnected,
+  marketplaceCenter: MarketplaceCenter,
 };

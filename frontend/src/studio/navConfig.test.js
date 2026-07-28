@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_NAV_KEY, NAV_ITEMS, getStudioNavItemByKey, isValidStudioNavKey } from "./navConfig.js";
 
 describe("Studio NAV_ITEMS", () => {
-  it("has all 13 required core pages, in order", () => {
+  it("has all 14 required core pages, in order", () => {
     expect(NAV_ITEMS.map((item) => item.key)).toEqual([
       "overview",
       "contentProjects",
@@ -16,6 +16,7 @@ describe("Studio NAV_ITEMS", () => {
       "adOrders",
       "computeTasks",
       "dataAnalytics",
+      "marketplace",
       "settings",
     ]);
   });

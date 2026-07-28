@@ -7,7 +7,7 @@ import {
 } from "./navigation";
 
 describe("OPERATOR_NAV_ITEMS", () => {
-  it("has the finalized 14-item customer-facing structure, in order", () => {
+  it("has the finalized 15-item customer-facing structure, in order", () => {
     expect(OPERATOR_NAV_ITEMS.map((item) => item.key)).toEqual([
       "dashboard",
       "secretary",
@@ -20,6 +20,7 @@ describe("OPERATOR_NAV_ITEMS", () => {
       "approvals",
       "growth",
       "costToken",
+      "marketplace",
       "deviceUpdates",
       "dataPrivacy",
       "settings",

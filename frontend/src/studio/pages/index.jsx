@@ -3,6 +3,7 @@ import { ContentProjectsPage, ShortDramaPage, AiVideoPage, AiLivePage } from "./
 import { MatrixAccountsPage, ContentAssetsPage } from "./MatrixAssetPages.jsx";
 import { TrafficPoolPage, AdResourcesPage, AdOrdersPage } from "./TrafficAdPages.jsx";
 import { ComputeTasksPage, DataAnalyticsPage, SettingsPage } from "./PlatformPages.jsx";
+import { MarketplaceBrowser } from "../../shared/marketplace/MarketplaceBrowser.jsx";
 
 /**
  * 模块 key -> 渲染函数的唯一映射，StudioApp.jsx 从这里查表渲染当前
@@ -23,5 +24,6 @@ export const PAGE_COMPONENTS = {
   adOrders: () => <AdOrdersPage />,
   computeTasks: () => <ComputeTasksPage />,
   dataAnalytics: () => <DataAnalyticsPage />,
+  marketplace: () => <MarketplaceBrowser theme="studio" />,
   settings: () => <SettingsPage />,
 };
