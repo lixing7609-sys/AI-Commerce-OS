@@ -203,7 +203,7 @@ function SecretaryPage({ initialDetail }) {
           item={resultItem}
           shopName={shopNameOf(shops, detailItem.shopId)}
           onBack={() => setDetailItem(null)}
-          backLabel="返回AI秘书处"
+          backLabel="返回 Operator 秘书"
         />
       </div>
     );
@@ -213,8 +213,8 @@ function SecretaryPage({ initialDetail }) {
     <div className="op-page">
       <header className="op-page-header">
         <div>
-          <h1>AI秘书处</h1>
-          <p>查看AI今天正在做什么、已经完成什么，以及哪些事项等待你决定。</p>
+          <h1>Operator 秘书</h1>
+          <p>只负责经营 Runtime——查看AI今天正在做什么、已经完成什么，以及哪些经营事项等待你决定。</p>
         </div>
       </header>
 

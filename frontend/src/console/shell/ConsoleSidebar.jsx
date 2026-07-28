@@ -1,50 +1,178 @@
-import { FOUNDER_MODULES, NAV_GROUPS } from "../nav/navConfig.js";
+import { useState } from "react";
+import { FOUNDER_MODULES, NAV_GROUPS, MARKETPLACE_SUBNAV, getGroupKeyForModule, getModuleConfig } from "../nav/navConfig.js";
 import { useConsoleNavContext } from "../nav/ConsoleNavContext.jsx";
 import { useCapabilities } from "../useCapabilities.js";
+import { OPERATOR_NAV_ITEMS } from "../../operator-preview/helpers/navigation.js";
+import { NAV_ITEMS as STUDIO_NAV_ITEMS, DEFAULT_NAV_KEY as STUDIO_DEFAULT_KEY } from "../../studio/navConfig.js";
+import { getStoredExpandedGroup, setStoredExpandedGroup } from "../nav/sidebarExpansionStore.js";
+
+/**
+ * Founder 唯一左侧导航（阶段 M8c Founder Unified Product Navigation）。
+ *
+ * 上一版（M8b）"Operator 实验室"/"Studio 实验室"是 FOUNDER_MODULES
+ * 里普通的一个按钮，点击后右侧内容区渲染一整套内嵌的 Operator/
+ * Studio 侧边栏——owner 看到实际截图后明确否决："Founder 左侧的
+ * Operator 实验室下面又出现了一整套 Operator 侧边栏"。修正：
+ * Operator 完整导航（`OPERATOR_NAV_ITEMS`）和 Studio 完整导航
+ * （`STUDIO_NAV_ITEMS`）现在直接展开在这一个组件里——不手写第二份
+ * 导航数组，两份列表都是直接 import 独立 Operator/Studio 自己的
+ * 权威 registry；子项点击只把 Founder 自己的 `{module, subView}`
+ * 导航状态改成对应值，右侧内容区（见 labs/OperatorLab.jsx /
+ * StudioLab.jsx）只渲染那一个页面组件，不再渲染任何嵌套侧边栏。
+ *
+ * 手风琴（单一展开分组）：`产品研发中心`/`Operator 实验室`/
+ * `Studio 实验室`/`Marketplace 中心`/`系统与发布` 五个分组同时只
+ * 展开一个，点击父节点区域切换，展开状态经
+ * `sidebarExpansionStore.js`（localStorage）持久化，刷新后恢复；
+ * 当前激活模块所在分组总是强制展开（即使用户之前手动折叠过），
+ * 避免"当前页面所在分组是折叠的、用户看不到自己在哪"这种状态。
+ * "Founder 总览"不参与折叠——默认页所在分组需要一直可见。
+ */
+
+const GROUP_SELF_MODULE_KEY = {
+  operatorLabGroup: "operatorLab",
+  studioLabGroup: "studioLab",
+  marketplace: "marketplaceCenter",
+};
+
+const MARKETPLACE_STATUS_BADGE = { planned: "规划中", cloudMock: "Cloud Mock" };
 
 export function ConsoleSidebar() {
-  const { module: activeModule, navigate } = useConsoleNavContext();
+  const { module: activeModule, subView, navigate } = useConsoleNavContext();
   const capabilities = useCapabilities();
 
+  const activeGroupKey = getGroupKeyForModule(activeModule);
+  const [expandedGroup, setExpandedGroup] = useState(() => activeGroupKey ?? getStoredExpandedGroup());
+  const [trackedActiveGroupKey, setTrackedActiveGroupKey] = useState(activeGroupKey);
+
+  // 当前激活模块所在分组永远强制展开——不管用户之前手动折叠过什么。
+  // 在渲染期间根据 activeGroupKey 的变化调整 state（React 官方推荐的
+  // "根据 prop 变化调整 state"模式，见 https://react.dev/learn/
+  // you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes），
+  // 不用 useEffect，避免多一次级联渲染。
+  if (activeGroupKey && activeGroupKey !== trackedActiveGroupKey) {
+    setTrackedActiveGroupKey(activeGroupKey);
+    setExpandedGroup(activeGroupKey);
+    setStoredExpandedGroup(activeGroupKey);
+  }
+
+  function toggleGroup(groupKey, onFirstExpand) {
+    if (expandedGroup === groupKey) {
+      setExpandedGroup(null);
+      setStoredExpandedGroup(null);
+      return;
+    }
+    setExpandedGroup(groupKey);
+    setStoredExpandedGroup(groupKey);
+    if (activeGroupKey !== groupKey) {
+      onFirstExpand?.();
+    }
+  }
+
+  function renderModuleButton(item) {
+    return (
+      <button
+        key={item.key}
+        type="button"
+        className={"fdr-sidebar__item" + (item.key === activeModule ? " fdr-sidebar__item--active" : "")}
+        onClick={() => navigate(item.key)}
+        title={item.pendingOperatorParity ? "该模块尚未和 Operator 实验室完成单一真源合并" : undefined}
+      >
+        <span className="fdr-sidebar__icon" aria-hidden="true">{item.icon}</span>
+        {item.label}
+        {item.pendingOperatorParity ? <span className="fdr-sidebar__badge">待同步</span> : null}
+      </button>
+    );
+  }
+
+  function renderSubItem({ key, label, icon, status }, moduleKey, defaultSubView) {
+    const isActive = activeModule === moduleKey && (subView ?? defaultSubView) === key;
+    return (
+      <button
+        key={key}
+        type="button"
+        className={"fdr-sidebar__subitem" + (isActive ? " fdr-sidebar__item--active" : "")}
+        onClick={() => navigate(moduleKey, { subView: key })}
+      >
+        {icon ? <span className="fdr-sidebar__icon" aria-hidden="true">{icon}</span> : null}
+        {label}
+        {status && MARKETPLACE_STATUS_BADGE[status] ? (
+          <span className="fdr-sidebar__badge">{MARKETPLACE_STATUS_BADGE[status]}</span>
+        ) : null}
+      </button>
+    );
+  }
+
   return (
-    <nav className="fdr-sidebar" aria-label="Founder Operator 导航">
+    <nav className="fdr-sidebar" aria-label="Founder 唯一导航">
       <div className="fdr-sidebar__brand">
         AI Commerce OS
         <span className="fdr-sidebar__brand-badge">FOUNDER</span>
       </div>
+      <div className="fdr-sidebar__scroll">
+        {NAV_GROUPS.map((group) => {
+          const selfModuleKey = GROUP_SELF_MODULE_KEY[group.key];
+          const items = FOUNDER_MODULES.filter(
+            (item) => item.group === group.key && item.key !== selfModuleKey && capabilities[item.requiredCapability]
+          );
 
-      {NAV_GROUPS.map((group) => {
-        const items = FOUNDER_MODULES.filter(
-          (item) => item.group === group.key && capabilities[item.requiredCapability]
-        );
-        if (items.length === 0) return null;
+          if (!group.collapsible) {
+            if (items.length === 0) return null;
+            return (
+              <div key={group.key}>
+                <div className="fdr-sidebar__group">{group.label}</div>
+                {items.map((item) => renderModuleButton(item))}
+              </div>
+            );
+          }
 
-        return (
-          <div key={group.key}>
-            <div className="fdr-sidebar__group">{group.label}</div>
-            {items.map((item) => (
+          // 分组本身（"Operator 实验室"这个概念）挂在一个 FOUNDER_MODULES
+          // 条目上，只用来读取 requiredCapability 做权限收口——不再单独
+          // 渲染成一个按钮，分组标题本身就是唯一入口。
+          const selfModuleConfig = selfModuleKey ? getModuleConfig(selfModuleKey) : null;
+          if (selfModuleConfig && !capabilities[selfModuleConfig.requiredCapability]) return null;
+          if (!selfModuleConfig && items.length === 0) return null;
+
+          const expanded = expandedGroup === group.key;
+          const panelId = `fdr-sidebar-panel-${group.key}`;
+
+          return (
+            <div key={group.key} className="fdr-sidebar__accordion">
               <button
-                key={item.key}
                 type="button"
-                className={
-                  "fdr-sidebar__item" +
-                  (item.key === activeModule ? " fdr-sidebar__item--active" : "")
+                className={"fdr-sidebar__group-toggle" + (expanded ? " expanded" : "")}
+                aria-expanded={expanded}
+                aria-controls={panelId}
+                onClick={() =>
+                  toggleGroup(group.key, () => {
+                    if (group.key === "operatorLabGroup") navigate("operatorLab", { subView: "dashboard" });
+                    else if (group.key === "studioLabGroup") navigate("studioLab", { subView: STUDIO_DEFAULT_KEY });
+                    else if (group.key === "marketplace") navigate("marketplaceCenter", { subView: "overview" });
+                  })
                 }
-                onClick={() => navigate(item.key)}
-                title={item.pendingOperatorParity ? "该模块尚未和 Operator 实验室完成单一真源合并" : undefined}
               >
-                <span className="fdr-sidebar__icon">{item.icon}</span>
-                {item.label}
-                {item.pendingOperatorParity ? (
-                  <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.6, border: "1px solid currentColor", borderRadius: 4, padding: "0 4px" }}>
-                    待同步
-                  </span>
-                ) : null}
+                <span className="fdr-sidebar__group-arrow" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+                {group.label}
               </button>
-            ))}
-          </div>
-        );
-      })}
+              {expanded ? (
+                <div id={panelId} className="fdr-sidebar__panel">
+                  {items.map((item) => renderModuleButton(item))}
+                  {items.length > 0 && group.external ? <div className="fdr-sidebar__divider" /> : null}
+                  {group.external === "operator"
+                    ? OPERATOR_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "operatorLab", "dashboard"))
+                    : null}
+                  {group.external === "studio"
+                    ? STUDIO_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "studioLab", STUDIO_DEFAULT_KEY))
+                    : null}
+                  {group.external === "marketplaceCloud"
+                    ? MARKETPLACE_SUBNAV.map((navItem) => renderSubItem(navItem, "marketplaceCenter", "overview"))
+                    : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </nav>
   );
 }

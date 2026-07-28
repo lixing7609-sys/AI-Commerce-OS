@@ -77,18 +77,19 @@ test.describe("Founder: Store Connection Center (真实店铺接入)", () => {
   });
 });
 
-test.describe("Founder: Operator Lab (研发实验室内嵌 Operator)", () => {
-  test("reuses the real Operator dashboard page with zero console errors", async ({ page }) => {
+test.describe("Founder: Operator Lab (阶段 M8c contentOnly 渲染，Operator 完整导航直接展开在 Founder 侧边栏里)", () => {
+  test("reuses the real Operator dashboard page with zero console errors, no nested Operator sidebar", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/?mode=founder&module=operatorLab");
-    await expect(page.getByText("研发实验室 · 完整复用 Operator 产品端页面")).toBeVisible();
     await expect(page.getByText("一人公司经营驾驶舱")).toBeVisible();
+    await expect(page.locator(".op-sidebar")).toHaveCount(0);
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
   });
 
-  test("navigating inside the embedded Operator nav does not reload or break the Founder shell", async ({ page }) => {
-    await page.goto("/?mode=founder&module=operatorLab");
-    await page.getByRole("button", { name: "广告投放" }).click();
+  test("navigating via Founder's sidebar sub-item does not reload or break the Founder shell", async ({ page }) => {
+    await page.goto("/founder");
+    await page.getByRole("button", { name: "Operator 实验室", exact: true }).click();
+    await page.locator(".fdr-sidebar__subitem", { hasText: "广告投放" }).click();
     await expect(page.getByRole("heading", { name: "广告投放" })).toBeVisible();
     // Founder 自己的顶层导航必须仍然存在（说明没有整页跳转/重新加载）
     await expect(page.getByRole("button", { name: "AI 秘书处" })).toBeVisible();
@@ -96,8 +97,9 @@ test.describe("Founder: Operator Lab (研发实验室内嵌 Operator)", () => {
 
   test("店铺 page inside Operator Lab is the same real ShopCenterContent as standalone Operator, plus the Founder-only 平台连接器 overlay tab", async ({ page }) => {
     const errors = collectPageErrors(page);
-    await page.goto("/?mode=founder&module=operatorLab");
-    await page.locator(".op-nav-link", { hasText: "店铺" }).click();
+    await page.goto("/founder");
+    await page.getByRole("button", { name: "Operator 实验室", exact: true }).click();
+    await page.locator(".fdr-sidebar__subitem", { hasText: "店铺" }).click();
     const firstCard = page.locator("article").first();
     const hasStore = await firstCard.isVisible().catch(() => false);
     test.skip(!hasStore, "no real store in the dev database");
@@ -127,36 +129,33 @@ test.describe("Founder: Operator Lab (研发实验室内嵌 Operator)", () => {
   });
 });
 
-test.describe("Founder: Studio Lab (研发实验室内嵌 Studio)", () => {
-  test("reuses the real Studio overview page with zero console errors", async ({ page }) => {
+test.describe("Founder: Studio Lab (阶段 M8c contentOnly 渲染，Studio 完整导航直接展开在 Founder 侧边栏里)", () => {
+  test("reuses the real Studio overview page with zero console errors, no nested Studio sidebar", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/?mode=founder&module=studioLab");
-    await expect(page.getByText("研发实验室 · 完整复用 Studio 产品端页面")).toBeVisible();
     await expect(page.getByText("Studio 概览 —— 内容生产、矩阵账号、流量与广告资源的经营视图")).toBeVisible();
+    await expect(page.locator(".st-sidebar")).toHaveCount(0);
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
   });
 
-  test("the embedded Studio content area scrolls independently, without a page-level double scrollbar", async ({ page }) => {
-    await page.goto("/?mode=founder&module=studioLab");
-    await page.getByRole("button", { name: "AI 短剧" }).click();
+  test("the embedded Studio content is reachable and scrollable via Founder's own single content container, no double scrollbar", async ({ page }) => {
+    await page.goto("/founder");
+    await page.getByRole("button", { name: "Studio 实验室", exact: true }).click();
+    await page.locator(".fdr-sidebar__subitem", { hasText: "AI 短剧" }).click();
+    await expect(page.getByRole("heading", { name: "AI 短剧" })).toBeVisible();
 
-    const before = await page.evaluate(() => {
-      const el = document.querySelector(".st-content");
-      return { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
+    // Founder 自己的内容容器（.fdr-content）现在是唯一的滚动上下文——
+    // 内嵌页面不再自带 .st-content 有界容器，不应该出现第二个独立的
+    // 滚动区域相互冲突。
+    const scrollContainerCount = await page.evaluate(() => {
+      const candidates = [".fdr-content", ".st-content"];
+      return candidates.filter((sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return false;
+        const style = getComputedStyle(el);
+        return style.overflowY === "auto" || style.overflowY === "scroll";
+      }).length;
     });
-    expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
-
-    await page.evaluate(() => {
-      document.querySelector(".st-content").scrollTop = 300;
-    });
-    const after = await page.evaluate(() => document.querySelector(".st-content").scrollTop);
-    expect(after).toBeGreaterThan(0);
-
-    // Founder 自己的外层内容容器不应该因为内嵌 Studio 被撑出额外的滚动
-    const founderContentOverflow = await page.evaluate(() => {
-      const el = document.querySelector(".fdr-content");
-      return el ? el.scrollHeight - el.clientHeight : 0;
-    });
-    expect(founderContentOverflow).toBeLessThanOrEqual(4);
+    expect(scrollContainerCount).toBe(1);
   });
 });

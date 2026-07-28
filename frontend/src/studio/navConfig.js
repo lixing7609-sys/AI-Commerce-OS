@@ -5,9 +5,9 @@
  * 独立文件，方便 StudioApp.jsx 同时导出组件和这份纯数据而不触发
  * React Fast Refresh 的 lint 规则，也方便被测试单独 import。
  *
- * 14 项导航对应 §5 要求的核心页面——内容生产（内容项目/AI短剧/
- * AI视频/AI直播）、矩阵与资产（矩阵账号/内容资产）、流量与广告
- * （流量池/广告资源/广告订单）、平台协同（算力任务）、经营视图
+ * 15 项导航对应 §5 要求的核心页面——Studio秘书、内容生产（内容项目/
+ * AI短剧/AI视频/AI直播）、矩阵与资产（矩阵账号/内容资产）、流量与
+ * 广告（流量池/广告资源/广告订单）、平台协同（算力任务）、经营视图
  * （Studio概览/数据分析）、Marketplace、设置。全部是真实可点击页面，
  * 不是占位。
  *
@@ -16,8 +16,15 @@
  * Operator 的 marketplace 页面共用同一份
  * shared/marketplace/marketplaceService.js，只按
  * targetProduct==="studio"|"shared" 过滤，不是独立实现。
+ *
+ * 阶段 M8c 三类秘书正式区分：新增 secretary——**Studio秘书**，只负责
+ * 内容 Runtime 范围内的任务，不显示 Founder 研发全局或 Operator 的
+ * 完整经营管理。与 Operator 的 secretary（Operator秘书）、Founder 的
+ * "AI秘书处"（跨产品总秘书）是三个不同职责的秘书，见
+ * docs/01-reference-architecture/edition-architecture.md §19。
  */
 export const NAV_ITEMS = [
+  { key: "secretary", label: "Studio秘书", icon: "☑" },
   { key: "overview", label: "Studio 概览", icon: "◆" },
   { key: "contentProjects", label: "内容项目", icon: "▤" },
   { key: "shortDrama", label: "AI 短剧", icon: "▶" },

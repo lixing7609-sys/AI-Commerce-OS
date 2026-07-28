@@ -21,7 +21,9 @@ function collectPageErrors(page) {
 test.describe("Marketplace: three-view scoping", () => {
   test("Founder Marketplace Center shows every package including draft/in_review and third-party submissions", async ({ page }) => {
     const errors = collectPageErrors(page);
-    await page.goto("/?mode=founder&module=marketplaceCenter");
+    // 阶段 M8c：默认落地页是"Marketplace 概览"（统计卡片，不是完整
+    // 列表）——完整能力包表格在"我的能力包"子页面，显式导航过去。
+    await page.goto("/?mode=founder&module=marketplaceCenter&subView=myPackages");
     await expect(page.getByRole("heading", { name: "Marketplace 中心" })).toBeVisible();
     await expect(page.getByText("（草稿）退款协商 Agent")).toBeVisible();
     await expect(page.getByText("（审核中）动态改价 Skill")).toBeVisible();
@@ -61,5 +63,33 @@ test.describe("Marketplace: three-view scoping", () => {
     const card = page.locator("article", { hasText: "品牌调性 Prompt 模板" });
     await card.getByRole("button", { name: "安装" }).click();
     await expect(card.getByText("已安装")).toBeVisible();
+  });
+});
+
+test.describe("Marketplace: authority is framed as Operator Cloud, not a per-Mac-mini local market (阶段 M8c)", () => {
+  test("Founder Marketplace 中心 explicitly states it's a Cloud management/publish entry, not a local full market service", async ({ page }) => {
+    await page.goto("/?mode=founder&module=marketplaceCenter");
+    await expect(page.getByText("云端 Marketplace 的 Founder 管理/发布入口")).toBeVisible();
+    await expect(page.getByText("权威数据归属 Operator Cloud")).toBeVisible();
+  });
+
+  test("Founder Marketplace 中心's sidebar sub-nav shows honest 规划中/Cloud Mock badges, never claims unfinished features are live", async ({ page }) => {
+    await page.goto("/founder");
+    await page.getByRole("button", { name: "Marketplace 中心", exact: true }).click();
+    await expect(page.locator(".fdr-sidebar__subitem", { hasText: "Release Candidate 提交" }).getByText("规划中")).toBeVisible();
+    await expect(page.locator(".fdr-sidebar__subitem", { hasText: "分成与结算" }).getByText("规划中")).toBeVisible();
+    await expect(page.locator(".fdr-sidebar__subitem", { hasText: "Cloud Marketplace 控制台" }).getByText("Cloud Mock")).toBeVisible();
+  });
+
+  test("Cloud Marketplace 控制台 tab honestly states no real Operator Cloud backend is connected yet, no fake console link", async ({ page }) => {
+    await page.goto("/?mode=founder&module=marketplaceCenter&subView=cloudConsole");
+    await expect(page.getByText("尚未接入真实 Operator Cloud 后端")).toBeVisible();
+    await expect(page.getByText("Cloud Marketplace Mock API")).toBeVisible();
+    await expect(page.getByRole("button", { name: "打开云端管理控制台（尚未接入）" })).toBeDisabled();
+  });
+
+  test("Operator's 能力市场 nav item is reachable as a Cloud consumer view, same shared component as Studio's", async ({ page }) => {
+    await page.goto("/operator");
+    await expect(page.getByRole("button", { name: "能力市场" })).toBeVisible();
   });
 });

@@ -4,7 +4,7 @@
  * 与 Founder 的 console/nav/navConfig.js 同一个原则：这是唯一权威
  * 列表，侧边栏、底部导航、抽屉导航都从这里读取，不在别处重复定义
  * 模块 key。15 项客户最终导航结构：
- *   今日经营 / AI 秘书 / 店铺 / 商品 / 内容 / 广告投放 / 订单 / 客服 /
+ *   今日经营 / Operator秘书 / 店铺 / 商品 / 内容 / 广告投放 / 订单 / 客服 /
  *   审批 / AI 成长 / 成本与 Token / 能力市场 / 设备与更新 / 数据与
  *   隐私 / 设置
  *
@@ -22,10 +22,21 @@
  * marketplace——Operator 消费视角的 AI 能力市场，和 Founder
  * Marketplace 中心、Studio 的 marketplace 页面共用同一份
  * shared/marketplace/marketplaceService.js。
+ *
+ * 阶段 M8c 三类秘书正式区分：这里的 "secretary" 是 **Operator秘书**，
+ * 只负责经营 Runtime 范围内的任务（当前店铺/商品/订单/客户/客服/
+ * 库存/广告投放/直播带货/利润/Token经营成本/日报/经营审批/经营
+ * 异常）——不显示 Founder 研发全局、Studio 内容项目、完整 Prompt/
+ * Skill 管理、Release 管理、开发者审核、Marketplace 全局运营。与
+ * Founder 的"AI秘书处"（跨产品总秘书）、Studio 的"Studio秘书"
+ * （内容 Runtime）是三个不同职责的秘书，不是三套同名秘书——关系是
+ * Founder AI秘书处调用/汇总 Operator秘书与 Studio秘书的报告，不是
+ * 三者互相替代。见 docs/01-reference-architecture/
+ * edition-architecture.md §19。
  */
 export const OPERATOR_NAV_ITEMS = [
   { key: "dashboard", label: "今日经营", icon: "◆", status: "ready" },
-  { key: "secretary", label: "AI 秘书", icon: "☑", status: "ready" },
+  { key: "secretary", label: "Operator秘书", icon: "☑", status: "ready" },
   { key: "shops", label: "店铺", icon: "▽", status: "ready" },
   { key: "products", label: "商品", icon: "▣", status: "comingSoon" },
   { key: "content", label: "内容", icon: "▥", status: "comingSoon" },

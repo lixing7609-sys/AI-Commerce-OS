@@ -1,4 +1,5 @@
 import { OverviewPage } from "./OverviewPage.jsx";
+import { SecretaryPage } from "./SecretaryPage.jsx";
 import { ContentProjectsPage, ShortDramaPage, AiVideoPage, AiLivePage } from "./ContentPages.jsx";
 import { MatrixAccountsPage, ContentAssetsPage } from "./MatrixAssetPages.jsx";
 import { TrafficPoolPage, AdResourcesPage, AdOrdersPage } from "./TrafficAdPages.jsx";
@@ -12,6 +13,7 @@ import { MarketplaceBrowser } from "../../shared/marketplace/MarketplaceBrowser.
  * navConfig.js 里的 NAV_ITEMS 完全对应。
  */
 export const PAGE_COMPONENTS = {
+  secretary: ({ navigate }) => <SecretaryPage navigate={navigate} />,
   overview: ({ navigate }) => <OverviewPage navigate={navigate} />,
   contentProjects: () => <ContentProjectsPage />,
   shortDrama: () => <ShortDramaPage />,

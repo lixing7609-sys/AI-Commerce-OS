@@ -9,9 +9,30 @@ import {
 } from "./types.js";
 
 /**
- * Marketplace 的 mock 领域数据（阶段 M8 §9/§10）。localStorage 持久化，
- * 和 shared/storePlatform、shared/distributedCompute 同一套约定——
- * 不是真实支付/结算系统，是"信息架构和领域模型正确"的可交互原型。
+ * Cloud Marketplace Mock API（阶段 M8c §4E）——Marketplace 的权威数据
+ * /服务按架构应该部署在 Operator Cloud（见任务书 §4A："Operator
+ * Cloud 是 Marketplace 唯一权威数据源"），这个文件是"如果真的调用
+ * Operator Cloud 的 Marketplace API 会拿到什么"的本地模拟替身。
+ *
+ * 为什么物理上仍然放在 shared/marketplace/ 而不是 cloud/marketplace/
+ * ——这是刻意的技术决定，不是没做完：scripts/editions/manifest.py
+ * 的 edition boundary（阶段 M8b 补上的规则，见
+ * edition-architecture.md §18.3）禁止 operator/studio 客户发行包
+ * import frontend/src/cloud/ 下的任何东西，而 Operator 和 Studio
+ * 的能力市场消费页面（MarketplaceBrowser.jsx）必须能在运行时读到
+ * 这份数据——真实架构里这是一次跨网络的 HTTP 调用，不受这条边界
+ * 约束；但在没有真实后端、纯前端 mock 的现状下，"客户端"和"服务端"
+ * 无法用两个不同的 npm 包/部署单元物理隔开，只能靠这份注释和
+ * `shared/marketplace/marketplaceService.js`（唯一允许调用这个文件
+ * 的地方）在逻辑上维持"这是在调用远端 Cloud API，不是在读本地数据库"
+ * 这个语义边界。真正拆分成物理独立的 Cloud 服务是 Operator Cloud
+ * 真实后端上线之后的工作，不在本阶段范围内。
+ *
+ * localStorage 持久化，和 shared/storePlatform、
+ * shared/distributedCompute 同一套约定——不是真实支付/结算系统，是
+ * "信息架构和领域模型正确"的可交互原型，UI 层必须明确标注"Cloud
+ * Mock"/"云端 Marketplace 模拟环境"，不得表现成真实云端状态（见
+ * console/labs/MarketplaceCenter.jsx 的 CloudConsoleNotice）。
  * 种子数据故意覆盖 Operator/Studio/Shared 三种 targetProducts、
  * BUNDLE 在内的多种 packageType、draft 到 stable 的完整评审状态谱，
  * 这样 Marketplace 三端视图的过滤逻辑才有真实差异可验证。

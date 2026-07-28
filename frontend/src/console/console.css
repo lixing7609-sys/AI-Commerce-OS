@@ -37,11 +37,24 @@
   color: var(--fdr-sidebar-text);
   display: flex;
   flex-direction: column;
-  padding: 18px 0;
+  padding: 18px 0 0;
   position: sticky;
   top: 0;
   height: 100vh;
+  overflow: hidden;
+}
+
+/*
+ * 阶段 M8c §3 滚动要求："Logo 区固定；当前展开节点可见；不出现两个
+ * 重叠滚动条"——brand 区留在 .fdr-sidebar 的普通流里（不滚动），
+ * 下面这个包裹层才是真正的滚动容器，手风琴展开/折叠只改变这个
+ * 容器内部的内容高度，不会把 logo 挤出视口。
+ */
+.fdr-sidebar__scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  padding-bottom: 18px;
 }
 
 .fdr-sidebar__brand {
@@ -54,6 +67,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
 }
 
 .fdr-sidebar__brand-badge {
@@ -107,6 +121,85 @@
   width: 18px;
   text-align: center;
   flex-shrink: 0;
+}
+
+.fdr-sidebar__badge {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: .75;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+/* 阶段 M8c §3：可展开/折叠的产品导航树分组。 */
+.fdr-sidebar__accordion {
+  margin-bottom: 2px;
+}
+
+.fdr-sidebar__group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  color: var(--fdr-sidebar-text);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fdr-sidebar__group-toggle:hover {
+  color: #fff;
+}
+
+.fdr-sidebar__group-toggle.expanded {
+  color: #fff;
+}
+
+.fdr-sidebar__group-arrow {
+  display: inline-block;
+  width: 10px;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.fdr-sidebar__panel {
+  padding-bottom: 4px;
+}
+
+.fdr-sidebar__divider {
+  margin: 6px 20px;
+  border-top: 1px solid var(--fdr-sidebar-border);
+}
+
+.fdr-sidebar__subitem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 20px 7px 32px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--fdr-sidebar-text);
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  background: none;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  text-align: left;
+}
+
+.fdr-sidebar__subitem:hover {
+  background: rgba(255,255,255,.05);
+  color: #fff;
 }
 
 .fdr-main {

@@ -1,10 +1,16 @@
 import { TargetProduct, ReviewState } from "./types.js";
-import { listPackages, getPackageById, getInstallation } from "./mockMarketplaceRepository.js";
+import { listPackages, getPackageById, getInstallation } from "./cloudMarketplaceMockApi.js";
 
 /**
- * Marketplace 的唯一查询边界——Operator/Studio 的浏览页面、Founder
- * 的管理页面全部通过这里读取数据，过滤规则只写一次，防止某个视图
- * 自己再实现一遍"只看 approved"之类的判断，出现三处不一致。
+ * Marketplace 的唯一客户端查询边界（阶段 M8c：Marketplace client，
+ * 见 edition-architecture.md §18.4/§19）——Operator/Studio 的浏览
+ * 页面（`shared/marketplace/MarketplaceBrowser.jsx`）、Founder 的
+ * 管理页面（`console/labs/MarketplaceCenter.jsx`）全部通过这里读取
+ * 数据，过滤规则只写一次，防止某个视图自己再实现一遍"只看
+ * approved"之类的判断，出现三处不一致。底层调用
+ * `cloudMarketplaceMockApi.js`——本地对"调用 Operator Cloud
+ * Marketplace API"的模拟，权威数据按架构归属 Operator Cloud，这层
+ * 客户端不持有自己的数据源。
  */
 
 /**
@@ -50,4 +56,4 @@ export {
   setReleaseChannel,
   publishNewVersion,
   rollbackToVersion,
-} from "./mockMarketplaceRepository.js";
+} from "./cloudMarketplaceMockApi.js";

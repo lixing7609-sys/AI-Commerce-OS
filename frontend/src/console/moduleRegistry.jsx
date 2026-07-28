@@ -14,7 +14,7 @@ import { ReplayCenterModule } from "./modules/replayCenter/ReplayCenterModule.js
 import { EvaluationCenterModule } from "./modules/evaluationCenter/EvaluationCenterModule.jsx";
 import { SystemCenterModule } from "./modules/systemCenter/SystemCenterModule.jsx";
 import { StoreConnectionCenter } from "./labs/StoreConnectionCenter.jsx";
-import { OperatorLabWithExit } from "./labs/OperatorLabWithExit.jsx";
+import { OperatorLabConnected } from "./labs/OperatorLabConnected.jsx";
 import { StudioLabConnected } from "./labs/StudioLabConnected.jsx";
 import { MarketplaceCenter } from "./labs/MarketplaceCenter.jsx";
 
@@ -49,7 +49,7 @@ export const MODULE_COMPONENTS = {
   evaluationCenter: EvaluationCenterModule,
   systemCenter: SystemCenterModule,
   storeConnectionCenter: StoreConnectionCenter,
-  operatorLab: OperatorLabWithExit,
+  operatorLab: OperatorLabConnected,
   studioLab: StudioLabConnected,
   marketplaceCenter: MarketplaceCenter,
 };

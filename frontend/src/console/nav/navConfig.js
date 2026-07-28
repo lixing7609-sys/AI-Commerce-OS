@@ -32,6 +32,15 @@ import { CAPABILITY_KEYS } from "../capabilities.js";
  *     边界："不暴露 Founder 才有的无限制广告开发/策略配置工具"），
  *     移入"产品研发中心"，不再和 Operator 的"广告投放"顶级菜单并列，
  *     避免被误读成同一层级的重复入口。
+ *
+ * 阶段 M8c 三类秘书正式区分："AI 秘书处"是 **Founder 总秘书**——
+ * 跨产品、跨实验室、跨研发与经营的总控入口：接收创始人自然语言指令、
+ * 跨 Operator 和 Studio 调度、查询研发/第一家真实店铺/第一条内容
+ * 项目状态、调用产品研发中心、汇总 Operator秘书和 Studio秘书的
+ * 报告、生成跨产品日报周报和决策建议。它不等同于经营秘书
+ * （operator-preview/ 的"Operator秘书"）也不等同于内容创作秘书
+ * （studio/ 的"Studio秘书"）——关系是调用/汇总，不是三套同名秘书。
+ * 见 docs/01-reference-architecture/edition-architecture.md §19。
  */
 export const FOUNDER_MODULES = [
   {
@@ -175,17 +184,58 @@ export const FOUNDER_MODULES = [
   },
 ];
 
+/**
+ * 阶段 M8c Founder Unified Product Navigation：`collapsible: true` 的
+ * 分组在 ConsoleSidebar 里渲染成手风琴（单一展开）——`external` 标记
+ * 该分组的子项来自哪个共享 registry（而不是 FOUNDER_MODULES 自己），
+ * 由 ConsoleSidebar 直接 import 对应产品的 NAV_ITEMS 渲染，不手写
+ * 第二份导航数组。"Founder 总览"不折叠（默认页所在分组，需要一直
+ * 可见）。
+ */
 export const NAV_GROUPS = [
-  { key: "overview", label: "Founder 总览" },
-  { key: "productRnd", label: "产品研发中心" },
-  { key: "operatorLabGroup", label: "Operator 实验室" },
-  { key: "studioLabGroup", label: "Studio 实验室" },
-  { key: "marketplace", label: "Marketplace 中心" },
-  { key: "system", label: "系统与发布" },
+  { key: "overview", label: "Founder 总览", collapsible: false },
+  { key: "productRnd", label: "产品研发中心", collapsible: true },
+  { key: "operatorLabGroup", label: "Operator 实验室", collapsible: true, external: "operator" },
+  { key: "studioLabGroup", label: "Studio 实验室", collapsible: true, external: "studio" },
+  { key: "marketplace", label: "Marketplace 中心", collapsible: true, external: "marketplaceCloud" },
+  { key: "system", label: "系统与发布", collapsible: true },
+];
+
+/**
+ * Marketplace 中心的折叠子导航（阶段 M8c §5/§6）——云端 Marketplace
+ * 的 Founder 管理入口，不是本地完整市场服务。`status` 标注真实完成
+ * 度，ConsoleSidebar/MarketplaceCenter 据此渲染"规划中"/"Cloud Mock"
+ * 徽章，不允许把未完成的项呈现成已上线。
+ *   - implemented：真实可用（读写 shared/marketplace/ 的 Cloud Mock 数据）
+ *   - cloudMock：可用，但明确基于本地模拟的云端数据，不是真实后端
+ *   - planned：尚未实现，占位说明
+ */
+export const MARKETPLACE_SUBNAV = [
+  { key: "overview", label: "Marketplace 概览", status: "implemented" },
+  { key: "myPackages", label: "我的能力包", status: "implemented" },
+  { key: "review", label: "上架审核", status: "implemented" },
+  { key: "releaseCandidate", label: "Release Candidate 提交", status: "planned" },
+  { key: "versionsGray", label: "版本与灰度", status: "implemented" },
+  { key: "pricingLicense", label: "定价与 License", status: "implemented" },
+  { key: "salesDownloads", label: "销售与下载", status: "implemented" },
+  { key: "developers", label: "开发者中心", status: "implemented" },
+  { key: "settlement", label: "分成与结算", status: "planned" },
+  { key: "cloudConsole", label: "Cloud Marketplace 控制台", status: "cloudMock" },
 ];
 
 export const DEFAULT_MODULE_KEY =
   FOUNDER_MODULES.find((module) => module.isDefault)?.key ?? FOUNDER_MODULES[0].key;
+
+/**
+ * 给定当前激活的 Founder 模块 key，返回它应该自动展开的手风琴分组
+ * key——Operator/Studio/Marketplace 三个"外部 registry"分组的展开
+ * 状态由激活的 module 本身决定（module==="operatorLab" 就展开
+ * "operatorLabGroup"），不需要子项 key 逐一维护映射表。
+ */
+export function getGroupKeyForModule(moduleKey) {
+  const moduleConfig = getModuleConfig(moduleKey);
+  return moduleConfig?.group ?? null;
+}
 
 export function getModuleConfig(moduleKey) {
   return FOUNDER_MODULES.find((module) => module.key === moduleKey) ?? null;

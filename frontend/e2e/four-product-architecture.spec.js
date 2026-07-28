@@ -154,12 +154,17 @@ test.describe("Founder: core navigation intact", () => {
     // 实验室（真实店铺接入模块 + Operator 实验室内嵌的
     // ShopCenterContent），旧的 ?module=storeCenter 链接会自动重定向
     // 到 Operator 实验室的店铺页，不会变成 404 或空白页。
+    //
+    // 阶段 M8c：Operator 实验室是折叠的手风琴分组，"真实店铺接入"
+    // 只在展开后才可见——先点开分组再断言，而不是假设它默认平铺。
     await page.goto("/founder");
     await expect(page.getByText("和 AI 秘书说点什么")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Operator 实验室" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Operator 实验室", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Operator 实验室", exact: true }).click();
     await expect(page.getByRole("button", { name: "真实店铺接入" })).toBeVisible();
 
     await page.goto("/?mode=founder&module=storeCenter");
-    await expect(page.locator(".op-nav-link", { hasText: "店铺" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Operator 实验室", exact: true })).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".fdr-sidebar__subitem.fdr-sidebar__item--active")).toHaveText(/店铺/);
   });
 });
