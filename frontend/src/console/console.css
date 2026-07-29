@@ -1,5 +1,7 @@
 /* Founder Operator 控制台外壳样式。Mission-control 观感：深色
-   侧边栏 + 浅色工作区，不套用通用后台管理系统的白底顶栏样式。 */
+   侧边栏 + 浅色工作区，不套用通用后台管理系统的白底顶栏样式。
+   阶段 Design DNA v1.1：侧边栏结构性重建，见
+   docs/01-foundation/design/navigation-shell-spec.md。 */
 
 /* index.css（Vite 模板全局样式）里的 h1/h2 { color: var(--text-h) }
    规则没有作用域限制，且 --text-h 会随浏览器暗色模式变化——在
@@ -16,202 +18,518 @@
 }
 
 .fdr-root {
-  --fdr-sidebar-bg: #0B1120;
-  --fdr-sidebar-text: #CBD5E1;
-  --fdr-sidebar-text-dim: #64748B;
-  --fdr-sidebar-active-bg: rgba(79, 70, 229, .28);
-  --fdr-sidebar-border: rgba(255,255,255,.08);
-
   display: flex;
   height: 100vh;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
 }
 
+/* ==========================================================================
+   Sidebar shell — Design DNA v1.1 navigation-shell-spec.md
+   Four zones: A identity, B workspace context, C primary nav
+   (scrollable), D system utilities. Dark sidebar tokens (theme.css)
+   are fixed regardless of app theme — "dark sidebar + light
+   workspace, always" is a product decision, not theme-dependent.
+   ========================================================================== */
+
 .fdr-sidebar {
-  width: var(--sidebar-width);
+  width: var(--sidebar-width-expanded);
   flex-shrink: 0;
-  background: var(--fdr-sidebar-bg);
-  color: var(--fdr-sidebar-text);
+  background: var(--sidebar-canvas);
+  color: var(--sidebar-text-primary);
   display: flex;
   flex-direction: column;
-  padding: 18px 0 0;
   position: sticky;
   top: 0;
   height: 100vh;
   overflow: hidden;
+  border-right: 1px solid var(--sidebar-border);
+  transition: var(--sidebar-transition);
 }
 
-/*
- * 阶段 M8c §3 滚动要求："Logo 区固定；当前展开节点可见；不出现两个
- * 重叠滚动条"——brand 区留在 .fdr-sidebar 的普通流里（不滚动），
- * 下面这个包裹层才是真正的滚动容器，手风琴展开/折叠只改变这个
- * 容器内部的内容高度，不会把 logo 挤出视口。
- */
+.fdr-sidebar[data-collapsed="true"] {
+  width: var(--sidebar-width-collapsed);
+}
+
+/* Zone A — Product identity */
+
+.fdr-sidebar__identity {
+  flex: none;
+  height: var(--sidebar-identity-height);
+  display: flex;
+  align-items: center;
+  gap: var(--sidebar-icon-gap);
+  padding: 0 var(--sidebar-padding-x);
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__identity {
+  padding: 0;
+  justify-content: center;
+}
+
+.fdr-sidebar__mark {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-xs);
+  background: var(--sidebar-ai-accent);
+  flex-shrink: 0;
+}
+
+.fdr-sidebar__identity-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.fdr-sidebar__wordmark {
+  font-size: 15px;
+  font-weight: var(--type-heading-card-weight);
+  color: var(--sidebar-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fdr-sidebar__edition {
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-body-weight);
+  color: var(--sidebar-text-tertiary);
+  white-space: nowrap;
+}
+
+.fdr-sidebar__collapse-toggle {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--sidebar-text-tertiary);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+
+.fdr-sidebar__collapse-toggle:hover {
+  background: var(--sidebar-hover-surface);
+  color: var(--sidebar-text-primary);
+}
+
+/* Zone B — Workspace context */
+
+.fdr-sidebar__context {
+  flex: none;
+  padding: var(--space-12) var(--sidebar-padding-x);
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.fdr-sidebar__context-select {
+  width: 100%;
+  background: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  color: var(--sidebar-text-primary);
+  border-radius: var(--radius-xs);
+  padding: 7px 10px;
+  font-size: var(--type-body-small-size);
+  font-family: inherit;
+}
+
+.fdr-sidebar__context-select:focus-visible {
+  outline: 2px solid var(--sidebar-focus);
+  outline-offset: 1px;
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__context {
+  display: none;
+}
+
+/* Zone C — Primary navigation (scrollable; identity/context/utilities
+   stay fixed — spec §9 "no two overlapping scrollbars"). */
+
 .fdr-sidebar__scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-bottom: 18px;
+  /* visible, not hidden: collapsed-mode flyouts (.fdr-sidebar__flyout)
+     are absolutely positioned outside the sidebar's own width and
+     would otherwise be clipped by this container. */
+  overflow-x: visible;
+  padding: var(--space-16) 0;
 }
 
-.fdr-sidebar__brand {
-  padding: 4px 20px 18px 20px;
-  font-size: 15px;
-  font-weight: 700;
-  color: #fff;
-  border-bottom: 1px solid var(--fdr-sidebar-border);
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
+.fdr-sidebar__zone {
+  margin-bottom: var(--sidebar-zone-gap);
 }
 
-.fdr-sidebar__brand-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--primary);
-  color: #fff;
+.fdr-sidebar__zone:last-child {
+  margin-bottom: 0;
 }
 
-.fdr-sidebar__group {
-  padding: 10px 20px 4px 20px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--fdr-sidebar-text-dim);
+.fdr-sidebar__zone-label {
+  padding: 0 var(--sidebar-padding-x) 6px;
+  font-size: 11px;
+  font-weight: var(--type-label-weight);
+  letter-spacing: 0.04em;
+  color: var(--sidebar-text-tertiary);
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__zone-label {
+  display: none;
 }
 
 .fdr-sidebar__item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 20px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fdr-sidebar-text);
+  gap: var(--sidebar-icon-gap);
+  height: var(--sidebar-item-height);
+  padding: 0 var(--sidebar-padding-x);
+  margin: 0 var(--space-8) var(--sidebar-item-gap);
+  width: calc(100% - var(--space-16));
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+  color: var(--sidebar-text-secondary);
   cursor: pointer;
-  border-left: 3px solid transparent;
+  border: none;
+  border-radius: var(--radius-sm);
   background: none;
-  border-top: none;
-  border-right: none;
-  border-bottom: none;
-  width: 100%;
   text-align: left;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__item {
+  margin: 0 auto var(--sidebar-item-gap);
+  padding: 0;
+  justify-content: center;
 }
 
 .fdr-sidebar__item:hover {
-  background: rgba(255,255,255,.05);
-  color: #fff;
+  background: var(--sidebar-hover-surface);
+  color: var(--sidebar-text-primary);
+}
+
+.fdr-sidebar__item:focus-visible {
+  outline: 2px solid var(--sidebar-focus);
+  outline-offset: -2px;
 }
 
 .fdr-sidebar__item--active {
-  background: var(--fdr-sidebar-active-bg);
-  color: #fff;
-  border-left-color: var(--primary);
+  background: var(--sidebar-active-surface);
+  color: var(--sidebar-text-primary);
+  font-weight: var(--type-label-weight);
 }
 
-.fdr-sidebar__icon {
-  width: 18px;
-  text-align: center;
+.fdr-sidebar__item-icon {
   flex-shrink: 0;
+  display: flex;
 }
 
-.fdr-sidebar__badge {
-  margin-left: 6px;
-  font-size: 10px;
-  opacity: .75;
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  padding: 0 4px;
-  flex-shrink: 0;
+.fdr-sidebar__item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* 阶段 M8c §3：可展开/折叠的产品导航树分组。 */
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__item-label,
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__zone-label {
+  display: none;
+}
+
+/* Core zone secondary rows (always-visible siblings of a multi-module
+   group, e.g. 模型路由 under Agent中心) — plain text, no icon, per
+   navigation-shell-spec.md's nested-item icon decision. */
+
+.fdr-sidebar__item--secondary {
+  height: 32px;
+  font-size: var(--type-body-small-size);
+  padding-left: calc(var(--sidebar-padding-x) + var(--sidebar-indent));
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__item--secondary {
+  display: none;
+}
+
+/* Labs / Cloud accordion — split click targets: label navigates,
+   chevron only toggles (navigation-shell-spec.md §Interaction). */
+
 .fdr-sidebar__accordion {
-  margin-bottom: 2px;
+  margin: 0 var(--space-8) var(--sidebar-item-gap);
 }
 
-.fdr-sidebar__group-toggle {
+.fdr-sidebar__group-row {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.fdr-sidebar__group-row:hover {
+  background: var(--sidebar-hover-surface);
+}
+
+.fdr-sidebar__group-row--active {
+  background: var(--sidebar-active-surface);
+}
+
+.fdr-sidebar__group-label {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 10px 20px;
-  background: none;
+  gap: var(--sidebar-icon-gap);
+  height: var(--sidebar-item-height);
+  padding: 0 0 0 var(--sidebar-padding-x);
   border: none;
-  color: var(--fdr-sidebar-text);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .06em;
+  background: none;
+  color: var(--sidebar-text-secondary);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
   text-align: left;
   cursor: pointer;
 }
 
-.fdr-sidebar__group-toggle:hover {
-  color: #fff;
+.fdr-sidebar__group-row--active .fdr-sidebar__group-label {
+  color: var(--sidebar-text-primary);
+  font-weight: var(--type-label-weight);
 }
 
-.fdr-sidebar__group-toggle.expanded {
-  color: #fff;
+.fdr-sidebar__group-label:focus-visible {
+  outline: 2px solid var(--sidebar-focus);
+  outline-offset: -2px;
 }
 
-.fdr-sidebar__group-arrow {
-  display: inline-block;
-  width: 10px;
+.fdr-sidebar__group-label-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdr-sidebar__group-chevron {
   flex-shrink: 0;
-  font-size: 10px;
+  width: 32px;
+  height: var(--sidebar-item-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--sidebar-text-tertiary);
+  cursor: pointer;
+  margin-right: var(--space-4);
+  border-radius: var(--radius-xs);
+}
+
+.fdr-sidebar__group-chevron:hover {
+  color: var(--sidebar-text-primary);
+}
+
+.fdr-sidebar__group-chevron:focus-visible {
+  outline: 2px solid var(--sidebar-focus);
+  outline-offset: -2px;
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__group-chevron {
+  display: none;
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__group-row {
+  justify-content: center;
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__group-label {
+  padding-left: 0;
+  justify-content: center;
 }
 
 .fdr-sidebar__panel {
-  padding-bottom: 4px;
+  padding: 2px 0 4px;
 }
 
 .fdr-sidebar__divider {
-  margin: 6px 20px;
-  border-top: 1px solid var(--fdr-sidebar-border);
+  margin: 6px var(--sidebar-padding-x);
+  border-top: 1px solid var(--sidebar-border);
 }
 
-/* Studio 实验室展开面板里的二级分组标题（总控/内容策划/…/Studio 实验控制层）。 */
 .fdr-sidebar__subgroup-label {
-  padding: 8px 20px 4px 32px;
-  font-size: 9.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--fdr-sidebar-text-dim);
-  opacity: .8;
+  padding: 8px var(--sidebar-padding-x) 4px calc(var(--sidebar-padding-x) + var(--sidebar-indent));
+  font-size: 10.5px;
+  font-weight: var(--type-label-weight);
+  letter-spacing: 0.04em;
+  color: var(--sidebar-text-tertiary);
+  opacity: .85;
 }
 
 .fdr-sidebar__subitem {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 7px 20px 7px 32px;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--fdr-sidebar-text);
+  width: calc(100% - var(--space-16));
+  margin: 0 var(--space-8);
+  height: 32px;
+  padding: 0 var(--sidebar-padding-x) 0 calc(var(--sidebar-padding-x) + var(--sidebar-indent));
+  font-size: var(--type-body-small-size);
+  font-weight: var(--type-body-weight);
+  color: var(--sidebar-text-secondary);
   cursor: pointer;
-  border-left: 3px solid transparent;
+  border: none;
+  border-radius: var(--radius-xs);
   background: none;
-  border-top: none;
-  border-right: none;
-  border-bottom: none;
   text-align: left;
 }
 
 .fdr-sidebar__subitem:hover {
-  background: rgba(255,255,255,.05);
-  color: #fff;
+  background: var(--sidebar-hover-surface);
+  color: var(--sidebar-text-primary);
 }
+
+.fdr-sidebar__subitem:focus-visible {
+  outline: 2px solid var(--sidebar-focus);
+  outline-offset: -2px;
+}
+
+.fdr-sidebar__item--active.fdr-sidebar__subitem {
+  background: var(--sidebar-active-surface);
+  color: var(--sidebar-text-primary);
+  font-weight: var(--type-label-weight);
+}
+
+/* Collapsed-mode flyout — Popover-based, anchored to the group row. */
+
+.fdr-sidebar__flyout {
+  min-width: 220px;
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+  background: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-3);
+  padding: var(--space-8) 0;
+}
+
+.fdr-sidebar__flyout-title {
+  padding: 6px var(--space-16);
+  font-size: var(--type-label-size);
+  font-weight: var(--type-label-weight);
+  color: var(--sidebar-text-primary);
+}
+
+/* Zone D — System utilities */
+
+.fdr-sidebar__utilities {
+  flex: none;
+  border-top: 1px solid var(--sidebar-border);
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fdr-sidebar__utility {
+  display: flex;
+  align-items: center;
+  gap: var(--sidebar-icon-gap);
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--sidebar-text-secondary);
+  font-size: var(--type-body-small-size);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.fdr-sidebar__utility:hover {
+  background: var(--sidebar-hover-surface);
+  color: var(--sidebar-text-primary);
+}
+
+.fdr-sidebar__utility:focus-visible {
+  outline: 2px solid var(--sidebar-focus);
+  outline-offset: -2px;
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__utility {
+  justify-content: center;
+  padding: 0;
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__utility-label {
+  display: none;
+}
+
+.fdr-sidebar__utility-shortcut {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--sidebar-text-tertiary);
+}
+
+.fdr-sidebar__utility-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.fdr-sidebar__account {
+  display: flex;
+  align-items: center;
+  gap: var(--sidebar-icon-gap);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+}
+
+.fdr-sidebar__account-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--sidebar-ai-accent);
+  color: var(--sidebar-canvas);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.fdr-sidebar__account-text {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.fdr-sidebar__account-name {
+  font-size: var(--type-body-small-size);
+  font-weight: var(--type-label-weight);
+  color: var(--sidebar-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fdr-sidebar__account-meta {
+  font-size: 11px;
+  color: var(--sidebar-text-tertiary);
+  white-space: nowrap;
+}
+
+.fdr-sidebar[data-collapsed="true"] .fdr-sidebar__account-text {
+  display: none;
+}
+
+/* Tooltips for collapsed-mode items reuse .fdr-tooltip from kit.css. */
+
+/* ==========================================================================
+   Main content column
+   ========================================================================== */
 
 .fdr-main {
   flex: 1;
@@ -225,54 +543,42 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
+  height: var(--shell-topbar-height);
+  padding: 0 var(--page-padding-x);
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   position: sticky;
   top: 0;
   z-index: 50;
-  gap: 16px;
+  gap: var(--space-16);
 }
 
 .fdr-topbar__left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
   min-width: 0;
+}
+
+.fdr-topbar__title {
+  font-size: var(--type-heading-card-size);
+  font-weight: var(--type-heading-card-weight);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fdr-topbar__right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-12);
   flex-shrink: 0;
 }
 
 .fdr-topbar__clock {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.fdr-topbar__owner {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.fdr-topbar__owner-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--type-caption-size);
+  color: var(--text-tertiary);
 }
 
 .fdr-content {
@@ -280,25 +586,45 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 24px;
+  padding: var(--page-padding-y) var(--page-padding-x);
 }
 
 .fdr-content__inner {
-  max-width: 1240px;
+  max-width: var(--shell-content-max-width);
   width: 100%;
   margin: 0 auto;
 }
 
-.fdr-scope-select {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  font-size: 13px;
-  background: var(--surface);
-  color: var(--text);
+/* Reused outside the sidebar by MarketplaceCenter.jsx's tab badges
+   (light workspace context, not sidebar-dark) — kept for compatibility
+   after the Design DNA v1.1 sidebar rebuild removed the sidebar-only
+   badge this name originally described. */
+.fdr-sidebar__badge {
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  padding: 0 4px;
+  color: var(--text-secondary);
 }
 
-@media (max-width: 900px) {
-  .fdr-sidebar { display: none; }
-  .fdr-content { padding: 16px; }
+.fdr-scope-select {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  padding: 6px 10px;
+  font-size: var(--type-body-size);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+@media (max-width: 1023px) {
+  /* Below 1024px, ConsoleSidebar.jsx itself forces effectiveCollapsed
+     to true (real JS state, driving data-collapsed="true" and the
+     flyout interaction model) — not approximated here in CSS. This
+     query only handles content padding. */
+  .fdr-content { padding: var(--space-20); }
+}
+
+@media (max-width: 767px) {
+  .fdr-content { padding: var(--space-16); }
 }

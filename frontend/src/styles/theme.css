@@ -44,10 +44,42 @@
   --space-40: 40px; --space-48: 48px; --space-64: 64px; --space-80: 80px; --space-96: 96px;
 
   /* ---- Shell / layout ---- */
-  --shell-sidebar-width: 256px;
-  --shell-sidebar-collapsed-width: 64px;
+  --shell-sidebar-width: 264px;
+  --shell-sidebar-collapsed-width: 72px;
   --shell-topbar-height: 56px;
   --shell-content-max-width: 1280px;
+
+  /* ---- Navigation shell (Design DNA v1.1) — docs/01-foundation/design/navigation-shell-spec.md
+     Dark sidebar tokens are intentionally separate from the light
+     workspace tokens above: the product decision is dark sidebar +
+     light workspace always (not theme-dependent), so these do not
+     flip under [data-theme="dark"]. ---- */
+  --sidebar-canvas: #12151A;
+  --sidebar-surface: #181C22;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-text-primary: #F1F2F4;
+  --sidebar-text-secondary: #9AA0AB;
+  --sidebar-text-tertiary: #6B7280;
+  --sidebar-active-surface: rgba(255, 255, 255, 0.08);
+  --sidebar-hover-surface: rgba(255, 255, 255, 0.045);
+  --sidebar-focus: var(--focus);
+  --sidebar-success: #22C55E;
+  --sidebar-warning: #F59E0B;
+  --sidebar-danger: #EF4444;
+  --sidebar-info: #3B82F6;
+  --sidebar-ai-accent: #2DD4C7;
+
+  --sidebar-width-expanded: var(--shell-sidebar-width);
+  --sidebar-width-collapsed: var(--shell-sidebar-collapsed-width);
+  --sidebar-padding-x: var(--space-20);
+  --sidebar-item-height: 40px;
+  --sidebar-item-gap: 2px;
+  --sidebar-icon-gap: 10px;
+  --sidebar-zone-gap: var(--space-24);
+  --sidebar-indent: var(--space-16);
+  --sidebar-identity-height: 64px;
+  --sidebar-utility-padding: var(--space-16);
+  --sidebar-transition: width var(--motion-deliberate) var(--ease-standard);
   --page-padding-x: var(--space-32);
   --page-padding-x-narrow: var(--space-20);
   --page-padding-y: var(--space-32);

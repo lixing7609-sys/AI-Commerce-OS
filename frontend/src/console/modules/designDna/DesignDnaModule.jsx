@@ -27,10 +27,12 @@ import { AIExecutionStatus } from "../../kit/AIExecutionStatus.jsx";
 import { AILearningFeedback } from "../../kit/AILearningFeedback.jsx";
 import { AIConfidence } from "../../kit/AIConfidence.jsx";
 import { AIRiskAlert } from "../../kit/AIRiskAlert.jsx";
+import { NavigationShellDemo } from "../../shell/NavigationShellDemo.jsx";
 
 const SECTION_TABS = [
   { key: "foundations", label: "Foundations" },
   { key: "components", label: "Components" },
+  { key: "navigation", label: "Navigation & Application Shell" },
   { key: "ai", label: "AI Interaction Language" },
   { key: "products", label: "Product Examples" },
 ];
@@ -278,6 +280,7 @@ export function DesignDnaModule() {
       <div style={{ marginTop: "var(--space-24)" }}>
         {tab === "foundations" ? <Foundations /> : null}
         {tab === "components" ? <Components /> : null}
+        {tab === "navigation" ? <NavigationShellDemo /> : null}
         {tab === "ai" ? <AILanguage /> : null}
         {tab === "products" ? <ProductExamples /> : null}
       </div>

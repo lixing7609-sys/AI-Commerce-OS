@@ -26,8 +26,8 @@ Exceptions to the 8px rhythm (2px, 12px, 20px) exist for optical correction on b
 
 | Token | Value | Notes |
 |---|---|---|
-| `--shell-sidebar-width` | 256px | Expanded sidebar (was 250px; rounded to the 8px grid) |
-| `--shell-sidebar-collapsed-width` | 64px | Icon-only rail — new; the current shell hard-hides the sidebar below 900px instead of collapsing it (see `component-spec.md` NavRail note) |
+| `--shell-sidebar-width` / `--sidebar-width-expanded` | 264px | Expanded sidebar (v1.1: revised from v1.0's 256px to 264px after visual validation of the four-zone rebuild — see `navigation-shell-spec.md`) |
+| `--shell-sidebar-collapsed-width` / `--sidebar-width-collapsed` | 72px | Icon-only rail — **implemented** in v1.1 (`ConsoleSidebar.jsx`), not just reserved. Manually toggled (persisted) or forced below 1024px. |
 | `--shell-topbar-height` | 56px | Matches the Tesla study's observed header height (§2) — coincidental convergence on a well-proven value, not a copy |
 | `--shell-content-max-width` | 1280px | Narrative/decision content (Founder工作台, forms, detail panels) |
 | `--shell-content-max-width-wide` | none (full-bleed) | Data workspaces (`DataTable`-heavy pages) may go edge-to-edge within the content area |
@@ -49,10 +49,10 @@ Exceptions to the 8px rhythm (2px, 12px, 20px) exist for optical correction on b
 | Wide desktop | ≥1440px | Full shell, `--shell-content-max-width` applies, generous margins |
 | Desktop | 1280–1439px | Full shell, content max-width applies with reduced outer margin |
 | Standard desktop | 1024–1279px | Full shell; sidebar stays expanded but content padding drops to `--space-24` |
-| Narrow desktop/tablet | 900–1023px | Sidebar auto-collapses to the icon rail (`--shell-sidebar-collapsed-width`) instead of the current hard-hide; content padding `--space-20` |
+| Narrow desktop/tablet | <1024px | **v1.1, implemented:** sidebar is forced into the icon rail (`effectiveCollapsed` in `ConsoleSidebar.jsx`, real component state — not a CSS-only approximation) regardless of the user's stored preference, which resumes once the viewport widens back out; content padding `--space-20` |
 | Minimum supported | ≥768px | Product remains usable (not optimized); below this is out of scope — the product is desktop-first per the originating spec |
 
-The current `console.css` still hard-hides the sidebar entirely below 900px (`@media (max-width: 900px)`), leaving the shell with no navigation at all at narrow widths. This token (`--shell-sidebar-collapsed-width`) reserves the value for an icon-rail collapse; actually wiring it in requires restructuring `ConsoleSidebar.jsx`'s label markup (today the icon and label aren't independently hideable), which touches shell chrome shared by every page, not just the pilot — out of scope for this pass and listed as a known limitation / recommended next step in the implementation report, not something this pass silently claims to have fixed.
+v1.0 left the sidebar hard-hidden entirely below 900px (`@media (max-width: 900px) { .fdr-sidebar { display: none; } }`), a known limitation flagged at the time. v1.1 replaces that with the real collapsed icon-rail (`navigation-shell-spec.md` §10/§13) — navigation is never fully absent at any supported width now.
 
 ## Column grid
 

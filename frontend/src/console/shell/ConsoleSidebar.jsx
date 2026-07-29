@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FOUNDER_MODULES, NAV_GROUPS, getGroupKeyForModule, getModuleConfig } from "../nav/navConfig.js";
+import { useEffect, useRef, useState } from "react";
+import { FOUNDER_MODULES, NAV_GROUPS, NAV_ZONES, getGroupKeyForModule, getModuleConfig } from "../nav/navConfig.js";
 import { useConsoleNavContext } from "../nav/ConsoleNavContext.jsx";
 import { useCapabilities } from "../useCapabilities.js";
 import { OPERATOR_V2_NAV_ITEMS } from "../labs/operatorLabV2/navigation.js";
@@ -9,30 +9,49 @@ import {
   getVisibleNavItemsByGroup as getStudioVisibleNavItemsByGroup,
 } from "../../studio/navConfig.js";
 import { NAV_ITEMS as CLOUD_NAV_ITEMS } from "../../cloud/navConfig.js";
-import { getStoredExpandedGroup, setStoredExpandedGroup } from "../nav/sidebarExpansionStore.js";
+import {
+  getStoredExpandedGroup, setStoredExpandedGroup,
+  getStoredSidebarCollapsed, setStoredSidebarCollapsed,
+} from "../nav/sidebarExpansionStore.js";
+import { NAV_ICON_MAP, UTILITY_ICONS } from "../nav/navIcons.js";
+import {
+  ALL_SHOPS_SCOPE, UNASSIGNED_SHOP_SCOPE, getStoredShopScope, setStoredShopScope,
+} from "../../store/shopScopeStore.js";
+import { getShops } from "../../services/shopApi.js";
+import { Icon } from "../kit/Icon.jsx";
+import { IconButton } from "../kit/IconButton.jsx";
+import { Tooltip } from "../kit/Tooltip.jsx";
+import { CommandPalette } from "../kit/CommandPalette.jsx";
+import { SidebarFlyout } from "./SidebarFlyout.jsx";
 
 /**
- * Founder 唯一左侧导航（阶段 M8c Founder Unified Product Navigation）。
+ * Founder 唯一左侧导航shell — Design DNA v1.1 structural rebuild.
+ * Spec: docs/01-foundation/design/navigation-shell-spec.md.
  *
- * 上一版（M8b）"Operator 实验室"/"Studio 实验室"是 FOUNDER_MODULES
- * 里普通的一个按钮，点击后右侧内容区渲染一整套内嵌的 Operator/
- * Studio 侧边栏——owner 看到实际截图后明确否决："Founder 左侧的
- * Operator 实验室下面又出现了一整套 Operator 侧边栏"。修正：
- * Operator 完整导航（`OPERATOR_NAV_ITEMS`）和 Studio 完整导航
- * （`STUDIO_NAV_ITEMS`）现在直接展开在这一个组件里——不手写第二份
- * 导航数组，两份列表都是直接 import 独立 Operator/Studio 自己的
- * 权威 registry；子项点击只把 Founder 自己的 `{module, subView}`
- * 导航状态改成对应值，右侧内容区（见 labs/OperatorLab.jsx /
- * StudioLab.jsx）只渲染那一个页面组件，不再渲染任何嵌套侧边栏。
+ * This is a presentation/interaction rebuild on top of the EXISTING
+ * data model (FOUNDER_MODULES/NAV_GROUPS/MODULE_REDIRECTS, unchanged
+ * — see NAV_ZONES in navConfig.js for the only new data, a purely
+ * additive Core/Labs/Cloud grouping layer). Operator v2 / Studio /
+ * Cloud navigation continue to render via direct import of their own
+ * authoritative registries, exactly as before — this file does not
+ * duplicate or rebuild that navigation data.
  *
- * 手风琴（单一展开分组）：`产品研发中心`/`Operator 实验室`/
- * `Studio 实验室`/`Marketplace 中心`/`系统与发布` 五个分组同时只
- * 展开一个，点击父节点区域切换，展开状态经
- * `sidebarExpansionStore.js`（localStorage）持久化，刷新后恢复；
- * 当前激活模块所在分组总是强制展开（即使用户之前手动折叠过），
- * 避免"当前页面所在分组是折叠的、用户看不到自己在哪"这种状态。
- * "Founder 总览"不参与折叠——默认页所在分组需要一直可见。
+ * Four zones (spec §Anatomy): A identity, B workspace context,
+ * C primary navigation (Core flat / Labs+Cloud accordion), D system
+ * utilities. Core renders flat/always-visible (spec §9 "Core
+ * navigation remains directly visible") — the previous per-group
+ * accordion-for-everything model is replaced with: single-module Core
+ * groups are one direct nav row named after the group; multi-module
+ * Core groups (Agent中心/Workflow中心/Capability中心) show their
+ * primary module as that row and remaining modules as always-visible
+ * secondary rows beneath it, still with zero accordion clicks needed.
+ * Labs/Cloud keep single-expanded-accordion behavior (now scoped to
+ * just those 3 groups) with split click targets: the group label
+ * navigates to its default workspace, a separate chevron toggles the
+ * panel — so browsing a lab's full menu never forces a navigation.
  */
+
+const LABS_CLOUD_GROUP_KEYS = ["operatorLabGroup", "studioLabGroup", "cloudCenterGroup"];
 
 const GROUP_SELF_MODULE_KEY = {
   operatorLabGroup: "operatorLab",
@@ -40,56 +59,172 @@ const GROUP_SELF_MODULE_KEY = {
   cloudCenterGroup: "cloudCenter",
 };
 
+const GROUP_DEFAULT_NAV = {
+  operatorLabGroup: { module: "operatorLab", subView: "workbench" },
+  studioLabGroup: { module: "studioLab", subView: STUDIO_DEFAULT_KEY },
+  cloudCenterGroup: { module: "cloudCenter", subView: "overview" },
+};
+
+function getCoreGroupModules(groupKey, capabilities) {
+  const items = FOUNDER_MODULES.filter(
+    (item) => item.group === groupKey && !item.hiddenFromSidebar && capabilities[item.requiredCapability]
+  );
+  const [primary, ...secondaries] = items;
+  return { primary, secondaries };
+}
+
 export function ConsoleSidebar() {
   const { module: activeModule, subView, navigate } = useConsoleNavContext();
   const capabilities = useCapabilities();
+  const flyoutAnchorRefs = useRef({});
 
   const activeGroupKey = getGroupKeyForModule(activeModule);
-  const [expandedGroup, setExpandedGroup] = useState(() => activeGroupKey ?? getStoredExpandedGroup());
+  const [expandedGroup, setExpandedGroup] = useState(() => {
+    const stored = getStoredExpandedGroup();
+    return LABS_CLOUD_GROUP_KEYS.includes(activeGroupKey)
+      ? activeGroupKey
+      : LABS_CLOUD_GROUP_KEYS.includes(stored)
+        ? stored
+        : null;
+  });
   const [trackedActiveGroupKey, setTrackedActiveGroupKey] = useState(activeGroupKey);
+  const [collapsed, setCollapsed] = useState(() => getStoredSidebarCollapsed());
+  const [narrowViewport, setNarrowViewport] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches
+  );
+  // Unified collapsed-mode flyout target: { key, rect } | null. rect is
+  // captured synchronously in the triggering click handler (not in an
+  // effect — the repo's React Compiler lint rule forbids setState
+  // directly inside an effect body) via event.currentTarget, so no
+  // DOM-measurement effect is needed at all.
+  const [flyoutTarget, setFlyoutTarget] = useState(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shops, setShops] = useState([]);
+  const [scope, setScope] = useState(() => getStoredShopScope());
 
-  // 当前激活模块所在分组永远强制展开——不管用户之前手动折叠过什么。
-  // 在渲染期间根据 activeGroupKey 的变化调整 state（React 官方推荐的
-  // "根据 prop 变化调整 state"模式，见 https://react.dev/learn/
-  // you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes），
-  // 不用 useEffect，避免多一次级联渲染。
-  if (activeGroupKey && activeGroupKey !== trackedActiveGroupKey) {
+  function toggleFlyout(key, anchorEl) {
+    setFlyoutTarget((prev) => (prev?.key === key ? null : { key, rect: anchorEl.getBoundingClientRect() }));
+  }
+
+  // Below 1024px, collapsed icon-rail is forced (not just visually
+  // approximated by CSS) so the flyout interaction model actually
+  // activates — see navigation-shell-spec.md §Responsive. The user's
+  // own manual preference (`collapsed`) is preserved independently
+  // and resumes once the viewport widens back out.
+  const effectiveCollapsed = collapsed || narrowViewport;
+
+  const onSecretaryTab = activeModule === "founderWorkbench" && subView !== "dashboard";
+  const showScopeSelector = !onSecretaryTab;
+
+  useEffect(() => {
+    let cancelled = false;
+    getShops()
+      .then((data) => { if (!cancelled) setShops(Array.isArray(data) ? data : data.items ?? []); })
+      .catch(() => { if (!cancelled) setShops([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 1023px)");
+    function handleChange(event) {
+      setNarrowViewport(event.matches);
+    }
+    // matchMedia's own "change" event is the primary signal; a plain
+    // window "resize" listener is a defensive fallback (observed in
+    // manual browser testing: a resize immediately after navigation
+    // did not reliably fire the matchMedia change event once).
+    function handleResize() {
+      setNarrowViewport(query.matches);
+    }
+    query.addEventListener("change", handleChange);
+    window.addEventListener("resize", handleResize);
+    return () => {
+      query.removeEventListener("change", handleChange);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen(true);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Force-expand the active Labs/Cloud group (adjust-state-during-render,
+  // same pattern as before v1.1 — avoids an extra cascading render).
+  if (
+    activeGroupKey &&
+    activeGroupKey !== trackedActiveGroupKey &&
+    LABS_CLOUD_GROUP_KEYS.includes(activeGroupKey)
+  ) {
     setTrackedActiveGroupKey(activeGroupKey);
     setExpandedGroup(activeGroupKey);
     setStoredExpandedGroup(activeGroupKey);
+  } else if (activeGroupKey && activeGroupKey !== trackedActiveGroupKey) {
+    setTrackedActiveGroupKey(activeGroupKey);
   }
 
-  function toggleGroup(groupKey, onFirstExpand) {
+  function handleScopeChange(event) {
+    const raw = event.target.value;
+    const next = raw === ALL_SHOPS_SCOPE || raw === UNASSIGNED_SHOP_SCOPE ? raw : Number(raw);
+    setScope(next);
+    setStoredShopScope(next);
+  }
+
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    setStoredSidebarCollapsed(next);
+    setFlyoutTarget(null);
+  }
+
+  function toggleChevron(groupKey) {
     if (expandedGroup === groupKey) {
       setExpandedGroup(null);
       setStoredExpandedGroup(null);
-      return;
-    }
-    setExpandedGroup(groupKey);
-    setStoredExpandedGroup(groupKey);
-    if (activeGroupKey !== groupKey) {
-      onFirstExpand?.();
+    } else {
+      setExpandedGroup(groupKey);
+      setStoredExpandedGroup(groupKey);
     }
   }
 
-  function renderModuleButton(item) {
+  function navigateToGroupDefault(groupKey) {
+    const target = GROUP_DEFAULT_NAV[groupKey];
+    if (!target) return;
+    navigate(target.module, { subView: target.subView });
+    setExpandedGroup(groupKey);
+    setStoredExpandedGroup(groupKey);
+  }
+
+  function renderModuleButton(item, { secondary = false } = {}) {
+    const iconName = NAV_ICON_MAP[item.key];
     return (
       <button
         key={item.key}
         type="button"
-        className={"fdr-sidebar__item" + (item.key === activeModule ? " fdr-sidebar__item--active" : "")}
+        className={
+          "fdr-sidebar__item" +
+          (secondary ? " fdr-sidebar__item--secondary" : "") +
+          (item.key === activeModule ? " fdr-sidebar__item--active" : "")
+        }
         onClick={() => navigate(item.key)}
       >
-        <span className="fdr-sidebar__icon" aria-hidden="true">{item.icon}</span>
-        {item.label}
+        {!secondary ? (
+          <span className="fdr-sidebar__item-icon">
+            <Icon name={iconName || "Circle"} size={18} />
+          </span>
+        ) : null}
+        <span className="fdr-sidebar__item-label">{item.label}</span>
       </button>
     );
   }
 
-  function renderSubItem({ key, label, icon, directModule }, moduleKey, defaultSubView) {
-    // `directModule`：见 labs/operatorLabV2/navigation.js 顶部注释——
-    // 这几项底层组件自己占用顶层 `module` 语义读取 subView，不能塞进
-    // `operatorLab` 的 subView 里，点击后直接跳到它们自己的顶层模块。
+  function renderSubItem({ key, label, directModule }, moduleKey, defaultSubView) {
     const isActive = directModule ? activeModule === directModule : activeModule === moduleKey && (subView ?? defaultSubView) === key;
     return (
       <button
@@ -98,19 +233,11 @@ export function ConsoleSidebar() {
         className={"fdr-sidebar__subitem" + (isActive ? " fdr-sidebar__item--active" : "")}
         onClick={() => (directModule ? navigate(directModule) : navigate(moduleKey, { subView: key }))}
       >
-        {icon ? <span className="fdr-sidebar__icon" aria-hidden="true">{icon}</span> : null}
         {label}
       </button>
     );
   }
 
-  /**
-   * Studio 完整业务导航按 Studio 自己的分组结构（总控/内容策划/
-   * AI创作中心/矩阵运营/商业经营/设置）渲染子标题——与独立 Studio
-   * 侧边栏（studio/StudioSidebar.jsx）呈现同一份分组信息，只是这里
-   * 展开面板本身已经代表"Studio 实验室"这一层，六个 Studio 分组不再
-   * 需要各自可折叠，直接平铺展示标题 + 子项即可。
-   */
   function renderStudioGroupedItems() {
     return STUDIO_NAV_GROUPS.map((studioGroup) => {
       const groupItems = getStudioVisibleNavItemsByGroup(studioGroup.key);
@@ -124,95 +251,283 @@ export function ConsoleSidebar() {
     });
   }
 
-  return (
-    <nav className="fdr-sidebar" aria-label="Founder 唯一导航">
-      <div className="fdr-sidebar__brand">
-        AI Commerce OS
-        <span className="fdr-sidebar__brand-badge">FOUNDER</span>
-      </div>
-      <div className="fdr-sidebar__scroll">
-        {NAV_GROUPS.map((group) => {
-          const selfModuleKey = GROUP_SELF_MODULE_KEY[group.key];
-          const items = FOUNDER_MODULES.filter(
-            (item) =>
-              item.group === group.key &&
-              item.key !== selfModuleKey &&
-              !item.hiddenFromSidebar &&
-              capabilities[item.requiredCapability]
-          );
-
-          if (!group.collapsible) {
-            if (items.length === 0) return null;
-            return (
-              <div key={group.key}>
-                <div className="fdr-sidebar__group">{group.label}</div>
-                {items.map((item) => renderModuleButton(item))}
+  function renderExternalPanelContent(group, items) {
+    return (
+      <>
+        {group.externalPosition !== "after" ? (
+          <>
+            {items.map((item) => renderModuleButton(item))}
+            {items.length > 0 && group.external ? <div className="fdr-sidebar__divider" /> : null}
+          </>
+        ) : null}
+        {group.external === "operatorV2" ? OPERATOR_V2_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "operatorLab", "workbench")) : null}
+        {group.external === "studio" ? renderStudioGroupedItems() : null}
+        {group.external === "cloud" ? CLOUD_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "cloudCenter", "overview")) : null}
+        {group.externalPosition === "after" ? (
+          <>
+            {items.length > 0 ? <div className="fdr-sidebar__divider" /> : null}
+            {items.length > 0 ? (
+              <div className="fdr-sidebar__subgroup-label">
+                {group.key === "studioLabGroup" ? "Studio 实验控制层" : "Founder 专属"}
               </div>
-            );
-          }
+            ) : null}
+            {items.map((item) => renderModuleButton(item))}
+          </>
+        ) : null}
+      </>
+    );
+  }
 
-          // 分组本身（"Operator 实验室"这个概念）挂在一个 FOUNDER_MODULES
-          // 条目上，只用来读取 requiredCapability 做权限收口——不再单独
-          // 渲染成一个按钮，分组标题本身就是唯一入口。
-          const selfModuleConfig = selfModuleKey ? getModuleConfig(selfModuleKey) : null;
-          if (selfModuleConfig && !capabilities[selfModuleConfig.requiredCapability]) return null;
-          if (!selfModuleConfig && items.length === 0) return null;
+  function renderLabsCloudGroup(group) {
+    const selfModuleKey = GROUP_SELF_MODULE_KEY[group.key];
+    const selfModuleConfig = getModuleConfig(selfModuleKey);
+    if (!capabilities[selfModuleConfig.requiredCapability]) return null;
 
-          const expanded = expandedGroup === group.key;
-          const panelId = `fdr-sidebar-panel-${group.key}`;
+    const items = FOUNDER_MODULES.filter(
+      (item) => item.group === group.key && item.key !== selfModuleKey && !item.hiddenFromSidebar && capabilities[item.requiredCapability]
+    );
+    const expanded = expandedGroup === group.key;
+    const groupActive = activeGroupKey === group.key;
+    const iconName = NAV_ICON_MAP[selfModuleKey];
+    const panelId = `fdr-sidebar-panel-${group.key}`;
 
-          return (
-            <div key={group.key} className="fdr-sidebar__accordion">
-              <button
-                type="button"
-                className={"fdr-sidebar__group-toggle" + (expanded ? " expanded" : "")}
-                aria-expanded={expanded}
-                aria-controls={panelId}
-                onClick={() =>
-                  toggleGroup(group.key, () => {
-                    if (group.key === "operatorLabGroup") navigate("operatorLab", { subView: "workbench" });
-                    else if (group.key === "studioLabGroup") navigate("studioLab", { subView: STUDIO_DEFAULT_KEY });
-                    else if (group.key === "cloudCenterGroup") navigate("cloudCenter", { subView: "overview" });
-                  })
-                }
-              >
-                <span className="fdr-sidebar__group-arrow" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
-                {group.label}
-              </button>
-              {expanded ? (
-                <div id={panelId} className="fdr-sidebar__panel">
-                  {group.externalPosition !== "after" ? (
-                    <>
-                      {items.map((item) => renderModuleButton(item))}
-                      {items.length > 0 && group.external ? <div className="fdr-sidebar__divider" /> : null}
-                    </>
-                  ) : null}
+    if (effectiveCollapsed) {
+      return (
+        <div key={group.key}>
+          <Tooltip content={group.label}>
+            <button
+              ref={(el) => { flyoutAnchorRefs.current[group.key] = el; }}
+              type="button"
+              className={"fdr-sidebar__item" + (groupActive ? " fdr-sidebar__item--active" : "")}
+              onClick={(event) => {
+                navigateToGroupDefault(group.key);
+                toggleFlyout(group.key, event.currentTarget);
+              }}
+              aria-label={group.label}
+            >
+              <span className="fdr-sidebar__item-icon"><Icon name={iconName || "Circle"} size={18} /></span>
+            </button>
+          </Tooltip>
+          <SidebarFlyout
+            rect={flyoutTarget?.key === group.key ? flyoutTarget.rect : null}
+            onClose={() => setFlyoutTarget(null)}
+            getAnchorEl={() => flyoutAnchorRefs.current[group.key]}
+          >
+            <div className="fdr-sidebar__flyout-title">{group.label}</div>
+            {renderExternalPanelContent(group, items)}
+          </SidebarFlyout>
+        </div>
+      );
+    }
 
-                  {group.external === "operatorV2"
-                    ? OPERATOR_V2_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "operatorLab", "workbench"))
-                    : null}
-                  {group.external === "studio" ? renderStudioGroupedItems() : null}
-                  {group.external === "cloud"
-                    ? CLOUD_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "cloudCenter", "overview"))
-                    : null}
-
-                  {group.externalPosition === "after" ? (
-                    <>
-                      {items.length > 0 ? <div className="fdr-sidebar__divider" /> : null}
-                      {items.length > 0 ? (
-                        <div className="fdr-sidebar__subgroup-label">
-                          {group.key === "studioLabGroup" ? "Studio 实验控制层" : "Founder 专属"}
-                        </div>
-                      ) : null}
-                      {items.map((item) => renderModuleButton(item))}
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
+    return (
+      <div key={group.key} className="fdr-sidebar__accordion">
+        <div className={"fdr-sidebar__group-row" + (groupActive ? " fdr-sidebar__group-row--active" : "")}>
+          <button type="button" className="fdr-sidebar__group-label" onClick={() => navigateToGroupDefault(group.key)}>
+            <Icon name={iconName || "Circle"} size={18} />
+            <span className="fdr-sidebar__group-label-text">{group.label}</span>
+          </button>
+          <button
+            type="button"
+            className="fdr-sidebar__group-chevron"
+            aria-expanded={expanded}
+            aria-controls={panelId}
+            aria-label={expanded ? `收起${group.label}` : `展开${group.label}`}
+            onClick={() => toggleChevron(group.key)}
+          >
+            <Icon name={expanded ? UTILITY_ICONS.chevronExpanded : UTILITY_ICONS.chevronCollapsed} size={16} />
+          </button>
+        </div>
+        {expanded ? (
+          <div id={panelId} className="fdr-sidebar__panel">
+            {renderExternalPanelContent(group, items)}
+          </div>
+        ) : null}
       </div>
+    );
+  }
+
+  function renderCoreGroup(groupKey) {
+    const group = NAV_GROUPS.find((g) => g.key === groupKey);
+    const { primary, secondaries } = getCoreGroupModules(groupKey, capabilities);
+    if (!primary) return null;
+
+    const iconName = NAV_ICON_MAP[primary.key];
+    const isPrimaryActive = primary.key === activeModule;
+    const anyActive = isPrimaryActive || secondaries.some((s) => s.key === activeModule);
+
+    if (effectiveCollapsed && secondaries.length > 0) {
+      return (
+        <div key={groupKey}>
+          <Tooltip content={group.label}>
+            <button
+              ref={(el) => { flyoutAnchorRefs.current[groupKey] = el; }}
+              type="button"
+              className={"fdr-sidebar__item" + (anyActive ? " fdr-sidebar__item--active" : "")}
+              onClick={(event) => toggleFlyout(groupKey, event.currentTarget)}
+              aria-label={group.label}
+            >
+              <span className="fdr-sidebar__item-icon"><Icon name={iconName || "Circle"} size={18} /></span>
+            </button>
+          </Tooltip>
+          <SidebarFlyout
+            rect={flyoutTarget?.key === groupKey ? flyoutTarget.rect : null}
+            onClose={() => setFlyoutTarget(null)}
+            getAnchorEl={() => flyoutAnchorRefs.current[groupKey]}
+          >
+            <div className="fdr-sidebar__flyout-title">{group.label}</div>
+            {[primary, ...secondaries].map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={"fdr-sidebar__subitem" + (item.key === activeModule ? " fdr-sidebar__item--active" : "")}
+                style={{ paddingLeft: "var(--sidebar-padding-x)" }}
+                onClick={() => { navigate(item.key); setFlyoutTarget(null); }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </SidebarFlyout>
+        </div>
+      );
+    }
+
+    if (effectiveCollapsed) {
+      return (
+        <Tooltip key={groupKey} content={group.label}>
+          {renderModuleButton({ ...primary, label: group.label })}
+        </Tooltip>
+      );
+    }
+
+    return (
+      <div key={groupKey}>
+        {renderModuleButton({ ...primary, label: group.label })}
+        {secondaries.map((item) => renderModuleButton(item, { secondary: true }))}
+      </div>
+    );
+  }
+
+  const commandGroups = [
+    {
+      label: "导航",
+      items: FOUNDER_MODULES.filter((m) => !m.hiddenFromSidebar && capabilities[m.requiredCapability]).map((m) => ({
+        label: m.label,
+        icon: NAV_ICON_MAP[m.key],
+        onSelect: () => navigate(m.key),
+      })),
+    },
+  ];
+
+  return (
+    <nav className="fdr-sidebar" data-collapsed={effectiveCollapsed ? "true" : "false"} aria-label="Founder 导航">
+      <div className="fdr-sidebar__identity">
+        <div className="fdr-sidebar__mark" aria-hidden="true" />
+        {!effectiveCollapsed ? (
+          <div className="fdr-sidebar__identity-text">
+            <div className="fdr-sidebar__wordmark">AI Commerce OS</div>
+            <div className="fdr-sidebar__edition">Founder</div>
+          </div>
+        ) : null}
+        {!narrowViewport && !effectiveCollapsed ? (
+          <button
+            type="button"
+            className="fdr-sidebar__collapse-toggle"
+            onClick={toggleCollapsed}
+            aria-label="收起侧边栏"
+          >
+            <Icon name={UTILITY_ICONS.collapse} size={16} />
+          </button>
+        ) : null}
+      </div>
+
+      {effectiveCollapsed && !narrowViewport ? (
+        <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", borderBottom: "1px solid var(--sidebar-border)" }}>
+          <Tooltip content="展开侧边栏">
+            <IconButton icon={UTILITY_ICONS.expand} aria-label="展开侧边栏" onClick={toggleCollapsed} />
+          </Tooltip>
+        </div>
+      ) : null}
+
+      {showScopeSelector ? (
+        <div className="fdr-sidebar__context">
+          <select className="fdr-sidebar__context-select" value={scope} onChange={handleScopeChange} aria-label="当前店铺范围">
+            <option value={ALL_SHOPS_SCOPE}>全部店铺</option>
+            <option value={UNASSIGNED_SHOP_SCOPE}>未绑定店铺</option>
+            {shops.filter((s) => s.status === "active").map((shop) => (
+              <option key={shop.id} value={shop.id}>{shop.shop_name}</option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
+      <div className="fdr-sidebar__scroll">
+        {NAV_ZONES.map((zone) => (
+          <div className="fdr-sidebar__zone" key={zone.key}>
+            {!effectiveCollapsed ? <div className="fdr-sidebar__zone-label">{zone.label}</div> : null}
+            {zone.key === "core"
+              ? zone.groups.map((groupKey) => renderCoreGroup(groupKey))
+              : zone.groups.map((groupKey) => {
+                  const group = NAV_GROUPS.find((g) => g.key === groupKey);
+                  return group ? renderLabsCloudGroup(group) : null;
+                })}
+          </div>
+        ))}
+      </div>
+
+      <div className="fdr-sidebar__utilities">
+        <Tooltip content="搜索 / 命令面板 (⌘K)">
+          <button type="button" className="fdr-sidebar__utility" onClick={() => setPaletteOpen(true)}>
+            <Icon name={UTILITY_ICONS.search} size={18} />
+            <span className="fdr-sidebar__utility-label">搜索</span>
+            {!effectiveCollapsed ? <span className="fdr-sidebar__utility-shortcut">⌘K</span> : null}
+          </button>
+        </Tooltip>
+
+        <Tooltip content="活动通知">
+          <button
+            ref={(el) => { flyoutAnchorRefs.current.notifications = el; }}
+            type="button"
+            className="fdr-sidebar__utility"
+            onClick={(event) => toggleFlyout("notifications", event.currentTarget)}
+          >
+            <Icon name={UTILITY_ICONS.notifications} size={18} />
+            <span className="fdr-sidebar__utility-label">通知</span>
+          </button>
+        </Tooltip>
+        <SidebarFlyout
+          rect={flyoutTarget?.key === "notifications" ? flyoutTarget.rect : null}
+          onClose={() => setFlyoutTarget(null)}
+          getAnchorEl={() => flyoutAnchorRefs.current.notifications}
+        >
+          <div className="fdr-sidebar__flyout-title" style={{ color: "var(--text-primary)" }}>活动通知</div>
+          <p style={{ padding: "0 16px 12px", fontSize: 13, color: "var(--text-secondary)" }}>暂无新通知</p>
+        </SidebarFlyout>
+
+        <Tooltip content="系统中心 / 设置">
+          <button type="button" className="fdr-sidebar__utility" onClick={() => navigate("systemCenter")}>
+            <Icon name={UTILITY_ICONS.settings} size={18} />
+            <span className="fdr-sidebar__utility-label">设置</span>
+          </button>
+        </Tooltip>
+
+        <Tooltip content="Mac mini 已连接">
+          <div className="fdr-sidebar__utility" style={{ cursor: "default" }}>
+            <span className="fdr-sidebar__utility-dot" style={{ background: "var(--sidebar-success)" }} />
+            <span className="fdr-sidebar__utility-label">设备已连接</span>
+          </div>
+        </Tooltip>
+
+        <div className="fdr-sidebar__account">
+          <span className="fdr-sidebar__account-avatar">F</span>
+          <div className="fdr-sidebar__account-text">
+            <div className="fdr-sidebar__account-name">Founder</div>
+            <div className="fdr-sidebar__account-meta">founderOperator</div>
+          </div>
+        </div>
+      </div>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} groups={commandGroups} />
     </nav>
   );
 }

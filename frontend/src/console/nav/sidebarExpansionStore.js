@@ -25,3 +25,31 @@ export function setStoredExpandedGroup(groupKey) {
     // 隐私模式/容量超限时静默忽略——展开状态只在当前会话内存中生效。
   }
 }
+
+/**
+ * Design DNA v1.1 collapsed icon-rail persistence — same mechanism/
+ * storage convention as the accordion state above, not a new global
+ * state solution (spec explicitly asks to reuse the existing
+ * preference mechanism rather than add a fragile new one).
+ */
+const COLLAPSED_STORAGE_KEY = "ai-commerce-os:founder:sidebar-collapsed";
+
+export function getStoredSidebarCollapsed() {
+  try {
+    return window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setStoredSidebarCollapsed(collapsed) {
+  try {
+    if (collapsed) {
+      window.localStorage.setItem(COLLAPSED_STORAGE_KEY, "1");
+    } else {
+      window.localStorage.removeItem(COLLAPSED_STORAGE_KEY);
+    }
+  } catch {
+    // Same silent-ignore rationale as setStoredExpandedGroup above.
+  }
+}

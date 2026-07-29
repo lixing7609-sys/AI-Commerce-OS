@@ -1,6 +1,8 @@
-# AI Commerce OS Design DNA v1.0
+# AI Commerce OS Design DNA v1.0 (+ v1.1 Navigation Shell)
 
-Status: **Foundation established, piloted on Founder工作台.** Not yet applied to the rest of the product. See `docs/11-review/design-dna-v1.0-implementation-report.md` for what shipped in this pass versus what's deferred.
+Status: **Foundation established, piloted on Founder工作台 workspace (v1.0) and the Founder navigation shell (v1.1).** Not yet applied to the rest of the product. See `docs/11-review/design-dna-v1.0-implementation-report.md` for what shipped versus what's deferred.
+
+**v1.1 addendum:** v1.0's pilot covered the Founder工作台 workspace but left the surrounding sidebar/shell almost untouched — visual review correctly flagged this as leaving the workspace and shell reading as two different products, since the left navigation is a permanent, always-visible part of the shell and one of the strongest sources of product identity, not a secondary detail. v1.1 structurally rebuilds `ConsoleSidebar.jsx`/`ConsoleTopBar.jsx` (four zones, Core/Labs/Cloud grouping, collapsed icon-rail mode, unified icon system) without changing the canonical Founder information architecture. Full spec: [navigation-shell-spec.md](navigation-shell-spec.md).
 
 ## 1. Why this exists
 
@@ -48,7 +50,9 @@ Every AI-originated action in Founder (and eventually Operator/Studio/Cloud) pas
 
 ## 6. What this pass delivers vs. defers
 
-**Delivered:** design tokens (typography/spacing/color/radius/motion) for the Founder console layer (`theme.css`), an icon system (Lucide), a completed component primitive set + AI-specific + business components in `console/kit`, an internal `/?module=designDna` showcase, and a rebuilt Founder工作台 pilot screen.
+**Delivered (v1.0):** design tokens (typography/spacing/color/radius/motion) for the Founder console layer (`theme.css`), an icon system (Lucide), a completed component primitive set + AI-specific + business components in `console/kit`, an internal `/?module=designDna` showcase, and a rebuilt Founder工作台 pilot screen.
+
+**Delivered (v1.1):** a structural rebuild of the permanent Founder shell — `ConsoleSidebar.jsx` (four zones, Core/Labs/Cloud grouping, split navigate/toggle click targets, working collapsed icon-rail mode with portal-based flyouts) and `ConsoleTopBar.jsx` (page title lifted from `navConfig.js`, redundant scope-select/clock/owner moved into the sidebar's own zones) — closing the "workspace and shell feel like two different products" gap visual review identified in v1.0.
 
 **Explicitly deferred (non-goals for this pass, per originating spec):** redesigning any other Founder page, the standalone `/operator` and `/studio` editions, Cloud Center backend, and unifying the three *other* parallel token systems already in the repo (`App.css`, `studioConsole.css`, `cloudConsole.css`, `operatorPreview.css`) — those are noted as the recommended next migration batch in the final implementation report.
 
@@ -62,3 +66,4 @@ Every AI-originated action in Founder (and eventually Operator/Studio/Cloud) pas
 - `ai-interaction-language.md` — the Observe→Learn loop in full
 - `accessibility-spec.md`
 - `design-review-checklist.md` — the gate every future page must pass
+- `navigation-shell-spec.md` — v1.1: the Founder sidebar/shell structural rebuild

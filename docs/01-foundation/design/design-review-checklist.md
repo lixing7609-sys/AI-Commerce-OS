@@ -44,8 +44,16 @@ Every new or redesigned page must pass this checklist before merge. This is the 
 - [ ] All form fields have real `<label>` associations (not placeholder-as-label).
 - [ ] Reduced motion is respected (`prefers-reduced-motion` shortens/removes non-essential transitions).
 
+## Navigation (v1.1)
+- [ ] Uses the canonical Core/Labs/Cloud grouping — no new top-level nav concept invented.
+- [ ] Core items are directly clickable — no accordion gate on a single-destination row.
+- [ ] Labs/Cloud group rows use split click targets (label navigates, chevron only toggles) — never one ambiguous target doing both.
+- [ ] Collapsed-mode content with nested items uses a portal-based flyout, never relative/absolute positioning inside `.fdr-sidebar`/`.fdr-root` (both `overflow: hidden` — see navigation-shell-spec.md §11).
+- [ ] All sidebar colors are `--sidebar-*` tokens — no raw hex.
+- [ ] No duplicate Founder navigation entries between Core/Labs/Cloud and any embedded registry.
+
 ## How this is enforced in this pass
 
-- Manual: this checklist, applied to the Founder工作台 pilot before commit.
-- Automated (partial, see `docs/11-review/design-dna-v1.0-implementation-report.md` for exact coverage): vitest checks for token availability, absence of legacy arbitrary colors in new components, single-icon-source usage, and required AI-component states.
+- Manual: this checklist, applied to the Founder工作台 pilot (v1.0) and the navigation shell rebuild (v1.1) before commit.
+- Automated (partial, see `docs/11-review/design-dna-v1.0-implementation-report.md` for exact coverage): vitest checks for token availability, absence of legacy arbitrary colors in new components, single-icon-source usage, required AI-component states, and (v1.1) navigation-shell structural/behavioral assertions (`navigationShell.test.jsx`).
 - Not yet automated: line-length/measure enforcement, one-primary-action-per-screen — these remain manual review items for now and are listed as a follow-up in the implementation report.

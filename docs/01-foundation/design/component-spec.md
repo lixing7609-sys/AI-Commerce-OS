@@ -235,11 +235,21 @@ All documented together since they share one contract: every AI-specific compone
 | `AssetVersion` | Version metadata for a content/prompt/skill asset | `KeyValueList` + `Badge` |
 | `ContentPreview` | Thumbnail/preview of a content asset with metadata | `radius-sm` media container (matches the Tesla-study media-panel radius) |
 
+## Navigation Shell (v1.1)
+
+**Purpose:** the permanent Founder left sidebar + top bar — see [navigation-shell-spec.md](navigation-shell-spec.md) for the full spec (anatomy, tokens, typography, states, collapsed mode, accessibility, prohibited patterns). Implemented in `console/shell/ConsoleSidebar.jsx` / `ConsoleTopBar.jsx`, styled via `console.css`'s `.fdr-sidebar__*`/`.fdr-topbar__*` rules and the `--sidebar-*` token set in `theme.css`.
+
+- **Anatomy:** four zones (Product Identity / Workspace Context / Primary Navigation / System Utilities) — not a flat list.
+- **Variants:** expanded (264px) / collapsed icon-rail (72px, manual toggle or forced below 1024px).
+- **States:** default/hover/active/focus per nav row; expanded/collapsed per Labs-Cloud accordion group; open/closed per collapsed-mode flyout.
+- **Permitted:** the Core/Labs/Cloud grouping is the only sanctioned top-level Founder navigation shape.
+- **Prohibited:** restoring the retired "真实经营" entry; a second sidebar-like component; an accordion gate on a single-destination Core item; relative-positioned flyout content inside an `overflow:hidden` ancestor (must portal — see spec §11).
+
 ## Icon system
 
 Single library: **Lucide React** (`lucide-react`), replacing the current literal-Unicode-glyph approach everywhere in new/touched components (existing untouched pages keep their glyphs until migrated — a known limitation, not silently patched app-wide). All icons render through a single `Icon` wrapper (`console/kit/Icon.jsx`) that enforces one of the six standard sizes (14/16/18/20/24/32px) and a consistent `strokeWidth` (1.75) — no raw `<SvgIcon>` usage outside the wrapper, and no mixing in a second icon library.
 
-**Nav icon mapping (11 frozen top-level groups):**
+**Nav icon mapping (11 frozen top-level groups) — implemented in `console/nav/navIcons.js` as of v1.1 (previously just a planned mapping in this doc):**
 
 | Section | Icon |
 |---|---|
@@ -254,5 +264,7 @@ Single library: **Lucide React** (`lucide-react`), replacing the current literal
 | Operator实验室 | `FlaskConical` |
 | Studio实验室 | `Palette` |
 | Cloud Center | `Cloud` |
+
+**Zone D system-utility icons** (`UTILITY_ICONS` in `console/nav/navIcons.js`): Search → `Search`, Command palette → `Command`, Notifications/Activity → `Bell`, Settings → `Settings`, Account → `CircleUserRound`, Connection status → `Wifi`, collapse/expand toggle → `PanelLeftClose`/`PanelLeftOpen`, accordion chevrons → `ChevronDown`/`ChevronRight`. Nested sub-items (Core secondary rows; Operator v2/Studio/Cloud registry items) intentionally render without icons — see navigation-shell-spec.md §7 for why.
 
 Icons always accompany a text label in navigation — never a standalone icon-only nav item (spec requirement: "icons must support labels, not replace unclear labels").

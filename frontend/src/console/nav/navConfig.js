@@ -285,6 +285,30 @@ export const NAV_GROUPS = [
 ];
 
 /**
+ * Design DNA v1.1 navigation shell (docs/01-foundation/design/
+ * navigation-shell-spec.md) — purely presentational grouping layer on
+ * top of NAV_GROUPS, added for the sidebar's three visual zones
+ * (Core/Labs/Cloud). Does NOT change FOUNDER_MODULES, NAV_GROUPS, or
+ * MODULE_REDIRECTS — every existing group key/module key/persisted
+ * localStorage value keeps meaning exactly what it meant before.
+ * Core zone groups render flat/always-visible (no accordion — see
+ * ConsoleSidebar.jsx); Labs/Cloud keep the existing single-expanded
+ * accordion behavior, now scoped to just those 3 groups.
+ */
+export const NAV_ZONES = [
+  {
+    key: "core",
+    label: "Core",
+    groups: [
+      "founderWorkbenchGroup", "agentCenterGroup", "promptCenterGroup", "skillCenterGroup",
+      "workflowCenterGroup", "knowledgeCenterGroup", "connectorCenterGroup", "capabilityCenterGroup",
+    ],
+  },
+  { key: "labs", label: "Labs", groups: ["operatorLabGroup", "studioLabGroup"] },
+  { key: "cloud", label: "Cloud", groups: ["cloudCenterGroup"] },
+];
+
+/**
  * Marketplace 的折叠子导航——不再由侧边栏渲染（Marketplace 现在是
  * Cloud Center 里的一个普通模块条目），改为 MarketplaceCenter.jsx
  * 自己在页面内用 Tabs 渲染，这里只保留数据定义供该组件消费。
