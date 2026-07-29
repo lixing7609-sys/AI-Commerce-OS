@@ -168,6 +168,56 @@ export const FOUNDER_MODULES = [
     icon: "◆",
     requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_VIEW,
   },
+  // Studio 实验控制层（阶段 Studio V3 Integration §十八/补充§五）：只在
+  // Founder 内可见的系统级研发配置能力，渲染在 Studio 实验室手风琴
+  // 展开面板里、Studio 完整业务导航之后——与 operatorLabGroup 里
+  // storeConnectionCenter/productCenter 等"Founder 专属 + 放进同一
+  // 分组"的既有模式相同，只是外部导航（业务能力）在前、Founder 专属
+  // 研发能力在后，用 ConsoleSidebar.jsx 的 externalPosition 区分。
+  {
+    key: "studioAgents", label: "Studio Agent", group: "studioLabGroup", icon: "⚙",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
+  {
+    key: "studioPrompts", label: "Studio Prompt", group: "studioLabGroup", icon: "✎",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
+  {
+    key: "studioSkills", label: "Studio Skill", group: "studioLabGroup", icon: "🧩",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
+  {
+    key: "studioWorkflows", label: "Studio Workflow", group: "studioLabGroup", icon: "⇄",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
+  {
+    key: "studioModelRouting", label: "Studio 模型路由", group: "studioLabGroup", icon: "⇆",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
+  {
+    key: "studioPromptTest", label: "Prompt测试台", group: "studioLabGroup", icon: "⚑",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
+  {
+    key: "studioReplay", label: "真实任务回放", group: "studioLabGroup", icon: "↻",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
+  {
+    key: "studioEvaluation", label: "A/B评测", group: "studioLabGroup", icon: "★",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
+  {
+    key: "studioLogs", label: "运行日志", group: "studioLabGroup", icon: "▤",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
+  {
+    key: "studioCosts", label: "成本分析", group: "studioLabGroup", icon: "◉",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
+  {
+    key: "studioReleases", label: "版本与发布", group: "studioLabGroup", icon: "⛁",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+  },
   {
     key: "marketplaceCenter",
     label: "Marketplace 中心",
@@ -195,9 +245,12 @@ export const FOUNDER_MODULES = [
 export const NAV_GROUPS = [
   { key: "overview", label: "Founder 总览", collapsible: false },
   { key: "productRnd", label: "产品研发中心", collapsible: true },
-  { key: "operatorLabGroup", label: "Operator 实验室", collapsible: true, external: "operator" },
-  { key: "studioLabGroup", label: "Studio 实验室", collapsible: true, external: "studio" },
-  { key: "marketplace", label: "Marketplace 中心", collapsible: true, external: "marketplaceCloud" },
+  { key: "operatorLabGroup", label: "Operator 实验室", collapsible: true, external: "operator", externalPosition: "before" },
+  // Studio 实验室：Studio 完整业务导航（外部 registry）在前，Founder
+  // 专属的"Studio 实验控制层"（studioAgents…studioReleases 11 项）
+  // 在后——与 operatorLabGroup 顺序相反，见 §七 展开后子分组顺序要求。
+  { key: "studioLabGroup", label: "Studio 实验室", collapsible: true, external: "studio", externalPosition: "after" },
+  { key: "marketplace", label: "Marketplace 中心", collapsible: true, external: "marketplaceCloud", externalPosition: "before" },
   { key: "system", label: "系统与发布", collapsible: true },
 ];
 

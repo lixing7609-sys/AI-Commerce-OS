@@ -1,5 +1,7 @@
-import { getIpName, getStudioState } from "../mock/studioMock.js";
+import { useState } from "react";
+import { getIpName, getStudioState, retryPublishTask } from "../mock/studioMock.js";
 import { Card, DemoBadge, Pill, Table } from "./uiHelpers.jsx";
+import { useInlineFeedback } from "./useInlineFeedback.js";
 import { formatDateTime, formatMoney, formatNumber } from "./formatters.js";
 
 /**
@@ -33,6 +35,42 @@ export function MatrixAccountsPage() {
           { key: "sellableTrafficValue", label: "可售广告资源估值", render: (r) => formatMoney(r.sellableTrafficValue) },
         ]}
         rows={matrixAccounts}
+      />
+    </Card>
+  );
+}
+
+const PUBLISH_STATUS_LABEL = { scheduled: "已排期", publishing: "发布中", published: "已发布", failed: "失败" };
+const PUBLISH_STATUS_TONE = { scheduled: "neutral", publishing: "info", published: "success", failed: "danger" };
+
+export function MatrixPublishPage() {
+  const [state, setState] = useState(() => getStudioState());
+  const [feedback, showFeedback] = useInlineFeedback();
+
+  async function handleRetry(taskId) {
+    const next = await retryPublishTask(taskId);
+    setState((s) => ({ ...s, matrixPublishTasks: next.matrixPublishTasks }));
+    showFeedback("已重新提交发布，数据回流已同步");
+  }
+
+  return (
+    <Card title="矩阵发布" action={feedback ? <span className="st-inline-feedback">{feedback}</span> : <DemoBadge />}>
+      <Table
+        columns={[
+          { key: "platform", label: "平台" }, { key: "accountId", label: "账号", render: (r) => state.matrixAccounts.find((a) => a.accountId === r.accountId)?.handle ?? r.accountId },
+          { key: "title", label: "标题" }, { key: "abTitle", label: "A/B 标题" }, { key: "copy", label: "文案" },
+          { key: "tags", label: "标签", render: (r) => r.tags.join("、") }, { key: "cover", label: "封面" },
+          { key: "scheduledAt", label: "发布时间", render: (r) => formatDateTime(r.scheduledAt) },
+          { key: "status", label: "状态", render: (r) => <Pill tone={PUBLISH_STATUS_TONE[r.status]}>{PUBLISH_STATUS_LABEL[r.status]}</Pill> },
+          { key: "contentUrl", label: "内容URL", render: (r) => r.contentUrl || "—" },
+          { key: "dataSyncStatus", label: "数据回流", render: (r) => (r.dataSyncStatus === "synced" ? "已同步" : "待同步") },
+          {
+            key: "actions", label: "操作", render: (r) => (
+              r.status === "failed" ? <button type="button" className="st-btn st-btn-sm" onClick={(e) => { e.stopPropagation(); handleRetry(r.taskId); }}>失败重试</button> : "—"
+            ),
+          },
+        ]}
+        rows={state.matrixPublishTasks}
       />
     </Card>
   );

@@ -1,6 +1,6 @@
 /**
  * Studio 页面共用的最小展示组件——不是完整的 kit 库，只是把
- * StatGrid/Table/Pill 这类在 13 个页面里反复出现的结构抽出来，
+ * StatGrid/Table/Pill 这类在多个页面里反复出现的结构抽出来，
  * 避免每个页面各自重写一遍。样式全部来自 studioConsole.css 的
  * st- 前缀类名。
  */
@@ -65,6 +65,47 @@ export function EmptyState({ icon = "○", message, action }) {
       <div className="st-empty__icon">{icon}</div>
       <div className="st-empty__message">{message}</div>
       {action}
+    </div>
+  );
+}
+
+export function Tabs({ tabs, active, onChange }) {
+  return (
+    <div className="st-tabs">
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          type="button"
+          className={`st-tab${active === tab.key ? " active" : ""}`}
+          onClick={() => onChange(tab.key)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Modal({ open, title, onClose, children, width = 640 }) {
+  if (!open) return null;
+  return (
+    <div className="st-modal-overlay" onClick={onClose}>
+      <div className="st-modal-box" style={{ width }} onClick={(e) => e.stopPropagation()}>
+        <div className="st-modal-head">
+          <b>{title}</b>
+          <button type="button" className="st-modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="st-modal-body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+export function Field({ label, children }) {
+  return (
+    <div className="st-field">
+      <label>{label}</label>
+      {children}
     </div>
   );
 }

@@ -179,6 +179,17 @@
   border-top: 1px solid var(--fdr-sidebar-border);
 }
 
+/* Studio 实验室展开面板里的二级分组标题（总控/内容策划/…/Studio 实验控制层）。 */
+.fdr-sidebar__subgroup-label {
+  padding: 8px 20px 4px 32px;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--fdr-sidebar-text-dim);
+  opacity: .8;
+}
+
 .fdr-sidebar__subitem {
   display: flex;
   align-items: center;

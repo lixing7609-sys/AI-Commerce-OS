@@ -17,6 +17,15 @@ import { StoreConnectionCenter } from "./labs/StoreConnectionCenter.jsx";
 import { OperatorLabConnected } from "./labs/OperatorLabConnected.jsx";
 import { StudioLabConnected } from "./labs/StudioLabConnected.jsx";
 import { MarketplaceCenter } from "./labs/MarketplaceCenter.jsx";
+import {
+  StudioAgentsModule, StudioPromptsModule, StudioSkillsModule, StudioWorkflowsModule, StudioModelRoutingModule,
+} from "./modules/studioLab/StudioAgentModules.jsx";
+import {
+  StudioPromptTestModule, StudioReplayModule, StudioEvaluationModule,
+} from "./modules/studioLab/StudioTestingModules.jsx";
+import {
+  StudioLogsModule, StudioCostsModule, StudioReleasesModule,
+} from "./modules/studioLab/StudioOpsModules.jsx";
 
 /**
  * 模块 key -> 组件的唯一映射，ConsoleShell 从这里查表渲染当前
@@ -52,4 +61,19 @@ export const MODULE_COMPONENTS = {
   operatorLab: OperatorLabConnected,
   studioLab: StudioLabConnected,
   marketplaceCenter: MarketplaceCenter,
+  // Studio 实验控制层（阶段 Studio V3 Integration）——Founder 专属，
+  // 渲染在 Studio 实验室手风琴展开面板里 Studio 完整业务导航之后，
+  // 与 productCenter/orderCenter 等 operatorLabGroup 的 Founder 专属
+  // 项同一个模式：独立的顶级模块 key，不经过 StudioLab 的 subView。
+  studioAgents: StudioAgentsModule,
+  studioPrompts: StudioPromptsModule,
+  studioSkills: StudioSkillsModule,
+  studioWorkflows: StudioWorkflowsModule,
+  studioModelRouting: StudioModelRoutingModule,
+  studioPromptTest: StudioPromptTestModule,
+  studioReplay: StudioReplayModule,
+  studioEvaluation: StudioEvaluationModule,
+  studioLogs: StudioLogsModule,
+  studioCosts: StudioCostsModule,
+  studioReleases: StudioReleasesModule,
 };

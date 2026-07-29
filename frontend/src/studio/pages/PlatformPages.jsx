@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   COMPUTE_TASK_PRIORITIES,
   COMPUTE_TASK_TYPES,
@@ -6,7 +7,8 @@ import {
   isDistributedComputeEnabled,
 } from "../../shared/distributedCompute/mockComputeRepository.js";
 import { getStudioOverview, getStudioState } from "../mock/studioMock.js";
-import { Card, DemoBadge, Pill, StatGrid, Table } from "./uiHelpers.jsx";
+import { Card, DemoBadge, Field, Pill, StatGrid, Table } from "./uiHelpers.jsx";
+import { useInlineFeedback } from "./useInlineFeedback.js";
 import { formatMoney, formatNumber } from "./formatters.js";
 
 /* ---------------------------- 算力任务 ---------------------------- */
@@ -115,15 +117,15 @@ export function DataAnalyticsPage() {
   );
 }
 
-/* ---------------------------- 设置 ---------------------------- */
+/* ---------------------------- Studio设置 ---------------------------- */
 
-export function SettingsPage() {
+export function StudioSettingsPage() {
   return (
     <div>
       <Card title="产品信息">
         <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12, fontSize: 13 }}>
           <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>产品名称</dt><dd style={{ margin: 0 }}>AI Commerce OS Studio</dd></div>
-          <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>架构定位</dt><dd style={{ margin: 0 }}>Content Plane</dd></div>
+          <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>产品定位</dt><dd style={{ margin: 0 }}>AI Content Company Operating System · AI内容公司操作系统</dd></div>
           <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>数据状态</dt><dd style={{ margin: 0 }}>演示数据 · 不连接真实平台账号/广告交易系统</dd></div>
         </dl>
       </Card>
@@ -138,6 +140,114 @@ export function SettingsPage() {
         <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
           经营者工作台：/operator · 研发与经营验证中心：/founder · 平台控制台：/cloud
         </p>
+      </Card>
+    </div>
+  );
+}
+
+/* ---------------------------- 平台连接 ---------------------------- */
+
+const PLATFORM_CONNECTIONS_SEED = [
+  { id: "pc-1", platform: "抖音", accountHandle: "@重生豪门官方", status: "已连接", lastSync: "3分钟前" },
+  { id: "pc-2", platform: "小红书", accountHandle: "星辰家居研究所", status: "已连接", lastSync: "12分钟前" },
+  { id: "pc-3", platform: "红果短剧", accountHandle: "重生豪门剧场", status: "已连接", lastSync: "1小时前" },
+  { id: "pc-4", platform: "视频号", accountHandle: "AI一人公司观察", status: "已连接", lastSync: "5分钟前" },
+  { id: "pc-5", platform: "微信公众号", accountHandle: "AI一人公司观察", status: "未连接", lastSync: "—" },
+  { id: "pc-6", platform: "知乎", accountHandle: "—", status: "未连接", lastSync: "—" },
+];
+
+export function PlatformConnectionsPage() {
+  const [rows, setRows] = useState(PLATFORM_CONNECTIONS_SEED);
+  const [feedback, showFeedback] = useInlineFeedback();
+
+  function toggle(id) {
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, status: r.status === "已连接" ? "未连接" : "已连接", lastSync: r.status === "已连接" ? "—" : "刚刚" } : r)));
+    showFeedback("平台账号连接状态已更新（演示，未发起真实授权）");
+  }
+
+  return (
+    <Card title="平台连接" action={feedback ? <span className="st-inline-feedback">{feedback}</span> : <DemoBadge />}>
+      <Table
+        columns={[
+          { key: "platform", label: "平台" }, { key: "accountHandle", label: "账号" },
+          { key: "status", label: "状态", render: (r) => <Pill tone={r.status === "已连接" ? "success" : "neutral"}>{r.status}</Pill> },
+          { key: "lastSync", label: "最近同步" },
+          { key: "actions", label: "操作", render: (r) => <button type="button" className="st-btn st-btn-sm" onClick={(e) => { e.stopPropagation(); toggle(r.id); }}>{r.status === "已连接" ? "断开连接" : "连接账号"}</button> },
+        ]}
+        rows={rows}
+      />
+    </Card>
+  );
+}
+
+/* ---------------------------- 品牌规范 ---------------------------- */
+
+export function BrandGuidelinesPage() {
+  const [form, setForm] = useState({
+    toneOfVoice: "专业、克制、带一点鼓舞人心的表达", forbiddenWords: "保证、绝对、最、第一（无依据的极限用语）",
+    visualStyle: "冷色调为主，简洁排版，避免过度娱乐化元素", logoUsage: "Logo 需保留四周留白，不得拉伸变形",
+    complianceNote: "涉及品牌植入内容需在发布前经品牌方复核",
+  });
+  const [feedback, showFeedback] = useInlineFeedback();
+
+  function set(key, value) { setForm((f) => ({ ...f, [key]: value })); }
+
+  return (
+    <Card title="品牌规范" action={feedback ? <span className="st-inline-feedback">{feedback}</span> : <DemoBadge />}>
+      <Field label="语气与风格"><textarea value={form.toneOfVoice} onChange={(e) => set("toneOfVoice", e.target.value)} /></Field>
+      <Field label="禁用词"><textarea value={form.forbiddenWords} onChange={(e) => set("forbiddenWords", e.target.value)} /></Field>
+      <Field label="视觉风格"><textarea value={form.visualStyle} onChange={(e) => set("visualStyle", e.target.value)} /></Field>
+      <Field label="Logo 使用规范"><textarea value={form.logoUsage} onChange={(e) => set("logoUsage", e.target.value)} /></Field>
+      <Field label="合规提示"><textarea value={form.complianceNote} onChange={(e) => set("complianceNote", e.target.value)} /></Field>
+      <button type="button" className="st-btn st-btn--primary" onClick={() => showFeedback("品牌规范已保存，将同步给内容审核 Agent")}>保存</button>
+    </Card>
+  );
+}
+
+/* ---------------------------- 通知与权限 ---------------------------- */
+
+const NOTIFICATION_ITEMS = [
+  { key: "reviewPending", label: "内容待审核提醒" }, { key: "accountAtRisk", label: "矩阵账号异常提醒" },
+  { key: "publishFailed", label: "发布失败提醒" }, { key: "budgetThreshold", label: "预算超限提醒" },
+  { key: "settlementDue", label: "结算到账提醒" },
+];
+
+const PERMISSION_ROLES = [
+  { role: "Studio负责人", scope: "全部模块", canEdit: true },
+  { role: "内容运营总监", scope: "内容策划 / AI创作中心 / 矩阵运营", canEdit: true },
+  { role: "AI导演", scope: "AI创作中心 / AI导演工作台", canEdit: true },
+  { role: "编剧", scope: "剧本 / 脚本 / 分镜", canEdit: true },
+  { role: "剪辑与发布人员", scope: "AI剪辑 / 矩阵发布", canEdit: true },
+  { role: "商业化运营人员", scope: "商业经营", canEdit: false },
+];
+
+export function NotificationsPermissionsPage() {
+  const [notifications, setNotifications] = useState(() => Object.fromEntries(NOTIFICATION_ITEMS.map((n) => [n.key, true])));
+  const [feedback, showFeedback] = useInlineFeedback();
+
+  function toggleNotification(key) {
+    setNotifications((n) => ({ ...n, [key]: !n[key] }));
+    showFeedback("通知设置已更新");
+  }
+
+  return (
+    <div>
+      <Card title="通知设置" action={feedback ? <span className="st-inline-feedback">{feedback}</span> : <DemoBadge />}>
+        {NOTIFICATION_ITEMS.map((item) => (
+          <label key={item.key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+            <input type="checkbox" checked={notifications[item.key]} onChange={() => toggleNotification(item.key)} />
+            {item.label}
+          </label>
+        ))}
+      </Card>
+      <Card title="角色权限">
+        <Table
+          columns={[
+            { key: "role", label: "角色" }, { key: "scope", label: "可见范围" },
+            { key: "canEdit", label: "可编辑", render: (r) => <Pill tone={r.canEdit ? "success" : "neutral"}>{r.canEdit ? "是" : "仅查看"}</Pill> },
+          ]}
+          rows={PERMISSION_ROLES.map((r, idx) => ({ id: idx, ...r }))}
+        />
       </Card>
     </div>
   );

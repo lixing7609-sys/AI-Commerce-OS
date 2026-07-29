@@ -141,8 +141,8 @@ test.describe("Founder: Studio Lab (阶段 M8c contentOnly 渲染，Studio 完�
   test("the embedded Studio content is reachable and scrollable via Founder's own single content container, no double scrollbar", async ({ page }) => {
     await page.goto("/founder");
     await page.getByRole("button", { name: "Studio 实验室", exact: true }).click();
-    await page.locator(".fdr-sidebar__subitem", { hasText: "AI 短剧" }).click();
-    await expect(page.getByRole("heading", { name: "AI 短剧" })).toBeVisible();
+    await page.locator(".fdr-sidebar__subitem", { hasText: "AI短剧" }).click();
+    await expect(page.getByRole("heading", { name: "AI短剧" })).toBeVisible();
 
     // Founder 自己的内容容器（.fdr-content）现在是唯一的滚动上下文——
     // 内嵌页面不再自带 .st-content 有界容器，不应该出现第二个独立的

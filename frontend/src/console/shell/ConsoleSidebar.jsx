@@ -3,7 +3,11 @@ import { FOUNDER_MODULES, NAV_GROUPS, MARKETPLACE_SUBNAV, getGroupKeyForModule, 
 import { useConsoleNavContext } from "../nav/ConsoleNavContext.jsx";
 import { useCapabilities } from "../useCapabilities.js";
 import { OPERATOR_NAV_ITEMS } from "../../operator-preview/helpers/navigation.js";
-import { NAV_ITEMS as STUDIO_NAV_ITEMS, DEFAULT_NAV_KEY as STUDIO_DEFAULT_KEY } from "../../studio/navConfig.js";
+import {
+  NAV_GROUPS as STUDIO_NAV_GROUPS,
+  DEFAULT_NAV_KEY as STUDIO_DEFAULT_KEY,
+  getVisibleNavItemsByGroup as getStudioVisibleNavItemsByGroup,
+} from "../../studio/navConfig.js";
 import { getStoredExpandedGroup, setStoredExpandedGroup } from "../nav/sidebarExpansionStore.js";
 
 /**
@@ -103,6 +107,26 @@ export function ConsoleSidebar() {
     );
   }
 
+  /**
+   * Studio 完整业务导航按 Studio 自己的分组结构（总控/内容策划/
+   * AI创作中心/矩阵运营/商业经营/设置）渲染子标题——与独立 Studio
+   * 侧边栏（studio/StudioSidebar.jsx）呈现同一份分组信息，只是这里
+   * 展开面板本身已经代表"Studio 实验室"这一层，六个 Studio 分组不再
+   * 需要各自可折叠，直接平铺展示标题 + 子项即可。
+   */
+  function renderStudioGroupedItems() {
+    return STUDIO_NAV_GROUPS.map((studioGroup) => {
+      const groupItems = getStudioVisibleNavItemsByGroup(studioGroup.key);
+      if (groupItems.length === 0) return null;
+      return (
+        <div key={studioGroup.key}>
+          <div className="fdr-sidebar__subgroup-label">{studioGroup.label}</div>
+          {groupItems.map((navItem) => renderSubItem(navItem, "studioLab", STUDIO_DEFAULT_KEY))}
+        </div>
+      );
+    });
+  }
+
   return (
     <nav className="fdr-sidebar" aria-label="Founder 唯一导航">
       <div className="fdr-sidebar__brand">
@@ -156,17 +180,28 @@ export function ConsoleSidebar() {
               </button>
               {expanded ? (
                 <div id={panelId} className="fdr-sidebar__panel">
-                  {items.map((item) => renderModuleButton(item))}
-                  {items.length > 0 && group.external ? <div className="fdr-sidebar__divider" /> : null}
+                  {group.externalPosition !== "after" ? (
+                    <>
+                      {items.map((item) => renderModuleButton(item))}
+                      {items.length > 0 && group.external ? <div className="fdr-sidebar__divider" /> : null}
+                    </>
+                  ) : null}
+
                   {group.external === "operator"
                     ? OPERATOR_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "operatorLab", "dashboard"))
                     : null}
-                  {group.external === "studio"
-                    ? STUDIO_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "studioLab", STUDIO_DEFAULT_KEY))
-                    : null}
+                  {group.external === "studio" ? renderStudioGroupedItems() : null}
                   {group.external === "marketplaceCloud"
                     ? MARKETPLACE_SUBNAV.map((navItem) => renderSubItem(navItem, "marketplaceCenter", "overview"))
                     : null}
+
+                  {group.externalPosition === "after" ? (
+                    <>
+                      {items.length > 0 ? <div className="fdr-sidebar__divider" /> : null}
+                      {items.length > 0 ? <div className="fdr-sidebar__subgroup-label">Studio 实验控制层</div> : null}
+                      {items.map((item) => renderModuleButton(item))}
+                    </>
+                  ) : null}
                 </div>
               ) : null}
             </div>

@@ -10,7 +10,7 @@ import { formatDateTime, formatMoney, formatNumber } from "./formatters.js";
  */
 
 export function TrafficPoolPage() {
-  const { trafficPool, matrixAccounts } = getStudioState();
+  const { trafficPool, matrixAccounts, trafficSourceBreakdown } = getStudioState();
 
   return (
     <div>
@@ -24,7 +24,25 @@ export function TrafficPoolPage() {
           <span className="st-flow-step">广告收入</span>
         </div>
       </div>
-      <Card title="流量池" action={<DemoBadge />}>
+
+      <Card title="流量来源结构（8类）" action={<DemoBadge />}>
+        <Table
+          columns={[
+            { key: "sourceType", label: "流量来源" },
+            { key: "share", label: "占比", render: (r) => `${r.share}%` },
+            { key: "cost", label: "流量成本", render: (r) => formatMoney(r.cost) },
+            { key: "conversion", label: "转化率", render: (r) => `${r.conversion}%` },
+            { key: "retainableUsers", label: "可沉淀用户", render: (r) => formatNumber(r.retainableUsers) },
+            { key: "contentContribution", label: "内容贡献" },
+            { key: "accountContribution", label: "账号贡献" },
+            { key: "trend", label: "趋势", render: (r) => <Pill tone={r.trend === "上升" ? "success" : r.trend === "下降" ? "danger" : "neutral"}>{r.trend}</Pill> },
+            { key: "aiSuggestion", label: "AI 优化建议" },
+          ]}
+          rows={trafficSourceBreakdown.map((t, idx) => ({ id: idx, ...t }))}
+        />
+      </Card>
+
+      <Card title="流量池明细" action={<DemoBadge />}>
         <Table
           columns={[
             { key: "platform", label: "平台流量" },

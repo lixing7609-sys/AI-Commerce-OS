@@ -71,7 +71,7 @@ test.describe("Founder sidebar: collapsible accordion, single expansion", () => 
   test("Studio 实验室 expands the full independent Studio navigation, in order, including Studio秘书", async ({ page }) => {
     await page.goto("/founder");
     await page.getByRole("button", { name: "Studio 实验室", exact: true }).click();
-    for (const label of ["Studio秘书", "Studio 概览", "内容项目", "AI 短剧", "AI 视频", "AI 直播", "矩阵账号", "内容资产", "流量池", "广告资源", "广告订单", "算力任务", "数据分析", "能力市场", "设置"]) {
+    for (const label of ["Studio秘书", "Studio概览", "内容项目", "AI短剧", "AI视频", "AI图文", "AI直播", "矩阵账号", "内容资产", "流量池", "广告资源", "广告订单", "算力任务", "数据分析", "能力市场", "Studio设置"]) {
       await expect(page.locator(".fdr-sidebar__subitem", { hasText: label })).toBeVisible();
     }
   });
@@ -124,7 +124,7 @@ test.describe("Founder: refresh and deep-link restore the correct expanded group
     const cases = [
       { module: "storeCenter", group: "Operator 实验室", subItem: "店铺" },
       { module: "contentCenter", group: "Studio 实验室", subItem: "内容项目" },
-      { module: "liveCenter", group: "Studio 实验室", subItem: "AI 直播" },
+      { module: "liveCenter", group: "Studio 实验室", subItem: "AI直播" },
       { module: "trafficNetworkCenter", group: "Studio 实验室", subItem: "矩阵账号" },
     ];
     for (const { module, group, subItem } of cases) {

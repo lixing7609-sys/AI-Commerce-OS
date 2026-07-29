@@ -1,6 +1,7 @@
 import { useState } from "react";
 import "./studioConsole.css";
-import { NAV_ITEMS, DEFAULT_NAV_KEY } from "./navConfig.js";
+import { DEFAULT_NAV_KEY, getStudioNavItemByKey } from "./navConfig.js";
+import { StudioSidebar } from "./StudioSidebar.jsx";
 import { PAGE_COMPONENTS } from "./pages/index.jsx";
 import { ErrorBoundary } from "../shared/ErrorBoundary.jsx";
 
@@ -38,43 +39,17 @@ function StudioShell() {
     setParams(opts);
   }
 
-  const activeItem = NAV_ITEMS.find((i) => i.key === activePage);
+  const activeItem = getStudioNavItemByKey(activePage);
   const PageComponent = PAGE_COMPONENTS[activePage];
 
   return (
     <div className="st-shell">
-      <aside className="st-sidebar">
-        <div className="st-brand">
-          <span>◆</span>
-          <div>
-            <div>AI Commerce OS</div>
-            <span className="st-brand-badge">STUDIO</span>
-          </div>
-        </div>
-        <nav className="st-nav">
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={`st-nav-link${activePage === item.key ? " active" : ""}`}
-              onClick={() => navigate(item.key)}
-            >
-              <span className="st-nav-icon">{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <div className="st-sidebar-footer">
-          演示数据 · 内容生产与流量运营
-          <br />
-          经营者工作台：/operator
-        </div>
-      </aside>
+      <StudioSidebar activePage={activePage} onNavigate={navigate} />
       <main className="st-main">
         <div className="st-topbar">
           <div>
             <h1>{activeItem?.label ?? "Studio"}</h1>
-            <p className="st-topbar-subtitle">AI Commerce OS Studio —— 内容生产、矩阵账号与流量/广告资源经营</p>
+            <p className="st-topbar-subtitle">AI Commerce OS Studio —— AI Content Company Operating System · AI内容公司操作系统</p>
           </div>
           <span className="st-demo-badge">演示数据</span>
         </div>

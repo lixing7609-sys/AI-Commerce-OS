@@ -1,4 +1,4 @@
-import { createLocalRepository, simulateLatency, tagDemo } from "../../shared/localRepository.js";
+import { createLocalRepository, nextMockId, simulateLatency, tagDemo } from "../../shared/localRepository.js";
 
 /**
  * AI Commerce OS Studio 的 Mock 数据层（阶段：四端产品体系 V1，§5）。
@@ -23,7 +23,24 @@ export const CONTENT_TYPE_LABEL = {
   ad_creative: "广告素材",
   brand_column: "品牌栏目",
   matrix_content: "矩阵内容",
+  product_video: "商品视频",
+  live_clip: "直播切片",
+  knowledge_ip: "知识 IP",
+  custom: "自定义内容项目",
 };
+
+/** §九新建项目工作台的"内容类型"下拉选项——覆盖视频/直播族全部类型，AI图文/漫画走 GRAPHIC_TYPE_LABEL 独立分支。 */
+export const NEW_PROJECT_CONTENT_TYPE_OPTIONS = [
+  { value: "shortdrama", label: "AI短剧" },
+  { value: "matrix_content", label: "短视频矩阵" },
+  { value: "product_video", label: "商品视频" },
+  { value: "ad_creative", label: "品牌广告" },
+  { value: "live", label: "直播内容" },
+  { value: "live_clip", label: "直播切片" },
+  { value: "knowledge_ip", label: "知识IP" },
+  { value: "graphic", label: "AI图文（结构化图文内容）" },
+  { value: "custom", label: "自定义内容项目" },
+];
 
 export const PROJECT_STATUS_LABEL = {
   planning: "策划中",
@@ -46,7 +63,25 @@ export const MONETIZATION_LABEL = {
   revenue_share: "平台分成",
   licensing: "版权授权",
   internal_marketing: "内部营销（不直接变现）",
+  commerce_commission: "带货",
+  live_commerce: "直播成交",
+  brand_deal: "品牌合作",
+  knowledge_payment: "知识付费",
+  traffic_growth: "涨粉和流量池",
+  mixed: "混合变现",
 };
+
+export const NEW_PROJECT_MONETIZATION_OPTIONS = [
+  { value: "revenue_share", label: "平台分成" },
+  { value: "ad_revenue", label: "广告分成" },
+  { value: "commerce_commission", label: "带货" },
+  { value: "live_commerce", label: "直播成交" },
+  { value: "brand_deal", label: "品牌合作" },
+  { value: "knowledge_payment", label: "知识付费" },
+  { value: "licensing", label: "版权授权" },
+  { value: "traffic_growth", label: "涨粉和流量池" },
+  { value: "mixed", label: "混合变现" },
+];
 
 const now = Date.now();
 const days = (n) => new Date(now + n * 86400000).toISOString();
@@ -56,6 +91,9 @@ const IP_LIST = [
   { ipId: "ip-1", name: "《重生豪门之我在家居行业当扫地僧》" },
   { ipId: "ip-2", name: "星辰家居·匠心系列" },
   { ipId: "ip-3", name: "锦程国际·出海日记" },
+  { ipId: "ip-4", name: "《重生后我接管了老板的公司》" },
+  { ipId: "ip-5", name: "LightOS · 出租屋灯光改造矩阵" },
+  { ipId: "ip-6", name: "AI 一人公司商业观察 IP" },
 ];
 
 function seedContentProjects() {
@@ -96,6 +134,33 @@ function seedContentProjects() {
       tokenUsed: 400, computeUnitsUsed: 0, budget: 15000, status: "planning",
       monetizationModel: "licensing",
     },
+    {
+      // Studio V3 Integration §二十三 旗舰演示项目 1/3：红果短剧，AI导演工作台默认演示项目。
+      projectId: "proj-7", name: "红果短剧《重生后我接管了老板的公司》EP13-16", contentType: "shortdrama", ipId: "ip-4",
+      stage: "分镜", ownerAgentOrPerson: "Director Agent · AI导演工作台", expectedCompleteAt: days(2),
+      tokenUsed: 33600, computeUnitsUsed: 92, budget: 60000, status: "in_production",
+      monetizationModel: "revenue_share",
+      contentGoal: "情绪爽剧 · 24 集 · 红果主发", targetAudience: "都市女性 25-40 岁",
+      automationLevel: "半自动（关键节点人工确认）", humanReviewNodes: ["分镜确认", "内容审核"],
+    },
+    {
+      // 旗舰演示项目 2/3：LightOS 出租屋灯光改造矩阵——短视频矩阵 + 带货 + 品牌种草。
+      projectId: "proj-8", name: "LightOS 出租屋灯光改造矩阵", contentType: "matrix_content", ipId: "ip-5",
+      stage: "生成", ownerAgentOrPerson: "矩阵内容 Agent", expectedCompleteAt: days(5),
+      tokenUsed: 18200, computeUnitsUsed: 64, budget: 30000, status: "in_production",
+      monetizationModel: "ad_revenue",
+      contentGoal: "30 条短视频矩阵，抖音 + 小红书", targetAudience: "租房群体 22-32 岁",
+      automationLevel: "全自动（异常自动转人工）", humanReviewNodes: ["内容审核"],
+    },
+    {
+      // 旗舰演示项目 3/3：AI一人公司商业观察 IP——知识 IP，日更 + 直播切片 + 品牌合作 + 知识产品。
+      projectId: "proj-9", name: "AI 一人公司商业观察 IP · 日更计划", contentType: "matrix_content", ipId: "ip-6",
+      stage: "流量资产沉淀", ownerAgentOrPerson: "内容策划 Agent", expectedCompleteAt: days(1),
+      tokenUsed: 41200, computeUnitsUsed: 120, budget: 45000, status: "in_production",
+      monetizationModel: "licensing",
+      contentGoal: "知识 IP · 日更短视频 + 直播切片", targetAudience: "创业者 / 自由职业者",
+      automationLevel: "半自动（关键节点人工确认）", humanReviewNodes: ["内容审核", "品牌合作确认"],
+    },
   ];
 }
 
@@ -106,6 +171,10 @@ function seedMatrixAccounts() {
     { accountId: "matrix-3", platform: "小红书", handle: "星辰家居研究所", positioning: "家居选购种草", ipId: "ip-2", followers: 68900, lastUpdatedAt: daysAgo(0.1), contentCount: 128, totalPlays: 4200000, accountHealth: "healthy", monetizationStatus: "in_progress", sellableTrafficValue: 9800 },
     { accountId: "matrix-4", platform: "视频号", handle: "锦程出海笔记", positioning: "跨境贸易纪实", ipId: "ip-3", followers: 21400, lastUpdatedAt: daysAgo(6), contentCount: 18, totalPlays: 610000, accountHealth: "attention", monetizationStatus: "not_started", sellableTrafficValue: 1200 },
     { accountId: "matrix-5", platform: "B站", handle: "重生豪门UP主剪辑版", positioning: "都市逆袭短剧", ipId: "ip-1", followers: 9200, lastUpdatedAt: daysAgo(14), contentCount: 12, totalPlays: 380000, accountHealth: "at_risk", monetizationStatus: "not_started", sellableTrafficValue: 300 },
+    { accountId: "matrix-6", platform: "视频号", handle: "AI一人公司观察", positioning: "商业观察知识IP", ipId: "ip-6", followers: 82400, lastUpdatedAt: daysAgo(0.2), contentCount: 61, totalPlays: 5600000, accountHealth: "healthy", monetizationStatus: "monetized", sellableTrafficValue: 14200 },
+    { accountId: "matrix-7", platform: "B站", handle: "AI一人公司观察", positioning: "商业观察知识IP", ipId: "ip-6", followers: 45300, lastUpdatedAt: daysAgo(0.4), contentCount: 58, totalPlays: 3900000, accountHealth: "healthy", monetizationStatus: "monetized", sellableTrafficValue: 9600 },
+    { accountId: "matrix-8", platform: "抖音", handle: "LightOS灯光改造", positioning: "出租屋改造种草", ipId: "ip-5", followers: 33800, lastUpdatedAt: daysAgo(0.5), contentCount: 22, totalPlays: 2100000, accountHealth: "healthy", monetizationStatus: "in_progress", sellableTrafficValue: 6200 },
+    { accountId: "matrix-9", platform: "小红书", handle: "LightOS灯光改造", positioning: "出租屋改造种草", ipId: "ip-5", followers: 28900, lastUpdatedAt: daysAgo(0.1), contentCount: 30, totalPlays: 1800000, accountHealth: "healthy", monetizationStatus: "in_progress", sellableTrafficValue: 5100 },
   ];
 }
 
@@ -188,6 +257,27 @@ function seedAiLiveProjects() {
   ];
 }
 
+function seedTrafficSourceBreakdown() {
+  return [
+    { sourceType: "自然推荐流量", share: 46, cost: 0, conversion: 3.8, retainableUsers: 12000, contentContribution: "高", accountContribution: "matrix-1/matrix-6", trend: "上升", aiSuggestion: "保持当前发布频率，内容质量是主要驱动力" },
+    { sourceType: "搜索流量", share: 16, cost: 0, conversion: 6.2, retainableUsers: 4200, contentContribution: "中", accountContribution: "matrix-3/matrix-9", trend: "上升", aiSuggestion: "补充更多长尾关键词图文，承接搜索意图" },
+    { sourceType: "关键词流量", share: 8, cost: 0, conversion: 5.4, retainableUsers: 1800, contentContribution: "中", accountContribution: "matrix-9", trend: "平稳", aiSuggestion: "关键词密度可再优化 0.5-1 个百分点" },
+    { sourceType: "矩阵互推流量", share: 18, cost: 0, conversion: 2.1, retainableUsers: 3600, contentContribution: "中", accountContribution: "全部矩阵账号", trend: "平稳", aiSuggestion: "增加账号间互推卡点，提升转化率" },
+    { sourceType: "私域流量", share: 4, cost: 200, conversion: 12.6, retainableUsers: 2100, contentContribution: "低", accountContribution: "matrix-6", trend: "上升", aiSuggestion: "私域转化率最高，建议加大引流预算" },
+    { sourceType: "直播流量", share: 3, cost: 400, conversion: 8.9, retainableUsers: 900, contentContribution: "低", accountContribution: "matrix-1", trend: "平稳", aiSuggestion: "直播流量沉淀效率高，可增加场次" },
+    { sourceType: "付费广告流量", share: 12, cost: 1500, conversion: 1.8, retainableUsers: 2600, contentContribution: "低", accountContribution: "matrix-1/matrix-8", trend: "下降", aiSuggestion: "ROI 低于均值，建议收缩预算至私域/直播" },
+    { sourceType: "外部导入流量", share: 3, cost: 0, conversion: 0.9, retainableUsers: 300, contentContribution: "低", accountContribution: "—", trend: "平稳", aiSuggestion: "外部导入占比很小，暂不作为重点优化项" },
+  ];
+}
+
+function seedMatrixPublishTasks() {
+  return [
+    { taskId: "pub-1", projectId: "proj-7", platform: "红果短剧", accountId: "matrix-1", title: "《重生后我接管了老板的公司》EP03", copy: "从今天起，这家公司由我说了算。", tags: ["逆袭", "职场"], cover: "ep03-cover.png", scheduledAt: days(0.3), abTitle: "老板消失后，我用一份协议夺回了公司", status: "scheduled", retryCount: 0, contentUrl: "", dataSyncStatus: "pending" },
+    { taskId: "pub-2", projectId: "proj-8", platform: "抖音", accountId: "matrix-8", title: "出租屋灯光改造01", copy: "30分钟告别白炽灯", tags: ["租房好物", "氛围灯"], cover: "lightos-01-cover.png", scheduledAt: daysAgo(0.1), abTitle: "免打孔灯光改造，租期结束直接拆", status: "published", retryCount: 0, contentUrl: "https://douyin.example/demo-pub-2", dataSyncStatus: "synced" },
+    { taskId: "pub-3", projectId: "proj-9", platform: "视频号", accountId: "matrix-6", title: "AI一人公司：员工都是Agent", copy: "一个人如何管理14个Agent同事", tags: ["AI创业"], cover: "aigongsi-cover.png", scheduledAt: daysAgo(0.2), abTitle: "我雇了14个AI员工，一分钱不发工资", status: "failed", retryCount: 1, contentUrl: "", dataSyncStatus: "pending" },
+  ];
+}
+
 const repository = createLocalRepository("studio.state", () => ({
   contentProjects: seedContentProjects(),
   matrixAccounts: seedMatrixAccounts(),
@@ -198,6 +288,8 @@ const repository = createLocalRepository("studio.state", () => ({
   shortDramaDetail: seedShortDramaDetail(),
   aiVideoTasks: seedAiVideoTasks(),
   aiLiveProjects: seedAiLiveProjects(),
+  matrixPublishTasks: seedMatrixPublishTasks(),
+  trafficSourceBreakdown: seedTrafficSourceBreakdown(),
 }));
 
 export function getStudioState() {
@@ -254,12 +346,61 @@ export async function reserveAdResource(resourceId) {
   }));
 }
 
+/**
+ * 新建内容项目（§九 新建项目工作台的提交动作）——真实生产入口，不是
+ * 表单占位：写入 contentProjects 仓库并返回新项目，供调用方立即
+ * navigate("director", { projectId: 新项目ID }) 进入 AI导演工作台。
+ */
+export async function createContentProject(input) {
+  await simulateLatency(400, 800);
+  const projectId = nextMockId("proj");
+  const project = {
+    projectId,
+    name: input.name || "未命名内容项目",
+    contentType: input.contentType || "shortvideo",
+    ipId: input.ipId || null,
+    stage: "选题",
+    ownerAgentOrPerson: "Director Agent · 待分配",
+    expectedCompleteAt: input.deadline || days(7),
+    tokenUsed: 0,
+    computeUnitsUsed: 0,
+    budget: Number(input.budgetCap) || 10000,
+    status: "planning",
+    monetizationModel: input.monetizationModel || "internal_marketing",
+    contentGoal: input.contentGoal || "",
+    targetAudience: input.targetAudience || "",
+    targetPlatform: input.targetPlatform || "",
+    targetAccount: input.targetAccount || "",
+    contentCount: Number(input.contentCount) || 1,
+    videoDuration: input.videoDuration || "",
+    contentStyle: input.contentStyle || "",
+    relatedProductId: input.relatedProductId || null,
+    relatedBrandId: input.relatedBrandId || null,
+    relatedTrendId: input.relatedTrendId || null,
+    automationLevel: input.automationLevel || "半自动（关键节点人工确认）",
+    humanReviewNodes: input.humanReviewNodes || ["内容审核"],
+    notes: input.notes || "",
+  };
+  repository.update((state) => ({ ...state, contentProjects: [project, ...state.contentProjects] }));
+  return tagDemo(project);
+}
+
 export async function advanceProjectStage(projectId, nextStage) {
   await simulateLatency(300, 600);
   return repository.update((state) => ({
     ...state,
     contentProjects: state.contentProjects.map((p) =>
       p.projectId === projectId ? { ...p, stage: nextStage } : p
+    ),
+  }));
+}
+
+export async function retryPublishTask(taskId) {
+  await simulateLatency(400, 800);
+  return repository.update((state) => ({
+    ...state,
+    matrixPublishTasks: state.matrixPublishTasks.map((t) =>
+      t.taskId === taskId ? { ...t, status: "published", retryCount: t.retryCount + 1, contentUrl: `https://platform.example/demo-${taskId}`, dataSyncStatus: "synced" } : t
     ),
   }));
 }

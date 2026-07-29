@@ -7,20 +7,25 @@ import {
   getIpName,
   getStudioState,
 } from "../mock/studioMock.js";
+import { ProjectCreationModal } from "./ProjectCreationModal.jsx";
 import { Card, DemoBadge, Pill, Table } from "./uiHelpers.jsx";
 import { formatDateTime, formatMoney } from "./formatters.js";
 
 /* ---------------------------- 内容项目 ---------------------------- */
 
-export function ContentProjectsPage() {
+export function ContentProjectsPage({ navigate }) {
   const { contentProjects } = getStudioState();
   const [typeFilter, setTypeFilter] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
   const rows = typeFilter ? contentProjects.filter((p) => p.contentType === typeFilter) : contentProjects;
 
   return (
     <div>
-      <Card title="内容项目" action={<DemoBadge />}>
+      <Card
+        title="内容项目"
+        action={<span className="st-btn-row"><button type="button" className="st-btn st-btn--primary st-btn-sm" onClick={() => setCreateOpen(true)}>＋ 新建内容项目</button><DemoBadge /></span>}
+      >
         <div className="st-filter-bar">
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
             <option value="">全部类型</option>
@@ -42,10 +47,20 @@ export function ContentProjectsPage() {
             { key: "budget", label: "预算", render: (r) => formatMoney(r.budget) },
             { key: "status", label: "状态", render: (r) => <Pill tone={PROJECT_STATUS_TONE[r.status]}>{PROJECT_STATUS_LABEL[r.status]}</Pill> },
             { key: "monetizationModel", label: "收益模式", render: (r) => MONETIZATION_LABEL[r.monetizationModel] },
+            { key: "actions", label: "操作", render: (r) => <button type="button" className="st-btn st-btn-sm" onClick={(e) => { e.stopPropagation(); navigate("director", { projectId: r.projectId }); }}>进入导演台</button> },
           ]}
           rows={rows}
+          onRowClick={(r) => navigate("director", { projectId: r.projectId })}
         />
       </Card>
+      <ProjectCreationModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={({ project, isGraphic }) => {
+          setCreateOpen(false);
+          navigate(isGraphic ? "graphicContentEditor" : "director", { projectId: project.projectId });
+        }}
+      />
     </div>
   );
 }
