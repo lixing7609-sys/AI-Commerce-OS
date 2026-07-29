@@ -1,4 +1,4 @@
-import { getStudioOverview, getStudioState, getIpName } from "../mock/studioMock.js";
+import { getStudioOverview, getStudioState } from "../mock/studioMock.js";
 import { getHotspotState } from "../mock/hotspotMock.js";
 import { getAgentStatusList } from "../mock/studioAgentMock.js";
 import { getMonetizationOverview } from "../mock/monetizationMock.js";

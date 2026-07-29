@@ -92,7 +92,7 @@ test.describe("Founder: Operator Lab (阶段 M8c contentOnly 渲染，Operator �
     await page.locator(".fdr-sidebar__subitem", { hasText: "广告投放" }).click();
     await expect(page.getByRole("heading", { name: "广告投放" })).toBeVisible();
     // Founder 自己的顶层导航必须仍然存在（说明没有整页跳转/重新加载）
-    await expect(page.getByRole("button", { name: "AI 秘书处" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Founder工作台" })).toBeVisible();
   });
 
   test("店铺 page inside Operator Lab is the same real ShopCenterContent as standalone Operator, plus the Founder-only 平台连接器 overlay tab", async ({ page }) => {

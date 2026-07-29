@@ -20,9 +20,22 @@ function collectPageErrors(page) {
 }
 
 test.describe("startup smoke — all three editions", () => {
-  test("Cloud (default, no query params) loads with real content, branding, and zero console errors", async ({ page }) => {
+  // 阶段 Founder Full-System v3 Batch 2：Founder 是主产品，裸 URL
+  // （不带任何参数）默认打开 Founder，不再是 Operator Cloud——见
+  // editions/editionConfig.js。Operator Cloud 的稳定入口是 `/cloud`
+  // 路径别名。
+  test("bare root (default, no query params) loads Founder with real content, branding, and zero console errors", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/");
+    await expect(page.locator("main")).not.toBeEmpty();
+    await expect(page.locator(".fdr-sidebar__brand-badge")).toHaveText("FOUNDER");
+    await expect(page.getByRole("button", { name: "Founder工作台" })).toBeVisible();
+    expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
+  });
+
+  test("Cloud (/cloud) loads with real content, branding, and zero console errors", async ({ page }) => {
+    const errors = collectPageErrors(page);
+    await page.goto("/cloud");
     await expect(page.locator("main")).not.toBeEmpty();
     await expect(page.getByText("AI Commerce Operator Cloud")).toBeVisible();
     await expect(page.getByRole("heading", { name: "总览", level: 1 })).toBeVisible();

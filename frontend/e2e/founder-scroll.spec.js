@@ -100,7 +100,9 @@ test.describe("Founder vertical scroll regression", () => {
   test("no shared regression: Cloud and Operator still render and scroll as designed", async ({ page }) => {
     const errors = collectPageErrors(page);
 
-    await page.goto("/");
+    // 阶段 Founder Full-System v3 Batch 2：裸 URL 现在默认打开
+    // Founder，Operator Cloud 的稳定入口是 `/cloud` 路径别名。
+    await page.goto("/cloud");
     await expect(page.getByRole("heading", { name: "总览", level: 1 })).toBeVisible();
     await expect(page.locator(".cc-main")).toHaveCount(1);
 

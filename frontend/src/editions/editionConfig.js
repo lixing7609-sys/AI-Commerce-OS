@@ -28,8 +28,14 @@
  *      ?mode=studio → Studio Edition（阶段"四端产品体系 V1"新增）；
  *      ?mode=developer → 保留原有 Developer/Task Center 工作台，
  *        显式选择才可达；
- *   4. 默认 Operator Cloud——裸 URL（不带路径别名、不带 mode 参数）
- *      呈现平台方的设备/租户/许可/Token计量/OTA/分布式调度管理方向。
+ *   4. 默认 Founder（阶段"Founder Full-System v3"改回）——裸 URL
+ *      （不带路径别名、不带 mode 参数）呈现 Founder 主应用。此前
+ *      "三版最终定位"阶段把默认值改成过 Operator Cloud，验收时确认
+ *      这不是期望行为：Founder 是主产品，本地默认入口必须是它。
+ *      Operator Cloud 的能力现在作为 Founder 侧边栏的"Cloud Center"
+ *      分组内嵌可达（见 console/labs/CloudCenterConnected.jsx），不
+ *      再需要占用裸 URL；独立 `/cloud` 路径别名保留不变，仍可直接
+ *      打开原来的 Operator Cloud 控制台。
  */
 
 const MODE_QUERY_PARAM = "mode";
@@ -61,7 +67,7 @@ export const EDITIONS = Object.freeze({
   STUDIO: "studio",
 });
 
-const DEFAULT_EDITION = EDITIONS.OPERATOR_CLOUD;
+const DEFAULT_EDITION = EDITIONS.FOUNDER_OPERATOR;
 
 const _VALID_EDITIONS = new Set(Object.values(EDITIONS));
 

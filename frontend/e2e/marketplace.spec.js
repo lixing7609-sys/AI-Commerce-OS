@@ -76,12 +76,15 @@ test.describe("Marketplace: authority is framed as Operator Cloud, not a per-Mac
     await expect(page.getByText("权威数据归属 Operator Cloud")).toBeVisible();
   });
 
-  test("Founder Marketplace 中心's sidebar sub-nav shows honest 规划中/Cloud Mock badges, never claims unfinished features are live", async ({ page }) => {
-    await page.goto("/founder");
-    await page.getByRole("button", { name: "Marketplace 中心", exact: true }).click();
-    await expect(page.locator(".fdr-sidebar__subitem", { hasText: "Release Candidate 提交" }).getByText("规划中")).toBeVisible();
-    await expect(page.locator(".fdr-sidebar__subitem", { hasText: "分成与结算" }).getByText("规划中")).toBeVisible();
-    await expect(page.locator(".fdr-sidebar__subitem", { hasText: "Cloud Marketplace 控制台" }).getByText("Cloud Mock")).toBeVisible();
+  test("Founder Marketplace 中心's in-page tab bar shows honest 规划中/Cloud Mock badges, never claims unfinished features are live", async ({ page }) => {
+    // 阶段 Founder Full-System v3 Batch 2 §A：Marketplace 不再是顶级
+    // 侧边栏分组（旧的"Marketplace 中心"顶级入口已收口进 Cloud
+    // Center），子导航从侧边栏手风琴移到了页面内的 Tab 栏——见
+    // console/labs/MarketplaceCenter.jsx。
+    await page.goto("/?mode=founder&module=marketplaceCenter");
+    await expect(page.locator(".fdr-tabs__item", { hasText: "Release Candidate 提交" }).getByText("规划中")).toBeVisible();
+    await expect(page.locator(".fdr-tabs__item", { hasText: "分成与结算" }).getByText("规划中")).toBeVisible();
+    await expect(page.locator(".fdr-tabs__item", { hasText: "Cloud Marketplace 控制台" }).getByText("Cloud Mock")).toBeVisible();
   });
 
   test("Cloud Marketplace 控制台 tab honestly states no real Operator Cloud backend is connected yet, no fake console link", async ({ page }) => {

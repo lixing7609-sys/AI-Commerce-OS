@@ -24,7 +24,13 @@ function collectPageErrors(page) {
 }
 
 const ENTRIES = [
-  { path: "/cloud", legacyQuery: "/", label: "Operator Cloud", brandingText: "AI Commerce Operator Cloud" },
+  // 阶段 Founder Full-System v3 Batch 2：裸 URL 的默认 Edition 从
+  // Operator Cloud 改回 Founder（Founder 是主产品，见
+  // editions/editionConfig.js）。Operator Cloud 不再有独立的"裸 URL
+  // 旧链接"可以指向它——`/cloud` 路径别名本身就是它现在唯一、稳定的
+  // 入口，这里 legacyQuery 直接复用同一个路径，测试的是"路径别名本身
+  // 幂等可靠"而不是一个已经不存在的旧回退行为。
+  { path: "/cloud", legacyQuery: "/cloud", label: "Operator Cloud", brandingText: "AI Commerce Operator Cloud" },
   { path: "/founder", legacyQuery: "/?mode=founder&module=secretary", label: "Founder", brandingText: "FOUNDER" },
   { path: "/operator", legacyQuery: "/?mode=operator-preview", label: "Operator", brandingText: "OPERATOR" },
   { path: "/studio", legacyQuery: "/?mode=studio", label: "Studio", brandingText: "STUDIO" },

@@ -51,7 +51,7 @@ test("Founder v3 full crawl", async ({ page }) => {
       }
 
       const shotName = `${slug(groupLabel, report.length)}__${slug(labels[i], i)}.png`;
-      let bodyText = "";
+      let bodyText;
       try {
         bodyText = (await page.locator("main").innerText({ timeout: 3000 })).slice(0, 200);
       } catch {
@@ -101,7 +101,7 @@ test("Founder v3 full crawl", async ({ page }) => {
         clickError = String(e).slice(0, 300);
       }
       const shotName = `${slug("overview", report.length)}__${slug(label, 0)}.png`;
-      let bodyText = "";
+      let bodyText;
       try {
         bodyText = (await page.locator("main").innerText({ timeout: 3000 })).slice(0, 200);
       } catch {
@@ -109,7 +109,9 @@ test("Founder v3 full crawl", async ({ page }) => {
       }
       try {
         await page.screenshot({ path: path.join(SCREEN_DIR, shotName), fullPage: true });
-      } catch {}
+      } catch {
+        // ignore screenshot failures, still record the row
+      }
       page.off("pageerror", onErr);
       page.off("console", onConsole);
       report.push({ group: "Founder 总览", label, index: 0, clickError, consoleErrors: errors, bodyPreview: bodyText, screenshot: shotName });

@@ -9,6 +9,8 @@ import { EmptyState } from "../kit/EmptyState.jsx";
 import { useToast } from "../kit/useToast.js";
 import { useConsoleNavContext } from "../nav/ConsoleNavContext.jsx";
 import { MARKETPLACE_SUBNAV } from "../nav/navConfig.js";
+
+const SUBNAV_STATUS_BADGE = { planned: "规划中", cloudMock: "Cloud Mock" };
 import {
   listAllPackagesForManagement,
   getPackage,
@@ -321,6 +323,22 @@ export function MarketplaceCenter() {
         subtitle="云端 Marketplace 的 Founder 管理/发布入口——权威数据归属 Operator Cloud，本地为 Cloud Mock"
         actions={<DemoBadge />}
       />
+
+      <div className="fdr-tabs" style={{ marginBottom: 16 }}>
+        {MARKETPLACE_SUBNAV.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={"fdr-tabs__item" + (activeTab === item.key ? " fdr-tabs__item--active" : "")}
+            onClick={() => navigate("marketplaceCenter", { subView: item.key })}
+          >
+            {item.label}
+            {SUBNAV_STATUS_BADGE[item.status] ? (
+              <span className="fdr-sidebar__badge" style={{ marginLeft: 6 }}>{SUBNAV_STATUS_BADGE[item.status]}</span>
+            ) : null}
+          </button>
+        ))}
+      </div>
 
       {body}
 

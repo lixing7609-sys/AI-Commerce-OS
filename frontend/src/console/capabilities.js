@@ -10,8 +10,14 @@
  */
 
 export const CAPABILITY_KEYS = Object.freeze({
+  FOUNDER_WORKBENCH_VIEW: "founderWorkbench.view",
   SECRETARY_VIEW: "secretary.view",
   DASHBOARD_VIEW: "dashboard.view",
+  PROMPT_CENTER_VIEW: "promptCenter.view",
+  SKILL_CENTER_VIEW: "skillCenter.view",
+  KNOWLEDGE_CENTER_VIEW: "knowledgeCenter.view",
+  CONNECTOR_CENTER_VIEW: "connectorCenter.view",
+  CLOUD_CENTER_VIEW: "cloudCenter.view",
   STORE_CENTER_VIEW: "storeCenter.view",
   PRODUCT_CENTER_VIEW: "productCenter.view",
   PRODUCT_CENTER_EDIT: "productCenter.edit",

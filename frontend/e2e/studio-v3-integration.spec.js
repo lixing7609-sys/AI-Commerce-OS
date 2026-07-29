@@ -172,11 +172,11 @@ test.describe("Founder Studio 实验室：展开后接入 Studio 完整业务 + 
     await expect(page.locator(".fdr-sidebar")).toHaveCount(1);
   });
 
-  test("Founder Studio 实验室的 Studio秘书与独立 Studio 秘书是同一实现，标签正确区分于 AI秘书处/Operator秘书", async ({ page }) => {
+  test("Founder Studio 实验室的 Studio秘书与独立 Studio 秘书是同一实现，标签正确区分于 Founder工作台/Operator秘书", async ({ page }) => {
     await page.goto("/founder");
-    await expect(page.getByRole("button", { name: "AI 秘书处" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Founder工作台" })).toBeVisible();
     await page.getByRole("button", { name: "Studio 实验室", exact: true }).click();
     await page.locator(".fdr-sidebar__subitem", { hasText: "Studio秘书" }).click();
-    await expect(page.getByText("Studio 秘书 · 内容公司经营总控")).toBeVisible();
+    await expect(page.getByText("Studio秘书 · 今日经营简报")).toBeVisible();
   });
 });

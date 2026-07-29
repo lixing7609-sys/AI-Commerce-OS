@@ -25,9 +25,14 @@ function collectPageErrors(page) {
 }
 
 test.describe("Founder sidebar: collapsible accordion, single expansion", () => {
-  test("Operator/Studio/Marketplace/产品研发中心/系统与发布 groups start collapsed", async ({ page }) => {
+  test("all eight collapsible groups start collapsed", async ({ page }) => {
     await page.goto("/founder");
-    for (const group of ["Operator 实验室", "Studio 实验室", "Marketplace 中心", "产品研发中心", "系统与发布"]) {
+    // 阶段 Founder Full-System v3 Batch 2 §A：一级导航冻结为十一组，
+    // 其中"Founder工作台"不折叠（默认页所在分组），其余八组可折叠。
+    for (const group of [
+      "Agent中心", "Prompt中心", "Skill中心", "Workflow中心", "Knowledge中心", "Connector中心", "Capability中心",
+      "Operator 实验室", "Studio 实验室", "Cloud Center",
+    ]) {
       await expect(page.getByRole("button", { name: group, exact: true })).toHaveAttribute("aria-expanded", "false");
     }
     // 折叠状态下，Operator/Studio 的具体业务子项完全不可见
@@ -35,13 +40,20 @@ test.describe("Founder sidebar: collapsible accordion, single expansion", () => 
     await expect(page.getByRole("button", { name: "内容项目", exact: true })).toHaveCount(0);
   });
 
-  test("clicking Operator 实验室 expands the full independent Operator navigation, in order", async ({ page }) => {
+  test("clicking Operator 实验室 expands the full v2 Operator navigation, in order", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/founder");
     await page.getByRole("button", { name: "Operator 实验室", exact: true }).click();
     await expect(page.getByRole("button", { name: "Operator 实验室", exact: true })).toHaveAttribute("aria-expanded", "true");
 
-    for (const label of ["今日经营", "Operator秘书", "店铺", "商品", "内容", "广告投放", "订单", "客服", "审批", "AI 成长", "成本与 Token", "能力市场", "设备与更新", "数据与隐私", "设置"]) {
+    // 阶段 Founder Full-System v3 Batch 2 §B：Operator 实验室 v2 的
+    // 唯一权威列表（labs/operatorLabV2/navigation.js）——不再有
+    // "能力市场/设备与更新/数据与隐私"，新增"客户/数据与经营分析/
+    // 自动经营"。
+    for (const label of [
+      "Operator工作台", "Operator秘书", "店铺", "商品", "内容", "广告投放", "订单",
+      "客户", "客服", "审批", "AI成长", "成本与Token", "数据与经营分析", "自动经营", "设置",
+    ]) {
       await expect(page.locator(".fdr-sidebar__subitem", { hasText: label })).toBeVisible();
     }
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
@@ -145,28 +157,41 @@ test.describe("Founder nav collapse: no duplicate top-level business menus", () 
     }
   });
 
-  test("商品中心/订单中心/客服中心/审批中心 remain reachable (not deleted) inside the expanded Operator 实验室 group, marked 待同步", async ({ page }) => {
+  test("商品/订单/客服/审批 are reachable as single, non-duplicated Operator 实验室 nav items (no more 4 generic 待同步 warning buttons)", async ({ page }) => {
+    // 阶段 Founder Full-System v3 Batch 2 §D：旧机制在 operatorLabGroup
+    // 顶部单独渲染四个 FOUNDER_MODULES 按钮，全部共用同一段
+    // title="该模块尚未和 Operator 实验室完成单一真源合并"文案，视觉
+    // 上是四个无法区分的重复按钮。修复后：这四项只在 Operator 实验室
+    // v2 的唯一导航列表里各出现一次（与"店铺""广告投放"等其它子项
+    // 同一层级），侧边栏里完全没有那段警告文案。
     await page.goto("/founder");
+    await expect(page.getByText("该模块尚未和 Operator 实验室完成单一真源合并")).toHaveCount(0);
+
     await page.getByRole("button", { name: "Operator 实验室", exact: true }).click();
-    for (const label of ["商品中心", "订单中心", "客服中心", "审批中心"]) {
-      const button = page.locator(".fdr-sidebar__item", { hasText: label });
-      await expect(button).toBeVisible();
-      await expect(button.getByText("待同步")).toBeVisible();
+    for (const label of ["商品", "订单", "客服", "审批"]) {
+      const items = page.locator(".fdr-sidebar__subitem", { hasText: label });
+      await expect(items).toHaveCount(1);
     }
+
+    // 点击"订单"落到 OrderCenterModule 真实实现，不是占位页。
+    await page.locator(".fdr-sidebar__subitem", { hasText: "订单" }).click();
+    await expect(page.getByRole("heading", { name: "订单中心" })).toBeVisible();
+    await expect(page.getByText("即将上线")).toHaveCount(0);
   });
 
-  test("广告策略研发 lives under 产品研发中心, not a top-level peer of Operator's 广告投放", async ({ page }) => {
+  test("广告策略研发 lives under Capability中心, not a top-level peer of Operator's 广告投放", async ({ page }) => {
     await page.goto("/founder");
-    await page.getByRole("button", { name: "产品研发中心", exact: true }).click();
+    await page.getByRole("button", { name: "Capability中心", exact: true }).click();
     await expect(page.getByRole("button", { name: "广告策略研发" })).toBeVisible();
     await expect(page.getByRole("button", { name: "广告中心", exact: true })).toHaveCount(0);
   });
 });
 
-test.describe("Founder: three secretaries are distinguished, not the same page", () => {
-  test("Founder's own secretary stays labeled AI 秘书处", async ({ page }) => {
+test.describe("Founder: secretaries are distinguished, not the same page", () => {
+  test("Founder's own workbench is labeled Founder工作台 and includes an AI 秘书 tab", async ({ page }) => {
     await page.goto("/founder");
-    await expect(page.getByRole("button", { name: "AI 秘书处" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Founder工作台" })).toBeVisible();
+    await expect(page.getByText("和 AI 秘书说点什么")).toBeVisible();
   });
 
   test("Operator's secretary is labeled Operator秘书 and its page scopes to business Runtime only", async ({ page }) => {
@@ -175,10 +200,13 @@ test.describe("Founder: three secretaries are distinguished, not the same page",
     await expect(page.getByText("只负责经营 Runtime")).toBeVisible();
   });
 
-  test("Studio's secretary is labeled Studio秘书 and its page scopes to content Runtime only", async ({ page }) => {
+  test("Studio's secretary is labeled Studio秘书, distinct from Founder工作台/Operator秘书", async ({ page }) => {
+    // 阶段 Studio V3 Integration 之后 Studio 秘书页面内容已重写（不在
+    // 本批次范围内，独立 /studio 与 Founder 内嵌 Studio 实验室零分叉，
+    // 见 studio/pages/SecretaryPage.jsx）——这里只断言标签仍然是独立
+    // 的"Studio秘书"，不与 Founder工作台/Operator秘书混同。
     await page.goto("/founder?module=studioLab&subView=secretary");
-    await expect(page.getByRole("heading", { name: "Studio 秘书" })).toBeVisible();
-    await expect(page.getByText("只负责内容 Runtime")).toBeVisible();
+    await expect(page.getByText("Studio秘书 · 今日经营简报")).toBeVisible();
   });
 
   test("standalone Operator shows Operator秘书 in its own nav, not a generic AI秘书 label shared with Founder/Studio", async ({ page }) => {

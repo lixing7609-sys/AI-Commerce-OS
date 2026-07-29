@@ -4,116 +4,125 @@ import { CAPABILITY_KEYS } from "../capabilities.js";
  * 模块的唯一权威列表：侧边栏、导航状态、页面渲染表都从这里读取，
  * 不在别处重复定义模块 key。
  *
- * 阶段 M8 Founder Product Shell Consolidation：Founder 不再平铺一套
- * 和 Operator/Studio 重复的经营业务菜单——一级导航正式收口为六组
- * （Founder 总览 / 产品研发中心 / Operator 实验室 / Studio 实验室 /
- * Marketplace 中心 / 系统与发布）。原来的"店铺经营"/"增长与资金"/
- * "分析与系统"分组被拆解：
- *   - 店铺（storeCenter）→ 已迁移进 Operator 实验室内嵌的
- *     ShopCenterContent（见 shared/products/operator/），Founder
- *     不再单独有一个"店铺中心"顶级入口。
- *   - 内容中心/AI直播中心/流量网络中心 → 通过 MODULE_REDIRECTS 重定
- *     向到 Studio 实验室对应页面（studio/ 已经是这些能力的真实、
- *     完整实现，不是占位页），旧收藏夹链接不会失效。
- *   - 商品中心/订单中心/客服中心/审批中心 → **已知的、明确记录的
- *     未完成收口项**：这几个模块目前只在 Founder 里有真实实现，
- *     独立 Operator 对应页面（operator-preview/ 的 products/orders/
- *     customerService/approvals）还是诚实的"即将上线"占位页，尚未
- *     完成和 Founder 版本的单一真源合并（该合并需要把这几个模块
- *     内部对 useConsoleNavContext/useToast 的直接依赖改造成 props
- *     接口，工作量与店铺模块的迁移相当，本轮未完成，见
- *     founder-superset-live-pilot.md）。在完成之前，它们保留在
- *     Founder 侧、分组到"Operator 实验室"旁边（而不是继续留在一个
- *     叫"店铺经营"的独立分组里，避免看起来像是刻意维持的第二套业务
- *     菜单），并带 `pendingOperatorParity: true` 标记——ConsoleSidebar
- *     据此渲染一个"待同步"提示，不让这个缺口在 UI 上被悄悄掩盖。
- *   - 广告中心（adCenter）→ 重新归类为 Founder 专属研发工具（对应
- *     operator-preview/pages/AdOpsPage.jsx 自己代码注释里早就说明的
- *     边界："不暴露 Founder 才有的无限制广告开发/策略配置工具"），
- *     移入"产品研发中心"，不再和 Operator 的"广告投放"顶级菜单并列，
- *     避免被误读成同一层级的重复入口。
+ * 阶段 Founder Full-System v3（Batch 2 IA 重建）：一级导航正式收口为
+ * 交办任务冻结的十一组——Founder工作台 / Agent中心 / Prompt中心 /
+ * Skill中心 / Workflow中心 / Knowledge中心 / Connector中心 /
+ * Capability中心 / Operator 实验室 / Studio 实验室 / Cloud Center。
+ * 旧的"产品研发中心 / Marketplace 中心 / 系统与发布"三个顶级分组被
+ * 拆解迁移，不是删除功能：
+ *   - Agent 工作室/模型路由 → Agent 中心
+ *   - 自动化策略/回放中心 → Workflow 中心
+ *   - 基准测试中心/评估中心/广告策略研发 → Capability 中心
+ *   - Token 中心/Marketplace 中心/系统中心 → Cloud Center（Founder
+ *     专属尾部条目，见 externalPosition="after"）
+ *   - Operator Cloud（原裸 URL 默认应用）→ Cloud Center 的外部
+ *     registry（`external: "cloud"`），见 cloud/pageRegistry.jsx
+ *   - 商品中心/订单中心/客服中心/审批中心/真实店铺接入 → 不再是
+ *     FOUNDER_MODULES 里独立的、渲染成侧边栏按钮的模块（这正是
+ *     "该模块尚未和 Operator 实验室完成单一真源合并"四个重复警告
+ *     按钮的来源）——现在直接作为 Operator 实验室 v2 registry
+ *     （`console/labs/operatorLabV2/`）自己的子项存在，和"店铺/广告
+ *     投放"等其它 Operator 子项同一层级，不再有第二套导航。组件本身
+ *     （ProductCenterModule/OrderCenterModule/…）没有删除，仍在
+ *     `console/modules/` 下，只是渲染入口改为 Operator 实验室 v2
+ *     registry 直接 import，不再经过顶层 FOUNDER_MODULES。
+ *   - Prompt中心/Skill中心/Knowledge中心/Connector中心 → 全新的
+ *     Founder 核心资产中心，使用 `console/shared/assetDomain.js` +
+ *     `console/kit/AssetCenterModule.jsx` 的通用列表/详情/新建/编辑
+ *     骨架，不是文字占位页。
  *
- * 阶段 M8c 三类秘书正式区分："AI 秘书处"是 **Founder 总秘书**——
- * 跨产品、跨实验室、跨研发与经营的总控入口：接收创始人自然语言指令、
- * 跨 Operator 和 Studio 调度、查询研发/第一家真实店铺/第一条内容
- * 项目状态、调用产品研发中心、汇总 Operator秘书和 Studio秘书的
- * 报告、生成跨产品日报周报和决策建议。它不等同于经营秘书
- * （operator-preview/ 的"Operator秘书"）也不等同于内容创作秘书
- * （studio/ 的"Studio秘书"）——关系是调用/汇总，不是三套同名秘书。
- * 见 docs/01-reference-architecture/edition-architecture.md §19。
+ * "AI 秘书处"和"今日经营"合并为一个顶级入口"Founder工作台"
+ * （`founderWorkbench`，内部用 subView 区分两个 Tab），不再是两个
+ * 平级按钮——交办任务的目标信息架构里"Founder工作台"是唯一一条叶子
+ * 节点。旧的 `?module=secretary` / `?module=dashboard` 链接通过
+ * `MODULE_REDIRECTS` 落地到对应 Tab，不会 404。
  */
 export const FOUNDER_MODULES = [
   {
-    key: "secretary",
-    label: "AI 秘书处",
-    group: "overview",
+    key: "founderWorkbench",
+    label: "Founder工作台",
+    group: "founderWorkbenchGroup",
     icon: "✦",
-    requiredCapability: CAPABILITY_KEYS.SECRETARY_VIEW,
+    requiredCapability: CAPABILITY_KEYS.FOUNDER_WORKBENCH_VIEW,
     isDefault: true,
-  },
-  {
-    key: "dashboard",
-    label: "今日经营",
-    group: "overview",
-    icon: "▦",
-    requiredCapability: CAPABILITY_KEYS.DASHBOARD_VIEW,
   },
   {
     key: "agentStudio",
     label: "Agent 工作室",
-    group: "productRnd",
+    group: "agentCenterGroup",
     icon: "⚙",
     requiredCapability: CAPABILITY_KEYS.AGENT_STUDIO_VIEW,
   },
   {
     key: "modelRouter",
     label: "模型路由",
-    group: "productRnd",
+    group: "agentCenterGroup",
     icon: "⇆",
     requiredCapability: CAPABILITY_KEYS.MODEL_ROUTER_VIEW,
   },
   {
+    key: "promptCenter",
+    label: "Prompt 列表",
+    group: "promptCenterGroup",
+    icon: "✎",
+    requiredCapability: CAPABILITY_KEYS.PROMPT_CENTER_VIEW,
+  },
+  {
+    key: "skillCenter",
+    label: "Skill 列表",
+    group: "skillCenterGroup",
+    icon: "🧩",
+    requiredCapability: CAPABILITY_KEYS.SKILL_CENTER_VIEW,
+  },
+  {
     key: "automationPolicy",
     label: "自动化策略",
-    group: "productRnd",
+    group: "workflowCenterGroup",
     icon: "☲",
     requiredCapability: CAPABILITY_KEYS.AUTOMATION_POLICY_VIEW,
   },
   {
-    key: "tokenCenter",
-    label: "Token 中心",
-    group: "productRnd",
-    icon: "◉",
-    requiredCapability: CAPABILITY_KEYS.TOKEN_CENTER_VIEW,
-  },
-  {
-    key: "adCenter",
-    label: "广告策略研发",
-    group: "productRnd",
-    icon: "■",
-    requiredCapability: CAPABILITY_KEYS.AD_CENTER_VIEW,
-    founderOnly: true,
-  },
-  {
-    key: "benchmarkCenter",
-    label: "基准测试中心",
-    group: "productRnd",
-    icon: "⚑",
-    requiredCapability: CAPABILITY_KEYS.BENCHMARK_CENTER_VIEW,
-  },
-  {
     key: "replayCenter",
     label: "回放中心",
-    group: "productRnd",
+    group: "workflowCenterGroup",
     icon: "↻",
     requiredCapability: CAPABILITY_KEYS.REPLAY_CENTER_VIEW,
   },
   {
+    key: "knowledgeCenter",
+    label: "知识库",
+    group: "knowledgeCenterGroup",
+    icon: "▤",
+    requiredCapability: CAPABILITY_KEYS.KNOWLEDGE_CENTER_VIEW,
+  },
+  {
+    key: "connectorCenter",
+    label: "连接器",
+    group: "connectorCenterGroup",
+    icon: "⛓",
+    requiredCapability: CAPABILITY_KEYS.CONNECTOR_CENTER_VIEW,
+  },
+  {
+    key: "benchmarkCenter",
+    label: "基准测试中心",
+    group: "capabilityCenterGroup",
+    icon: "⚑",
+    requiredCapability: CAPABILITY_KEYS.BENCHMARK_CENTER_VIEW,
+  },
+  {
     key: "evaluationCenter",
     label: "评估中心",
-    group: "productRnd",
+    group: "capabilityCenterGroup",
     icon: "★",
     requiredCapability: CAPABILITY_KEYS.EVALUATION_CENTER_VIEW,
+  },
+  {
+    key: "adCenter",
+    label: "广告策略研发",
+    group: "capabilityCenterGroup",
+    icon: "■",
+    requiredCapability: CAPABILITY_KEYS.AD_CENTER_VIEW,
+    founderOnly: true,
   },
   {
     key: "operatorLab",
@@ -122,44 +131,33 @@ export const FOUNDER_MODULES = [
     icon: "▣",
     requiredCapability: CAPABILITY_KEYS.OPERATOR_LAB_VIEW,
   },
+  // 下面四个模块 key 必须继续注册（不能只留在 MODULE_REDIRECTS
+  // 里）——ProductCenterModule/OrderCenterModule/
+  // CustomerServiceCenterModule/ApprovalCenterModule 内部大量标签页/
+  // 详情跳转直接写死 `navigate("orderCenter", {subView:...})` 这类
+  // 自我引用（例如 CustomerServiceCenterModule 的 8 个标签、
+  // OrderCenterModule 的详情深链），如果这里改成重定向或者干脆不注册，
+  // 这些组件内部的标签切换会失效。`hiddenFromSidebar: true` 让
+  // ConsoleSidebar 不把它们渲染成 operatorLabGroup 里的按钮（这正是
+  // 之前四个"该模块尚未和 Operator 实验室完成单一真源合并"重复警告
+  // 按钮的来源），但 Operator 实验室 v2 registry 仍然直接 import 同一
+  // 个组件作为"商品/订单/客服/审批"四个子项的真实实现，两条路径渲染
+  // 的是同一份组件，不是两份重复实现。
   {
-    key: "storeConnectionCenter",
-    label: "真实店铺接入",
-    group: "operatorLabGroup",
-    icon: "⛓",
-    requiredCapability: CAPABILITY_KEYS.STORE_CONNECTION_CENTER_VIEW,
+    key: "productCenter", label: "商品中心", group: "operatorLabGroup", icon: "▤",
+    requiredCapability: CAPABILITY_KEYS.PRODUCT_CENTER_VIEW, hiddenFromSidebar: true,
   },
   {
-    key: "productCenter",
-    label: "商品中心",
-    group: "operatorLabGroup",
-    icon: "▤",
-    requiredCapability: CAPABILITY_KEYS.PRODUCT_CENTER_VIEW,
-    pendingOperatorParity: true,
+    key: "orderCenter", label: "订单中心", group: "operatorLabGroup", icon: "▥",
+    requiredCapability: CAPABILITY_KEYS.ORDER_CENTER_VIEW, hiddenFromSidebar: true,
   },
   {
-    key: "orderCenter",
-    label: "订单中心",
-    group: "operatorLabGroup",
-    icon: "▥",
-    requiredCapability: CAPABILITY_KEYS.ORDER_CENTER_VIEW,
-    pendingOperatorParity: true,
+    key: "customerServiceCenter", label: "客服中心", group: "operatorLabGroup", icon: "⟲",
+    requiredCapability: CAPABILITY_KEYS.CUSTOMER_SERVICE_CENTER_VIEW, hiddenFromSidebar: true,
   },
   {
-    key: "customerServiceCenter",
-    label: "客服中心",
-    group: "operatorLabGroup",
-    icon: "⟲",
-    requiredCapability: CAPABILITY_KEYS.CUSTOMER_SERVICE_CENTER_VIEW,
-    pendingOperatorParity: true,
-  },
-  {
-    key: "approvalCenter",
-    label: "审批中心",
-    group: "operatorLabGroup",
-    icon: "☑",
-    requiredCapability: CAPABILITY_KEYS.APPROVAL_CENTER_VIEW,
-    pendingOperatorParity: true,
+    key: "approvalCenter", label: "审批中心", group: "operatorLabGroup", icon: "☑",
+    requiredCapability: CAPABILITY_KEYS.APPROVAL_CENTER_VIEW, hiddenFromSidebar: true,
   },
   {
     key: "studioLab",
@@ -168,12 +166,7 @@ export const FOUNDER_MODULES = [
     icon: "◆",
     requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_VIEW,
   },
-  // Studio 实验控制层（阶段 Studio V3 Integration §十八/补充§五）：只在
-  // Founder 内可见的系统级研发配置能力，渲染在 Studio 实验室手风琴
-  // 展开面板里、Studio 完整业务导航之后——与 operatorLabGroup 里
-  // storeConnectionCenter/productCenter 等"Founder 专属 + 放进同一
-  // 分组"的既有模式相同，只是外部导航（业务能力）在前、Founder 专属
-  // 研发能力在后，用 ConsoleSidebar.jsx 的 externalPosition 区分。
+  // Studio 实验控制层——未改动，见 studioLabGroup 的 externalPosition="after"。
   {
     key: "studioAgents", label: "Studio Agent", group: "studioLabGroup", icon: "⚙",
     requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
@@ -219,46 +212,70 @@ export const FOUNDER_MODULES = [
     requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
   },
   {
+    key: "cloudCenter",
+    label: "Cloud Center",
+    group: "cloudCenterGroup",
+    icon: "☁",
+    requiredCapability: CAPABILITY_KEYS.CLOUD_CENTER_VIEW,
+  },
+  // Cloud Center 的 Founder 专属尾部条目——原来的顶级"Token 中心"/
+  // "Marketplace 中心"/"系统中心"，按交办任务 Phase 4 映射表迁移到
+  // 这里，组件本身未改动，只是侧边栏挂载位置变化。
+  {
+    key: "tokenCenter",
+    label: "Token 中心",
+    group: "cloudCenterGroup",
+    icon: "◉",
+    requiredCapability: CAPABILITY_KEYS.TOKEN_CENTER_VIEW,
+  },
+  {
     key: "marketplaceCenter",
-    label: "Marketplace 中心",
-    group: "marketplace",
+    label: "Marketplace",
+    group: "cloudCenterGroup",
     icon: "⛁",
     requiredCapability: CAPABILITY_KEYS.MARKETPLACE_CENTER_VIEW,
   },
   {
     key: "systemCenter",
     label: "系统中心",
-    group: "system",
+    group: "cloudCenterGroup",
     icon: "⚙⚙",
     requiredCapability: CAPABILITY_KEYS.SYSTEM_CENTER_VIEW,
   },
 ];
 
 /**
- * 阶段 M8c Founder Unified Product Navigation：`collapsible: true` 的
- * 分组在 ConsoleSidebar 里渲染成手风琴（单一展开）——`external` 标记
- * 该分组的子项来自哪个共享 registry（而不是 FOUNDER_MODULES 自己），
- * 由 ConsoleSidebar 直接 import 对应产品的 NAV_ITEMS 渲染，不手写
- * 第二份导航数组。"Founder 总览"不折叠（默认页所在分组，需要一直
- * 可见）。
+ * `collapsible: true` 的分组渲染成手风琴（单一展开）——`external`
+ * 标记该分组的子项来自哪个共享 registry，由 ConsoleSidebar 直接
+ * import 对应产品的 NAV_ITEMS 渲染，不手写第二份导航数组。
+ * "Founder工作台"不折叠（默认页所在分组，需要一直可见）。
  */
 export const NAV_GROUPS = [
-  { key: "overview", label: "Founder 总览", collapsible: false },
-  { key: "productRnd", label: "产品研发中心", collapsible: true },
-  { key: "operatorLabGroup", label: "Operator 实验室", collapsible: true, external: "operator", externalPosition: "before" },
-  // Studio 实验室：Studio 完整业务导航（外部 registry）在前，Founder
-  // 专属的"Studio 实验控制层"（studioAgents…studioReleases 11 项）
-  // 在后——与 operatorLabGroup 顺序相反，见 §七 展开后子分组顺序要求。
+  { key: "founderWorkbenchGroup", label: "Founder工作台", collapsible: false },
+  { key: "agentCenterGroup", label: "Agent中心", collapsible: true },
+  { key: "promptCenterGroup", label: "Prompt中心", collapsible: true },
+  { key: "skillCenterGroup", label: "Skill中心", collapsible: true },
+  { key: "workflowCenterGroup", label: "Workflow中心", collapsible: true },
+  { key: "knowledgeCenterGroup", label: "Knowledge中心", collapsible: true },
+  { key: "connectorCenterGroup", label: "Connector中心", collapsible: true },
+  { key: "capabilityCenterGroup", label: "Capability中心", collapsible: true },
+  // Operator 实验室 v2：唯一权威列表在 labs/operatorLabV2/navigation.js，
+  // 已经包含"店铺/商品/内容/广告投放/订单/客户/客服/审批/…"全部子
+  // 项，不再需要 FOUNDER_MODULES 里任何 operatorLabGroup 的 items
+  // （旧版本"真实店铺接入/商品中心/订单中心/客服中心/审批中心"五个
+  // FOUNDER_MODULES 条目就是四个重复警告按钮的来源，本次直接移除，
+  // 不是隐藏）。
+  { key: "operatorLabGroup", label: "Operator 实验室", collapsible: true, external: "operatorV2", externalPosition: "before" },
   { key: "studioLabGroup", label: "Studio 实验室", collapsible: true, external: "studio", externalPosition: "after" },
-  { key: "marketplace", label: "Marketplace 中心", collapsible: true, external: "marketplaceCloud", externalPosition: "before" },
-  { key: "system", label: "系统与发布", collapsible: true },
+  // Cloud Center：Operator Cloud 自己的 7 项导航（`external: "cloud"`）
+  // 在前，Founder 专属迁入项（Token 中心/Marketplace/系统中心）在后。
+  { key: "cloudCenterGroup", label: "Cloud Center", collapsible: true, external: "cloud", externalPosition: "before" },
 ];
 
 /**
- * Marketplace 中心的折叠子导航（阶段 M8c §5/§6）——云端 Marketplace
- * 的 Founder 管理入口，不是本地完整市场服务。`status` 标注真实完成
- * 度，ConsoleSidebar/MarketplaceCenter 据此渲染"规划中"/"Cloud Mock"
- * 徽章，不允许把未完成的项呈现成已上线。
+ * Marketplace 的折叠子导航——不再由侧边栏渲染（Marketplace 现在是
+ * Cloud Center 里的一个普通模块条目），改为 MarketplaceCenter.jsx
+ * 自己在页面内用 Tabs 渲染，这里只保留数据定义供该组件消费。
  *   - implemented：真实可用（读写 shared/marketplace/ 的 Cloud Mock 数据）
  *   - cloudMock：可用，但明确基于本地模拟的云端数据，不是真实后端
  *   - planned：尚未实现，占位说明
@@ -281,8 +298,8 @@ export const DEFAULT_MODULE_KEY =
 
 /**
  * 给定当前激活的 Founder 模块 key，返回它应该自动展开的手风琴分组
- * key——Operator/Studio/Marketplace 三个"外部 registry"分组的展开
- * 状态由激活的 module 本身决定（module==="operatorLab" 就展开
+ * key——Operator/Studio/Cloud 三个"外部 registry"分组的展开状态由
+ * 激活的 module 本身决定（module==="operatorLab" 就展开
  * "operatorLabGroup"），不需要子项 key 逐一维护映射表。
  */
 export function getGroupKeyForModule(moduleKey) {
@@ -295,16 +312,27 @@ export function getModuleConfig(moduleKey) {
 }
 
 /**
- * 已收口的旧一级菜单 → 新落点的重定向表。内容/直播/流量网络三个
- * 模块的真实实现现在只活在 Studio（studio/），Founder 不再自己维护
- * 一份；旧的 `?module=xxx` 收藏夹链接不会变成 404 或静默回退到默认
- * 页，而是带着正确的 Studio 实验室子页面落地。
+ * 已收口/已迁移的旧一级菜单 → 新落点的重定向表。旧的 `?module=xxx`
+ * 收藏夹链接不会变成 404 或静默回退到默认页，而是带着正确的子页面
+ * 落地。
+ *
+ * 注意：不是所有迁移都需要在这里登记——`modelRouter`/
+ * `automationPolicy`/`tokenCenter`/`adCenter`/`benchmarkCenter`/
+ * `replayCenter`/`evaluationCenter`/`systemCenter`/`marketplaceCenter`
+ * 这些模块 key 本身没有变化，只是 `FOUNDER_MODULES` 里的 `group`
+ * 字段（侧边栏挂载位置）变了——`getModuleConfig(key)` 仍然能找到
+ * 它们，`?module=modelRouter` 这类旧链接不需要重定向表也能正常落地。
+ * 这张表只登记**module key 本身被废弃**、需要映射到新 key+subView
+ * 组合的情况。
  */
 export const MODULE_REDIRECTS = {
+  secretary: { module: "founderWorkbench", subView: "secretary" },
+  dashboard: { module: "founderWorkbench", subView: "dashboard" },
   contentCenter: { module: "studioLab", subView: "contentProjects" },
   liveCenter: { module: "studioLab", subView: "aiLive" },
   trafficNetworkCenter: { module: "studioLab", subView: "matrixAccounts" },
   storeCenter: { module: "operatorLab", subView: "shops" },
+  storeConnectionCenter: { module: "operatorLab", subView: "storeConnection" },
 };
 
 export function resolveModuleRedirect(moduleKey) {

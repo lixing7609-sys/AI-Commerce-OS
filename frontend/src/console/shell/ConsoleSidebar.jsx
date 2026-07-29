@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { FOUNDER_MODULES, NAV_GROUPS, MARKETPLACE_SUBNAV, getGroupKeyForModule, getModuleConfig } from "../nav/navConfig.js";
+import { FOUNDER_MODULES, NAV_GROUPS, getGroupKeyForModule, getModuleConfig } from "../nav/navConfig.js";
 import { useConsoleNavContext } from "../nav/ConsoleNavContext.jsx";
 import { useCapabilities } from "../useCapabilities.js";
-import { OPERATOR_NAV_ITEMS } from "../../operator-preview/helpers/navigation.js";
+import { OPERATOR_V2_NAV_ITEMS } from "../labs/operatorLabV2/navigation.js";
 import {
   NAV_GROUPS as STUDIO_NAV_GROUPS,
   DEFAULT_NAV_KEY as STUDIO_DEFAULT_KEY,
   getVisibleNavItemsByGroup as getStudioVisibleNavItemsByGroup,
 } from "../../studio/navConfig.js";
+import { NAV_ITEMS as CLOUD_NAV_ITEMS } from "../../cloud/navConfig.js";
 import { getStoredExpandedGroup, setStoredExpandedGroup } from "../nav/sidebarExpansionStore.js";
 
 /**
@@ -36,10 +37,8 @@ import { getStoredExpandedGroup, setStoredExpandedGroup } from "../nav/sidebarEx
 const GROUP_SELF_MODULE_KEY = {
   operatorLabGroup: "operatorLab",
   studioLabGroup: "studioLab",
-  marketplace: "marketplaceCenter",
+  cloudCenterGroup: "cloudCenter",
 };
-
-const MARKETPLACE_STATUS_BADGE = { planned: "规划中", cloudMock: "Cloud Mock" };
 
 export function ConsoleSidebar() {
   const { module: activeModule, subView, navigate } = useConsoleNavContext();
@@ -80,29 +79,27 @@ export function ConsoleSidebar() {
         type="button"
         className={"fdr-sidebar__item" + (item.key === activeModule ? " fdr-sidebar__item--active" : "")}
         onClick={() => navigate(item.key)}
-        title={item.pendingOperatorParity ? "该模块尚未和 Operator 实验室完成单一真源合并" : undefined}
       >
         <span className="fdr-sidebar__icon" aria-hidden="true">{item.icon}</span>
         {item.label}
-        {item.pendingOperatorParity ? <span className="fdr-sidebar__badge">待同步</span> : null}
       </button>
     );
   }
 
-  function renderSubItem({ key, label, icon, status }, moduleKey, defaultSubView) {
-    const isActive = activeModule === moduleKey && (subView ?? defaultSubView) === key;
+  function renderSubItem({ key, label, icon, directModule }, moduleKey, defaultSubView) {
+    // `directModule`：见 labs/operatorLabV2/navigation.js 顶部注释——
+    // 这几项底层组件自己占用顶层 `module` 语义读取 subView，不能塞进
+    // `operatorLab` 的 subView 里，点击后直接跳到它们自己的顶层模块。
+    const isActive = directModule ? activeModule === directModule : activeModule === moduleKey && (subView ?? defaultSubView) === key;
     return (
       <button
         key={key}
         type="button"
         className={"fdr-sidebar__subitem" + (isActive ? " fdr-sidebar__item--active" : "")}
-        onClick={() => navigate(moduleKey, { subView: key })}
+        onClick={() => (directModule ? navigate(directModule) : navigate(moduleKey, { subView: key }))}
       >
         {icon ? <span className="fdr-sidebar__icon" aria-hidden="true">{icon}</span> : null}
         {label}
-        {status && MARKETPLACE_STATUS_BADGE[status] ? (
-          <span className="fdr-sidebar__badge">{MARKETPLACE_STATUS_BADGE[status]}</span>
-        ) : null}
       </button>
     );
   }
@@ -137,7 +134,11 @@ export function ConsoleSidebar() {
         {NAV_GROUPS.map((group) => {
           const selfModuleKey = GROUP_SELF_MODULE_KEY[group.key];
           const items = FOUNDER_MODULES.filter(
-            (item) => item.group === group.key && item.key !== selfModuleKey && capabilities[item.requiredCapability]
+            (item) =>
+              item.group === group.key &&
+              item.key !== selfModuleKey &&
+              !item.hiddenFromSidebar &&
+              capabilities[item.requiredCapability]
           );
 
           if (!group.collapsible) {
@@ -169,9 +170,9 @@ export function ConsoleSidebar() {
                 aria-controls={panelId}
                 onClick={() =>
                   toggleGroup(group.key, () => {
-                    if (group.key === "operatorLabGroup") navigate("operatorLab", { subView: "dashboard" });
+                    if (group.key === "operatorLabGroup") navigate("operatorLab", { subView: "workbench" });
                     else if (group.key === "studioLabGroup") navigate("studioLab", { subView: STUDIO_DEFAULT_KEY });
-                    else if (group.key === "marketplace") navigate("marketplaceCenter", { subView: "overview" });
+                    else if (group.key === "cloudCenterGroup") navigate("cloudCenter", { subView: "overview" });
                   })
                 }
               >
@@ -187,18 +188,22 @@ export function ConsoleSidebar() {
                     </>
                   ) : null}
 
-                  {group.external === "operator"
-                    ? OPERATOR_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "operatorLab", "dashboard"))
+                  {group.external === "operatorV2"
+                    ? OPERATOR_V2_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "operatorLab", "workbench"))
                     : null}
                   {group.external === "studio" ? renderStudioGroupedItems() : null}
-                  {group.external === "marketplaceCloud"
-                    ? MARKETPLACE_SUBNAV.map((navItem) => renderSubItem(navItem, "marketplaceCenter", "overview"))
+                  {group.external === "cloud"
+                    ? CLOUD_NAV_ITEMS.map((navItem) => renderSubItem(navItem, "cloudCenter", "overview"))
                     : null}
 
                   {group.externalPosition === "after" ? (
                     <>
                       {items.length > 0 ? <div className="fdr-sidebar__divider" /> : null}
-                      {items.length > 0 ? <div className="fdr-sidebar__subgroup-label">Studio 实验控制层</div> : null}
+                      {items.length > 0 ? (
+                        <div className="fdr-sidebar__subgroup-label">
+                          {group.key === "studioLabGroup" ? "Studio 实验控制层" : "Founder 专属"}
+                        </div>
+                      ) : null}
                       {items.map((item) => renderModuleButton(item))}
                     </>
                   ) : null}
