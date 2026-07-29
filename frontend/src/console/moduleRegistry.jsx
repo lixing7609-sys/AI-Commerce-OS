@@ -1,4 +1,5 @@
 import { FounderWorkbenchModule } from "./modules/founderWorkbench/FounderWorkbenchModule.jsx";
+import { DesignDnaModule } from "./modules/designDna/DesignDnaModule.jsx";
 import { ProductCenterModule } from "./modules/productCenter/ProductCenterModule.jsx";
 import { OrderCenterModule } from "./modules/orderCenter/OrderCenterModule.jsx";
 import { CustomerServiceCenterModule } from "./modules/customerServiceCenter/CustomerServiceCenterModule.jsx";
@@ -51,6 +52,7 @@ import {
  * 自我引用，必须保持可解析。
  */
 export const MODULE_COMPONENTS = {
+  designDna: DesignDnaModule,
   founderWorkbench: FounderWorkbenchModule,
   productCenter: ProductCenterModule,
   orderCenter: OrderCenterModule,

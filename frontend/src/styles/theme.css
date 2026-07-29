@@ -1,43 +1,167 @@
+/* AI Commerce OS Design DNA v1.0 — Founder console token layer.
+   Spec: docs/01-foundation/design/{typography,layout-grid,color}-spec.md
+
+   Loaded after index.css in main.jsx, so these declarations win the
+   :root cascade for any colliding legacy names (--bg/--text/--border/
+   --shadow/--text-h) regardless of the OS color-scheme setting —
+   closes the root cause documented in the console.css header comment
+   (an unscoped h1/h2 { color: var(--text-h) } rule in index.css used
+   to flip with prefers-color-scheme independent of the app theme). */
+
 :root {
+  color-scheme: light;
 
-  /* Brand */
+  /* ---- Font stack ---- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    "Noto Sans CJK SC", "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas,
+    "Noto Sans Mono CJK SC", monospace;
 
-  --primary: #4F46E5;
-  --primary-hover: #4338CA;
+  /* ---- Type roles: size / weight / line-height ---- */
+  --type-display-hero-size: 56px;   --type-display-hero-weight: 600; --type-display-hero-line: 64px; --type-display-hero-tracking: -0.01em;
+  --type-display-section-size: 40px; --type-display-section-weight: 600; --type-display-section-line: 48px;
+  --type-heading-page-size: 30px;   --type-heading-page-weight: 600; --type-heading-page-line: 38px;
+  --type-heading-section-size: 22px; --type-heading-section-weight: 600; --type-heading-section-line: 30px;
+  --type-heading-card-size: 18px;   --type-heading-card-weight: 600; --type-heading-card-line: 26px;
+  --type-title-item-size: 16px;     --type-title-item-weight: 600; --type-title-item-line: 24px;
+  --type-body-large-size: 16px;     --type-body-large-weight: 400; --type-body-large-line: 26px;
+  --type-body-size: 14px;           --type-body-weight: 400; --type-body-line: 22px;
+  --type-body-small-size: 13px;     --type-body-small-weight: 400; --type-body-small-line: 20px;
+  --type-label-size: 13px;          --type-label-weight: 500; --type-label-line: 18px;
+  --type-caption-size: 12px;        --type-caption-weight: 400; --type-caption-line: 16px;
+  --type-metadata-size: 12px;       --type-metadata-weight: 400; --type-metadata-line: 16px;
+  --type-metric-large-size: 40px;   --type-metric-large-weight: 600; --type-metric-large-line: 44px;
+  --type-metric-size: 24px;         --type-metric-weight: 600; --type-metric-line: 30px;
+  --type-button-size: 14px;         --type-button-weight: 500; --type-button-line: 20px;
+  --type-code-size: 13px;           --type-code-weight: 400; --type-code-line: 20px;
 
-  /* Background */
+  --measure-body: 640px;
+  --measure-body-cjk: 640px;
 
-  --bg: #F5F7FB;
+  /* ---- Spacing scale (4px base, 8px rhythm) ---- */
+  --space-2: 2px;  --space-4: 4px;   --space-8: 8px;   --space-12: 12px;
+  --space-16: 16px; --space-20: 20px; --space-24: 24px; --space-32: 32px;
+  --space-40: 40px; --space-48: 48px; --space-64: 64px; --space-80: 80px; --space-96: 96px;
+
+  /* ---- Shell / layout ---- */
+  --shell-sidebar-width: 256px;
+  --shell-sidebar-collapsed-width: 64px;
+  --shell-topbar-height: 56px;
+  --shell-content-max-width: 1280px;
+  --page-padding-x: var(--space-32);
+  --page-padding-x-narrow: var(--space-20);
+  --page-padding-y: var(--space-32);
+  --section-gap: var(--space-40);
+  --component-gap: var(--space-16);
+  --form-gap: var(--space-16);
+  --table-row-height: 48px;
+  --table-row-height-compact: 36px;
+
+  /* ---- Color: neutrals ---- */
+  --canvas: #F7F8FA;
+  --canvas-subtle: #EEF0F3;
   --surface: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --surface-inverse: #12151A;
+  --border-subtle: #E7E9EC;
+  --border-default: #DADEE3;
+  --border-strong: #C2C7CE;
+  --text-primary: #14171C;
+  --text-secondary: #5B6169;
+  --text-tertiary: #8A8F98;
+  --text-inverse: #F5F6F7;
 
-  /* Text */
+  /* ---- Color: action / status / AI ---- */
+  --action-primary: #12151A;
+  --action-hover: #22262D;
+  --focus: #2563EB;
+  --success: #16A34A;
+  --warning: #D97706;
+  --danger: #DC2626;
+  --information: #2563EB;
+  --ai-accent: #0E7C86;
+  --ai-accent-subtle: rgba(14, 124, 134, 0.08);
 
-  --text: #111827;
-  --text-secondary: #6B7280;
+  /* ---- Radius ---- */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
 
-  /* Border */
+  /* ---- Elevation (border/tonal separation preferred; shadow as last resort) ---- */
+  --elevation-1: 0 1px 2px rgba(15, 17, 21, 0.06);
+  --elevation-2: 0 4px 12px rgba(15, 17, 21, 0.08);
+  --elevation-3: 0 16px 40px rgba(15, 17, 21, 0.12);
 
-  --border: #E5E7EB;
+  /* ---- Motion ---- */
+  --motion-instant: 100ms;
+  --motion-fast: 150ms;
+  --motion-standard: 200ms;
+  --motion-deliberate: 300ms;
+  --motion-slow: 500ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
 
-  /* Status */
+  /* ---- Legacy aliases (kept so existing console.css/kit.css/components
+     keep working unchanged; new work should use the tokens above) ---- */
+  --primary: var(--action-primary);
+  --primary-hover: var(--action-hover);
+  --bg: var(--canvas);
+  --text: var(--text-primary);
+  --text-secondary: var(--text-secondary);
+  --text-h: var(--text-primary);
+  --border: var(--border-default);
+  --radius-sm: var(--radius-xs);
+  --radius: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --shadow: var(--elevation-2);
+  --sidebar-width: var(--shell-sidebar-width);
+}
 
+/* Dark tokens are defined but NOT auto-activated via
+   prefers-color-scheme: the existing product is deliberately
+   "dark sidebar + light workspace, always" (see console.css's own
+   header comment) regardless of OS theme — auto-switching the whole
+   canvas dark would regress that explicit design decision for any
+   user with an OS-level dark preference. These tokens are reserved
+   for a future explicit in-app theme toggle (:root[data-theme="dark"]),
+   not wired to one yet — see the implementation report. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: #0B0D10;
+  --canvas-subtle: #111419;
+  --surface: #14171C;
+  --surface-raised: #1B1F26;
+  --surface-inverse: #F5F6F7;
+  --border-subtle: #22262D;
+  --border-default: #2B3038;
+  --border-strong: #3A4048;
+  --text-primary: #F1F2F4;
+  --text-secondary: #B5BAC2;
+  --text-tertiary: #7C828C;
+  --text-inverse: #14171C;
+
+  --action-primary: #F1F2F4;
+  --action-hover: #DADEE3;
+  --focus: #3B82F6;
   --success: #22C55E;
   --warning: #F59E0B;
   --danger: #EF4444;
+  --information: #3B82F6;
+  --ai-accent: #2DD4C7;
+  --ai-accent-subtle: rgba(45, 212, 199, 0.14);
+}
 
-  /* Radius */
-
-  --radius-sm: 8px;
-  --radius: 16px;
-  --radius-lg: 24px;
-
-  /* Shadow */
-
-  --shadow:
-      0 10px 30px rgba(0,0,0,.06);
-
-  /* Layout */
-
-  --sidebar-width: 250px;
-
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-instant: 0.01ms;
+    --motion-fast: 0.01ms;
+    --motion-standard: 0.01ms;
+    --motion-deliberate: 0.01ms;
+    --motion-slow: 0.01ms;
+  }
 }

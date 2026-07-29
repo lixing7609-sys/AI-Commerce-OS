@@ -39,6 +39,18 @@ import { CAPABILITY_KEYS } from "../capabilities.js";
  */
 export const FOUNDER_MODULES = [
   {
+    // Design DNA v1.0 internal showcase (docs/01-foundation/design/).
+    // Not a customer nav item — reachable only via ?module=designDna,
+    // same hiddenFromSidebar pattern already used for productCenter/
+    // orderCenter/etc above.
+    key: "designDna",
+    label: "Design DNA Showcase",
+    group: "founderWorkbenchGroup",
+    icon: "◆",
+    requiredCapability: CAPABILITY_KEYS.DESIGN_DNA_VIEW,
+    hiddenFromSidebar: true,
+  },
+  {
     key: "founderWorkbench",
     label: "Founder工作台",
     group: "founderWorkbenchGroup",

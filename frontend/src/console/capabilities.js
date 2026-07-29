@@ -51,6 +51,7 @@ export const CAPABILITY_KEYS = Object.freeze({
   STUDIO_LAB_VIEW: "studioLab.view",
   STUDIO_LAB_EXPERIMENT_VIEW: "studioLab.experiment.view",
   MARKETPLACE_CENTER_VIEW: "marketplaceCenter.view",
+  DESIGN_DNA_VIEW: "designDna.view",
 });
 
 function allTrue(keys) {
