@@ -18,19 +18,19 @@
  * 内部的本地状态或旧深链进入。
  */
 export const NAV_ITEMS = [
-  { key: "workspace", label: "Workspace", icon: "◆", group: "studio" },
-  { key: "graphicContent", label: "AI Image", icon: "▧", group: "studio" },
-  { key: "aiVideo", label: "AI Video", icon: "▶", group: "studio" },
-  { key: "aiArticle", label: "AI Article", icon: "▤", group: "studio" },
-  { key: "aiLive", label: "AI Live", icon: "◉", group: "studio" },
-  { key: "shortDrama", label: "AI Short Drama", icon: "◈", group: "studio" },
-  { key: "aiAudio", label: "AI Audio", icon: "♪", group: "studio" },
-  { key: "matrixAccounts", label: "Matrix Accounts", icon: "▦", group: "studio" },
-  { key: "publishingCenter", label: "Publishing Center", icon: "⬆", group: "studio" },
-  { key: "assetLibrary", label: "Asset Library", icon: "◫", group: "studio" },
-  { key: "brandAssets", label: "Brand Assets", icon: "◐", group: "studio" },
-  { key: "analytics", label: "Analytics", icon: "◔", group: "studio" },
-  { key: "settings", label: "Settings", icon: "⚙", group: "studio" },
+  { key: "workspace", label: "Studio 工作台", icon: "◆", group: "studio" },
+  { key: "graphicContent", label: "AI 图片", icon: "▧", group: "studio" },
+  { key: "aiVideo", label: "AI 视频", icon: "▶", group: "studio" },
+  { key: "aiArticle", label: "AI 文章", icon: "▤", group: "studio" },
+  { key: "aiLive", label: "AI 直播", icon: "◉", group: "studio" },
+  { key: "shortDrama", label: "AI 短剧", icon: "◈", group: "studio" },
+  { key: "aiAudio", label: "AI 音频", icon: "♪", group: "studio" },
+  { key: "matrixAccounts", label: "矩阵账号", icon: "▦", group: "studio" },
+  { key: "publishingCenter", label: "发布中心", icon: "⬆", group: "studio" },
+  { key: "assetLibrary", label: "素材库", icon: "◫", group: "studio" },
+  { key: "brandAssets", label: "品牌资产", icon: "◐", group: "studio" },
+  { key: "analytics", label: "内容数据", icon: "◔", group: "studio" },
+  { key: "settings", label: "Studio 设置", icon: "⚙", group: "studio" },
 
   // ---- 详情/工作台页面（不进侧边栏）----
   { key: "director", label: "AI导演工作台", icon: "🎬", group: "studio", hidden: true },

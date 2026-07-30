@@ -8,12 +8,17 @@ import { Modal } from "../../../kit/Modal.jsx";
 import { EmptyState } from "../../../kit/EmptyState.jsx";
 import { useToast } from "../../../kit/useToast.js";
 import { DEMO_STORES } from "../../../mock/storesMock.js";
+import { getFeaturedCustomer, getFeaturedOrder } from "../../../../demoData/operatorDemoData.js";
 import {
   addCustomerNote,
   getAllTags,
   getCustomer,
   getCustomerStats,
   getCustomers,
+  getFollowUpLabel,
+  getFollowUpTone,
+  getIntentLabel,
+  getIntentTone,
   getMemberLevelLabel,
   getRiskLabel,
   toggleRiskFlag,
@@ -29,21 +34,24 @@ function CustomerDetailModal({ customerId, onClose, onChanged }) {
 
   return (
     <Modal open={!!customerId} title={customer.name} onClose={onClose}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
         <StatusPill tone={customer.memberLevel === "gold" ? "success" : "neutral"}>{getMemberLevelLabel(customer.memberLevel)}会员</StatusPill>
         <StatusPill tone={customer.riskFlag === "watch" ? "warning" : "neutral"}>风险：{getRiskLabel(customer.riskFlag)}</StatusPill>
+        <StatusPill tone={getIntentTone(customer.intent)}>购买意向：{getIntentLabel(customer.intent)}</StatusPill>
+        <StatusPill tone={getFollowUpTone(customer.followUpStatus)}>跟进状态：{getFollowUpLabel(customer.followUpStatus)}</StatusPill>
         <DemoBadge />
       </div>
       <dl style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, fontSize: 13, margin: 0 }}>
         <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>所属店铺</dt><dd style={{ margin: 0 }}>{customer.storeName}</dd></div>
         <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>联系电话</dt><dd style={{ margin: 0 }}>{customer.phone}</dd></div>
+        <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>来源渠道</dt><dd style={{ margin: 0 }}>{customer.sourceChannel}</dd></div>
         <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>累计订单</dt><dd style={{ margin: 0 }}>{customer.totalOrders}</dd></div>
         <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>累计消费</dt><dd style={{ margin: 0 }}>¥{customer.totalSpend.toLocaleString()}</dd></div>
-        <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>最近下单</dt><dd style={{ margin: 0 }}>{new Date(customer.lastOrderAt).toLocaleDateString("zh-CN")}</dd></div>
+        <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>最近购买</dt><dd style={{ margin: 0 }}>{new Date(customer.lastOrderAt).toLocaleDateString("zh-CN")}</dd></div>
         <div><dt style={{ color: "var(--text-secondary)", fontSize: 11 }}>标签</dt><dd style={{ margin: 0 }}>{customer.tags.length ? customer.tags.join("、") : "无"}</dd></div>
       </dl>
 
-      <div style={{ marginTop: 16 }}>
+      <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <Button
           size="sm"
           variant={customer.riskFlag === "watch" ? "secondary" : "danger"}
@@ -54,6 +62,13 @@ function CustomerDetailModal({ customerId, onClose, onChanged }) {
           }}
         >
           {customer.riskFlag === "watch" ? "取消风险关注" : "标记为需关注"}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => toast("已安排跟进任务（演示反馈，尚未接入真实任务系统）", "success")}
+        >
+          安排跟进
         </Button>
       </div>
 
@@ -87,7 +102,7 @@ function CustomerDetailModal({ customerId, onClose, onChanged }) {
   );
 }
 
-export function CustomersPage() {
+export function CustomersPage({ rootNavigate } = {}) {
   const [storeId, setStoreId] = useState(ALL);
   const [search, setSearch] = useState("");
   const [riskOnly, setRiskOnly] = useState(false);
@@ -98,6 +113,8 @@ export function CustomersPage() {
   const rows = useMemo(() => getCustomers({ storeId, search, riskOnly }), [storeId, search, riskOnly, forceRerender]); // eslint-disable-line react-hooks/exhaustive-deps
   const stats = useMemo(() => getCustomerStats(storeId), [storeId, forceRerender]); // eslint-disable-line react-hooks/exhaustive-deps
   const tags = useMemo(() => getAllTags(), [forceRerender]); // eslint-disable-line react-hooks/exhaustive-deps
+  const featuredCustomer = getFeaturedCustomer();
+  const featuredOrder = getFeaturedOrder();
 
   function refresh() {
     forceRerender((n) => n + 1);
@@ -114,8 +131,8 @@ export function CustomersPage() {
   return (
     <div>
       <PageHeader
-        title="客户"
-        subtitle="按店铺汇总的客户画像——复购、消费、风险标记，不是订单的附属视图"
+        title="客户中心"
+        subtitle="按店铺汇总的客户画像——分层、来源、意向与跟进状态，不是订单的附属视图"
         actions={
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <DemoBadge />
@@ -130,6 +147,20 @@ export function CustomersPage() {
         <StatCard label="需关注" value={stats.atRisk} onClick={() => setRiskOnly(true)} />
         <StatCard label="累计消费" value={`¥${stats.totalSpend.toLocaleString()}`} />
       </StatGrid>
+
+      {featuredCustomer && featuredOrder ? (
+        <div className="fdr-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontSize: 13 }}>
+            <strong>{featuredCustomer.name}</strong>
+            <span style={{ color: "var(--text-secondary)", marginLeft: 8 }}>
+              在订单中心有一笔关联订单 {featuredOrder.orderNumber}（¥{featuredOrder.amount.toLocaleString()}），可跳转核对客户与订单信息是否一致
+            </span>
+          </div>
+          {rootNavigate ? (
+            <Button size="sm" variant="secondary" onClick={() => rootNavigate("orderCenter")}>前往订单中心查看该订单 →</Button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="fdr-card" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <select className="fdr-select" value={storeId} onChange={(e) => setStoreId(e.target.value)}>
@@ -158,11 +189,13 @@ export function CustomersPage() {
             columns={[
               { key: "name", label: "客户" },
               { key: "storeName", label: "店铺" },
-              { key: "memberLevel", label: "会员等级", render: (r) => getMemberLevelLabel(r.memberLevel) },
-              { key: "totalOrders", label: "累计订单" },
+              { key: "memberLevel", label: "客户分层", render: (r) => getMemberLevelLabel(r.memberLevel) },
+              { key: "sourceChannel", label: "来源渠道" },
               { key: "totalSpend", label: "累计消费", render: (r) => `¥${r.totalSpend.toLocaleString()}` },
-              { key: "lastOrderAt", label: "最近下单", render: (r) => new Date(r.lastOrderAt).toLocaleDateString("zh-CN") },
-              { key: "riskFlag", label: "风险", render: (r) => <StatusPill tone={r.riskFlag === "watch" ? "warning" : "neutral"}>{getRiskLabel(r.riskFlag)}</StatusPill> },
+              { key: "lastOrderAt", label: "最近购买", render: (r) => new Date(r.lastOrderAt).toLocaleDateString("zh-CN") },
+              { key: "intent", label: "意向", render: (r) => <StatusPill tone={getIntentTone(r.intent)}>{getIntentLabel(r.intent)}</StatusPill> },
+              { key: "tags", label: "标签", render: (r) => (r.tags.length ? r.tags.join("、") : "—") },
+              { key: "followUpStatus", label: "跟进状态", render: (r) => <StatusPill tone={getFollowUpTone(r.followUpStatus)}>{getFollowUpLabel(r.followUpStatus)}</StatusPill> },
               { key: "actions", label: "操作", render: (r) => <Button size="sm" variant="secondary" onClick={() => setSelectedId(r.id)}>详情</Button> },
             ]}
             rows={rows}

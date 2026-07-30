@@ -165,6 +165,27 @@ export function SecretaryModule() {
         </div>
       ) : null}
 
+      <SectionHeading>今日待办</SectionHeading>
+      <div style={{ marginBottom: "var(--space-32)", display: "flex", flexDirection: "column", gap: "var(--space-8)" }}>
+        {attentionItems.length === 0 ? (
+          <EmptyState message="今天没有待办事项" />
+        ) : (
+          attentionItems.map((item) => (
+            <div
+              key={item.id}
+              className="fdr-card"
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-12)" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-8)" }}>
+                <StatusPill tone={item.severity}>{item.severity === "danger" ? "紧急" : item.severity === "warning" ? "需关注" : "常规"}</StatusPill>
+                <span className="fdr-type-body-small">{item.label}</span>
+              </div>
+              <TextButton onClick={() => navigate(item.targetModule)}>去处理 →</TextButton>
+            </div>
+          ))
+        )}
+      </div>
+
       <SectionHeading>决策 — AI 建议</SectionHeading>
       <div style={{ marginBottom: "var(--space-32)" }}>
         {recommendations.map((rec) => (

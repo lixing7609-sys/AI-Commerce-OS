@@ -13,8 +13,8 @@ function Wrapper({ children }) {
 // Founder Master Edition Charter §3 — exactly 5 top-level groups.
 // "Founder Workspace" renders flat (renderCoreGroup); the other four
 // are accordions (renderLabsCloudGroup, see LABS_CLOUD_GROUP_KEYS).
-const CANONICAL_WORKSPACE_LABEL = "Founder Workspace";
-const CANONICAL_ACCORDION_LABELS = ["AI Capability Center", "Operator Lab", "Studio Lab", "Cloud Center"];
+const CANONICAL_WORKSPACE_LABEL = "Founder 工作台";
+const CANONICAL_ACCORDION_LABELS = ["AI 能力中心", "Operator 实验室", "Studio 实验室", "Cloud Center"];
 
 function mockMatchMedia(matches) {
   window.matchMedia = (query) => ({
@@ -81,7 +81,7 @@ describe("Founder navigation shell (Founder Master Edition Charter §3)", () => 
 
   it("Operator Lab and Studio Lab chevrons expand nested navigation without navigating away", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
-    const studioChevron = screen.getByRole("button", { name: /展开Studio Lab|收起Studio Lab/ });
+    const studioChevron = screen.getByRole("button", { name: /展开Studio 实验室|收起Studio 实验室/ });
     const beforeUrl = window.location.search;
     fireEvent.click(studioChevron);
     expect(window.location.search).toBe(beforeUrl);
@@ -97,7 +97,7 @@ describe("Founder navigation shell (Founder Master Edition Charter §3)", () => 
 
   it("selecting a nested Studio sub-item marks it active", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
-    const studioChevron = screen.getByRole("button", { name: /展开Studio Lab/ });
+    const studioChevron = screen.getByRole("button", { name: /展开Studio 实验室/ });
     fireEvent.click(studioChevron);
     const subitems = document.querySelectorAll(".fdr-sidebar__subitem");
     expect(subitems.length).toBeGreaterThan(0);
@@ -127,7 +127,7 @@ describe("Founder navigation shell (Founder Master Edition Charter §3)", () => 
   it("collapsed items with nested content expose a tooltip/flyout trigger with an accessible label", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    const operatorButton = screen.getByRole("button", { name: "Operator Lab" });
+    const operatorButton = screen.getByRole("button", { name: "Operator 实验室" });
     expect(operatorButton).toBeTruthy();
     fireEvent.click(operatorButton);
     expect(document.querySelector(".fdr-sidebar__flyout")).toBeTruthy();
@@ -136,7 +136,7 @@ describe("Founder navigation shell (Founder Master Edition Charter §3)", () => 
   it("Escape closes the collapsed-mode flyout", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    fireEvent.click(screen.getByRole("button", { name: "Operator Lab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Operator 实验室" }));
     expect(document.querySelector(".fdr-sidebar__flyout")).toBeTruthy();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(document.querySelector(".fdr-sidebar__flyout")).toBeNull();

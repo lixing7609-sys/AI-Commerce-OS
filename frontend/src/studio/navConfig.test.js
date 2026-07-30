@@ -48,7 +48,7 @@ describe("NAV_GROUPS (Founder Master Edition Charter §3.4 — flat, no sub-clus
 describe("isValidStudioNavKey / getStudioNavItemByKey / getVisibleNavItemsByGroup / getGroupKeyForNavItem", () => {
   it("resolves a known top-level key", () => {
     expect(isValidStudioNavKey("analytics")).toBe(true);
-    expect(getStudioNavItemByKey("analytics")?.label).toBe("Analytics");
+    expect(getStudioNavItemByKey("analytics")?.label).toBe("内容数据");
   });
 
   it("resolves hidden detail-page keys as valid (reachable via navigate, not shown in sidebar)", () => {

@@ -50,7 +50,7 @@ test("Design DNA v1.0 acceptance screenshots", async ({ page }) => {
   // demonstrates both states of the accordion pattern). The chevron
   // toggles expand/collapse; the group label itself only navigates.
   await page.goto("/");
-  const capabilityChevron = page.getByRole("button", { name: /展开AI Capability Center|收起AI Capability Center/ });
+  const capabilityChevron = page.getByRole("button", { name: /展开AI 能力中心|收起AI 能力中心/ });
   await capabilityChevron.click();
   await shot(page, "03-sidebar-group-expanded");
   await capabilityChevron.click();

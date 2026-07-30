@@ -41,6 +41,7 @@ export const UTILITY_ICONS = {
   commandPalette: "Command",
   notifications: "Bell",
   settings: "Settings",
+  productReview: "ClipboardCheck",
   account: "CircleUserRound",
   connectionStatus: "Wifi",
   collapse: "PanelLeftClose",

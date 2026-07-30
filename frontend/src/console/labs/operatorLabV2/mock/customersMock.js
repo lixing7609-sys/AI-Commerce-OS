@@ -10,6 +10,10 @@ import { DEMO_STORES } from "../../../mock/storesMock.js";
 
 const MEMBER_LEVEL_LABEL = { normal: "普通", silver: "银卡", gold: "金卡" };
 const RISK_LABEL = { none: "无", watch: "需关注" };
+const INTENT_LABEL = { high: "高", medium: "中", low: "低" };
+const INTENT_TONE = { high: "success", medium: "warning", low: "neutral" };
+const FOLLOW_UP_LABEL = { pending: "待跟进", in_progress: "跟进中", done: "已完成", none: "无需跟进" };
+const FOLLOW_UP_TONE = { pending: "danger", in_progress: "warning", done: "success", none: "neutral" };
 
 export function getMemberLevelLabel(level) {
   return MEMBER_LEVEL_LABEL[level] ?? level;
@@ -17,8 +21,20 @@ export function getMemberLevelLabel(level) {
 export function getRiskLabel(risk) {
   return RISK_LABEL[risk] ?? risk;
 }
+export function getIntentLabel(intent) {
+  return INTENT_LABEL[intent] ?? intent;
+}
+export function getIntentTone(intent) {
+  return INTENT_TONE[intent] ?? "neutral";
+}
+export function getFollowUpLabel(status) {
+  return FOLLOW_UP_LABEL[status] ?? status;
+}
+export function getFollowUpTone(status) {
+  return FOLLOW_UP_TONE[status] ?? "neutral";
+}
 
-function buildCustomer({ idx, storeId, memberLevel, totalOrders, totalSpend, daysAgo, tags, riskFlag }) {
+function buildCustomer({ idx, storeId, memberLevel, totalOrders, totalSpend, daysAgo, tags, riskFlag, sourceChannel, intent, followUpStatus }) {
   const store = DEMO_STORES.find((s) => s.id === storeId);
   return {
     id: nextMockId("cust"),
@@ -33,19 +49,22 @@ function buildCustomer({ idx, storeId, memberLevel, totalOrders, totalSpend, day
     lastOrderAt: new Date(Date.now() - daysAgo * 86400000).toISOString(),
     tags,
     riskFlag,
+    sourceChannel,
+    intent,
+    followUpStatus,
     notes: [],
   };
 }
 
 function seedCustomers() {
   return tagDemo([
-    buildCustomer({ idx: 1, storeId: "store-1", memberLevel: "gold", totalOrders: 18, totalSpend: 5240, daysAgo: 2, tags: ["复购率高", "偏好新品"], riskFlag: "none" }),
-    buildCustomer({ idx: 2, storeId: "store-1", memberLevel: "silver", totalOrders: 6, totalSpend: 980, daysAgo: 5, tags: ["价格敏感"], riskFlag: "none" }),
-    buildCustomer({ idx: 3, storeId: "store-2", memberLevel: "normal", totalOrders: 1, totalSpend: 129, daysAgo: 30, tags: [], riskFlag: "none" }),
-    buildCustomer({ idx: 4, storeId: "store-2", memberLevel: "gold", totalOrders: 24, totalSpend: 8760, daysAgo: 1, tags: ["VIP", "常咨询客服"], riskFlag: "none" }),
-    buildCustomer({ idx: 5, storeId: "store-3", memberLevel: "silver", totalOrders: 4, totalSpend: 560, daysAgo: 45, tags: ["退款过1次"], riskFlag: "watch" },
+    buildCustomer({ idx: 1, storeId: "store-1", memberLevel: "gold", totalOrders: 18, totalSpend: 5240, daysAgo: 2, tags: ["复购率高", "偏好新品"], riskFlag: "none", sourceChannel: "短视频广告", intent: "high", followUpStatus: "none" }),
+    buildCustomer({ idx: 2, storeId: "store-1", memberLevel: "silver", totalOrders: 6, totalSpend: 980, daysAgo: 5, tags: ["价格敏感"], riskFlag: "none", sourceChannel: "自然搜索", intent: "medium", followUpStatus: "pending" }),
+    buildCustomer({ idx: 3, storeId: "store-2", memberLevel: "normal", totalOrders: 1, totalSpend: 129, daysAgo: 30, tags: [], riskFlag: "none", sourceChannel: "直播间", intent: "low", followUpStatus: "none" }),
+    buildCustomer({ idx: 4, storeId: "store-2", memberLevel: "gold", totalOrders: 24, totalSpend: 8760, daysAgo: 1, tags: ["VIP", "常咨询客服"], riskFlag: "none", sourceChannel: "老客户带新", intent: "high", followUpStatus: "in_progress" }),
+    buildCustomer({ idx: 5, storeId: "store-3", memberLevel: "silver", totalOrders: 4, totalSpend: 560, daysAgo: 45, tags: ["退款过1次"], riskFlag: "watch", sourceChannel: "私域社群", intent: "medium", followUpStatus: "pending" },
     ),
-    buildCustomer({ idx: 6, storeId: "store-3", memberLevel: "normal", totalOrders: 2, totalSpend: 210, daysAgo: 60, tags: [], riskFlag: "none" }),
+    buildCustomer({ idx: 6, storeId: "store-3", memberLevel: "normal", totalOrders: 2, totalSpend: 210, daysAgo: 60, tags: [], riskFlag: "none", sourceChannel: "自然搜索", intent: "low", followUpStatus: "done" }),
   ]);
 }
 

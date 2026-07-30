@@ -538,6 +538,13 @@ export function ConsoleSidebar() {
           </button>
         </SidebarFlyout>
 
+        <Tooltip content="产品审查｜逐页检查全部可见页面的中文框架">
+          <button type="button" className="fdr-sidebar__utility" onClick={() => navigate("productReview")}>
+            <Icon name={UTILITY_ICONS.productReview} size={18} />
+            <span className="fdr-sidebar__utility-label">产品审查</span>
+          </button>
+        </Tooltip>
+
         <Tooltip content="系统中心 / 设置">
           <button type="button" className="fdr-sidebar__utility" onClick={() => navigate("systemCenter")}>
             <Icon name={UTILITY_ICONS.settings} size={18} />

@@ -52,19 +52,19 @@
  * 默认 Tab——不会 404，见 pageRegistry.jsx 顶部注释。
  */
 export const OPERATOR_V2_NAV_ITEMS = [
-  { key: "workbench", label: "Workspace", icon: "◆" },
-  { key: "products", label: "Products", icon: "▣", directModule: "productCenter" },
-  { key: "orders", label: "Orders", icon: "▤", directModule: "orderCenter" },
-  { key: "customers", label: "Customers", icon: "◐" },
-  { key: "customerService", label: "Customer Service", icon: "⟲", directModule: "customerServiceCenter" },
-  { key: "marketing", label: "Marketing", icon: "▥" },
-  { key: "adOps", label: "Advertising", icon: "■" },
-  { key: "brand", label: "Brand", icon: "◆" },
-  { key: "aiSecretary", label: "AI Secretary", icon: "☑" },
-  { key: "analytics", label: "Data", icon: "▦" },
-  { key: "financeProfit", label: "Finance & Profit", icon: "◔" },
-  { key: "organization", label: "Organization", icon: "☲" },
-  { key: "settings", label: "Settings", icon: "⚙" },
+  { key: "workbench", label: "经营工作台", icon: "◆" },
+  { key: "products", label: "商品中心", icon: "▣", directModule: "productCenter" },
+  { key: "orders", label: "订单中心", icon: "▤", directModule: "orderCenter" },
+  { key: "customers", label: "客户中心", icon: "◐" },
+  { key: "customerService", label: "客服中心", icon: "⟲", directModule: "customerServiceCenter" },
+  { key: "marketing", label: "营销中心", icon: "▥" },
+  { key: "adOps", label: "广告投放", icon: "■" },
+  { key: "brand", label: "品牌中心", icon: "◆" },
+  { key: "aiSecretary", label: "Operator 秘书", icon: "☑" },
+  { key: "analytics", label: "数据中心", icon: "▦" },
+  { key: "financeProfit", label: "财务与利润", icon: "◔" },
+  { key: "organization", label: "组织与审批", icon: "☲" },
+  { key: "settings", label: "经营设置", icon: "⚙" },
 ];
 
 export function isValidOperatorV2NavKey(key) {

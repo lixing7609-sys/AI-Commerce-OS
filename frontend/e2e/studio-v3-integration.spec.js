@@ -26,8 +26,8 @@ test.describe("独立 Studio：13 项扁平侧边栏（Founder Master Edition Ch
     await page.goto("/studio");
     await expect(page.locator(".st-sidebar-accordion")).toHaveCount(0);
     for (const label of [
-      "Workspace", "AI Image", "AI Video", "AI Article", "AI Live", "AI Short Drama", "AI Audio",
-      "Matrix Accounts", "Publishing Center", "Asset Library", "Brand Assets", "Analytics", "Settings",
+      "Studio 工作台", "AI 图片", "AI 视频", "AI 文章", "AI 直播", "AI 短剧", "AI 音频",
+      "矩阵账号", "发布中心", "素材库", "品牌资产", "内容数据", "Studio 设置",
     ]) {
       await expect(page.locator(".st-nav-link", { hasText: label })).toBeVisible();
     }
@@ -36,7 +36,7 @@ test.describe("独立 Studio：13 项扁平侧边栏（Founder Master Edition Ch
   test("默认落地页是 Workspace，秘书/项目队列/选题与热点都是它的 Tab", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/studio");
-    await expect(page.locator(".st-nav-link.active", { hasText: "Workspace" })).toBeVisible();
+    await expect(page.locator(".st-nav-link.active", { hasText: "Studio 工作台" })).toBeVisible();
     for (const tab of ["总览", "秘书", "项目队列", "选题与热点"]) {
       await expect(page.getByRole("button", { name: tab, exact: true })).toBeVisible();
     }
@@ -101,7 +101,7 @@ test.describe("独立 Studio：AI图文作为一级内容形态", () => {
   test("AI图文列表展示真实项目，非占位页面", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/studio");
-    await page.locator(".st-nav-link", { hasText: "AI Image" }).click();
+    await page.locator(".st-nav-link", { hasText: "AI 图片" }).click();
     await expect(page.getByText("《普通人如何用 AI 建立一人公司》")).toBeVisible();
     await expect(page.getByText("《出租屋氛围灯改造指南》")).toBeVisible();
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
@@ -109,7 +109,7 @@ test.describe("独立 Studio：AI图文作为一级内容形态", () => {
 
   test("进入图文编辑器显示三栏结构与14阶段流程，正文由结构化内容块组成", async ({ page }) => {
     await page.goto("/studio");
-    await page.locator(".st-nav-link", { hasText: "AI Image" }).click();
+    await page.locator(".st-nav-link", { hasText: "AI 图片" }).click();
     await page.locator("tr", { hasText: "普通人如何用" }).first().click();
     await expect(page.getByText("AI图文编辑器", { exact: false }).first()).toBeVisible();
     await expect(page.getByText("14 阶段生产流程")).toBeVisible();
@@ -119,7 +119,7 @@ test.describe("独立 Studio：AI图文作为一级内容形态", () => {
 
   test("可以在图文编辑器生成一个新的平台版本", async ({ page }) => {
     await page.goto("/studio");
-    await page.locator(".st-nav-link", { hasText: "AI Image" }).click();
+    await page.locator(".st-nav-link", { hasText: "AI 图片" }).click();
     await page.locator("tr", { hasText: "普通人如何用" }).first().click();
     await page.getByRole("button", { name: "平台版本" }).click();
     const before = await page.locator("table tbody tr").count();
@@ -132,8 +132,8 @@ test.describe("Founder Studio Lab：展开后接入 Studio 完整业务；实验
   test("展开后按 Charter §3.4 显示 Studio 完整的 13 项扁平导航，不再带 Founder 专属实验控制层尾部", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/founder");
-    await page.getByRole("button", { name: "Studio Lab", exact: true }).click();
-    for (const label of ["Workspace", "AI Image", "Publishing Center"]) {
+    await page.getByRole("button", { name: "Studio 实验室", exact: true }).click();
+    for (const label of ["Studio 工作台", "AI 图片", "发布中心"]) {
       await expect(page.locator(".fdr-sidebar__subitem", { hasText: label })).toBeVisible();
     }
     // Charter §3.4: 原"Studio 实验控制层"尾部条目已吸收进 AI Capability
@@ -146,12 +146,12 @@ test.describe("Founder Studio Lab：展开后接入 Studio 完整业务；实验
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
   });
 
-  test("Studio Agent 现在挂在 AI Capability Center · Agent Center 的 Studio Agents Tab 下，显示模式标识与27个Agent", async ({ page }) => {
+  test("Studio Agent 现在挂在 AI Capability Center · Agent Center 的 Studio Agent Tab 下，显示模式标识与27个Agent", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/founder");
-    await page.getByRole("button", { name: "AI Capability Center", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Studio Agents", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Studio Agents", exact: true }).click();
+    await page.getByRole("button", { name: "AI 能力中心", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Studio Agent", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Studio Agent", exact: true }).click();
     await expect(page.getByText("Founder · Studio 实验室")).toBeVisible();
     await expect(page.getByText(/共 27 个角色化 Agent/)).toBeVisible();
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
@@ -159,17 +159,17 @@ test.describe("Founder Studio Lab：展开后接入 Studio 完整业务；实验
 
   test("Founder 内嵌 Studio Lab 没有第二套 Studio 侧边栏", async ({ page }) => {
     await page.goto("/founder");
-    await page.getByRole("button", { name: "Studio Lab", exact: true }).click();
-    await page.locator(".fdr-sidebar__subitem", { hasText: "Workspace" }).click();
+    await page.getByRole("button", { name: "Studio 实验室", exact: true }).click();
+    await page.locator(".fdr-sidebar__subitem", { hasText: "Studio 工作台" }).click();
     await expect(page.locator(".st-sidebar")).toHaveCount(0);
     await expect(page.locator(".fdr-sidebar")).toHaveCount(1);
   });
 
   test("Founder Studio Lab 的 Studio秘书与独立 Studio 秘书是同一实现，标签正确区分于 Today/Operator秘书", async ({ page }) => {
     await page.goto("/founder");
-    await expect(page.getByRole("button", { name: "Today", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Studio Lab", exact: true }).click();
-    await page.locator(".fdr-sidebar__subitem", { hasText: "Workspace" }).click();
+    await expect(page.getByRole("button", { name: "今日总览", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Studio 实验室", exact: true }).click();
+    await page.locator(".fdr-sidebar__subitem", { hasText: "Studio 工作台" }).click();
     await page.getByRole("button", { name: "秘书", exact: true }).click();
     await expect(page.getByText("Studio秘书 · 今日经营简报")).toBeVisible();
   });

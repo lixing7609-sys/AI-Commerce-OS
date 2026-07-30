@@ -51,7 +51,7 @@ test.describe("Marketplace: three-view scoping", () => {
     await page.goto("/studio");
     // Founder Master Edition Charter §3.4: Studio's nav is now 13 flat
     // items; Marketplace is absorbed into Asset Library as a tab.
-    await page.locator(".st-nav-link", { hasText: "Asset Library" }).click();
+    await page.locator(".st-nav-link", { hasText: "素材库" }).click();
     await page.getByRole("button", { name: "能力市场" }).click();
     await expect(page.getByText("选题雷达 Agent")).toBeVisible();
     await expect(page.getByText("家居行业经营知识库")).toBeVisible(); // SHARED 包

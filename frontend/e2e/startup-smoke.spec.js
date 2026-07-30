@@ -29,7 +29,7 @@ test.describe("startup smoke — all three editions", () => {
     await page.goto("/");
     await expect(page.locator("main")).not.toBeEmpty();
     await expect(page.locator(".fdr-sidebar__edition")).toHaveText("Founder");
-    await expect(page.getByRole("button", { name: "Today", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "今日总览", exact: true })).toBeVisible();
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
   });
 

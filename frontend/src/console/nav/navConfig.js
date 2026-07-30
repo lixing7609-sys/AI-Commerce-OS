@@ -60,8 +60,20 @@ export const FOUNDER_MODULES = [
     hiddenFromSidebar: true,
   },
   {
+    // 产品审查模式（Founder Master Edition V1.0 中文框架审查版
+    // §六）——不是 51 个产品页面之一，是供产品负责人审查这 51 个
+    // 页面的元工具，走顶部工具栏"产品审查"按钮进入，同 designDna
+    // 一样不占用任何一个顶层分组的可见子项名额。
+    key: "productReview",
+    label: "产品审查",
+    group: "founderWorkspaceGroup",
+    icon: "☑",
+    requiredCapability: CAPABILITY_KEYS.PRODUCT_REVIEW_VIEW,
+    hiddenFromSidebar: true,
+  },
+  {
     key: "founderWorkbench",
-    label: "Today",
+    label: "今日总览",
     group: "founderWorkspaceGroup",
     icon: "✦",
     requiredCapability: CAPABILITY_KEYS.FOUNDER_WORKBENCH_VIEW,
@@ -69,56 +81,56 @@ export const FOUNDER_MODULES = [
   },
   {
     key: "decisions",
-    label: "Decisions",
+    label: "决策中心",
     group: "founderWorkspaceGroup",
     icon: "☑",
     requiredCapability: CAPABILITY_KEYS.DECISIONS_VIEW,
   },
   {
     key: "development",
-    label: "Development",
+    label: "开发进度",
     group: "founderWorkspaceGroup",
     icon: "⌘",
     requiredCapability: CAPABILITY_KEYS.DEVELOPMENT_VIEW,
   },
   {
     key: "businessValidation",
-    label: "Business Validation",
+    label: "经营验证",
     group: "founderWorkspaceGroup",
     icon: "▥",
     requiredCapability: CAPABILITY_KEYS.BUSINESS_VALIDATION_VIEW,
   },
   {
     key: "contentValidation",
-    label: "Content Validation",
+    label: "内容验证",
     group: "founderWorkspaceGroup",
     icon: "◆",
     requiredCapability: CAPABILITY_KEYS.CONTENT_VALIDATION_VIEW,
   },
   {
     key: "cloudStatus",
-    label: "Cloud Status",
+    label: "云端状态",
     group: "founderWorkspaceGroup",
     icon: "☁",
     requiredCapability: CAPABILITY_KEYS.CLOUD_STATUS_VIEW,
   },
   {
     key: "risks",
-    label: "Risks",
+    label: "风险中心",
     group: "founderWorkspaceGroup",
     icon: "⚑",
     requiredCapability: CAPABILITY_KEYS.RISKS_VIEW,
   },
   {
     key: "notifications",
-    label: "Notifications",
+    label: "通知中心",
     group: "founderWorkspaceGroup",
     icon: "◔",
     requiredCapability: CAPABILITY_KEYS.NOTIFICATIONS_VIEW,
   },
   {
     key: "agentCenter",
-    label: "Agent Center",
+    label: "Agent 中心",
     group: "aiCapabilityCenterGroup",
     icon: "⚙",
     requiredCapability: CAPABILITY_KEYS.AGENT_CENTER_VIEW,
@@ -141,21 +153,21 @@ export const FOUNDER_MODULES = [
   },
   {
     key: "promptCenter",
-    label: "Prompt Center",
+    label: "Prompt 中心",
     group: "aiCapabilityCenterGroup",
     icon: "✎",
     requiredCapability: CAPABILITY_KEYS.PROMPT_CENTER_VIEW,
   },
   {
     key: "skillCenter",
-    label: "Skill Center",
+    label: "Skill 中心",
     group: "aiCapabilityCenterGroup",
     icon: "🧩",
     requiredCapability: CAPABILITY_KEYS.SKILL_CENTER_VIEW,
   },
   {
     key: "workflowCenter",
-    label: "Workflow Center",
+    label: "Workflow 中心",
     group: "aiCapabilityCenterGroup",
     icon: "☲",
     requiredCapability: CAPABILITY_KEYS.WORKFLOW_CENTER_VIEW,
@@ -178,21 +190,21 @@ export const FOUNDER_MODULES = [
   },
   {
     key: "knowledgeCenter",
-    label: "Knowledge Center",
+    label: "知识中心",
     group: "aiCapabilityCenterGroup",
     icon: "▤",
     requiredCapability: CAPABILITY_KEYS.KNOWLEDGE_CENTER_VIEW,
   },
   {
     key: "connectorCenter",
-    label: "Connector Center",
+    label: "Connector 中心",
     group: "aiCapabilityCenterGroup",
     icon: "⛓",
     requiredCapability: CAPABILITY_KEYS.CONNECTOR_CENTER_VIEW,
   },
   {
     key: "capabilityCenter",
-    label: "Capability Center",
+    label: "能力中心",
     group: "aiCapabilityCenterGroup",
     icon: "◈",
     requiredCapability: CAPABILITY_KEYS.CAPABILITY_CENTER_VIEW,
@@ -328,7 +340,7 @@ export const FOUNDER_MODULES = [
   // 供旧深链解析（内部标签/详情跳转自我引用，见各自组件顶部注释）。
   {
     key: "cloudToken",
-    label: "Token",
+    label: "Token 中心",
     group: "cloudCenterGroup",
     icon: "◉",
     requiredCapability: CAPABILITY_KEYS.TOKEN_CENTER_VIEW,
@@ -350,28 +362,28 @@ export const FOUNDER_MODULES = [
   },
   {
     key: "cloudVersion",
-    label: "Version",
+    label: "版本管理",
     group: "cloudCenterGroup",
     icon: "⛭",
     requiredCapability: CAPABILITY_KEYS.CLOUD_VERSION_VIEW,
   },
   {
     key: "cloudAssets",
-    label: "Assets",
+    label: "资产管理",
     group: "cloudCenterGroup",
     icon: "▤",
     requiredCapability: CAPABILITY_KEYS.CLOUD_ASSETS_VIEW,
   },
   {
     key: "monitoring",
-    label: "Monitoring",
+    label: "系统监控",
     group: "cloudCenterGroup",
     icon: "◈",
     requiredCapability: CAPABILITY_KEYS.MONITORING_VIEW,
   },
   {
     key: "logs",
-    label: "Logs",
+    label: "日志中心",
     group: "cloudCenterGroup",
     icon: "▤",
     requiredCapability: CAPABILITY_KEYS.LOGS_VIEW,
@@ -397,10 +409,10 @@ export const FOUNDER_MODULES = [
  * （renderLabsCloudGroup）——见该文件 LABS_CLOUD_GROUP_KEYS。
  */
 export const NAV_GROUPS = [
-  { key: "founderWorkspaceGroup", label: "Founder Workspace", collapsible: false },
-  { key: "aiCapabilityCenterGroup", label: "AI Capability Center", collapsible: true },
-  { key: "operatorLabGroup", label: "Operator Lab", collapsible: true, external: "operatorV2", externalPosition: "before" },
-  { key: "studioLabGroup", label: "Studio Lab", collapsible: true, external: "studio", externalPosition: "before" },
+  { key: "founderWorkspaceGroup", label: "Founder 工作台", collapsible: false },
+  { key: "aiCapabilityCenterGroup", label: "AI 能力中心", collapsible: true },
+  { key: "operatorLabGroup", label: "Operator 实验室", collapsible: true, external: "operatorV2", externalPosition: "before" },
+  { key: "studioLabGroup", label: "Studio 实验室", collapsible: true, external: "studio", externalPosition: "before" },
   { key: "cloudCenterGroup", label: "Cloud Center", collapsible: true, external: "cloud", externalPosition: "before" },
 ];
 
@@ -417,9 +429,9 @@ export const NAV_GROUPS = [
  * purely cosmetic grouping/labeling and can't desync module behavior.
  */
 export const NAV_ZONES = [
-  { key: "workspace", label: "Founder Workspace", groups: ["founderWorkspaceGroup"] },
-  { key: "production", label: "Capability & Labs", groups: ["aiCapabilityCenterGroup", "operatorLabGroup", "studioLabGroup"] },
-  { key: "cloud", label: "Cloud", groups: ["cloudCenterGroup"] },
+  { key: "workspace", label: "Founder 工作台", groups: ["founderWorkspaceGroup"] },
+  { key: "production", label: "能力与实验室", groups: ["aiCapabilityCenterGroup", "operatorLabGroup", "studioLabGroup"] },
+  { key: "cloud", label: "云端", groups: ["cloudCenterGroup"] },
 ];
 
 /**

@@ -7,6 +7,7 @@ import { CloudStatusModule } from "./modules/cloudStatus/CloudStatusModule.jsx";
 import { RisksModule } from "./modules/risks/RisksModule.jsx";
 import { NotificationsModule } from "./modules/notifications/NotificationsModule.jsx";
 import { DesignDnaModule } from "./modules/designDna/DesignDnaModule.jsx";
+import { ProductReviewModule } from "./modules/productReview/ProductReviewModule.jsx";
 import { ProductCenterModule } from "./modules/productCenter/ProductCenterModule.jsx";
 import { OrderCenterModule } from "./modules/orderCenter/OrderCenterModule.jsx";
 import { CustomerServiceCenterModule } from "./modules/customerServiceCenter/CustomerServiceCenterModule.jsx";
@@ -68,6 +69,7 @@ import {
  */
 export const MODULE_COMPONENTS = {
   designDna: DesignDnaModule,
+  productReview: ProductReviewModule,
   founderWorkbench: FounderWorkbenchModule,
   decisions: DecisionsModule,
   development: DevelopmentModule,

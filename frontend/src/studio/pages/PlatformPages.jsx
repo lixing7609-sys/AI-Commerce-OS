@@ -6,7 +6,8 @@ import {
   getDistributedComputeState,
   isDistributedComputeEnabled,
 } from "../../shared/distributedCompute/mockComputeRepository.js";
-import { getStudioOverview, getStudioState } from "../mock/studioMock.js";
+import { CONTENT_TYPE_LABEL, PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE, getIpName, getStudioOverview, getStudioState } from "../mock/studioMock.js";
+import { getGraphicContentState } from "../mock/graphicContentMock.js";
 import { Card, DemoBadge, Field, Pill, StatGrid, Table } from "./uiHelpers.jsx";
 import { useInlineFeedback } from "./useInlineFeedback.js";
 import { formatMoney, formatNumber } from "./formatters.js";
@@ -68,7 +69,8 @@ export function ComputeTasksPage() {
 
 export function DataAnalyticsPage() {
   const overview = getStudioOverview();
-  const { contentProjects, matrixAccounts, adOrders } = getStudioState();
+  const { contentProjects, matrixAccounts, adOrders, matrixPublishTasks, contentAssets } = getStudioState();
+  const { projects: graphicProjects, metrics: graphicMetrics } = getGraphicContentState();
 
   const byContentType = contentProjects.reduce((acc, p) => {
     acc[p.contentType] = (acc[p.contentType] ?? 0) + 1;
@@ -76,30 +78,72 @@ export function DataAnalyticsPage() {
   }, {});
 
   const byPlatform = matrixAccounts.reduce((acc, a) => {
-    acc[a.platform] = (acc[a.platform] ?? 0) + a.totalPlays;
+    if (!acc[a.platform]) acc[a.platform] = { plays: 0, followers: 0, accounts: 0 };
+    acc[a.platform].plays += a.totalPlays;
+    acc[a.platform].followers += a.followers;
+    acc[a.platform].accounts += 1;
     return acc;
   }, {});
+
+  const totalContentOutput = contentProjects.length + graphicProjects.length;
+  const publishedCount = matrixPublishTasks.filter((t) => t.status === "published").length;
+  const totalReads = graphicMetrics.reduce((sum, m) => sum + (m.reads ?? 0), 0);
+  const totalEngagement = graphicMetrics.reduce((sum, m) => sum + (m.saves ?? 0) + (m.shares ?? 0) + (m.newFollowers ?? 0), 0);
+  const totalConversions = graphicMetrics.reduce((sum, m) => sum + (m.productClicks ?? 0) + (m.conversions ?? 0), 0);
+  const totalTokenUsed = contentProjects.reduce((sum, p) => sum + (p.tokenUsed ?? 0), 0) + graphicProjects.reduce((sum, p) => sum + (p.tokenUsed ?? 0), 0);
+  const totalCost = contentAssets.reduce((sum, a) => sum + (a.tokenCost ?? 0), 0);
+  const totalPlays = Object.values(byPlatform).reduce((sum, v) => sum + v.plays, 0);
 
   return (
     <div>
       <StatGrid
         items={[
+          { label: "内容产量", value: totalContentOutput },
+          { label: "发布数量", value: publishedCount },
+          { label: "累计播放", value: formatNumber(totalPlays) },
+          { label: "累计阅读", value: formatNumber(totalReads) },
+          { label: "累计互动", value: formatNumber(totalEngagement) },
+          { label: "累计转化", value: formatNumber(totalConversions) },
           { label: "本月广告收入", value: formatMoney(overview.monthlyAdRevenue) },
           { label: "内容分成收入", value: formatMoney(overview.contentShareRevenue) },
+          { label: "内容生产成本（Token）", value: formatNumber(totalCost) },
+          { label: "累计 Token 使用", value: formatNumber(totalTokenUsed) },
           { label: "总粉丝量", value: formatNumber(overview.totalFollowers) },
           { label: "本月累计流量", value: formatNumber(overview.monthlyTraffic) },
         ]}
       />
-      <Card title="内容项目类型分布" action={<DemoBadge />}>
+      <Card title="内容类型对比" action={<DemoBadge />}>
         <Table
-          columns={[{ key: "type", label: "内容类型" }, { key: "count", label: "项目数量" }]}
+          columns={[
+            { key: "type", label: "内容类型", render: (r) => CONTENT_TYPE_LABEL[r.type] ?? r.type },
+            { key: "count", label: "项目数量" },
+          ]}
           rows={Object.entries(byContentType).map(([type, count]) => ({ id: type, type, count }))}
         />
       </Card>
-      <Card title="平台播放量分布" action={<DemoBadge />}>
+      <Card title="平台对比" action={<DemoBadge />}>
         <Table
-          columns={[{ key: "platform", label: "平台" }, { key: "plays", label: "累计播放量", render: (r) => formatNumber(r.plays) }]}
-          rows={Object.entries(byPlatform).map(([platform, plays]) => ({ id: platform, platform, plays }))}
+          columns={[
+            { key: "platform", label: "平台" },
+            { key: "accounts", label: "矩阵账号数", render: (r) => r.accounts },
+            { key: "followers", label: "粉丝量", render: (r) => formatNumber(r.followers) },
+            { key: "plays", label: "累计播放量", render: (r) => formatNumber(r.plays) },
+          ]}
+          rows={Object.entries(byPlatform).map(([platform, v]) => ({ id: platform, platform, ...v }))}
+        />
+      </Card>
+      <Card title="项目复盘" action={<DemoBadge />}>
+        <Table
+          columns={[
+            { key: "name", label: "内容项目" },
+            { key: "contentType", label: "内容类型", render: (r) => CONTENT_TYPE_LABEL[r.contentType] ?? r.contentType },
+            { key: "ip", label: "所属 IP", render: (r) => getIpName(r.ipId) },
+            { key: "status", label: "状态", render: (r) => <Pill tone={PROJECT_STATUS_TONE[r.status]}>{PROJECT_STATUS_LABEL[r.status]}</Pill> },
+            { key: "budget", label: "预算", render: (r) => formatMoney(r.budget) },
+            { key: "tokenUsed", label: "已用 Token", render: (r) => r.tokenUsed.toLocaleString() },
+            { key: "budgetUsage", label: "预算使用率", render: (r) => (r.budget ? `${Math.round((r.tokenUsed / r.budget) * 100)}%` : "—") },
+          ]}
+          rows={contentProjects}
         />
       </Card>
       <Card title="广告订单结算概览" action={<DemoBadge />}>

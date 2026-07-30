@@ -5,6 +5,13 @@
  * of the 8 Workspace pages drills into the module that actually
  * produced the underlying data, instead of being 7 unrelated
  * dashboards with their own bespoke status language.
+ *
+ * `rejected`/`executed` were added to the vocabulary (中文框架审查
+ * 版) so Decisions can render the product spec's required five-state
+ * view (待决策/审议中/已批准/已驳回/已执行) without inventing a
+ * second, page-local status language — approve/reject/mark-executed
+ * on the Decisions page transitions a decision through these same
+ * states.
  */
 export const STATUS_LABEL = {
   pending: "待处理",
@@ -12,6 +19,8 @@ export const STATUS_LABEL = {
   approved: "已批准",
   blocked: "已阻塞",
   resolved: "已解决",
+  rejected: "已驳回",
+  executed: "已执行",
 };
 
 export const STATUS_TONE = {
@@ -20,6 +29,26 @@ export const STATUS_TONE = {
   approved: "success",
   blocked: "danger",
   resolved: "neutral",
+  rejected: "danger",
+  executed: "neutral",
+};
+
+export const RISK_CATEGORY_LABEL = {
+  business: "经营风险",
+  content: "内容风险",
+  system: "系统风险",
+  device: "设备风险",
+  cost: "成本风险",
+  compliance: "合规风险",
+};
+
+export const NOTIFICATION_CATEGORY_LABEL = {
+  system: "系统通知",
+  approval: "审批通知",
+  business: "经营通知",
+  content: "内容通知",
+  device: "设备通知",
+  security: "安全通知",
 };
 
 export function getDecisions() {
@@ -31,6 +60,8 @@ export function getDecisions() {
       status: "pending",
       priority: "P0",
       owner: "Founder",
+      impact: "影响「新城」店铺 12 个 SKU 的售价，预计涉及未来 3 天在售库存约 ¥18.6 万。",
+      dueAt: "2026-07-31T10:00:00Z",
       sourceModule: "Operator Lab",
       sourceModuleLabel: "审批中心",
       linkedModule: "approvalCenter",
@@ -43,6 +74,8 @@ export function getDecisions() {
       status: "in-review",
       priority: "P1",
       owner: "Founder",
+      impact: "影响 13 个矩阵账号的本周发布排期，延迟终审将顺延后续 3 集的发布节奏。",
+      dueAt: "2026-07-31T18:00:00Z",
       sourceModule: "Studio Lab",
       sourceModuleLabel: "AI 短剧 · 内容审核",
       linkedModule: "studioLab",
@@ -56,6 +89,8 @@ export function getDecisions() {
       status: "pending",
       priority: "P1",
       owner: "Founder",
+      impact: "发布后将替换全部 5 个店铺的客服 Agent 默认 Prompt，预计当日生效。",
+      dueAt: "2026-08-01T10:00:00Z",
       sourceModule: "AI Capability Center",
       sourceModuleLabel: "Capability Center · 评估中心",
       linkedModule: "capabilityCenter",
@@ -68,6 +103,8 @@ export function getDecisions() {
       status: "blocked",
       priority: "P0",
       owner: "Founder",
+      impact: "不处理将导致 3 个店铺的补货/客服/内容 Agent 任务在今日内中断执行。",
+      dueAt: "2026-07-30T12:00:00Z",
       sourceModule: "Cloud Center",
       sourceModuleLabel: "Token",
       linkedModule: "tokenCenter",
@@ -80,6 +117,8 @@ export function getDecisions() {
       status: "approved",
       priority: "P2",
       owner: "Founder",
+      impact: "上架后将对全部 Operator 可见，可被采购并接入客服 Agent。",
+      dueAt: "2026-08-03T10:00:00Z",
       sourceModule: "Cloud Center",
       sourceModuleLabel: "Marketplace · 上架审核",
       linkedModule: "marketplaceCenter",
@@ -94,8 +133,11 @@ export function getRisks() {
       id: "risk-token-balance",
       title: "Token 余额低于预警线",
       level: "high",
+      category: "cost",
       concern: "剩余 1,240，低于 2,000 预警线，今日仍有 3 个 Agent 任务待执行，可能因余额不足而中断。",
       status: "pending",
+      owner: "Founder",
+      progress: "待处理 · 等待授予或充值",
       sourceModule: "Cloud Center",
       sourceModuleLabel: "Token",
       linkedModule: "tokenCenter",
@@ -105,8 +147,11 @@ export function getRisks() {
       id: "risk-eval-regression",
       title: "广告策略 Agent 评测出现回归",
       level: "medium",
+      category: "system",
       concern: "v3.1 相比 v3.0 在「大促预算分配」场景得分下降 4.5pt，建议暂缓发布并复查训练数据。",
       status: "in-review",
+      owner: "AI Capability Center 负责人",
+      progress: "复查中 · 训练数据回溯排查",
       sourceModule: "AI Capability Center",
       sourceModuleLabel: "Capability Center · 评估中心",
       linkedModule: "capabilityCenter",
@@ -116,8 +161,11 @@ export function getRisks() {
       id: "risk-autoops-refund-spike",
       title: "客户退款自动执行接近阈值",
       level: "medium",
+      category: "business",
       concern: "过去 24 小时自动退款笔数同比 +38%，虽仍在阈值内，接近触发人工复核上限。",
       status: "pending",
+      owner: "Operator Lab 负责人",
+      progress: "监控中 · 尚未超阈值",
       sourceModule: "Operator Lab",
       sourceModuleLabel: "Organization · 自动经营",
       linkedModule: "operatorLab",
@@ -128,13 +176,46 @@ export function getRisks() {
       id: "risk-license-expiry",
       title: "「新城」店铺 License 30 天后到期",
       level: "low",
+      category: "compliance",
       concern: "当前套餐将于 2026-08-29 到期，建议提前续费避免 Agent 能力被降级。",
       status: "pending",
+      owner: "Cloud Center 负责人",
+      progress: "待处理 · 待续费",
       sourceModule: "Cloud Center",
       sourceModuleLabel: "License",
       linkedModule: "cloudCenter",
       linkedSubView: "licenses",
       detectedAt: "2026-07-28T08:00:00Z",
+    },
+    {
+      id: "risk-content-review-backlog",
+      title: "内容审核积压超过 SLA",
+      level: "medium",
+      category: "content",
+      concern: "Studio Lab 待终审内容已超过 24 小时 SLA，最长一条已积压 26 小时，可能影响本周发布节奏。",
+      status: "pending",
+      owner: "Studio Lab 负责人",
+      progress: "待处理 · 等待 Founder 终审",
+      sourceModule: "Studio Lab",
+      sourceModuleLabel: "内容审核",
+      linkedModule: "studioLab",
+      linkedSubView: "contentReview",
+      detectedAt: "2026-07-29T16:00:00Z",
+    },
+    {
+      id: "risk-device-storage",
+      title: "设备存储空间告警",
+      level: "low",
+      category: "device",
+      concern: "锚点设备 mac-mini-op-0001 磁盘剩余空间低于 15%，建议清理历史素材或扩容，否则可能影响内容生产任务。",
+      status: "pending",
+      owner: "Cloud Center 负责人",
+      progress: "待处理 · 尚未安排清理",
+      sourceModule: "Cloud Center",
+      sourceModuleLabel: "设备管理",
+      linkedModule: "cloudCenter",
+      linkedSubView: "devices",
+      detectedAt: "2026-07-29T09:30:00Z",
     },
   ];
 }
@@ -195,10 +276,13 @@ export function getCloudStatusSummary() {
 
 export function getNotifications() {
   return [
-    { id: "n-1", title: "Token 余额低于预警线", meta: "Cloud Center · Token · 2 小时前", status: "danger", statusLabel: "高风险", linkedModule: "tokenCenter" },
-    { id: "n-2", title: "《都市重生》EP04 等待终审", meta: "Studio Lab · 内容审核 · 4 小时前", status: "info", statusLabel: "待决策", linkedModule: "studioLab", linkedSubView: "contentReview" },
-    { id: "n-3", title: "客服 Agent Prompt v2.3 评测通过", meta: "AI Capability Center · Capability Center · 昨天", status: "success", statusLabel: "待批准", linkedModule: "capabilityCenter" },
-    { id: "n-4", title: "「客服话术包 v4」已上架 Marketplace", meta: "Cloud Center · Marketplace · 2 天前", status: "neutral", statusLabel: "已完成", linkedModule: "marketplaceCenter" },
-    { id: "n-5", title: "广告策略 Agent v3.1 评测出现回归", meta: "AI Capability Center · 评估中心 · 昨天", status: "warning", statusLabel: "需复查", linkedModule: "capabilityCenter" },
+    { id: "n-1", title: "Token 余额低于预警线", meta: "Cloud Center · Token · 2 小时前", status: "danger", statusLabel: "高风险", category: "system", read: false, linkedModule: "tokenCenter" },
+    { id: "n-2", title: "《都市重生》EP04 等待终审", meta: "Studio Lab · 内容审核 · 4 小时前", status: "info", statusLabel: "待决策", category: "approval", read: false, linkedModule: "studioLab", linkedSubView: "contentReview" },
+    { id: "n-3", title: "客服 Agent Prompt v2.3 评测通过", meta: "AI Capability Center · Capability Center · 昨天", status: "success", statusLabel: "待批准", category: "approval", read: false, linkedModule: "capabilityCenter" },
+    { id: "n-4", title: "「客服话术包 v4」已上架 Marketplace", meta: "Cloud Center · Marketplace · 2 天前", status: "neutral", statusLabel: "已完成", category: "business", read: true, linkedModule: "marketplaceCenter" },
+    { id: "n-5", title: "广告策略 Agent v3.1 评测出现回归", meta: "AI Capability Center · 评估中心 · 昨天", status: "warning", statusLabel: "需复查", category: "system", read: true, linkedModule: "capabilityCenter" },
+    { id: "n-6", title: "内容审核积压提醒", meta: "Studio Lab · 内容审核 · 6 小时前", status: "warning", statusLabel: "需关注", category: "content", read: false, linkedModule: "studioLab", linkedSubView: "contentReview" },
+    { id: "n-7", title: "设备存储空间告警", meta: "Cloud Center · 设备管理 · 8 小时前", status: "warning", statusLabel: "需关注", category: "device", read: false, linkedModule: "cloudCenter" },
+    { id: "n-8", title: "检测到一次异常登录尝试", meta: "Cloud Center · 安全中心 · 1 天前", status: "danger", statusLabel: "需核实", category: "security", read: true, linkedModule: "cloudCenter" },
   ];
 }

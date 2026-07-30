@@ -68,8 +68,8 @@ test.describe("Four-product architecture: all four entries", () => {
 // (no 6-group accordion clustering) — every item is directly clickable
 // without expanding a parent group first.
 const STUDIO_TOP_LEVEL_ITEMS = [
-  "AI Video", "AI Article", "AI Live", "AI Short Drama", "AI Audio",
-  "Matrix Accounts", "Publishing Center", "Asset Library", "Brand Assets", "Analytics", "Settings",
+  "AI 视频", "AI 文章", "AI 直播", "AI 短剧", "AI 音频",
+  "矩阵账号", "发布中心", "素材库", "品牌资产", "内容数据", "Studio 设置",
 ];
 
 test.describe("Studio: full navigation and scrolling", () => {
@@ -77,8 +77,8 @@ test.describe("Studio: full navigation and scrolling", () => {
     const errors = collectPageErrors(page);
     await page.goto("/studio");
 
-    await expect(page.getByRole("button", { name: "Workspace", exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Workspace", level: 1 })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Studio 工作台", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Studio 工作台", level: 1 })).toBeVisible();
 
     for (const label of STUDIO_TOP_LEVEL_ITEMS) {
       await page.getByRole("button", { name: label, exact: true }).click();
@@ -94,7 +94,7 @@ test.describe("Studio: full navigation and scrolling", () => {
     // AI Short Drama's list page stacks several cards (projects/
     // characters/episode progress/distribution), which reliably
     // exceeds one screen at Playwright's default 1280x720 viewport.
-    await page.getByRole("button", { name: "AI Short Drama", exact: true }).click();
+    await page.getByRole("button", { name: "AI 短剧", exact: true }).click();
 
     const before = await page.evaluate(() => {
       const el = document.querySelector(".st-content");
@@ -113,8 +113,8 @@ test.describe("Studio: full navigation and scrolling", () => {
 
   test("Studio does not expose the old detached advertising-connector-style global panel and uses account-safe language", async ({ page }) => {
     await page.goto("/studio");
-    await page.getByRole("button", { name: "Matrix Accounts", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Matrix Accounts", level: 1 })).toBeVisible();
+    await page.getByRole("button", { name: "矩阵账号", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "矩阵账号", level: 1 })).toBeVisible();
     // 面向用户的文案不应该出现裸的 Connector 字样
     await expect(page.getByText(/Connector/i)).toHaveCount(0);
   });
@@ -124,8 +124,8 @@ test.describe("Cloud: Nodes (distributed scheduling) page", () => {
   test("Nodes opens and clearly shows distributedCompute is disabled", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/cloud");
-    await page.getByRole("button", { name: "Nodes" }).click();
-    await expect(page.getByRole("heading", { name: "Nodes", level: 1 })).toBeVisible();
+    await page.getByRole("button", { name: "节点调度" }).click();
+    await expect(page.getByRole("heading", { name: "节点调度", level: 1 })).toBeVisible();
     await expect(page.getByText("distributedCompute.enabled = false")).toBeVisible();
     await expect(page.getByRole("heading", { name: "算力总览" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "设备资源池" })).toBeVisible();
@@ -175,12 +175,12 @@ test.describe("Founder: core navigation intact", () => {
     // 它默认平铺。
     await page.goto("/founder");
     await expect(page.getByText("和 AI 秘书说点什么")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Operator Lab", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Operator Lab", exact: true }).click();
-    await expect(page.locator(".fdr-sidebar__subitem", { hasText: "Settings" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Operator 实验室", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Operator 实验室", exact: true }).click();
+    await expect(page.locator(".fdr-sidebar__subitem", { hasText: "经营设置" })).toBeVisible();
 
     await page.goto("/?mode=founder&module=storeCenter");
-    await expect(chevronFor(page, "Operator Lab")).toHaveAttribute("aria-expanded", "true");
-    await expect(page.locator(".fdr-sidebar__subitem.fdr-sidebar__item--active")).toHaveText(/Settings/);
+    await expect(chevronFor(page, "Operator 实验室")).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".fdr-sidebar__subitem.fdr-sidebar__item--active")).toHaveText(/经营设置/);
   });
 });

@@ -11,6 +11,9 @@ import { DemoBadge } from "../../kit/StatusPill.jsx";
 import { EmptyState } from "../../kit/EmptyState.jsx";
 import { TrendLineChart, ComparisonBarChart } from "../../kit/ChartFrame.jsx";
 import { getOperatingLoopSummary, OPERATING_LOOP_PROJECT_ID } from "../../mock/contentMock.js";
+import { getCloudStatusSummary } from "../founderWorkspace/workspaceEntities.js";
+import { getFeaturedDevice } from "../../../demoData/founderDemoData.js";
+import { RestrictedAction } from "../founderWorkspace/WorkspaceKit.jsx";
 
 const RANGE_OPTIONS = [
   { value: "today", label: "今天" },
@@ -28,6 +31,8 @@ export function DashboardModule() {
   const { navigate } = useConsoleNavContext();
   const [range, setRange] = useState("7d");
   const loopSummary = getOperatingLoopSummary();
+  const cloudStatus = getCloudStatusSummary();
+  const featuredDevice = getFeaturedDevice();
   const [summary, setSummary] = useState({ connected: false, data: null });
   const [stats, setStats] = useState({ connected: false, data: null });
   const [analytics, setAnalytics] = useState({ connected: false, data: null });
@@ -53,7 +58,12 @@ export function DashboardModule() {
       <PageHeader
         title="今日经营"
         subtitle="经营全景 — 更完整的趋势与明细"
-        actions={<SegmentedControl options={RANGE_OPTIONS} value={range} onChange={setRange} />}
+        actions={
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <SegmentedControl options={RANGE_OPTIONS} value={range} onChange={setRange} />
+            <RestrictedAction label="导出经营报表" />
+          </div>
+        }
       />
 
       <div style={{ marginBottom: "var(--space-32)" }}>
@@ -118,6 +128,20 @@ export function DashboardModule() {
               { label: "待人工接管", value: loopSummary.humanTakeoverRequests, onClick: () => navigate("customerServiceCenter", { subView: "takeover" }) },
               { label: "待复盘", value: loopSummary.reviewPending, onClick: () => navigate("contentCenter", { subView: "projects", entityId: OPERATING_LOOP_PROJECT_ID }) },
             ]}
+          />
+        </div>
+
+        <div className="fdr-card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-8)" }}>
+            <h3 className="fdr-type-heading-card" style={{ margin: 0 }}>设备与云端状态</h3>
+            <DemoBadge />
+          </div>
+          <p className="fdr-type-body-small" style={{ color: "var(--text-secondary)", margin: "0 0 var(--space-12)" }}>{cloudStatus.summary}</p>
+          <KeyValueList
+            items={[
+              ...cloudStatus.metrics.map((m) => ({ label: m.label, value: m.value, onClick: () => navigate("cloudStatus") })),
+              featuredDevice ? { label: "锚点设备", value: `${featuredDevice.id} · ${featuredDevice.health === "healthy" ? "健康" : featuredDevice.health}`, onClick: () => navigate("cloudCenter", { subView: "devices" }) } : null,
+            ].filter(Boolean)}
           />
         </div>
       </div>

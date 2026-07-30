@@ -19,11 +19,18 @@ export function ContentProjectsPage({ navigate }) {
   const [createOpen, setCreateOpen] = useState(false);
 
   const rows = typeFilter ? contentProjects.filter((p) => p.contentType === typeFilter) : contentProjects;
+  const reviewQueue = contentProjects.filter((p) => p.status === "in_review");
+  const byOwner = contentProjects.reduce((acc, p) => {
+    (acc[p.ownerAgentOrPerson] ??= []).push(p);
+    return acc;
+  }, {});
+  const byDeadline = [...contentProjects].sort((a, b) => new Date(a.expectedCompleteAt) - new Date(b.expectedCompleteAt));
+  const [now] = useState(() => Date.now());
 
   return (
     <div>
       <Card
-        title="内容项目"
+        title="内容项目 · 生产队列"
         action={<span className="st-btn-row"><button type="button" className="st-btn st-btn--primary st-btn-sm" onClick={() => setCreateOpen(true)}>＋ 新建内容项目</button><DemoBadge /></span>}
       >
         <div className="st-filter-bar">
@@ -53,6 +60,62 @@ export function ContentProjectsPage({ navigate }) {
           onRowClick={(r) => navigate("director", { projectId: r.projectId })}
         />
       </Card>
+
+      <Card title="内容日历（按预计完成/发布时间排序）" action={<DemoBadge />}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {byDeadline.map((p) => (
+            <div key={p.projectId} className="st-btn-row" style={{ justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)", cursor: "pointer" }} onClick={() => navigate("director", { projectId: p.projectId })} role="button" tabIndex={0}>
+              <span style={{ fontSize: 12, color: "var(--text-secondary)", minWidth: 140 }}>{formatDateTime(p.expectedCompleteAt)}</span>
+              <span style={{ fontSize: 13, flex: 1 }}>{p.name}</span>
+              <Pill tone={PROJECT_STATUS_TONE[p.status]}>{PROJECT_STATUS_LABEL[p.status]}</Pill>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <div className="st-field-row" style={{ alignItems: "stretch" }}>
+        <Card title="任务分配（按负责人/Agent）">
+          <Table
+            columns={[
+              { key: "owner", label: "负责人/Agent" },
+              { key: "count", label: "在办项目数" },
+              { key: "projects", label: "项目", render: (r) => r.projects.join("、") },
+            ]}
+            rows={Object.entries(byOwner).map(([owner, list]) => ({ id: owner, owner, count: list.length, projects: list.map((p) => p.name) }))}
+          />
+        </Card>
+        <Card title="审核队列">
+          <Table
+            columns={[
+              { key: "name", label: "项目名称" },
+              { key: "contentType", label: "内容类型", render: (r) => CONTENT_TYPE_LABEL[r.contentType] },
+              { key: "owner", label: "负责人/Agent", render: (r) => r.ownerAgentOrPerson },
+            ]}
+            rows={reviewQueue}
+            onRowClick={(r) => navigate("director", { projectId: r.projectId })}
+            empty="暂无待审核项目"
+          />
+        </Card>
+      </div>
+
+      <Card title="截止时间">
+        <Table
+          columns={[
+            { key: "name", label: "项目名称" },
+            { key: "expectedCompleteAt", label: "截止时间", render: (r) => formatDateTime(r.expectedCompleteAt) },
+            { key: "remaining", label: "距离截止", render: (r) => {
+              const diffDays = Math.round((new Date(r.expectedCompleteAt).getTime() - now) / 86400000);
+              if (Number.isNaN(diffDays)) return "—";
+              if (diffDays < 0) return <Pill tone="danger">已逾期 {Math.abs(diffDays)} 天</Pill>;
+              if (diffDays === 0) return <Pill tone="warning">今天截止</Pill>;
+              return `${diffDays} 天后`;
+            } },
+          ]}
+          rows={byDeadline}
+          onRowClick={(r) => navigate("director", { projectId: r.projectId })}
+        />
+      </Card>
+
       <ProjectCreationModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}

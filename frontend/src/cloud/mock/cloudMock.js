@@ -70,10 +70,10 @@ function seedDevices() {
 
 function seedLicenses() {
   return [
-    { id: "license-1", operatorId: "operator-1", package: "标准版", entitlements: ["内容生成", "客服自动化", "Agent 演化(受限)"], expiresAt: "2027-03-12", status: "active" },
-    { id: "license-2", operatorId: "operator-2", package: "标准版", entitlements: ["内容生成", "客服自动化", "Agent 演化(受限)"], expiresAt: "2027-04-02", status: "active" },
-    { id: "license-3", operatorId: "operator-3", package: "基础版", entitlements: ["内容生成"], expiresAt: "2027-05-20", status: "active" },
-    { id: "license-4", operatorId: "operator-4", package: "标准版", entitlements: ["内容生成", "客服自动化"], expiresAt: "2026-12-15", status: "suspended" },
+    { id: "license-1", operatorId: "operator-1", package: "标准版", entitlements: ["内容生成", "客服自动化", "Agent 演化(受限)"], effectiveAt: "2026-03-12", expiresAt: "2027-03-12", status: "active" },
+    { id: "license-2", operatorId: "operator-2", package: "标准版", entitlements: ["内容生成", "客服自动化", "Agent 演化(受限)"], effectiveAt: "2026-04-02", expiresAt: "2027-04-02", status: "active" },
+    { id: "license-3", operatorId: "operator-3", package: "基础版", entitlements: ["内容生成"], effectiveAt: "2026-05-20", expiresAt: "2027-05-20", status: "active" },
+    { id: "license-4", operatorId: "operator-4", package: "标准版", entitlements: ["内容生成", "客服自动化"], effectiveAt: "2026-06-15", expiresAt: "2026-12-15", status: "suspended" },
   ];
 }
 
@@ -99,19 +99,19 @@ function seedOtaReleases() {
   const now = Date.now();
   return [
     {
-      id: "ota-4.3.1", version: "4.3.1", channel: "stable", status: "rolled_out",
+      id: "ota-4.3.1", packageName: "founder-console-v4.3.1.pkg", version: "4.3.1", channel: "stable", status: "rolled_out",
       targetGroup: "全部稳定通道设备", scheduledAt: new Date(now - 5 * 86400000).toISOString(),
-      rolloutProgress: 100, failures: 0, notes: "客服中心会话稳定性修复",
+      grayPercentage: 100, rolloutProgress: 100, failures: 0, notes: "客服中心会话稳定性修复",
     },
     {
-      id: "ota-4.4.0-beta", version: "4.4.0", channel: "beta", status: "in_progress",
+      id: "ota-4.4.0-beta", packageName: "founder-console-v4.4.0-beta.pkg", version: "4.4.0", channel: "beta", status: "in_progress",
       targetGroup: "beta 通道设备（1台）", scheduledAt: new Date(now - 2 * 3600000).toISOString(),
-      rolloutProgress: 60, failures: 0, notes: "Agent Evolution 基础能力灰度",
+      grayPercentage: 25, rolloutProgress: 60, failures: 0, notes: "Agent Evolution 基础能力灰度",
     },
     {
-      id: "ota-4.2.2-failed", version: "4.2.2", channel: "stable", status: "failed",
+      id: "ota-4.2.2-failed", packageName: "founder-console-v4.2.2.pkg", version: "4.2.2", channel: "stable", status: "failed",
       targetGroup: "operator-4 设备", scheduledAt: new Date(now - 10 * 86400000).toISOString(),
-      rolloutProgress: 40, failures: 1, notes: "更新包校验失败，已自动回滚",
+      grayPercentage: 100, rolloutProgress: 40, failures: 1, notes: "更新包校验失败，已自动回滚",
     },
   ];
 }
@@ -225,6 +225,52 @@ export function pauseOtaRelease(releaseId) {
   return { ok: true };
 }
 
+export function resumeOtaRelease(releaseId) {
+  const state = repository.get();
+  const release = state.otaReleases.find((r) => r.id === releaseId);
+  if (!release) return { ok: false, error: "发布记录不存在" };
+  if (release.status !== "paused") return { ok: false, error: "只能继续已暂停的发布" };
+
+  repository.update((s) => ({
+    ...s,
+    otaReleases: s.otaReleases.map((r) => (r.id === releaseId ? { ...r, status: "in_progress" } : r)),
+  }));
+  return { ok: true };
+}
+
+/**
+ * 回滚发布——把该发布标记为已回滚，并为其目标设备群里第一台已知设备
+ * 追加一条回滚记录（演示：不真实下发任何指令）。
+ */
+export function rollbackOtaRelease(releaseId) {
+  const state = repository.get();
+  const release = state.otaReleases.find((r) => r.id === releaseId);
+  if (!release) return { ok: false, error: "发布记录不存在" };
+  if (release.status === "rolled_back") return { ok: false, error: "该发布已回滚" };
+
+  const priorRelease = state.otaReleases.find((r) => r.channel === release.channel && r.status === "rolled_out" && r.id !== release.id);
+  const toVersion = priorRelease?.version ?? "上一稳定版本";
+  const targetDevice = state.devices.find((d) => d.updateChannel === release.channel) ?? state.devices[0];
+
+  repository.update((s) => ({
+    ...s,
+    otaReleases: s.otaReleases.map((r) => (r.id === releaseId ? { ...r, status: "rolled_back", rolloutProgress: 0 } : r)),
+    rollbacks: [
+      {
+        id: `rollback-${releaseId}-${Date.now()}`,
+        deviceId: targetDevice?.id ?? "unknown-device",
+        otaReleaseId: releaseId,
+        fromVersion: release.version,
+        toVersion,
+        rolledBackAt: new Date().toISOString(),
+        reason: "Founder 手动触发回滚（演示）",
+      },
+      ...s.rollbacks,
+    ],
+  }));
+  return { ok: true };
+}
+
 export function authorizeDiagnostic(deviceId, hours = 24) {
   const state = repository.get();
   const device = state.devices.find((d) => d.id === deviceId);
@@ -235,6 +281,55 @@ export function authorizeDiagnostic(deviceId, hours = 24) {
     devices: s.devices.map((d) => (d.id === deviceId ? { ...d, diagnosticPermission: `已授权（${hours}小时，刚刚生效）` } : d)),
   }));
   return { ok: true, expiresInHours: hours };
+}
+
+// ---------------------------------------------------------------
+// 许可证操作——暂停/续期/转移都是本地演示状态变更，不触发真实计费
+// 或真实权益下发。
+// ---------------------------------------------------------------
+
+export function suspendLicense(licenseId) {
+  const state = repository.get();
+  const license = state.licenses.find((l) => l.id === licenseId);
+  if (!license) return { ok: false, error: "许可证不存在" };
+  if (license.status === "suspended") return { ok: false, error: "该许可证已是暂停状态" };
+
+  repository.update((s) => ({
+    ...s,
+    licenses: s.licenses.map((l) => (l.id === licenseId ? { ...l, status: "suspended" } : l)),
+  }));
+  return { ok: true };
+}
+
+export function renewLicense(licenseId, extendDays = 365) {
+  const state = repository.get();
+  const license = state.licenses.find((l) => l.id === licenseId);
+  if (!license) return { ok: false, error: "许可证不存在" };
+
+  const base = new Date(license.expiresAt).getTime();
+  const from = Number.isFinite(base) ? Math.max(base, Date.now()) : Date.now();
+  const nextExpiresAt = new Date(from + extendDays * 86400000).toISOString().slice(0, 10);
+
+  repository.update((s) => ({
+    ...s,
+    licenses: s.licenses.map((l) => (l.id === licenseId ? { ...l, status: "active", expiresAt: nextExpiresAt } : l)),
+  }));
+  return { ok: true, expiresAt: nextExpiresAt };
+}
+
+export function transferLicense(licenseId, targetOperatorId) {
+  const state = repository.get();
+  const license = state.licenses.find((l) => l.id === licenseId);
+  if (!license) return { ok: false, error: "许可证不存在" };
+  const target = state.operators.find((o) => o.id === targetOperatorId);
+  if (!target) return { ok: false, error: "目标经营者不存在" };
+  if (target.id === license.operatorId) return { ok: false, error: "目标经营者与当前持有者相同" };
+
+  repository.update((s) => ({
+    ...s,
+    licenses: s.licenses.map((l) => (l.id === licenseId ? { ...l, operatorId: targetOperatorId } : l)),
+  }));
+  return { ok: true, targetName: target.name };
 }
 
 export function resolveSupportCase(caseId) {

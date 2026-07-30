@@ -62,7 +62,16 @@ export function getAnalyticsSummary({ storeId = "all", range = "7d" } = {}) {
 
   const channelBreakdown = stores.map((s, idx) => {
     const storeGmv = perStoreTrends[idx].reduce((sum, d) => sum + d.gmv, 0);
-    return { storeId: s.id, storeName: s.name, platform: s.platform, gmv: storeGmv, share: totalGmv > 0 ? storeGmv / totalGmv : 0 };
+    const storeOrders = perStoreTrends[idx].reduce((sum, d) => sum + d.orders, 0);
+    return {
+      storeId: s.id,
+      storeName: s.name,
+      platform: s.platform,
+      gmv: storeGmv,
+      orders: storeOrders,
+      avgOrderValue: storeOrders > 0 ? Math.round(storeGmv / storeOrders) : 0,
+      share: totalGmv > 0 ? storeGmv / totalGmv : 0,
+    };
   });
 
   const topProducts = [

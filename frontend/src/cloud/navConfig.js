@@ -22,13 +22,13 @@
  * 可见的顶级列表里，见 LEGACY_CLOUD_KEYS。
  */
 export const NAV_ITEMS = [
-  { key: "devices", label: "Devices", icon: "▣" },
-  { key: "otaSupport", label: "OTA", icon: "⟲" },
-  { key: "licenses", label: "License", icon: "☑" },
+  { key: "devices", label: "设备管理", icon: "▣" },
+  { key: "otaSupport", label: "OTA 更新", icon: "⟲" },
+  { key: "licenses", label: "许可证", icon: "☑" },
   // 阶段"四端产品体系 V1"§7 新增：分布式调度——展示未来由 Operator
   // Cloud 调度经营者 Mac mini 空闲算力的架构预留能力，本轮全部只读
   // 模拟数据，distributedCompute.enabled 恒为 false。
-  { key: "distributedScheduling", label: "Nodes", icon: "⟁" },
+  { key: "distributedScheduling", label: "节点调度", icon: "⟁" },
 ];
 
 /** Retired top-level keys that stay individually resolvable (still real pages in PAGE_COMPONENTS). */

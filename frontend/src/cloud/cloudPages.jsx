@@ -7,8 +7,13 @@ import {
   getLicenseForOperator,
   getOperator,
   pauseOtaRelease,
+  renewLicense,
   resolveSupportCase,
+  resumeOtaRelease,
   retryOtaRelease,
+  rollbackOtaRelease,
+  suspendLicense,
+  transferLicense,
 } from "./mock/cloudMock.js";
 import { EDITIONS, POLICY_KEYS, hasPolicy } from "../shared/editionPolicy.js";
 import {
@@ -35,6 +40,25 @@ import {
 
 const HEALTH_LABEL = { healthy: "健康", attention: "需关注", offline: "离线" };
 const HEALTH_TONE = { healthy: "success", attention: "warning", offline: "danger" };
+const LICENSE_STATUS_LABEL = { active: "有效", suspended: "已暂停" };
+const LICENSE_STATUS_TONE = { active: "success", suspended: "danger" };
+const CHANNEL_LABEL = { stable: "正式通道", beta: "灰度通道" };
+
+/** Token 状态分级——余额/额度信息在设备列表里只需要一眼看出"够不够
+ * 用"，具体数字放在设备详情里，不在列表里重复堆两遍。 */
+function tokenStatusOf(tokenBalance) {
+  if (tokenBalance <= 0) return { label: "已耗尽", tone: "danger" };
+  if (tokenBalance < 1000) return { label: "偏低", tone: "warning" };
+  return { label: "充足", tone: "success" };
+}
+
+/** 告警文案——离线/需关注设备各自有明确的告警原因，健康设备无告警。 */
+function alertOf(device) {
+  if (device.health === "offline") return { label: "设备离线超时", tone: "danger" };
+  if (device.health === "attention") return { label: "需人工关注", tone: "warning" };
+  if (device.licenseState === "suspended") return { label: "许可证已暂停", tone: "danger" };
+  return { label: "无", tone: "neutral" };
+}
 
 export function Pill({ tone = "neutral", children }) {
   return <span className={`cc-pill cc-pill--${tone}`}>{children}</span>;
@@ -161,8 +185,8 @@ export function DeviceDetail({ device, onBack }) {
           <div><dt style={{ color: "#94a3b8", fontSize: 11 }}>Evolution Engine 版本</dt><dd>{device.evolutionEngineVersion}</dd></div>
           <div><dt style={{ color: "#94a3b8", fontSize: 11 }}>记忆 Schema 版本</dt><dd>{device.memorySchemaVersion}</dd></div>
           <div><dt style={{ color: "#94a3b8", fontSize: 11 }}>最近心跳</dt><dd>{new Date(device.lastHeartbeatAt).toLocaleString("zh-CN")}</dd></div>
-          <div><dt style={{ color: "#94a3b8", fontSize: 11 }}>更新通道</dt><dd>{device.updateChannel}</dd></div>
-          <div><dt style={{ color: "#94a3b8", fontSize: 11 }}>许可状态</dt><dd>{device.licenseState}（{license?.package}）</dd></div>
+          <div><dt style={{ color: "#94a3b8", fontSize: 11 }}>更新通道</dt><dd>{CHANNEL_LABEL[device.updateChannel] ?? device.updateChannel}</dd></div>
+          <div><dt style={{ color: "#94a3b8", fontSize: 11 }}>许可状态</dt><dd>{LICENSE_STATUS_LABEL[device.licenseState] ?? device.licenseState}（{license?.package}）</dd></div>
           <div><dt style={{ color: "#94a3b8", fontSize: 11 }}>Token 余额</dt><dd>{device.tokenBalance.toLocaleString()}</dd></div>
           <div><dt style={{ color: "#94a3b8", fontSize: 11 }}>远程诊断权限</dt><dd>{device.diagnosticPermission}</dd></div>
           <div style={{ gridColumn: "1/-1" }}><dt style={{ color: "#94a3b8", fontSize: 11 }}>本地数据策略</dt><dd>{device.localDataPolicy}</dd></div>
@@ -190,17 +214,38 @@ export function DevicesPage({ filterOperatorId }) {
 
   return (
     <div className="cc-card">
-      <h3 className="cc-card-title">设备{filterOperatorId ? `（经营者：${getOperator(filterOperatorId)?.name}）` : ""}</h3>
+      <h3 className="cc-card-title">设备列表{filterOperatorId ? `（经营者：${getOperator(filterOperatorId)?.name}）` : ""}</h3>
       <Table
         columns={[
-          { key: "id", label: "设备ID" },
-          { key: "operator", label: "经营者", render: (r) => getOperator(r.operatorId)?.name },
-          { key: "systemVersion", label: "系统版本" },
-          { key: "agentRuntimeVersion", label: "Runtime版本" },
+          { key: "id", label: "设备编号" },
+          { key: "operator", label: "Operator", render: (r) => getOperator(r.operatorId)?.name },
+          { key: "model", label: "设备型号" },
+          { key: "health", label: "在线状态", render: (r) => <Pill tone={HEALTH_TONE[r.health]}>{HEALTH_LABEL[r.health]}</Pill> },
+          { key: "systemVersion", label: "当前版本" },
+          {
+            key: "license", label: "许可证", render: (r) => {
+              const license = getLicenseForOperator(r.operatorId);
+              return license ? <Pill tone={LICENSE_STATUS_TONE[license.status]}>{license.package} · {LICENSE_STATUS_LABEL[license.status]}</Pill> : <Pill tone="neutral">无</Pill>;
+            },
+          },
+          {
+            key: "tokenStatus", label: "Token 状态", render: (r) => {
+              const status = tokenStatusOf(r.tokenBalance);
+              return <Pill tone={status.tone}>{status.label}（{r.tokenBalance.toLocaleString()}）</Pill>;
+            },
+          },
           { key: "lastHeartbeatAt", label: "最近心跳", render: (r) => new Date(r.lastHeartbeatAt).toLocaleString("zh-CN") },
-          { key: "health", label: "健康状态", render: (r) => <Pill tone={HEALTH_TONE[r.health]}>{HEALTH_LABEL[r.health]}</Pill> },
-          { key: "updateChannel", label: "更新通道" },
-          { key: "tokenBalance", label: "Token余额", render: (r) => r.tokenBalance.toLocaleString() },
+          {
+            key: "alert", label: "告警", render: (r) => {
+              const alert = alertOf(r);
+              return <Pill tone={alert.tone}>{alert.label}</Pill>;
+            },
+          },
+          {
+            key: "actions", label: "远程操作", render: (r) => (
+              <button type="button" className="cc-btn" onClick={(e) => { e.stopPropagation(); setSelectedId(r.id); }}>查看 / 远程诊断</button>
+            ),
+          },
         ]}
         rows={rows}
         onRowClick={(row) => setSelectedId(row.id)}
@@ -209,21 +254,82 @@ export function DevicesPage({ filterOperatorId }) {
   );
 }
 
+function LicenseTransferModal({ license, operators, onClose, onConfirm }) {
+  const [targetId, setTargetId] = useState(operators.find((o) => o.id !== license.operatorId)?.id ?? "");
+  return (
+    <div className="cc-card" style={{ position: "fixed", top: "20%", left: "50%", transform: "translateX(-50%)", zIndex: 50, width: 360, boxShadow: "0 12px 32px rgba(0,0,0,.4)" }}>
+      <h3 className="cc-card-title">转移许可证 {license.id}</h3>
+      <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 10px 0" }}>当前持有：{getOperator(license.operatorId)?.name}</p>
+      <select className="cc-btn" style={{ width: "100%", marginBottom: 12 }} value={targetId} onChange={(e) => setTargetId(e.target.value)}>
+        {operators.filter((o) => o.id !== license.operatorId).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+      </select>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button className="cc-btn" onClick={onClose}>取消</button>
+        <button className="cc-btn cc-btn--primary" onClick={() => onConfirm(targetId)} disabled={!targetId}>确认转移</button>
+      </div>
+    </div>
+  );
+}
+
 export function LicensesPage() {
-  const { licenses } = getCloudState();
+  const [, forceRerender] = useState(0);
+  const { licenses, operators } = getCloudState();
+  const [transferTarget, setTransferTarget] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const refresh = () => forceRerender((n) => n + 1);
+
+  function handleSuspend(id) {
+    const result = suspendLicense(id);
+    setMsg(result.ok ? "已暂停该许可证（演示）" : result.error);
+    refresh();
+  }
+  function handleRenew(id) {
+    const result = renewLicense(id, 365);
+    setMsg(result.ok ? `已续期至 ${result.expiresAt}（演示）` : result.error);
+    refresh();
+  }
+  function handleTransferConfirm(targetOperatorId) {
+    const result = transferLicense(transferTarget.id, targetOperatorId);
+    setMsg(result.ok ? `已转移给 ${result.targetName}（演示）` : result.error);
+    setTransferTarget(null);
+    refresh();
+  }
+
   return (
     <div className="cc-card">
-      <h3 className="cc-card-title">许可与套餐权益</h3>
+      <h3 className="cc-card-title">许可证列表</h3>
+      {msg ? <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 10px 0" }}>{msg}</p> : null}
       <Table
         columns={[
-          { key: "operator", label: "经营者", render: (r) => getOperator(r.operatorId)?.name },
+          { key: "id", label: "许可证编号" },
+          { key: "operator", label: "Operator", render: (r) => getOperator(r.operatorId)?.name },
+          { key: "device", label: "设备", render: (r) => getDevicesForOperator(r.operatorId).map((d) => d.id).join("、") || "—" },
+          { key: "version", label: "版本", render: (r) => getDevicesForOperator(r.operatorId)[0]?.systemVersion ?? "—" },
           { key: "package", label: "套餐" },
-          { key: "entitlements", label: "权益", render: (r) => r.entitlements.join("、") },
+          { key: "entitlements", label: "授权能力", render: (r) => r.entitlements.join("、") },
+          { key: "effectiveAt", label: "生效时间" },
           { key: "expiresAt", label: "到期时间" },
-          { key: "status", label: "状态", render: (r) => <Pill tone={r.status === "active" ? "success" : "danger"}>{r.status === "active" ? "有效" : "已暂停"}</Pill> },
+          { key: "status", label: "状态", render: (r) => <Pill tone={LICENSE_STATUS_TONE[r.status]}>{LICENSE_STATUS_LABEL[r.status]}</Pill> },
+          {
+            key: "actions", label: "操作", render: (r) => (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {r.status === "active" ? <button className="cc-btn" onClick={() => handleSuspend(r.id)}>暂停</button> : null}
+                <button className="cc-btn" onClick={() => handleRenew(r.id)}>续期</button>
+                <button className="cc-btn" onClick={() => setTransferTarget(r)}>转移</button>
+              </div>
+            ),
+          },
         ]}
         rows={licenses}
       />
+      {transferTarget ? (
+        <LicenseTransferModal
+          license={transferTarget}
+          operators={operators}
+          onClose={() => setTransferTarget(null)}
+          onConfirm={handleTransferConfirm}
+        />
+      ) : null}
     </div>
   );
 }
@@ -248,6 +354,7 @@ export function TokenMeteringPage() {
         <Table
           columns={[
             { key: "operator", label: "经营者", render: (r) => getOperator(r.operatorId)?.name },
+            { key: "device", label: "关联设备", render: (r) => getDevicesForOperator(r.operatorId).map((d) => d.id).join("、") || "—" },
             { key: "tokensUsed", label: "已用", render: (r) => r.tokensUsed.toLocaleString() },
             { key: "packageAllowance", label: "套餐额度", render: (r) => r.packageAllowance.toLocaleString() },
             { key: "usage", label: "使用率", render: (r) => `${Math.round((r.tokensUsed / r.packageAllowance) * 100)}%` },
@@ -276,24 +383,35 @@ export function OtaSupportPage() {
   return (
     <div>
       <div className="cc-card">
-        <h3 className="cc-card-title">OTA 发布</h3>
+        <h3 className="cc-card-title">更新包 / OTA 发布</h3>
         <Table
           columns={[
-            { key: "version", label: "版本" },
-            { key: "channel", label: "通道" },
-            { key: "targetGroup", label: "目标分组" },
-            { key: "rolloutProgress", label: "进度", render: (r) => `${r.rolloutProgress}%` },
+            { key: "packageName", label: "更新包" },
+            { key: "version", label: "目标版本" },
+            { key: "channel", label: "发布通道", render: (r) => CHANNEL_LABEL[r.channel] ?? r.channel },
+            { key: "targetGroup", label: "目标设备" },
+            { key: "grayPercentage", label: "灰度比例", render: (r) => `${r.grayPercentage}%` },
+            { key: "scheduledAt", label: "更新时间", render: (r) => new Date(r.scheduledAt).toLocaleString("zh-CN") },
+            { key: "rolloutProgress", label: "更新进度", render: (r) => `${r.rolloutProgress}%` },
+            {
+              key: "failedDevices", label: "失败设备", render: (r) => {
+                const failedDeviceIds = rollbacks.filter((rb) => rb.otaReleaseId === r.id).map((rb) => rb.deviceId);
+                return r.failures > 0 ? (failedDeviceIds.join("、") || `${r.failures} 台`) : "无";
+              },
+            },
             { key: "status", label: "状态", render: (r) => (
-              <Pill tone={r.status === "rolled_out" ? "success" : r.status === "failed" ? "danger" : r.status === "paused" ? "neutral" : "info"}>
-                {{ rolled_out: "已完成", in_progress: "进行中", failed: "失败", paused: "已暂停" }[r.status]}
+              <Pill tone={r.status === "rolled_out" ? "success" : r.status === "failed" ? "danger" : r.status === "paused" ? "neutral" : r.status === "rolled_back" ? "warning" : "info"}>
+                {{ rolled_out: "已完成", in_progress: "进行中", failed: "失败", paused: "已暂停", rolled_back: "已回滚" }[r.status]}
               </Pill>
             ) },
             { key: "notes", label: "说明" },
             {
               key: "actions", label: "操作", render: (r) => (
-                <div style={{ display: "flex", gap: 6 }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {hasPolicy(EDITIONS.CLOUD, POLICY_KEYS.OTA_RELEASE_MANAGE) && r.status === "failed" ? <button className="cc-btn" onClick={() => { retryOtaRelease(r.id); refresh(); }}>重试</button> : null}
                   {hasPolicy(EDITIONS.CLOUD, POLICY_KEYS.OTA_RELEASE_MANAGE) && r.status === "in_progress" ? <button className="cc-btn" onClick={() => { pauseOtaRelease(r.id); refresh(); }}>暂停</button> : null}
+                  {hasPolicy(EDITIONS.CLOUD, POLICY_KEYS.OTA_RELEASE_MANAGE) && r.status === "paused" ? <button className="cc-btn" onClick={() => { resumeOtaRelease(r.id); refresh(); }}>继续</button> : null}
+                  {hasPolicy(EDITIONS.CLOUD, POLICY_KEYS.OTA_RELEASE_MANAGE) && (r.status === "in_progress" || r.status === "paused" || r.status === "failed") ? <button className="cc-btn" onClick={() => { rollbackOtaRelease(r.id); refresh(); }}>回滚</button> : null}
                 </div>
               ),
             },
@@ -321,7 +439,7 @@ export function OtaSupportPage() {
           columns={[
             { key: "subject", label: "主题" },
             { key: "operator", label: "经营者", render: (r) => getOperator(r.operatorId)?.name },
-            { key: "priority", label: "优先级", render: (r) => <Pill tone={r.priority === "high" ? "danger" : "neutral"}>{r.priority}</Pill> },
+            { key: "priority", label: "优先级", render: (r) => <Pill tone={r.priority === "high" ? "danger" : "neutral"}>{{ high: "高", medium: "中", low: "低" }[r.priority] ?? r.priority}</Pill> },
             { key: "diagnosticAuthorized", label: "诊断授权", render: (r) => (r.diagnosticAuthorized ? "已授权" : "未授权") },
             { key: "status", label: "状态", render: (r) => <Pill tone={r.status === "resolved" ? "success" : r.status === "in_progress" ? "info" : "warning"}>{{ open: "待处理", in_progress: "处理中", resolved: "已解决" }[r.status]}</Pill> },
             {
