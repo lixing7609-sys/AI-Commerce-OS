@@ -75,7 +75,7 @@ function CloudConsoleShell() {
           {(() => {
             const PageComponent = PAGE_COMPONENTS[activePage];
             return PageComponent ? (
-              <PageComponent navigate={navigate} params={params} />
+              <PageComponent navigate={navigate} params={params} activeKey={activePage} />
             ) : (
               <div className="cc-empty">未找到页面{activePage ? `“${activePage}”` : ""}</div>
             );

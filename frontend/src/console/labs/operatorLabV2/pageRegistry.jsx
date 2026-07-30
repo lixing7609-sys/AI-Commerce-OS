@@ -1,16 +1,15 @@
-import SecretaryPage from "../../../operator-preview/pages/SecretaryPage.jsx";
-import SettingsPage from "../../../operator-preview/pages/SettingsPage.jsx";
-import { AIGrowthPage, CostTokenPage } from "../../../operator-preview/pages/AIGrowthPage.jsx";
-import ShopCenterContent from "../../../shared/products/operator/ShopCenterContent.jsx";
-import { STORE_DETAIL_EXTRA_TABS } from "../../modules/storeCenter/storeDetailExtraTabs.jsx";
-import { StoreConnectionCenter } from "../StoreConnectionCenter.jsx";
 import { WorkbenchPage } from "./pages/WorkbenchPage.jsx";
 import { ContentRedirectNotice } from "./pages/ContentRedirectNotice.jsx";
 import { DirectModuleRedirect } from "./pages/DirectModuleRedirect.jsx";
 import { AdOpsPage } from "./pages/AdOpsPage.jsx";
 import { CustomersPage } from "./pages/CustomersPage.jsx";
-import { AutoOpsPage } from "./pages/AutoOpsPage.jsx";
 import { AnalyticsPage } from "./pages/AnalyticsPage.jsx";
+import { MarketingPage } from "./pages/MarketingPage.jsx";
+import { BrandPage } from "./pages/BrandPage.jsx";
+import { AiSecretaryWorkbenchPage } from "./pages/AiSecretaryWorkbenchPage.jsx";
+import { FinanceProfitPage } from "./pages/FinanceProfitPage.jsx";
+import { OrganizationPage } from "./pages/OrganizationPage.jsx";
+import { SettingsWorkbenchPage } from "./pages/SettingsWorkbenchPage.jsx";
 
 /**
  * Operator 实验室 v2 唯一权威 key -> 组件映射（阶段 Founder
@@ -35,24 +34,28 @@ import { AnalyticsPage } from "./pages/AnalyticsPage.jsx";
  */
 export const OPERATOR_V2_PAGE_COMPONENTS = {
   workbench: ({ navigate }) => <WorkbenchPage navigate={navigate} />,
-  secretary: ({ navigate, entityId }) => <SecretaryPage onNavigate={navigate} initialDetail={entityId} />,
-  // `extraDetailTabs`：Founder 专属研发/诊断增强层（店铺详情页的
-  // "平台连接器"标签），旧版 OperatorLab.jsx 通过 `founderOverlay` prop
-  // 注入同一份 `STORE_DETAIL_EXTRA_TABS`——这里直接传入，效果不变，
-  // 独立 Operator（`operator-preview/pageRegistry.jsx`）永远拿不到，
-  // 行为不变。
-  shops: () => <ShopCenterContent extraDetailTabs={STORE_DETAIL_EXTRA_TABS} />,
   products: ({ rootNavigate }) => <DirectModuleRedirect rootNavigate={rootNavigate} moduleKey="productCenter" />,
-  content: ({ rootNavigate }) => <ContentRedirectNotice onGoToStudio={() => rootNavigate("studioLab", { subView: "contentProjects" })} />,
-  adOps: () => <AdOpsPage />,
   orders: ({ rootNavigate }) => <DirectModuleRedirect rootNavigate={rootNavigate} moduleKey="orderCenter" />,
   customers: () => <CustomersPage />,
   customerService: ({ rootNavigate }) => <DirectModuleRedirect rootNavigate={rootNavigate} moduleKey="customerServiceCenter" />,
-  approvals: ({ rootNavigate }) => <DirectModuleRedirect rootNavigate={rootNavigate} moduleKey="approvalCenter" />,
-  growth: () => <AIGrowthPage />,
-  costToken: () => <CostTokenPage />,
+  marketing: ({ rootNavigate }) => <MarketingPage rootNavigate={rootNavigate} />,
+  adOps: () => <AdOpsPage />,
+  brand: ({ rootNavigate }) => <BrandPage rootNavigate={rootNavigate} />,
+  aiSecretary: ({ navigate, entityId, activeKey }) => <AiSecretaryWorkbenchPage navigate={navigate} entityId={entityId} activeKey={activeKey} />,
   analytics: () => <AnalyticsPage />,
-  autoOps: () => <AutoOpsPage />,
-  storeConnection: () => <StoreConnectionCenter />,
-  settings: () => <SettingsPage />,
+  financeProfit: ({ rootNavigate, activeKey }) => <FinanceProfitPage rootNavigate={rootNavigate} activeKey={activeKey} />,
+  organization: ({ activeKey }) => <OrganizationPage activeKey={activeKey} />,
+  settings: ({ activeKey }) => <SettingsWorkbenchPage activeKey={activeKey} />,
+  // 以下是被吸收进上面六个组合页面的旧 key——不再是 OPERATOR_V2_NAV_ITEMS
+  // 的顶级子项，但仍然可以通过旧的 `?module=operatorLab&subView=xxx`
+  // 深链解析，落地到组合页面里正确的默认 Tab（`activeKey` 由
+  // OperatorLabV2Connected.jsx 透传，等于当前 subView）。
+  secretary: (props) => <AiSecretaryWorkbenchPage {...props} />,
+  growth: (props) => <AiSecretaryWorkbenchPage {...props} />,
+  costToken: (props) => <FinanceProfitPage {...props} />,
+  approvals: (props) => <OrganizationPage {...props} />,
+  autoOps: (props) => <OrganizationPage {...props} />,
+  shops: (props) => <SettingsWorkbenchPage {...props} />,
+  content: ({ rootNavigate }) => <ContentRedirectNotice onGoToStudio={() => rootNavigate("studioLab", { subView: "contentProjects" })} />,
+  storeConnection: (props) => <SettingsWorkbenchPage {...props} activeKey="connections" />,
 };

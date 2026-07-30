@@ -33,7 +33,7 @@ export function CloudCenterConnected() {
   return (
     <ErrorBoundary key={activePage} renderFallback={cloudCenterErrorFallback}>
       {PageComponent ? (
-        <PageComponent navigate={handleNavigate} params={{ operatorId: entityId ?? undefined }} />
+        <PageComponent navigate={handleNavigate} params={{ operatorId: entityId ?? undefined }} activeKey={activePage} />
       ) : (
         <div>未找到页面{activePage ? `"${activePage}"` : ""}</div>
       )}

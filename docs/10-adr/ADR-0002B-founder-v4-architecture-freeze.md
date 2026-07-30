@@ -1,7 +1,8 @@
 ---
 document_id: ADR-0002B
 title: Founder V4 Commerce Operating Architecture Freeze
-status: Accepted
+status: Superseded
+superseded_by: ADR-0007
 date: 2026-07-24
 owner: Chief Software Architect
 parent: ADR-0002
@@ -11,7 +12,12 @@ parent: ADR-0002
 
 ## Status
 
-Accepted
+Superseded (2026-07-30) by [ADR-0007 Founder Master Edition Development Charter](ADR-0007-founder-master-edition-development-charter.md).
+The 18-module/5-section freeze recorded below no longer reflects the codebase (which had already
+drifted to an 11-group/34-module IA before this reset) and is retained for historical reference
+only — do not implement against it. ADR-0007 and the
+[Founder Master Edition Development Charter](../architecture/Founder_Master_Edition_Development_Charter.md)
+are the sole architecture authority going forward.
 
 Subordinate to [ADR-0002 Edition Boundary](ADR-0002-edition-boundary.md) and continues the
 governance chain started by

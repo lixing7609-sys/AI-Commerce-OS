@@ -34,22 +34,37 @@
  * `module` 值，不经过 operatorLab 的 subView——见
  * shell/ConsoleSidebar.jsx 对应分支。
  */
+/**
+ * Founder Master Edition Charter §3.3 收口后的 13 项（曾经的 15 项
+ * 收口/吸收如下，全部迁移映射见 Charter 实施记录）：
+ *   - secretary + growth → AI Secretary（AiSecretaryWorkbenchPage）
+ *   - costToken → Finance & Profit（FinanceProfitPage，新增"利润" Tab）
+ *   - approvals + autoOps → Organization（OrganizationPage，新增
+ *     "团队与权限" Tab）
+ *   - shops + settings → Settings（SettingsWorkbenchPage，新增"平台
+ *     连接" Tab）
+ *   - content → 由新的 Marketing（MarketingPage）替代，承接其"跳转
+ *     Studio"意图，旧 content key 仍在 pageRegistry 里可解析
+ *   - brand → 全新（BrandPage）
+ * 被吸收的旧 key（secretary/growth/costToken/approvals/autoOps/
+ * shops/content）不再是这份列表的顶级子项，但仍在 pageRegistry.jsx
+ * 的 OPERATOR_V2_PAGE_COMPONENTS 里可解析，指向对应组合页面的正确
+ * 默认 Tab——不会 404，见 pageRegistry.jsx 顶部注释。
+ */
 export const OPERATOR_V2_NAV_ITEMS = [
-  { key: "workbench", label: "Operator工作台", icon: "◆" },
-  { key: "secretary", label: "Operator秘书", icon: "☑" },
-  { key: "shops", label: "店铺", icon: "▽" },
-  { key: "products", label: "商品", icon: "▣", directModule: "productCenter" },
-  { key: "content", label: "内容", icon: "▥" },
-  { key: "adOps", label: "广告投放", icon: "■" },
-  { key: "orders", label: "订单", icon: "▤", directModule: "orderCenter" },
-  { key: "customers", label: "客户", icon: "◐" },
-  { key: "customerService", label: "客服", icon: "⟲", directModule: "customerServiceCenter" },
-  { key: "approvals", label: "审批", icon: "☑", directModule: "approvalCenter" },
-  { key: "growth", label: "AI成长", icon: "↗" },
-  { key: "costToken", label: "成本与Token", icon: "◔" },
-  { key: "analytics", label: "数据与经营分析", icon: "▦" },
-  { key: "autoOps", label: "自动经营", icon: "☲" },
-  { key: "settings", label: "设置", icon: "⚙" },
+  { key: "workbench", label: "Workspace", icon: "◆" },
+  { key: "products", label: "Products", icon: "▣", directModule: "productCenter" },
+  { key: "orders", label: "Orders", icon: "▤", directModule: "orderCenter" },
+  { key: "customers", label: "Customers", icon: "◐" },
+  { key: "customerService", label: "Customer Service", icon: "⟲", directModule: "customerServiceCenter" },
+  { key: "marketing", label: "Marketing", icon: "▥" },
+  { key: "adOps", label: "Advertising", icon: "■" },
+  { key: "brand", label: "Brand", icon: "◆" },
+  { key: "aiSecretary", label: "AI Secretary", icon: "☑" },
+  { key: "analytics", label: "Data", icon: "▦" },
+  { key: "financeProfit", label: "Finance & Profit", icon: "◔" },
+  { key: "organization", label: "Organization", icon: "☲" },
+  { key: "settings", label: "Settings", icon: "⚙" },
 ];
 
 export function isValidOperatorV2NavKey(key) {

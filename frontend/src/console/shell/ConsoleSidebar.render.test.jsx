@@ -10,12 +10,11 @@ function Wrapper({ children }) {
   return <ConsoleNavContext.Provider value={nav}>{children}</ConsoleNavContext.Provider>;
 }
 
-const CANONICAL_CORE_LABELS = [
-  "Founder工作台", "Agent中心", "Prompt中心", "Skill中心",
-  "Workflow中心", "Knowledge中心", "Connector中心", "Capability中心",
-];
-const CANONICAL_LABS_LABELS = ["Operator 实验室", "Studio 实验室"];
-const CANONICAL_CLOUD_LABEL = "Cloud Center";
+// Founder Master Edition Charter §3 — exactly 5 top-level groups.
+// "Founder Workspace" renders flat (renderCoreGroup); the other four
+// are accordions (renderLabsCloudGroup, see LABS_CLOUD_GROUP_KEYS).
+const CANONICAL_WORKSPACE_LABEL = "Founder Workspace";
+const CANONICAL_ACCORDION_LABELS = ["AI Capability Center", "Operator Lab", "Studio Lab", "Cloud Center"];
 
 function mockMatchMedia(matches) {
   window.matchMedia = (query) => ({
@@ -37,10 +36,10 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("Founder navigation shell (Design DNA v1.1)", () => {
-  it("renders every canonical Core/Labs/Cloud top-level entry", () => {
+describe("Founder navigation shell (Founder Master Edition Charter §3)", () => {
+  it("renders exactly the 5 canonical top-level group entries", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
-    for (const label of [...CANONICAL_CORE_LABELS, ...CANONICAL_LABS_LABELS, CANONICAL_CLOUD_LABEL]) {
+    for (const label of [CANONICAL_WORKSPACE_LABEL, ...CANONICAL_ACCORDION_LABELS]) {
       expect(screen.getByText(label), `missing canonical entry "${label}"`).toBeTruthy();
     }
   });
@@ -80,9 +79,9 @@ describe("Founder navigation shell (Design DNA v1.1)", () => {
     expect(activeItems.length).toBeGreaterThan(0);
   });
 
-  it("Operator实验室 and Studio实验室 chevrons expand nested navigation without navigating away", () => {
+  it("Operator Lab and Studio Lab chevrons expand nested navigation without navigating away", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
-    const studioChevron = screen.getByRole("button", { name: /展开Studio 实验室|收起Studio 实验室/ });
+    const studioChevron = screen.getByRole("button", { name: /展开Studio Lab|收起Studio Lab/ });
     const beforeUrl = window.location.search;
     fireEvent.click(studioChevron);
     expect(window.location.search).toBe(beforeUrl);
@@ -98,7 +97,7 @@ describe("Founder navigation shell (Design DNA v1.1)", () => {
 
   it("selecting a nested Studio sub-item marks it active", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
-    const studioChevron = screen.getByRole("button", { name: /展开Studio 实验室/ });
+    const studioChevron = screen.getByRole("button", { name: /展开Studio Lab/ });
     fireEvent.click(studioChevron);
     const subitems = document.querySelectorAll(".fdr-sidebar__subitem");
     expect(subitems.length).toBeGreaterThan(0);
@@ -128,7 +127,7 @@ describe("Founder navigation shell (Design DNA v1.1)", () => {
   it("collapsed items with nested content expose a tooltip/flyout trigger with an accessible label", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    const operatorButton = screen.getByRole("button", { name: "Operator 实验室" });
+    const operatorButton = screen.getByRole("button", { name: "Operator Lab" });
     expect(operatorButton).toBeTruthy();
     fireEvent.click(operatorButton);
     expect(document.querySelector(".fdr-sidebar__flyout")).toBeTruthy();
@@ -137,7 +136,7 @@ describe("Founder navigation shell (Design DNA v1.1)", () => {
   it("Escape closes the collapsed-mode flyout", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    fireEvent.click(screen.getByRole("button", { name: "Operator 实验室" }));
+    fireEvent.click(screen.getByRole("button", { name: "Operator Lab" }));
     expect(document.querySelector(".fdr-sidebar__flyout")).toBeTruthy();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(document.querySelector(".fdr-sidebar__flyout")).toBeNull();

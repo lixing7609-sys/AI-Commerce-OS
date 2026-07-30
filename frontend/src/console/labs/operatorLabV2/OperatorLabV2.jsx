@@ -26,7 +26,7 @@ export function OperatorLabV2({ activePage, entityId, navigate, rootNavigate }) 
     <PreviewProvider>
       <ErrorBoundary key={activePage} renderFallback={operatorLabErrorFallback}>
         {PageComponent ? (
-          <PageComponent navigate={navigate} rootNavigate={rootNavigate} entityId={entityId} />
+          <PageComponent navigate={navigate} rootNavigate={rootNavigate} entityId={entityId} activeKey={activePage} />
         ) : (
           <div>未找到页面{activePage ? `"${activePage}"` : ""}</div>
         )}

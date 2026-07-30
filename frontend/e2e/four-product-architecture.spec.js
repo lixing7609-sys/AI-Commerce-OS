@@ -63,36 +63,27 @@ test.describe("Four-product architecture: all four entries", () => {
   }
 });
 
-// 阶段 Studio V3 Integration §六：独立 Studio 侧边栏改为六分组手风琴
-// （总控/内容策划/AI创作中心/矩阵运营/商业经营/设置），大部分导航项
-// 不再是页面加载时就平铺可见的按钮——测试需要先展开对应分组。
-// "AI创作中心"下的短剧/视频/直播标签也改用无空格写法（"AI短剧"）以
-// 匹配 V3 高保真原型的视觉基准，不再是旧版"AI 短剧"这种带空格写法。
-const STUDIO_GROUP_ITEMS = {
-  planning: ["内容项目"],
-  creation: ["AI短剧", "AI视频", "AI直播"],
-  matrix: ["矩阵账号", "内容资产", "流量池", "广告资源", "广告订单"],
-  commerce: ["算力任务", "数据分析"],
-  settings: ["Studio设置"],
-};
-const STUDIO_GROUP_LABEL = { planning: "内容策划", creation: "AI创作中心", matrix: "矩阵运营", commerce: "商业经营", settings: "设置" };
+// Founder Master Edition Charter §3.4: independent Studio's sidebar is
+// now the same 13 flat charter items as Founder's embedded Studio Lab
+// (no 6-group accordion clustering) — every item is directly clickable
+// without expanding a parent group first.
+const STUDIO_TOP_LEVEL_ITEMS = [
+  "AI Video", "AI Article", "AI Live", "AI Short Drama", "AI Audio",
+  "Matrix Accounts", "Publishing Center", "Asset Library", "Brand Assets", "Analytics", "Settings",
+];
 
 test.describe("Studio: full navigation and scrolling", () => {
   test("every Studio nav item opens real content with zero console errors", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/studio");
 
-    await expect(page.getByRole("button", { name: "Studio概览", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Studio概览", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Studio概览", level: 1 })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Workspace", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Workspace", level: 1 })).toBeVisible();
 
-    for (const [groupKey, items] of Object.entries(STUDIO_GROUP_ITEMS)) {
-      await page.getByRole("button", { name: STUDIO_GROUP_LABEL[groupKey], exact: true }).click();
-      for (const label of items) {
-        await page.locator(".st-nav-link", { hasText: label }).click();
-        await expect(page.getByRole("heading", { name: label, level: 1 })).toBeVisible();
-        await expect(page.locator(".st-content")).not.toBeEmpty();
-      }
+    for (const label of STUDIO_TOP_LEVEL_ITEMS) {
+      await page.getByRole("button", { name: label, exact: true }).click();
+      await expect(page.getByRole("heading", { name: label, level: 1 })).toBeVisible();
+      await expect(page.locator(".st-content")).not.toBeEmpty();
     }
 
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
@@ -100,11 +91,10 @@ test.describe("Studio: full navigation and scrolling", () => {
 
   test("Studio content panel actually scrolls to the bottom via mouse wheel", async ({ page }) => {
     await page.goto("/studio");
-    // AI短剧页面堆叠了 4 张卡片（项目/角色/分镜进度/发行数据），在
-    // Playwright 默认 1280x720 视口下必然超出一屏，比"内容项目"页面
-    // （只有一张表格，可能恰好一屏放得下）更适合验证真实滚动。
-    await page.getByRole("button", { name: "AI创作中心", exact: true }).click();
-    await page.locator(".st-nav-link", { hasText: "AI短剧" }).click();
+    // AI Short Drama's list page stacks several cards (projects/
+    // characters/episode progress/distribution), which reliably
+    // exceeds one screen at Playwright's default 1280x720 viewport.
+    await page.getByRole("button", { name: "AI Short Drama", exact: true }).click();
 
     const before = await page.evaluate(() => {
       const el = document.querySelector(".st-content");
@@ -123,20 +113,19 @@ test.describe("Studio: full navigation and scrolling", () => {
 
   test("Studio does not expose the old detached advertising-connector-style global panel and uses account-safe language", async ({ page }) => {
     await page.goto("/studio");
-    await page.getByRole("button", { name: "矩阵运营", exact: true }).click();
-    await page.locator(".st-nav-link", { hasText: "矩阵账号" }).click();
-    await expect(page.getByRole("heading", { name: "矩阵账号", level: 1 })).toBeVisible();
+    await page.getByRole("button", { name: "Matrix Accounts", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Matrix Accounts", level: 1 })).toBeVisible();
     // 面向用户的文案不应该出现裸的 Connector 字样
     await expect(page.getByText(/Connector/i)).toHaveCount(0);
   });
 });
 
-test.describe("Cloud: distributed scheduling page", () => {
-  test("分布式调度 opens and clearly shows distributedCompute is disabled", async ({ page }) => {
+test.describe("Cloud: Nodes (distributed scheduling) page", () => {
+  test("Nodes opens and clearly shows distributedCompute is disabled", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/cloud");
-    await page.getByRole("button", { name: "分布式调度" }).click();
-    await expect(page.getByRole("heading", { name: "分布式调度", level: 1 })).toBeVisible();
+    await page.getByRole("button", { name: "Nodes" }).click();
+    await expect(page.getByRole("heading", { name: "Nodes", level: 1 })).toBeVisible();
     await expect(page.getByText("distributedCompute.enabled = false")).toBeVisible();
     await expect(page.getByRole("heading", { name: "算力总览" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "设备资源池" })).toBeVisible();

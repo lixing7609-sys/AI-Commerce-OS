@@ -1,7 +1,6 @@
 import {
   OverviewPage,
-  OperatorsPage,
-  DevicesPage,
+  DevicesWorkbenchPage,
   LicensesPage,
   TokenMeteringPage,
   OtaSupportPage,
@@ -19,8 +18,11 @@ import {
  */
 export const PAGE_COMPONENTS = {
   overview: ({ navigate }) => <OverviewPage navigate={navigate} />,
-  operators: ({ navigate }) => <OperatorsPage navigate={navigate} />,
-  devices: ({ params }) => <DevicesPage filterOperatorId={params.operatorId} />,
+  // Kept resolvable for old deep links/direct-nav (OverviewPage's own
+  // stat cards still `navigate("operators")`) — no longer a top-level
+  // nav item, see LEGACY_CLOUD_KEYS in navConfig.js.
+  operators: ({ navigate, params, activeKey }) => <DevicesWorkbenchPage navigate={navigate} params={params} activeKey={activeKey ?? "operators"} />,
+  devices: ({ navigate, params, activeKey }) => <DevicesWorkbenchPage navigate={navigate} params={params} activeKey={activeKey ?? "devices"} />,
   licenses: () => <LicensesPage />,
   tokenMetering: () => <TokenMeteringPage />,
   otaSupport: () => <OtaSupportPage />,

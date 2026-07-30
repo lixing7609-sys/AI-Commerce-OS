@@ -1,95 +1,66 @@
 /**
- * AI Commerce OS Studio 一级导航的唯一权威列表（阶段：Studio V3
- * Integration — AI Content Company Operating System）。
+ * AI Commerce OS Studio 一级导航的唯一权威列表.
  *
- * Studio 的产品定位从"内容生产工具"升级为"内容公司操作系统"：覆盖
- * 热点发现→趋势预测→AI选题→内容立项→剧本→脚本→分镜→角色→场景→
- * 图片/视频生成→AI剪辑→配音/字幕/BGM→内容审核→矩阵发布→账号运营→
- * 流量池经营→广告运营→平台分成→品牌合作→带货与直播→知识产品→
- * 版权/IP授权→项目损益与ROI→Agent持续优化的完整业务闭环，AI图文与
- * AI短剧/AI视频/AI直播并列为一级内容形态，而不是"生成一张图"的
- * 附属功能。
+ * Founder Master Edition V1.0 Charter §3.4 收口：13 个扁平子项——
+ * Workspace / AI Image / AI Video / AI Article / AI Live / AI Short
+ * Drama / AI Audio / Matrix Accounts / Publishing Center / Asset
+ * Library / Brand Assets / Analytics / Settings。每个内容类型
+ * （Image/Video/Article/Live/Short Drama/Audio）拥有自己完整的端到端
+ * 生产流水线（Tab 形式），Workspace 只负责项目总览/生产队列/选题输入，
+ * 不再拥有共享生产流水线——旧的 6 组 36 项分类（总控/内容策划/AI创作
+ * 中心/矩阵运营/商业经营/设置）全部吸收进这 13 项里的组合页面
+ * （见 pages/index.jsx 的 PAGE_COMPONENTS 顶部注释，逐项映射表）。
  *
- * 每个 NAV_ITEM 携带 `group` 字段，对应 NAV_GROUPS 里的分组——独立
- * Studio（StudioApp.jsx）和 Founder Studio 实验室（ConsoleSidebar.jsx
- * 展开 studioLabGroup 时）共用同一份分组结构渲染手风琴，不是两套
- * 导航数据。`hidden: true` 的条目是详情/工作台页面（AI导演工作台、
- * AI图文编辑器），不出现在侧边栏，但通过 navigate(key, params) 从
- * 内容项目列表/秘书快捷操作/热点"创建项目"等入口进入，`
- * isValidStudioNavKey` 仍然认它是合法页面 key。
+ * 独立 Studio（StudioApp.jsx）和 Founder Studio Lab
+ * （ConsoleSidebar.jsx 展开 studioLabGroup 时）共用同一份列表渲染
+ * 手风琴，不是两套导航数据。`hidden: true` 的条目是详情/工作台页面
+ * （AI导演工作台、AI图文编辑器），不出现在侧边栏，通过各 Workbench
+ * 内部的本地状态或旧深链进入。
  */
 export const NAV_ITEMS = [
-  // ---- 总控 ----
-  { key: "secretary", label: "Studio秘书", icon: "☑", group: "control" },
-  { key: "overview", label: "Studio概览", icon: "◆", group: "control" },
+  { key: "workspace", label: "Workspace", icon: "◆", group: "studio" },
+  { key: "graphicContent", label: "AI Image", icon: "▧", group: "studio" },
+  { key: "aiVideo", label: "AI Video", icon: "▶", group: "studio" },
+  { key: "aiArticle", label: "AI Article", icon: "▤", group: "studio" },
+  { key: "aiLive", label: "AI Live", icon: "◉", group: "studio" },
+  { key: "shortDrama", label: "AI Short Drama", icon: "◈", group: "studio" },
+  { key: "aiAudio", label: "AI Audio", icon: "♪", group: "studio" },
+  { key: "matrixAccounts", label: "Matrix Accounts", icon: "▦", group: "studio" },
+  { key: "publishingCenter", label: "Publishing Center", icon: "⬆", group: "studio" },
+  { key: "assetLibrary", label: "Asset Library", icon: "◫", group: "studio" },
+  { key: "brandAssets", label: "Brand Assets", icon: "◐", group: "studio" },
+  { key: "analytics", label: "Analytics", icon: "◔", group: "studio" },
+  { key: "settings", label: "Settings", icon: "⚙", group: "studio" },
 
-  // ---- 内容策划 ----
-  { key: "hotspotAnalysis", label: "热点分析", icon: "🔥", group: "planning" },
-  { key: "trendForecast", label: "趋势预测", icon: "↗", group: "planning" },
-  { key: "topicPool", label: "选题池", icon: "◎", group: "planning" },
-  { key: "contentProjects", label: "内容项目", icon: "▣", group: "planning" },
-
-  // ---- AI创作中心 ----
-  { key: "shortDrama", label: "AI短剧", icon: "◈", group: "creation" },
-  { key: "aiVideo", label: "AI视频", icon: "▶", group: "creation" },
-  { key: "graphicContent", label: "AI图文", icon: "▧", group: "creation" },
-  { key: "aiLive", label: "AI直播", icon: "◉", group: "creation" },
-  { key: "scriptStoryboard", label: "剧本 / 脚本 / 分镜", icon: "✎", group: "creation" },
-  { key: "characterScene", label: "角色与场景", icon: "♙", group: "creation" },
-  { key: "mediaGeneration", label: "图片 / 视频生成", icon: "▤", group: "creation" },
-  { key: "aiEditing", label: "AI剪辑", icon: "⌁", group: "creation" },
-  { key: "voiceSubtitleBgm", label: "配音 / 字幕 / BGM", icon: "♪", group: "creation" },
-  { key: "contentReview", label: "内容审核", icon: "✓", group: "creation" },
-
-  // ---- 矩阵运营 ----
-  { key: "matrixAccounts", label: "矩阵账号", icon: "▦", group: "matrix" },
-  { key: "matrixPublish", label: "矩阵发布", icon: "⬆", group: "matrix" },
-  { key: "contentAssets", label: "内容资产", icon: "◫", group: "matrix" },
-  { key: "trafficPool", label: "流量池", icon: "◈", group: "matrix" },
-  { key: "adResources", label: "广告资源", icon: "◇", group: "matrix" },
-  { key: "adOrders", label: "广告订单", icon: "▩", group: "matrix" },
-
-  // ---- 商业经营 ----
-  { key: "monetizationCenter", label: "商业变现", icon: "¥", group: "commerce" },
-  { key: "revenueShare", label: "平台分成", icon: "▥", group: "commerce" },
-  { key: "brandDeals", label: "品牌合作", icon: "◌", group: "commerce" },
-  { key: "liveCommerce", label: "带货与直播", icon: "🛒", group: "commerce" },
-  { key: "knowledgeProducts", label: "知识产品", icon: "🎓", group: "commerce" },
-  { key: "ipLicensing", label: "版权 / IP授权", icon: "©", group: "commerce" },
-  { key: "computeTasks", label: "算力任务", icon: "⟲", group: "commerce" },
-  { key: "dataAnalytics", label: "数据分析", icon: "◔", group: "commerce" },
-  { key: "marketplace", label: "能力市场", icon: "⛁", group: "commerce" },
-
-  // ---- 设置 ----
-  { key: "studioSettings", label: "Studio设置", icon: "⚙", group: "settings" },
-  { key: "platformConnections", label: "平台连接", icon: "⛓", group: "settings" },
-  { key: "brandGuidelines", label: "品牌规范", icon: "◐", group: "settings" },
-  { key: "notificationsPermissions", label: "通知与权限", icon: "🔔", group: "settings" },
-
-  // ---- 详情/工作台页面（不进侧边栏，通过项目行/快捷操作进入）----
-  { key: "director", label: "AI导演工作台", icon: "🎬", group: "creation", hidden: true },
-  { key: "graphicContentEditor", label: "AI图文编辑器", icon: "▧", group: "creation", hidden: true },
+  // ---- 详情/工作台页面（不进侧边栏）----
+  { key: "director", label: "AI导演工作台", icon: "🎬", group: "studio", hidden: true },
+  { key: "graphicContentEditor", label: "AI图文编辑器", icon: "▧", group: "studio", hidden: true },
 ];
+
+/** 单一扁平分组——与 Operator Lab/Cloud Center 一致的呈现方式。 */
+export const NAV_GROUPS = [{ key: "studio", label: "Studio", collapsible: false }];
+
+export const DEFAULT_NAV_KEY = "workspace";
 
 /**
- * 分组的展示顺序与标题。`collapsible: false` 的分组（总控）不参与
- * 手风琴折叠，始终展开——它是默认落地页所在分组。其余分组默认折叠，
- * 当前激活页面所在分组会强制展开（见 StudioApp.jsx /
- * ConsoleSidebar.jsx 的展开状态调整逻辑，两处使用同一套模式）。
+ * 被 13 项收口吸收、不再是顶级子项的旧 key——仍然必须能通过
+ * `isValidStudioNavKey` 解析（StudioLabConnected.jsx / StudioLab.jsx
+ * 都用它是否为 true 来决定渲染 PAGE_COMPONENTS[key] 还是回退到默认
+ * 页面），否则旧的 `?module=studioLab&subView=secretary` 这类深链会
+ * 静默回退到 Workspace，而不是落地到 pages/index.jsx 里为它们保留的
+ * 组合页面/原始页面——那就是本次 Charter 明确禁止的"静默丢弃能力"。
  */
-export const NAV_GROUPS = [
-  { key: "control", label: "总控", collapsible: false },
-  { key: "planning", label: "内容策划", collapsible: true },
-  { key: "creation", label: "AI创作中心", collapsible: true },
-  { key: "matrix", label: "矩阵运营", collapsible: true },
-  { key: "commerce", label: "商业经营", collapsible: true },
-  { key: "settings", label: "设置", collapsible: true },
+export const LEGACY_STUDIO_KEYS = [
+  "secretary", "overview", "hotspotAnalysis", "trendForecast", "topicPool", "contentProjects",
+  "scriptStoryboard", "characterScene", "mediaGeneration", "aiEditing", "voiceSubtitleBgm", "contentReview",
+  "matrixPublish", "contentAssets", "trafficPool", "adResources", "adOrders",
+  "monetizationCenter", "revenueShare", "brandDeals", "liveCommerce", "knowledgeProducts", "ipLicensing",
+  "computeTasks", "dataAnalytics", "marketplace",
+  "studioSettings", "platformConnections", "brandGuidelines", "notificationsPermissions",
 ];
 
-export const DEFAULT_NAV_KEY = "overview";
-
 export function isValidStudioNavKey(key) {
-  return NAV_ITEMS.some((item) => item.key === key);
+  return NAV_ITEMS.some((item) => item.key === key) || LEGACY_STUDIO_KEYS.includes(key);
 }
 
 export function getStudioNavItemByKey(key) {

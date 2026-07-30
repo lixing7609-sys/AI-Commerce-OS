@@ -486,3 +486,26 @@ export function DistributedSchedulingPage() {
     </div>
   );
 }
+
+/**
+ * Cloud Center · Devices workbench (Founder Master Edition Charter
+ * §3.5) — folds the former standalone "经营者" top-level nav item into
+ * a tab here, since a fleet's devices and the operators/tenants who
+ * own them are one dataset. `activeKey` (the caller's activePage) picks
+ * the initial tab; both call sites remount this component on activePage
+ * change (`key={activePage}` on their ErrorBoundary), so a plain
+ * `useState` initializer is enough — no effect needed to resync.
+ */
+export function DevicesWorkbenchPage({ navigate, params, activeKey }) {
+  const [tab, setTab] = useState(activeKey === "operators" ? "operators" : "devices");
+
+  return (
+    <div>
+      <div className="cc-tabs" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button type="button" className={`cc-btn${tab === "devices" ? " active" : ""}`} onClick={() => setTab("devices")}>设备</button>
+        <button type="button" className={`cc-btn${tab === "operators" ? " active" : ""}`} onClick={() => setTab("operators")}>经营者</button>
+      </div>
+      {tab === "devices" ? <DevicesPage filterOperatorId={params?.operatorId} /> : <OperatorsPage navigate={navigate} />}
+    </div>
+  );
+}

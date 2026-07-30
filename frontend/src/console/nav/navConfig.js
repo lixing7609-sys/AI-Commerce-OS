@@ -4,38 +4,47 @@ import { CAPABILITY_KEYS } from "../capabilities.js";
  * 模块的唯一权威列表：侧边栏、导航状态、页面渲染表都从这里读取，
  * 不在别处重复定义模块 key。
  *
- * 阶段 Founder Full-System v3（Batch 2 IA 重建）：一级导航正式收口为
- * 交办任务冻结的十一组——Founder工作台 / Agent中心 / Prompt中心 /
- * Skill中心 / Workflow中心 / Knowledge中心 / Connector中心 /
- * Capability中心 / Operator 实验室 / Studio 实验室 / Cloud Center。
- * 旧的"产品研发中心 / Marketplace 中心 / 系统与发布"三个顶级分组被
- * 拆解迁移，不是删除功能：
- *   - Agent 工作室/模型路由 → Agent 中心
- *   - 自动化策略/回放中心 → Workflow 中心
- *   - 基准测试中心/评估中心/广告策略研发 → Capability 中心
- *   - Token 中心/Marketplace 中心/系统中心 → Cloud Center（Founder
- *     专属尾部条目，见 externalPosition="after"）
- *   - Operator Cloud（原裸 URL 默认应用）→ Cloud Center 的外部
- *     registry（`external: "cloud"`），见 cloud/pageRegistry.jsx
- *   - 商品中心/订单中心/客服中心/审批中心/真实店铺接入 → 不再是
- *     FOUNDER_MODULES 里独立的、渲染成侧边栏按钮的模块（这正是
- *     "该模块尚未和 Operator 实验室完成单一真源合并"四个重复警告
- *     按钮的来源）——现在直接作为 Operator 实验室 v2 registry
- *     （`console/labs/operatorLabV2/`）自己的子项存在，和"店铺/广告
- *     投放"等其它 Operator 子项同一层级，不再有第二套导航。组件本身
- *     （ProductCenterModule/OrderCenterModule/…）没有删除，仍在
- *     `console/modules/` 下，只是渲染入口改为 Operator 实验室 v2
- *     registry 直接 import，不再经过顶层 FOUNDER_MODULES。
- *   - Prompt中心/Skill中心/Knowledge中心/Connector中心 → 全新的
- *     Founder 核心资产中心，使用 `console/shared/assetDomain.js` +
- *     `console/kit/AssetCenterModule.jsx` 的通用列表/详情/新建/编辑
- *     骨架，不是文字占位页。
- *
- * "AI 秘书处"和"今日经营"合并为一个顶级入口"Founder工作台"
- * （`founderWorkbench`，内部用 subView 区分两个 Tab），不再是两个
- * 平级按钮——交办任务的目标信息架构里"Founder工作台"是唯一一条叶子
- * 节点。旧的 `?module=secretary` / `?module=dashboard` 链接通过
- * `MODULE_REDIRECTS` 落地到对应 Tab，不会 404。
+ * 阶段 Founder Master Edition V1.0（架构重置，见
+ * docs/architecture/Founder_Master_Edition_Development_Charter.md /
+ * ADR-0007）：一级导航收口为冻结的五组——Founder Workspace /
+ * AI Capability Center / Operator Lab / Studio Lab / Cloud Center。
+ * 之前的十一组（Founder工作台 / Agent中心 / Prompt中心 / Skill中心 /
+ * Workflow中心 / Knowledge中心 / Connector中心 / Capability中心 /
+ * Operator 实验室 / Studio 实验室 / Cloud Center，2798e74 引入）被
+ * 折叠迁移，不是删除功能：
+ *   - Founder工作台 → Founder Workspace 的 "Today" 子项（新增
+ *     Decisions/Development/Business Validation/Content Validation/
+ *     Cloud Status/Risks/Notifications 见 Founder Workspace 相关模块）
+ *   - Agent中心/Prompt中心/Skill中心/Workflow中心/Knowledge中心/
+ *     Connector中心/Capability中心 七个顶级分组 → 折叠进一个
+ *     AI Capability Center 手风琴分组，各自成为分组内的 7 个子项
+ *     （Agent Center/Prompt Center/Skill Center/Workflow Center/
+ *     Knowledge Center/Connector Center/Capability Center），复用
+ *     ConsoleSidebar.jsx 既有的 Labs/Cloud 手风琴机制
+ *     （LABS_CLOUD_GROUP_KEYS 等），不是新写一套渲染逻辑。
+ *   - Agent 工作室/模型路由/自动化策略/回放中心/基准测试中心/评估
+ *     中心/广告策略研发 七个原子模块 key 保留注册（`hiddenFromSidebar:
+ *     true`，内部标签页/详情跳转大量自我引用，不能改名或去掉注册），
+ *     现在作为 Agent Center / Workflow Center / Capability Center
+ *     三个新组合模块内部的 Tab 渲染，见对应 *Module.jsx 顶部注释。
+ *   - 原"Studio 实验控制层"11 个 Founder 专属尾部条目（studioAgents
+ *     …studioReleases，曾经挂在 studioLabGroup 的
+ *     externalPosition="after"）→ 不再是 Studio Lab 自己导航树下的
+ *     未说明尾部分组（Studio 是消费 AI 能力的编辑版，不应该带着
+ *     Founder 自己的能力研发工具），全部吸收进 AI Capability Center
+ *     对应子中心的 "Studio 作用域" Tab（Agent/Prompt/Skill/Workflow/
+ *     Capability Center 五个组合模块内部），group 字段改为
+ *     aiCapabilityCenterGroup，key 本身未变，旧深链仍可解析。
+ *   - Prompt中心/Skill中心/Knowledge中心/Connector中心的既有实现
+ *     （`console/shared/assetDomain.js` + `console/kit/
+ *     AssetCenterModule.jsx` 通用列表/详情/新建/编辑骨架）未改动，
+ *     只是 group 字段迁移；Prompt/Skill Center 额外包一层
+ *     *Workbench.jsx 把 Studio 作用域 Tab 加进去，注册的模块 key
+ *     不变（`promptCenter`/`skillCenter`），因为 AssetCenterModule
+ *     内部自我引用的 moduleKey 就是这两个 key 本身。
+ *   - Operator Lab（原 Operator 实验室）/ Studio Lab（原 Studio
+ *     实验室）/ Cloud Center 三个分组的 external registry 机制不变，
+ *     内部二级导航按 Charter §3.3–3.5 重新收口（各自模块内单独说明）。
  */
 export const FOUNDER_MODULES = [
   {
@@ -45,96 +54,173 @@ export const FOUNDER_MODULES = [
     // orderCenter/etc above.
     key: "designDna",
     label: "Design DNA Showcase",
-    group: "founderWorkbenchGroup",
+    group: "founderWorkspaceGroup",
     icon: "◆",
     requiredCapability: CAPABILITY_KEYS.DESIGN_DNA_VIEW,
     hiddenFromSidebar: true,
   },
   {
     key: "founderWorkbench",
-    label: "Founder工作台",
-    group: "founderWorkbenchGroup",
+    label: "Today",
+    group: "founderWorkspaceGroup",
     icon: "✦",
     requiredCapability: CAPABILITY_KEYS.FOUNDER_WORKBENCH_VIEW,
     isDefault: true,
   },
   {
+    key: "decisions",
+    label: "Decisions",
+    group: "founderWorkspaceGroup",
+    icon: "☑",
+    requiredCapability: CAPABILITY_KEYS.DECISIONS_VIEW,
+  },
+  {
+    key: "development",
+    label: "Development",
+    group: "founderWorkspaceGroup",
+    icon: "⌘",
+    requiredCapability: CAPABILITY_KEYS.DEVELOPMENT_VIEW,
+  },
+  {
+    key: "businessValidation",
+    label: "Business Validation",
+    group: "founderWorkspaceGroup",
+    icon: "▥",
+    requiredCapability: CAPABILITY_KEYS.BUSINESS_VALIDATION_VIEW,
+  },
+  {
+    key: "contentValidation",
+    label: "Content Validation",
+    group: "founderWorkspaceGroup",
+    icon: "◆",
+    requiredCapability: CAPABILITY_KEYS.CONTENT_VALIDATION_VIEW,
+  },
+  {
+    key: "cloudStatus",
+    label: "Cloud Status",
+    group: "founderWorkspaceGroup",
+    icon: "☁",
+    requiredCapability: CAPABILITY_KEYS.CLOUD_STATUS_VIEW,
+  },
+  {
+    key: "risks",
+    label: "Risks",
+    group: "founderWorkspaceGroup",
+    icon: "⚑",
+    requiredCapability: CAPABILITY_KEYS.RISKS_VIEW,
+  },
+  {
+    key: "notifications",
+    label: "Notifications",
+    group: "founderWorkspaceGroup",
+    icon: "◔",
+    requiredCapability: CAPABILITY_KEYS.NOTIFICATIONS_VIEW,
+  },
+  {
+    key: "agentCenter",
+    label: "Agent Center",
+    group: "aiCapabilityCenterGroup",
+    icon: "⚙",
+    requiredCapability: CAPABILITY_KEYS.AGENT_CENTER_VIEW,
+  },
+  {
     key: "agentStudio",
     label: "Agent 工作室",
-    group: "agentCenterGroup",
+    group: "aiCapabilityCenterGroup",
     icon: "⚙",
     requiredCapability: CAPABILITY_KEYS.AGENT_STUDIO_VIEW,
+    hiddenFromSidebar: true,
   },
   {
     key: "modelRouter",
     label: "模型路由",
-    group: "agentCenterGroup",
+    group: "aiCapabilityCenterGroup",
     icon: "⇆",
     requiredCapability: CAPABILITY_KEYS.MODEL_ROUTER_VIEW,
+    hiddenFromSidebar: true,
   },
   {
     key: "promptCenter",
-    label: "Prompt 列表",
-    group: "promptCenterGroup",
+    label: "Prompt Center",
+    group: "aiCapabilityCenterGroup",
     icon: "✎",
     requiredCapability: CAPABILITY_KEYS.PROMPT_CENTER_VIEW,
   },
   {
     key: "skillCenter",
-    label: "Skill 列表",
-    group: "skillCenterGroup",
+    label: "Skill Center",
+    group: "aiCapabilityCenterGroup",
     icon: "🧩",
     requiredCapability: CAPABILITY_KEYS.SKILL_CENTER_VIEW,
   },
   {
+    key: "workflowCenter",
+    label: "Workflow Center",
+    group: "aiCapabilityCenterGroup",
+    icon: "☲",
+    requiredCapability: CAPABILITY_KEYS.WORKFLOW_CENTER_VIEW,
+  },
+  {
     key: "automationPolicy",
     label: "自动化策略",
-    group: "workflowCenterGroup",
+    group: "aiCapabilityCenterGroup",
     icon: "☲",
     requiredCapability: CAPABILITY_KEYS.AUTOMATION_POLICY_VIEW,
+    hiddenFromSidebar: true,
   },
   {
     key: "replayCenter",
     label: "回放中心",
-    group: "workflowCenterGroup",
+    group: "aiCapabilityCenterGroup",
     icon: "↻",
     requiredCapability: CAPABILITY_KEYS.REPLAY_CENTER_VIEW,
+    hiddenFromSidebar: true,
   },
   {
     key: "knowledgeCenter",
-    label: "知识库",
-    group: "knowledgeCenterGroup",
+    label: "Knowledge Center",
+    group: "aiCapabilityCenterGroup",
     icon: "▤",
     requiredCapability: CAPABILITY_KEYS.KNOWLEDGE_CENTER_VIEW,
   },
   {
     key: "connectorCenter",
-    label: "连接器",
-    group: "connectorCenterGroup",
+    label: "Connector Center",
+    group: "aiCapabilityCenterGroup",
     icon: "⛓",
     requiredCapability: CAPABILITY_KEYS.CONNECTOR_CENTER_VIEW,
   },
   {
+    key: "capabilityCenter",
+    label: "Capability Center",
+    group: "aiCapabilityCenterGroup",
+    icon: "◈",
+    requiredCapability: CAPABILITY_KEYS.CAPABILITY_CENTER_VIEW,
+  },
+  {
     key: "benchmarkCenter",
     label: "基准测试中心",
-    group: "capabilityCenterGroup",
+    group: "aiCapabilityCenterGroup",
     icon: "⚑",
     requiredCapability: CAPABILITY_KEYS.BENCHMARK_CENTER_VIEW,
+    hiddenFromSidebar: true,
   },
   {
     key: "evaluationCenter",
     label: "评估中心",
-    group: "capabilityCenterGroup",
+    group: "aiCapabilityCenterGroup",
     icon: "★",
     requiredCapability: CAPABILITY_KEYS.EVALUATION_CENTER_VIEW,
+    hiddenFromSidebar: true,
   },
   {
     key: "adCenter",
     label: "广告策略研发",
-    group: "capabilityCenterGroup",
+    group: "aiCapabilityCenterGroup",
     icon: "■",
     requiredCapability: CAPABILITY_KEYS.AD_CENTER_VIEW,
     founderOnly: true,
+    hiddenFromSidebar: true,
   },
   {
     key: "operatorLab",
@@ -178,50 +264,53 @@ export const FOUNDER_MODULES = [
     icon: "◆",
     requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_VIEW,
   },
-  // Studio 实验控制层——未改动，见 studioLabGroup 的 externalPosition="after"。
+  // 原"Studio 实验控制层"——吸收进 AI Capability Center 对应子中心的
+  // Studio 作用域 Tab（Agent/Prompt/Skill/Workflow/Capability Center，
+  // 见各自 *Module.jsx / *Workbench.jsx），不再是 Studio Lab 导航树的
+  // 尾部分组。key 不变，仍可通过旧深链解析。
   {
-    key: "studioAgents", label: "Studio Agent", group: "studioLabGroup", icon: "⚙",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioAgents", label: "Studio Agent", group: "aiCapabilityCenterGroup", icon: "⚙",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
-    key: "studioPrompts", label: "Studio Prompt", group: "studioLabGroup", icon: "✎",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioPrompts", label: "Studio Prompt", group: "aiCapabilityCenterGroup", icon: "✎",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
-    key: "studioSkills", label: "Studio Skill", group: "studioLabGroup", icon: "🧩",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioSkills", label: "Studio Skill", group: "aiCapabilityCenterGroup", icon: "🧩",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
-    key: "studioWorkflows", label: "Studio Workflow", group: "studioLabGroup", icon: "⇄",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioWorkflows", label: "Studio Workflow", group: "aiCapabilityCenterGroup", icon: "⇄",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
-    key: "studioModelRouting", label: "Studio 模型路由", group: "studioLabGroup", icon: "⇆",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioModelRouting", label: "Studio 模型路由", group: "aiCapabilityCenterGroup", icon: "⇆",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
-    key: "studioPromptTest", label: "Prompt测试台", group: "studioLabGroup", icon: "⚑",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioPromptTest", label: "Prompt测试台", group: "aiCapabilityCenterGroup", icon: "⚑",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
-    key: "studioReplay", label: "真实任务回放", group: "studioLabGroup", icon: "↻",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioReplay", label: "真实任务回放", group: "aiCapabilityCenterGroup", icon: "↻",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
-    key: "studioEvaluation", label: "A/B评测", group: "studioLabGroup", icon: "★",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioEvaluation", label: "A/B评测", group: "aiCapabilityCenterGroup", icon: "★",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
-    key: "studioLogs", label: "运行日志", group: "studioLabGroup", icon: "▤",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioLogs", label: "运行日志", group: "aiCapabilityCenterGroup", icon: "▤",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
-    key: "studioCosts", label: "成本分析", group: "studioLabGroup", icon: "◉",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioCosts", label: "成本分析", group: "aiCapabilityCenterGroup", icon: "◉",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
-    key: "studioReleases", label: "版本与发布", group: "studioLabGroup", icon: "⛁",
-    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true,
+    key: "studioReleases", label: "版本与发布", group: "aiCapabilityCenterGroup", icon: "⛁",
+    requiredCapability: CAPABILITY_KEYS.STUDIO_LAB_EXPERIMENT_VIEW, founderOnly: true, hiddenFromSidebar: true,
   },
   {
     key: "cloudCenter",
@@ -230,15 +319,27 @@ export const FOUNDER_MODULES = [
     icon: "☁",
     requiredCapability: CAPABILITY_KEYS.CLOUD_CENTER_VIEW,
   },
-  // Cloud Center 的 Founder 专属尾部条目——原来的顶级"Token 中心"/
-  // "Marketplace 中心"/"系统中心"，按交办任务 Phase 4 映射表迁移到
-  // 这里，组件本身未改动，只是侧边栏挂载位置变化。
+  // Cloud Center 的 Founder 组合尾部条目（Charter §3.5，6 项）——
+  // Devices/OTA/License/Nodes 四项原生来自 cloud/navConfig.js 共享
+  // registry（见 ConsoleSidebar.jsx 的 externalPosition="after"），
+  // 这里补齐 Token/Marketplace/Version/Assets/Monitoring/Logs 六项，
+  // 让 Founder 的 Cloud Center 手风琴凑齐 Charter 冻结的 10 个子项。
+  // tokenCenter/systemCenter 两个旧 key 保留注册+hiddenFromSidebar，
+  // 供旧深链解析（内部标签/详情跳转自我引用，见各自组件顶部注释）。
+  {
+    key: "cloudToken",
+    label: "Token",
+    group: "cloudCenterGroup",
+    icon: "◉",
+    requiredCapability: CAPABILITY_KEYS.TOKEN_CENTER_VIEW,
+  },
   {
     key: "tokenCenter",
     label: "Token 中心",
     group: "cloudCenterGroup",
     icon: "◉",
     requiredCapability: CAPABILITY_KEYS.TOKEN_CENTER_VIEW,
+    hiddenFromSidebar: true,
   },
   {
     key: "marketplaceCenter",
@@ -248,63 +349,76 @@ export const FOUNDER_MODULES = [
     requiredCapability: CAPABILITY_KEYS.MARKETPLACE_CENTER_VIEW,
   },
   {
+    key: "cloudVersion",
+    label: "Version",
+    group: "cloudCenterGroup",
+    icon: "⛭",
+    requiredCapability: CAPABILITY_KEYS.CLOUD_VERSION_VIEW,
+  },
+  {
+    key: "cloudAssets",
+    label: "Assets",
+    group: "cloudCenterGroup",
+    icon: "▤",
+    requiredCapability: CAPABILITY_KEYS.CLOUD_ASSETS_VIEW,
+  },
+  {
+    key: "monitoring",
+    label: "Monitoring",
+    group: "cloudCenterGroup",
+    icon: "◈",
+    requiredCapability: CAPABILITY_KEYS.MONITORING_VIEW,
+  },
+  {
+    key: "logs",
+    label: "Logs",
+    group: "cloudCenterGroup",
+    icon: "▤",
+    requiredCapability: CAPABILITY_KEYS.LOGS_VIEW,
+  },
+  {
     key: "systemCenter",
     label: "系统中心",
     group: "cloudCenterGroup",
     icon: "⚙⚙",
     requiredCapability: CAPABILITY_KEYS.SYSTEM_CENTER_VIEW,
+    hiddenFromSidebar: true,
   },
 ];
 
 /**
+ * 五个冻结的一级分组（Founder Master Edition V1.0 Charter §3）。
  * `collapsible: true` 的分组渲染成手风琴（单一展开）——`external`
  * 标记该分组的子项来自哪个共享 registry，由 ConsoleSidebar 直接
  * import 对应产品的 NAV_ITEMS 渲染，不手写第二份导航数组。
- * "Founder工作台"不折叠（默认页所在分组，需要一直可见）。
+ * "Founder Workspace"不折叠（默认页所在分组，Mission Control 需要
+ * 一直可见）。AI Capability Center 是原生分组（没有 external
+ * registry），复用 ConsoleSidebar.jsx 的 Labs/Cloud 手风琴渲染函数
+ * （renderLabsCloudGroup）——见该文件 LABS_CLOUD_GROUP_KEYS。
  */
 export const NAV_GROUPS = [
-  { key: "founderWorkbenchGroup", label: "Founder工作台", collapsible: false },
-  { key: "agentCenterGroup", label: "Agent中心", collapsible: true },
-  { key: "promptCenterGroup", label: "Prompt中心", collapsible: true },
-  { key: "skillCenterGroup", label: "Skill中心", collapsible: true },
-  { key: "workflowCenterGroup", label: "Workflow中心", collapsible: true },
-  { key: "knowledgeCenterGroup", label: "Knowledge中心", collapsible: true },
-  { key: "connectorCenterGroup", label: "Connector中心", collapsible: true },
-  { key: "capabilityCenterGroup", label: "Capability中心", collapsible: true },
-  // Operator 实验室 v2：唯一权威列表在 labs/operatorLabV2/navigation.js，
-  // 已经包含"店铺/商品/内容/广告投放/订单/客户/客服/审批/…"全部子
-  // 项，不再需要 FOUNDER_MODULES 里任何 operatorLabGroup 的 items
-  // （旧版本"真实店铺接入/商品中心/订单中心/客服中心/审批中心"五个
-  // FOUNDER_MODULES 条目就是四个重复警告按钮的来源，本次直接移除，
-  // 不是隐藏）。
-  { key: "operatorLabGroup", label: "Operator 实验室", collapsible: true, external: "operatorV2", externalPosition: "before" },
-  { key: "studioLabGroup", label: "Studio 实验室", collapsible: true, external: "studio", externalPosition: "after" },
-  // Cloud Center：Operator Cloud 自己的 7 项导航（`external: "cloud"`）
-  // 在前，Founder 专属迁入项（Token 中心/Marketplace/系统中心）在后。
+  { key: "founderWorkspaceGroup", label: "Founder Workspace", collapsible: false },
+  { key: "aiCapabilityCenterGroup", label: "AI Capability Center", collapsible: true },
+  { key: "operatorLabGroup", label: "Operator Lab", collapsible: true, external: "operatorV2", externalPosition: "before" },
+  { key: "studioLabGroup", label: "Studio Lab", collapsible: true, external: "studio", externalPosition: "before" },
   { key: "cloudCenterGroup", label: "Cloud Center", collapsible: true, external: "cloud", externalPosition: "before" },
 ];
 
 /**
  * Design DNA v1.1 navigation shell (docs/01-foundation/design/
  * navigation-shell-spec.md) — purely presentational grouping layer on
- * top of NAV_GROUPS, added for the sidebar's three visual zones
- * (Core/Labs/Cloud). Does NOT change FOUNDER_MODULES, NAV_GROUPS, or
- * MODULE_REDIRECTS — every existing group key/module key/persisted
- * localStorage value keeps meaning exactly what it meant before.
- * Core zone groups render flat/always-visible (no accordion — see
- * ConsoleSidebar.jsx); Labs/Cloud keep the existing single-expanded
- * accordion behavior, now scoped to just those 3 groups.
+ * top of NAV_GROUPS, for the sidebar's visual zones. Updated for the
+ * Founder Master Edition five-group reset: "workspace" holds Mission
+ * Control (flat, no accordion); "production" holds the three
+ * accordion groups that consume/produce AI capability (AI Capability
+ * Center, Operator Lab, Studio Lab); "cloud" holds Cloud Center alone.
+ * ConsoleSidebar.jsx dispatches rendering per-group via
+ * LABS_CLOUD_GROUP_KEYS membership, not by zone key, so this layer is
+ * purely cosmetic grouping/labeling and can't desync module behavior.
  */
 export const NAV_ZONES = [
-  {
-    key: "core",
-    label: "Core",
-    groups: [
-      "founderWorkbenchGroup", "agentCenterGroup", "promptCenterGroup", "skillCenterGroup",
-      "workflowCenterGroup", "knowledgeCenterGroup", "connectorCenterGroup", "capabilityCenterGroup",
-    ],
-  },
-  { key: "labs", label: "Labs", groups: ["operatorLabGroup", "studioLabGroup"] },
+  { key: "workspace", label: "Workspace", groups: ["founderWorkspaceGroup"] },
+  { key: "production", label: "Capability & Labs", groups: ["aiCapabilityCenterGroup", "operatorLabGroup", "studioLabGroup"] },
   { key: "cloud", label: "Cloud", groups: ["cloudCenterGroup"] },
 ];
 

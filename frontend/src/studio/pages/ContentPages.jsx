@@ -67,7 +67,7 @@ export function ContentProjectsPage({ navigate }) {
 
 /* ---------------------------- AI 短剧 ---------------------------- */
 
-export function ShortDramaPage() {
+export function ShortDramaPage({ onSelectProject } = {}) {
   const { contentProjects, shortDramaDetail } = getStudioState();
   const dramaProjects = contentProjects.filter((p) => p.contentType === "shortdrama");
 
@@ -83,6 +83,7 @@ export function ShortDramaPage() {
             { key: "tokenUsed", label: "已用 Token", render: (r) => r.tokenUsed.toLocaleString() },
           ]}
           rows={dramaProjects}
+          onRowClick={onSelectProject ? (r) => onSelectProject(r.projectId) : undefined}
         />
       </Card>
 

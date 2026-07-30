@@ -23,6 +23,7 @@ import { IconButton } from "../kit/IconButton.jsx";
 import { Tooltip } from "../kit/Tooltip.jsx";
 import { CommandPalette } from "../kit/CommandPalette.jsx";
 import { SidebarFlyout } from "./SidebarFlyout.jsx";
+import { getNotifications } from "../modules/founderWorkspace/workspaceEntities.js";
 
 /**
  * Founder 唯一左侧导航shell — Design DNA v1.1 structural rebuild.
@@ -51,15 +52,17 @@ import { SidebarFlyout } from "./SidebarFlyout.jsx";
  * panel — so browsing a lab's full menu never forces a navigation.
  */
 
-const LABS_CLOUD_GROUP_KEYS = ["operatorLabGroup", "studioLabGroup", "cloudCenterGroup"];
+const LABS_CLOUD_GROUP_KEYS = ["aiCapabilityCenterGroup", "operatorLabGroup", "studioLabGroup", "cloudCenterGroup"];
 
 const GROUP_SELF_MODULE_KEY = {
+  aiCapabilityCenterGroup: "agentCenter",
   operatorLabGroup: "operatorLab",
   studioLabGroup: "studioLab",
   cloudCenterGroup: "cloudCenter",
 };
 
 const GROUP_DEFAULT_NAV = {
+  aiCapabilityCenterGroup: { module: "agentCenter" },
   operatorLabGroup: { module: "operatorLab", subView: "workbench" },
   studioLabGroup: { module: "studioLab", subView: STUDIO_DEFAULT_KEY },
   cloudCenterGroup: { module: "cloudCenter", subView: "overview" },
@@ -239,6 +242,17 @@ export function ConsoleSidebar() {
   }
 
   function renderStudioGroupedItems() {
+    // Founder Master Edition Charter §3.4: Studio Lab is now exactly
+    // 13 flat items (no sub-clusters) — same flat presentation as
+    // Operator Lab/Cloud Center. Skip the subgroup label entirely when
+    // there's only one group so it doesn't duplicate the accordion's
+    // own "Studio Lab" header; multi-group rendering stays available
+    // in case Studio's nav is ever re-clustered.
+    if (STUDIO_NAV_GROUPS.length === 1) {
+      return getStudioVisibleNavItemsByGroup(STUDIO_NAV_GROUPS[0].key).map((navItem) =>
+        renderSubItem(navItem, "studioLab", STUDIO_DEFAULT_KEY)
+      );
+    }
     return STUDIO_NAV_GROUPS.map((studioGroup) => {
       const groupItems = getStudioVisibleNavItemsByGroup(studioGroup.key);
       if (groupItems.length === 0) return null;
@@ -395,14 +409,14 @@ export function ConsoleSidebar() {
     if (effectiveCollapsed) {
       return (
         <Tooltip key={groupKey} content={group.label}>
-          {renderModuleButton({ ...primary, label: group.label })}
+          {renderModuleButton(primary)}
         </Tooltip>
       );
     }
 
     return (
       <div key={groupKey}>
-        {renderModuleButton({ ...primary, label: group.label })}
+        {renderModuleButton(primary)}
         {secondaries.map((item) => renderModuleButton(item, { secondary: true }))}
       </div>
     );
@@ -465,12 +479,13 @@ export function ConsoleSidebar() {
         {NAV_ZONES.map((zone) => (
           <div className="fdr-sidebar__zone" key={zone.key}>
             {!effectiveCollapsed ? <div className="fdr-sidebar__zone-label">{zone.label}</div> : null}
-            {zone.key === "core"
-              ? zone.groups.map((groupKey) => renderCoreGroup(groupKey))
-              : zone.groups.map((groupKey) => {
-                  const group = NAV_GROUPS.find((g) => g.key === groupKey);
-                  return group ? renderLabsCloudGroup(group) : null;
-                })}
+            {zone.groups.map((groupKey) => {
+              if (LABS_CLOUD_GROUP_KEYS.includes(groupKey)) {
+                const group = NAV_GROUPS.find((g) => g.key === groupKey);
+                return group ? renderLabsCloudGroup(group) : null;
+              }
+              return renderCoreGroup(groupKey);
+            })}
           </div>
         ))}
       </div>
@@ -501,7 +516,26 @@ export function ConsoleSidebar() {
           getAnchorEl={() => flyoutAnchorRefs.current.notifications}
         >
           <div className="fdr-sidebar__flyout-title" style={{ color: "var(--text-primary)" }}>活动通知</div>
-          <p style={{ padding: "0 16px 12px", fontSize: 13, color: "var(--text-secondary)" }}>暂无新通知</p>
+          {getNotifications().slice(0, 4).map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              className="fdr-sidebar__subitem"
+              style={{ textAlign: "left", whiteSpace: "normal", paddingLeft: 16 }}
+              onClick={() => { navigate("notifications"); setFlyoutTarget(null); }}
+            >
+              <div style={{ fontSize: 13 }}>{n.title}</div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{n.meta}</div>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="fdr-sidebar__subitem"
+            style={{ paddingLeft: 16, color: "var(--text-secondary)" }}
+            onClick={() => { navigate("notifications"); setFlyoutTarget(null); }}
+          >
+            查看全部通知 →
+          </button>
         </SidebarFlyout>
 
         <Tooltip content="系统中心 / 设置">

@@ -15,16 +15,25 @@
  */
 export const NAV_ICON_MAP = {
   founderWorkbench: "Gauge",
+  agentCenter: "Bot",
   agentStudio: "Bot",
   promptCenter: "MessageSquareText",
   skillCenter: "Puzzle",
+  workflowCenter: "Workflow",
   automationPolicy: "Workflow",
   knowledgeCenter: "BookOpen",
   connectorCenter: "Plug",
+  capabilityCenter: "Layers",
   benchmarkCenter: "Layers",
   operatorLab: "FlaskConical",
   studioLab: "Palette",
   cloudCenter: "Cloud",
+  cloudToken: "Coins",
+  marketplaceCenter: "Store",
+  cloudVersion: "GitBranch",
+  cloudAssets: "Archive",
+  monitoring: "Activity",
+  logs: "ScrollText",
 };
 
 export const UTILITY_ICONS = {

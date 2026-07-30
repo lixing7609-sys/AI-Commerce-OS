@@ -1,15 +1,30 @@
 import { FounderWorkbenchModule } from "./modules/founderWorkbench/FounderWorkbenchModule.jsx";
+import { DecisionsModule } from "./modules/decisions/DecisionsModule.jsx";
+import { DevelopmentModule } from "./modules/development/DevelopmentModule.jsx";
+import { BusinessValidationModule } from "./modules/businessValidation/BusinessValidationModule.jsx";
+import { ContentValidationModule } from "./modules/contentValidation/ContentValidationModule.jsx";
+import { CloudStatusModule } from "./modules/cloudStatus/CloudStatusModule.jsx";
+import { RisksModule } from "./modules/risks/RisksModule.jsx";
+import { NotificationsModule } from "./modules/notifications/NotificationsModule.jsx";
 import { DesignDnaModule } from "./modules/designDna/DesignDnaModule.jsx";
 import { ProductCenterModule } from "./modules/productCenter/ProductCenterModule.jsx";
 import { OrderCenterModule } from "./modules/orderCenter/OrderCenterModule.jsx";
 import { CustomerServiceCenterModule } from "./modules/customerServiceCenter/CustomerServiceCenterModule.jsx";
+import { AgentCenterModule } from "./modules/agentCenter/AgentCenterModule.jsx";
 import { AgentStudioModule } from "./modules/agentStudio/AgentStudioModule.jsx";
 import { ModelRouterModule } from "./modules/modelRouter/ModelRouterModule.jsx";
-import { PromptCenterModule } from "./modules/promptCenter/PromptCenterModule.jsx";
-import { SkillCenterModule } from "./modules/skillCenter/SkillCenterModule.jsx";
+import { PromptCenterWorkbench } from "./modules/promptCenter/PromptCenterWorkbench.jsx";
+import { SkillCenterWorkbench } from "./modules/skillCenter/SkillCenterWorkbench.jsx";
+import { WorkflowCenterModule } from "./modules/workflowCenter/WorkflowCenterModule.jsx";
+import { CapabilityCenterModule } from "./modules/capabilityCenter/CapabilityCenterModule.jsx";
 import { KnowledgeCenterModule } from "./modules/knowledgeCenter/KnowledgeCenterModule.jsx";
 import { ConnectorCenterModule } from "./modules/connectorCenter/ConnectorCenterModule.jsx";
 import { TokenCenterModule } from "./modules/tokenCenter/TokenCenterModule.jsx";
+import { CloudTokenModule } from "./modules/cloudToken/CloudTokenModule.jsx";
+import { CloudVersionModule } from "./modules/cloudVersion/CloudVersionModule.jsx";
+import { CloudAssetsModule } from "./modules/cloudAssets/CloudAssetsModule.jsx";
+import { MonitoringModule } from "./modules/monitoring/MonitoringModule.jsx";
+import { LogsModule } from "./modules/logs/LogsModule.jsx";
 import { AdCenterModule } from "./modules/adCenter/AdCenterModule.jsx";
 import { AutomationPolicyModule } from "./modules/automationPolicy/AutomationPolicyModule.jsx";
 import { ApprovalCenterModule } from "./modules/approvalCenter/ApprovalCenterModule.jsx";
@@ -54,16 +69,31 @@ import {
 export const MODULE_COMPONENTS = {
   designDna: DesignDnaModule,
   founderWorkbench: FounderWorkbenchModule,
+  decisions: DecisionsModule,
+  development: DevelopmentModule,
+  businessValidation: BusinessValidationModule,
+  contentValidation: ContentValidationModule,
+  cloudStatus: CloudStatusModule,
+  risks: RisksModule,
+  notifications: NotificationsModule,
   productCenter: ProductCenterModule,
   orderCenter: OrderCenterModule,
   customerServiceCenter: CustomerServiceCenterModule,
+  agentCenter: AgentCenterModule,
   agentStudio: AgentStudioModule,
   modelRouter: ModelRouterModule,
-  promptCenter: PromptCenterModule,
-  skillCenter: SkillCenterModule,
+  promptCenter: PromptCenterWorkbench,
+  skillCenter: SkillCenterWorkbench,
+  workflowCenter: WorkflowCenterModule,
+  capabilityCenter: CapabilityCenterModule,
   knowledgeCenter: KnowledgeCenterModule,
   connectorCenter: ConnectorCenterModule,
   tokenCenter: TokenCenterModule,
+  cloudToken: CloudTokenModule,
+  cloudVersion: CloudVersionModule,
+  cloudAssets: CloudAssetsModule,
+  monitoring: MonitoringModule,
+  logs: LogsModule,
   adCenter: AdCenterModule,
   automationPolicy: AutomationPolicyModule,
   approvalCenter: ApprovalCenterModule,
