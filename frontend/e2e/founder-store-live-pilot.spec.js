@@ -88,18 +88,21 @@ test.describe("Founder: Operator Lab (阶段 M8c contentOnly 渲染，Operator �
 
   test("navigating via Founder's sidebar sub-item does not reload or break the Founder shell", async ({ page }) => {
     await page.goto("/founder");
-    await page.getByRole("button", { name: "Operator 实验室", exact: true }).click();
-    await page.locator(".fdr-sidebar__subitem", { hasText: "广告投放" }).click();
+    await page.getByRole("button", { name: "Operator Lab", exact: true }).click();
+    await page.locator(".fdr-sidebar__subitem", { hasText: "Advertising" }).click();
     await expect(page.getByRole("heading", { name: "广告投放" })).toBeVisible();
     // Founder 自己的顶层导航必须仍然存在（说明没有整页跳转/重新加载）
-    await expect(page.getByRole("button", { name: "Founder工作台" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Today", exact: true })).toBeVisible();
   });
 
   test("店铺 page inside Operator Lab is the same real ShopCenterContent as standalone Operator, plus the Founder-only 平台连接器 overlay tab", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/founder");
-    await page.getByRole("button", { name: "Operator 实验室", exact: true }).click();
-    await page.locator(".fdr-sidebar__subitem", { hasText: "店铺" }).click();
+    await page.getByRole("button", { name: "Operator Lab", exact: true }).click();
+    // 店铺管理已经收口进 Settings 的"店铺管理" Tab（Charter §3.3：
+    // shops + settings → Settings），不再是独立顶级子项。
+    await page.locator(".fdr-sidebar__subitem", { hasText: "Settings" }).click();
+    await page.getByRole("button", { name: "店铺管理", exact: true }).click();
     const firstCard = page.locator("article").first();
     const hasStore = await firstCard.isVisible().catch(() => false);
     test.skip(!hasStore, "no real store in the dev database");
@@ -140,9 +143,9 @@ test.describe("Founder: Studio Lab (阶段 M8c contentOnly 渲染，Studio 完�
 
   test("the embedded Studio content is reachable and scrollable via Founder's own single content container, no double scrollbar", async ({ page }) => {
     await page.goto("/founder");
-    await page.getByRole("button", { name: "Studio 实验室", exact: true }).click();
-    await page.locator(".fdr-sidebar__subitem", { hasText: "AI短剧" }).click();
-    await expect(page.getByRole("heading", { name: "AI短剧" })).toBeVisible();
+    await page.getByRole("button", { name: "Studio Lab", exact: true }).click();
+    await page.locator(".fdr-sidebar__subitem", { hasText: "AI Short Drama" }).click();
+    await expect(page.getByRole("heading", { name: "AI Short Drama" })).toBeVisible();
 
     // Founder 自己的内容容器（.fdr-content）现在是唯一的滚动上下文——
     // 内嵌页面不再自带 .st-content 有界容器，不应该出现第二个独立的

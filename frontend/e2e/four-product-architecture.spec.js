@@ -159,24 +159,28 @@ test.describe("Operator: device resource card and advertising", () => {
   });
 });
 
+function chevronFor(page, name) {
+  return page.getByRole("button", { name: new RegExp(`^(展开|收起)${name}$`) });
+}
+
 test.describe("Founder: core navigation intact", () => {
   test("Founder's Secretary and Store Center (via Operator Lab) are still reachable", async ({ page }) => {
-    // 阶段 M8 Founder Product Shell Consolidation：Founder 不再单独有
-    // 一个顶级"店铺中心"菜单——店铺业务已经单一真源合并进 Operator
-    // 实验室（真实店铺接入模块 + Operator 实验室内嵌的
-    // ShopCenterContent），旧的 ?module=storeCenter 链接会自动重定向
-    // 到 Operator 实验室的店铺页，不会变成 404 或空白页。
+    // Founder Master Edition Charter §3.3: Founder 不再单独有一个顶级
+    // "店铺中心"菜单——店铺业务已经单一真源合并进 Operator Lab 的
+    // Settings（店铺管理/平台连接 Tab），旧的 ?module=storeCenter 链接
+    // 会自动重定向到 Operator Lab 的 Settings 子项，不会变成 404 或
+    // 空白页。
     //
-    // 阶段 M8c：Operator 实验室是折叠的手风琴分组，"真实店铺接入"
-    // 只在展开后才可见——先点开分组再断言，而不是假设它默认平铺。
+    // Operator Lab 是折叠的手风琴分组——先展开分组再断言，而不是假设
+    // 它默认平铺。
     await page.goto("/founder");
     await expect(page.getByText("和 AI 秘书说点什么")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Operator 实验室", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Operator 实验室", exact: true }).click();
-    await expect(page.getByRole("button", { name: "真实店铺接入" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Operator Lab", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Operator Lab", exact: true }).click();
+    await expect(page.locator(".fdr-sidebar__subitem", { hasText: "Settings" })).toBeVisible();
 
     await page.goto("/?mode=founder&module=storeCenter");
-    await expect(page.getByRole("button", { name: "Operator 实验室", exact: true })).toHaveAttribute("aria-expanded", "true");
-    await expect(page.locator(".fdr-sidebar__subitem.fdr-sidebar__item--active")).toHaveText(/店铺/);
+    await expect(chevronFor(page, "Operator Lab")).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".fdr-sidebar__subitem.fdr-sidebar__item--active")).toHaveText(/Settings/);
   });
 });

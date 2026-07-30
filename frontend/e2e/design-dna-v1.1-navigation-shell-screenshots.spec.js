@@ -37,12 +37,12 @@ test("Design DNA v1.1 navigation shell screenshots", async ({ page }) => {
   // expand back for the next shots
   await page.getByRole("button", { name: "展开侧边栏" }).click();
 
-  // 3. Operator实验室 expanded — 1440px
-  await page.getByRole("button", { name: "Operator 实验室", exact: true }).click();
+  // 3. Operator Lab expanded — 1440px
+  await page.getByRole("button", { name: "Operator Lab", exact: true }).click();
   await shot(page, "03-operator-lab-expanded-1440");
 
-  // 4. Studio实验室 expanded — 1440px
-  await page.getByRole("button", { name: "Studio 实验室", exact: true }).click();
+  // 4. Studio Lab expanded — 1440px
+  await page.getByRole("button", { name: "Studio Lab", exact: true }).click();
   await shot(page, "04-studio-lab-expanded-1440");
 
   // 5. Sidebar — 1280px
@@ -57,7 +57,7 @@ test("Design DNA v1.1 navigation shell screenshots", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.reload();
   await page.getByRole("button", { name: "收起侧边栏" }).click();
-  await page.getByRole("button", { name: "Studio 实验室", exact: true }).click();
+  await page.getByRole("button", { name: "Studio Lab", exact: true }).click();
   await shot(page, "07-collapsed-flyout");
 
   // 8. Keyboard focus state

@@ -34,31 +34,29 @@ test("Batch 2 acceptance screenshots", async ({ page }) => {
   await page.goto("/");
   await shot(page, "01-founder-sidebar-bare-root");
 
-  await expandGroup(page, "Operator 实验室");
+  await expandGroup(page, "Operator Lab");
   await shot(page, "02-operator-workbench");
 
-  await clickSub(page, "订单");
+  await clickSub(page, "Orders");
   await shot(page, "03-operator-orders");
 
-  await clickSub(page, "广告投放");
+  await clickSub(page, "Advertising");
   await shot(page, "04-operator-adops");
 
-  await clickSub(page, "自动经营");
+  await clickSub(page, "Organization");
   await shot(page, "05-operator-autoops");
 
-  await clickSub(page, "客户");
+  await clickSub(page, "Customers");
   await shot(page, "05b-operator-customers");
 
-  await expandGroup(page, "Agent中心");
-  await clickSub(page, "Agent 工作室");
+  await expandGroup(page, "AI Capability Center");
   await shot(page, "06-agent-center");
 
-  await expandGroup(page, "Workflow中心");
-  await clickSub(page, "自动化策略");
+  await clickSub(page, "Workflow Center");
   await shot(page, "07-workflow-center");
 
   await expandGroup(page, "Cloud Center");
-  await clickSub(page, "总览");
+  await clickSub(page, "Devices");
   await shot(page, "08-cloud-center");
 
   fs.writeFileSync(path.join(OUT_DIR, "console-errors.json"), JSON.stringify(errors, null, 2));

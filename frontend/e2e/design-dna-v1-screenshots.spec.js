@@ -45,13 +45,15 @@ test("Design DNA v1.0 acceptance screenshots", async ({ page }) => {
   await page.getByRole("button", { name: "Product Examples", exact: true }).click();
   await shot(page, "02-showcase-product-examples");
 
-  // 3. Expanded vs collapsed sidebar nav group (Founder工作台's own
-  // group is pinned non-collapsible, so Agent中心 demonstrates both
-  // states of the accordion pattern).
+  // 3. Expanded vs collapsed sidebar nav group (Founder Workspace's own
+  // group is pinned non-collapsible, so AI Capability Center
+  // demonstrates both states of the accordion pattern). The chevron
+  // toggles expand/collapse; the group label itself only navigates.
   await page.goto("/");
-  await page.getByRole("button", { name: "Agent中心", exact: true }).click();
+  const capabilityChevron = page.getByRole("button", { name: /展开AI Capability Center|收起AI Capability Center/ });
+  await capabilityChevron.click();
   await shot(page, "03-sidebar-group-expanded");
-  await page.getByRole("button", { name: "Agent中心", exact: true }).click();
+  await capabilityChevron.click();
   await shot(page, "04-sidebar-group-collapsed");
 
   // 4. AI recommendation flow (live, real component instances on the

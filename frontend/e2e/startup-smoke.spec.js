@@ -28,8 +28,8 @@ test.describe("startup smoke — all three editions", () => {
     const errors = collectPageErrors(page);
     await page.goto("/");
     await expect(page.locator("main")).not.toBeEmpty();
-    await expect(page.locator(".fdr-sidebar__brand-badge")).toHaveText("FOUNDER");
-    await expect(page.getByRole("button", { name: "Founder工作台" })).toBeVisible();
+    await expect(page.locator(".fdr-sidebar__edition")).toHaveText("Founder");
+    await expect(page.getByRole("button", { name: "Today", exact: true })).toBeVisible();
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
   });
 
@@ -38,7 +38,7 @@ test.describe("startup smoke — all three editions", () => {
     await page.goto("/cloud");
     await expect(page.locator("main")).not.toBeEmpty();
     await expect(page.getByText("AI Commerce Operator Cloud")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "总览", level: 1 })).toBeVisible();
+    await expect(page.getByText("隐私边界", { exact: false }).first()).toBeVisible();
     expect(errors, `console errors: ${errors.join("; ")}`).toHaveLength(0);
   });
 

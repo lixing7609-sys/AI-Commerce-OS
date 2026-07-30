@@ -20,7 +20,9 @@ const TABS = [
  * Connector Principle: Operator never sees technical connectors.
  */
 export function SettingsWorkbenchPage({ activeKey }) {
-  const [tab, setTab] = useState(activeKey === "shops" ? "shops" : "settings");
+  const [tab, setTab] = useState(
+    activeKey === "shops" ? "shops" : activeKey === "connections" ? "connections" : "settings"
+  );
 
   return (
     <div>

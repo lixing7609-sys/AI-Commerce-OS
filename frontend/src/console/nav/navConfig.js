@@ -417,7 +417,7 @@ export const NAV_GROUPS = [
  * purely cosmetic grouping/labeling and can't desync module behavior.
  */
 export const NAV_ZONES = [
-  { key: "workspace", label: "Workspace", groups: ["founderWorkspaceGroup"] },
+  { key: "workspace", label: "Founder Workspace", groups: ["founderWorkspaceGroup"] },
   { key: "production", label: "Capability & Labs", groups: ["aiCapabilityCenterGroup", "operatorLabGroup", "studioLabGroup"] },
   { key: "cloud", label: "Cloud", groups: ["cloudCenterGroup"] },
 ];
@@ -478,10 +478,10 @@ export function getModuleConfig(moduleKey) {
 export const MODULE_REDIRECTS = {
   secretary: { module: "founderWorkbench", subView: "secretary" },
   dashboard: { module: "founderWorkbench", subView: "dashboard" },
-  contentCenter: { module: "studioLab", subView: "contentProjects" },
+  contentCenter: { module: "studioLab", subView: "workspace" },
   liveCenter: { module: "studioLab", subView: "aiLive" },
   trafficNetworkCenter: { module: "studioLab", subView: "matrixAccounts" },
-  storeCenter: { module: "operatorLab", subView: "shops" },
+  storeCenter: { module: "operatorLab", subView: "settings" },
   storeConnectionCenter: { module: "operatorLab", subView: "storeConnection" },
 };
 

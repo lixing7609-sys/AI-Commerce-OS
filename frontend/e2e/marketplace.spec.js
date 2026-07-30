@@ -49,10 +49,10 @@ test.describe("Marketplace: three-view scoping", () => {
   test("Studio Marketplace only shows approved studio/shared packages, never draft/in_review or Operator-only ones", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/studio");
-    // 阶段 Studio V3 Integration §六：能力市场现在归在"商业经营"折叠
-    // 分组里，需要先展开分组再点击。
-    await page.getByRole("button", { name: "商业经营", exact: true }).click();
-    await page.locator(".st-nav-link", { hasText: "能力市场" }).click();
+    // Founder Master Edition Charter §3.4: Studio's nav is now 13 flat
+    // items; Marketplace is absorbed into Asset Library as a tab.
+    await page.locator(".st-nav-link", { hasText: "Asset Library" }).click();
+    await page.getByRole("button", { name: "能力市场" }).click();
     await expect(page.getByText("选题雷达 Agent")).toBeVisible();
     await expect(page.getByText("家居行业经营知识库")).toBeVisible(); // SHARED 包
     await expect(page.getByText("AI 客服员工·日常应答")).toHaveCount(0); // Operator 专属

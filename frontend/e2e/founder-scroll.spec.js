@@ -50,7 +50,7 @@ test.describe("Founder vertical scroll regression", () => {
     expect(initial.scrollHeight, "content must actually exceed the viewport for this test to be meaningful").toBeGreaterThan(initial.clientHeight + 50);
     expect(initial.scrollTop).toBe(0);
 
-    const bottomMarker = page.getByText("今日营收 · 广告花费 · Token 消耗");
+    const bottomMarker = page.getByText("和 AI 秘书说点什么");
     await expect(bottomMarker).not.toBeInViewport();
 
     // Real mouse-wheel scroll, not a synthetic scrollTop assignment.
@@ -103,7 +103,7 @@ test.describe("Founder vertical scroll regression", () => {
     // 阶段 Founder Full-System v3 Batch 2：裸 URL 现在默认打开
     // Founder，Operator Cloud 的稳定入口是 `/cloud` 路径别名。
     await page.goto("/cloud");
-    await expect(page.getByRole("heading", { name: "总览", level: 1 })).toBeVisible();
+    await expect(page.getByText("隐私边界", { exact: false }).first()).toBeVisible();
     await expect(page.locator(".cc-main")).toHaveCount(1);
 
     await page.goto("/?mode=operator-preview");
