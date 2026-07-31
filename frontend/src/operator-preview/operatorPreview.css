@@ -104,6 +104,14 @@
   color: #fff;
 }
 
+/* 抽屉头部复用 .op-brand 的品牌区块结构，但抽屉自己已经有整体
+   padding，这里去掉侧边栏专属的内边距/分隔线/外边距。 */
+.op-brand--drawer {
+  padding: 0;
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
 .op-nav {
   display: flex;
   flex-direction: column;

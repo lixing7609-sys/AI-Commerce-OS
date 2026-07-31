@@ -24,27 +24,26 @@
 
 .cc-brand {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 0 16px 16px 16px;
   border-bottom: 1px solid #1e293b;
   margin-bottom: 8px;
 }
 
-.cc-brand-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: #6366f1;
+.cc-brand-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-weight: 700;
+  gap: 8px;
 }
 
-.cc-brand-name {
-  font-size: 13px;
+.cc-brand-badge {
+  font-size: 10px;
   font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #6366f1;
+  color: #fff;
 }
 
 .cc-brand-tag {

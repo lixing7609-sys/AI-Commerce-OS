@@ -4,6 +4,7 @@ import { DEFAULT_NAV_KEY, getStudioNavItemByKey } from "./navConfig.js";
 import { StudioSidebar } from "./StudioSidebar.jsx";
 import { PAGE_COMPONENTS } from "./pages/index.jsx";
 import { ErrorBoundary } from "../shared/ErrorBoundary.jsx";
+import { useSinoFUTContextPublisher } from "../shared/sinofut/sinofutContextStore.js";
 
 /**
  * AI Commerce OS Studio（阶段：四端产品体系 V1）——内容生产与流量
@@ -41,6 +42,8 @@ function StudioShell() {
 
   const activeItem = getStudioNavItemByKey(activePage);
   const PageComponent = PAGE_COMPONENTS[activePage];
+
+  useSinoFUTContextPublisher(`Studio 实验室 · ${activeItem?.label ?? ""}`);
 
   return (
     <div className="st-shell">

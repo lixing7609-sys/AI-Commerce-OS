@@ -3,6 +3,8 @@ import "./cloudConsole.css";
 import { ErrorBoundary } from "../shared/ErrorBoundary.jsx";
 import { NAV_ITEMS } from "./navConfig.js";
 import { PAGE_COMPONENTS } from "./pageRegistry.jsx";
+import { SinoFUTBrand } from "../shared/sinofut/SinoFUTBrand.jsx";
+import { useSinoFUTContextPublisher } from "../shared/sinofut/sinofutContextStore.js";
 
 /**
  * Operator Cloud 控制台（阶段：三版最终定位）——裸 URL
@@ -41,15 +43,17 @@ function CloudConsoleShell() {
 
   const activeItem = NAV_ITEMS.find((i) => i.key === activePage);
 
+  useSinoFUTContextPublisher(`Cloud Center · ${activeItem?.label ?? ""}`);
+
   return (
     <div className="cc-shell">
       <aside className="cc-sidebar">
         <div className="cc-brand">
-          <span className="cc-brand-mark">☁</span>
-          <div>
-            <div className="cc-brand-name">Operator Cloud</div>
-            <div className="cc-brand-tag">设备 · 租户 · 许可 · OTA</div>
+          <div className="cc-brand-row">
+            <SinoFUTBrand />
+            <span className="cc-brand-badge">CLOUD</span>
           </div>
+          <div className="cc-brand-tag">设备 · 租户 · 许可 · OTA</div>
         </div>
         <nav className="cc-nav">
           {NAV_ITEMS.map((item) => (

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { OPERATOR_NAV_ITEMS } from "../helpers/navigation";
+import { SinoFUTBrand } from "../../shared/sinofut/SinoFUTBrand.jsx";
 
 /**
  * 经营者版一级导航（阶段：路由/页面修复 + 品牌统一）。
@@ -37,7 +38,7 @@ function OperatorNav({ activePage, onNavigate, companyName, scopeLabel, statusOk
     <>
       <aside className="op-sidebar">
         <div className="op-brand">
-          AI Commerce OS
+          <SinoFUTBrand />
           <span className="op-brand-badge">OPERATOR</span>
         </div>
 
@@ -105,7 +106,10 @@ function OperatorNav({ activePage, onNavigate, companyName, scopeLabel, statusOk
             onClick={(event) => event.stopPropagation()}
           >
             <div className="op-drawer-header">
-              <strong>AI Commerce OS <span className="op-brand-badge">OPERATOR</span></strong>
+              <div className="op-brand op-brand--drawer">
+                <SinoFUTBrand />
+                <span className="op-brand-badge">OPERATOR</span>
+              </div>
               <button
                 type="button"
                 className="op-drawer-close"

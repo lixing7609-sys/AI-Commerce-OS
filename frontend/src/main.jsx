@@ -9,6 +9,7 @@ import CloudConsoleApp from './cloud/CloudConsoleApp.jsx'
 import StudioApp from './studio/StudioApp.jsx'
 import { EDITIONS, getActiveEdition } from './editions/editionConfig.js'
 import { ErrorBoundary } from './shared/ErrorBoundary.jsx'
+import { SinoFUTWidget } from './shared/sinofut/SinoFUTWidget.jsx'
 
 const activeEdition = getActiveEdition()
 
@@ -71,5 +72,11 @@ createRoot(document.getElementById('root')).render(
     <ErrorBoundary renderFallback={topLevelFallback}>
       {renderForEdition(activeEdition)}
     </ErrorBoundary>
+    {/* SinoFUT 全局悬浮示意入口：挂载在四个 Edition 各自的 React 树
+        之外的最高层，唯一共享实现，所有 Edition 自动获得，不逐页/逐
+        Shell 复制。stacked 只在 Operator 独立预览端生效——那里已有
+        右下角固定的 Operator 秘书原型按钮（SecretaryPanel.jsx），错开
+        避免两个悬浮入口重叠。见 docs/sinofut-ui-foundation.md。 */}
+    <SinoFUTWidget stacked={activeEdition === EDITIONS.OPERATOR} />
   </StrictMode>,
 )

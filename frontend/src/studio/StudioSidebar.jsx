@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NAV_GROUPS, getVisibleNavItemsByGroup, getGroupKeyForNavItem } from "./navConfig.js";
 import { getStoredExpandedGroup, setStoredExpandedGroup } from "./navExpansionStore.js";
+import { SinoFUTBrand } from "../shared/sinofut/SinoFUTBrand.jsx";
 
 /**
  * 独立 Studio 的左侧导航（阶段：Studio V3 Integration §六）——可展开/
@@ -29,11 +30,8 @@ export function StudioSidebar({ activePage, onNavigate }) {
   return (
     <aside className="st-sidebar">
       <div className="st-brand">
-        <span>◆</span>
-        <div>
-          <div>AI Commerce OS</div>
-          <span className="st-brand-badge">STUDIO</span>
-        </div>
+        <SinoFUTBrand />
+        <span className="st-brand-badge">STUDIO</span>
       </div>
       <div className="st-sidebar-scroll">
         {NAV_GROUPS.map((group) => {

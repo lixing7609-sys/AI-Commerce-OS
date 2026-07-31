@@ -1,6 +1,20 @@
 import { useEffect, useState } from "react";
 import { useConsoleNavContext } from "../nav/ConsoleNavContext.jsx";
-import { getModuleConfig } from "../nav/navConfig.js";
+import { getGroupKeyForModule, getModuleConfig } from "../nav/navConfig.js";
+import { useSinoFUTContextPublisher } from "../../shared/sinofut/sinofutContextStore.js";
+
+/**
+ * SinoFUT 面板"当前：X · Y"文案的分组前缀——founderWorkspaceGroup 显示
+ * 为"Founder"（不是完整的"Founder 工作台"），其余四组直接复用
+ * navConfig.js NAV_GROUPS 的既有中文标签，不重复定义第二份文案。
+ */
+const SINOFUT_CONTEXT_GROUP_LABEL = {
+  founderWorkspaceGroup: "Founder",
+  aiCapabilityCenterGroup: "AI 能力中心",
+  operatorLabGroup: "Operator 实验室",
+  studioLabGroup: "Studio 实验室",
+  cloudCenterGroup: "Cloud Center",
+};
 
 function formatClock(date) {
   return date.toLocaleString("zh-CN", {
@@ -30,6 +44,9 @@ export function ConsoleTopBar() {
   }, []);
 
   const moduleConfig = getModuleConfig(module);
+  const groupKey = getGroupKeyForModule(module);
+  const groupLabel = SINOFUT_CONTEXT_GROUP_LABEL[groupKey] ?? "Founder";
+  useSinoFUTContextPublisher(`${groupLabel} · ${moduleConfig?.label ?? ""}`);
 
   return (
     <header className="fdr-topbar">

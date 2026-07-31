@@ -9,6 +9,7 @@ import { getNavItemByKey, isValidNavKey } from "./helpers/navigation";
 import { scopeLabelFor } from "./helpers/formatters";
 import { ErrorBoundary } from "../shared/ErrorBoundary.jsx";
 import { PAGE_COMPONENTS } from "./pageRegistry.jsx";
+import { useSinoFUTContextPublisher } from "../shared/sinofut/sinofutContextStore.js";
 
 const COMPANY_NAME = "一人公司";
 
@@ -51,6 +52,8 @@ function OperatorPreviewShell() {
   const scopeLabel = scopeLabelFor(shopScope, shops);
   const activeNavItem = getNavItemByKey(activePage);
   const PageComponent = isValidNavKey(activePage) ? PAGE_COMPONENTS[activePage] : null;
+
+  useSinoFUTContextPublisher(`Operator 实验室 · ${activeNavItem?.label ?? ""}`);
 
   return (
     <div className="op-shell">

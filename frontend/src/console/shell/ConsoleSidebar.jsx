@@ -24,6 +24,7 @@ import { Tooltip } from "../kit/Tooltip.jsx";
 import { CommandPalette } from "../kit/CommandPalette.jsx";
 import { SidebarFlyout } from "./SidebarFlyout.jsx";
 import { getNotifications } from "../modules/founderWorkspace/workspaceEntities.js";
+import { SinoFUTBrand } from "../../shared/sinofut/SinoFUTBrand.jsx";
 
 /**
  * Founder 唯一左侧导航shell — Design DNA v1.1 structural rebuild.
@@ -436,13 +437,10 @@ export function ConsoleSidebar() {
   return (
     <nav className="fdr-sidebar" data-collapsed={effectiveCollapsed ? "true" : "false"} aria-label="Founder 导航">
       <div className="fdr-sidebar__identity">
-        <div className="fdr-sidebar__mark" aria-hidden="true" />
-        {!effectiveCollapsed ? (
-          <div className="fdr-sidebar__identity-text">
-            <div className="fdr-sidebar__wordmark">AI Commerce OS</div>
-            <div className="fdr-sidebar__edition">Founder</div>
-          </div>
-        ) : null}
+        <SinoFUTBrand
+          collapsed={effectiveCollapsed}
+          className={effectiveCollapsed ? "" : "fdr-sidebar__identity-text"}
+        />
         {!narrowViewport && !effectiveCollapsed ? (
           <button
             type="button"

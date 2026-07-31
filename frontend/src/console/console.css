@@ -70,34 +70,10 @@
   justify-content: center;
 }
 
-.fdr-sidebar__mark {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-xs);
-  background: var(--sidebar-ai-accent);
-  flex-shrink: 0;
-}
-
 .fdr-sidebar__identity-text {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-}
-
-.fdr-sidebar__wordmark {
-  font-size: 15px;
-  font-weight: var(--type-heading-card-weight);
-  color: var(--sidebar-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.fdr-sidebar__edition {
-  font-size: var(--type-caption-size);
-  font-weight: var(--type-body-weight);
-  color: var(--sidebar-text-tertiary);
-  white-space: nowrap;
 }
 
 .fdr-sidebar__collapse-toggle {

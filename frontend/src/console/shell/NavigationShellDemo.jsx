@@ -5,6 +5,7 @@ import { Icon } from "../kit/Icon.jsx";
 import { Tooltip } from "../kit/Tooltip.jsx";
 import { SegmentedControl } from "../kit/SegmentedControl.jsx";
 import { SidebarFlyout } from "./SidebarFlyout.jsx";
+import { SinoFUTBrand } from "../../shared/sinofut/SinoFUTBrand.jsx";
 
 /**
  * Live demonstrator for the Design DNA showcase's "Navigation &
@@ -83,13 +84,10 @@ export function NavigationShellDemo() {
           style={{ position: "relative", height: "100%", top: "auto" }}
         >
           <div className="fdr-sidebar__identity">
-            <div className="fdr-sidebar__mark" aria-hidden="true" />
-            {!effectiveCollapsed ? (
-              <div className="fdr-sidebar__identity-text">
-                <div className="fdr-sidebar__wordmark">AI Commerce OS</div>
-                <div className="fdr-sidebar__edition">Founder</div>
-              </div>
-            ) : null}
+            <SinoFUTBrand
+              collapsed={effectiveCollapsed}
+              className={effectiveCollapsed ? "" : "fdr-sidebar__identity-text"}
+            />
           </div>
 
           {!effectiveCollapsed ? (
