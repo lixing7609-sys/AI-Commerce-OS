@@ -19,17 +19,26 @@
    (packages/ui/src/sino/SinoWorkspace.jsx): fixed conversation sidebar + a
    fixed-height main workspace (title bar / scrollable middle / pinned
    composer), filling the viewport below the top nav with no page-level
-   scroll. Two columns only — no third "AI experts" column. */
+   scroll. Two columns only — no third "AI experts" column.
+
+   .sf-main (packages/ui/src/shell.css, shared with Operator/Operator Cloud —
+   not touched here) centers content in a max-width:1320px, padded box. That's
+   correct for Founder's other pages but wrong for this one: the workspace must
+   read as "the whole page below the top nav", not a centered card. The
+   full-bleed rule below breaks .founder-home out of that padded/centered box
+   using only this file — no shared shell/AppShell change needed. */
 
 .founder-home {
+  position: relative;
+  left: 50%;
+  width: 100vw;
+  margin-left: -50vw;
+  margin-top: calc(-1 * var(--space-4));
+  margin-bottom: calc(-1 * var(--space-6));
+  height: calc(100% + var(--space-4) + var(--space-6));
   display: grid;
   grid-template-columns: 260px 1fr;
-  height: 100%;
-  min-height: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
   overflow: hidden;
-  background: var(--surface-raised);
 }
 
 .founder-home-sidebar {
@@ -107,8 +116,8 @@
 .founder-home-input {
   display: flex;
   gap: 10px;
-  max-width: 880px;
-  margin: 0 auto 10px;
+  width: 100%;
+  margin: 0 0 10px;
 }
 
 .founder-home-input input {
