@@ -15,18 +15,14 @@
   letter-spacing: 0;
 }
 
-/* Founder AI home workspace — modeled on the Operator AI workspace layout
-   (packages/ui/src/sino/SinoWorkspace.jsx): fixed conversation sidebar + a
-   fixed-height main workspace (title bar / scrollable middle / pinned
-   composer), filling the viewport below the top nav with no page-level
-   scroll. Two columns only — no third "AI experts" column.
+/* Founder AI workspace — "AI 董事会 + 决策中心 + 公司总控". Left: feature
+   navigation (13 sections in 4 groups). Right: whichever section is active.
+   Full-bleed below the top nav, no page-level scroll — see the pixel-exact
+   height fix (git log) for why the inline height + full-bleed margins exist.
 
    .sf-main (packages/ui/src/shell.css, shared with Operator/Operator Cloud —
-   not touched here) centers content in a max-width:1320px, padded box. That's
-   correct for Founder's other pages but wrong for this one: the workspace must
-   read as "the whole page below the top nav", not a centered card. The
-   full-bleed rule below breaks .founder-home out of that padded/centered box
-   using only this file — no shared shell/AppShell change needed. */
+   not touched here) centers content in a max-width:1320px, padded box; the
+   rules below break .founder-home out of that box using only this file. */
 
 .founder-home {
   position: relative;
@@ -36,31 +32,11 @@
   margin-top: calc(-1 * var(--space-4));
   margin-bottom: calc(-1 * var(--space-6));
   /* CSS fallback for the instant before FounderHome.jsx measures the real
-     top-nav height and sets an exact inline `height: calc(100dvh - Npx)` —
-     the inline style always wins once JS runs on mount. */
+     top-nav height and sets an exact inline `height: calc(100dvh - Npx)`. */
   height: calc(100% + var(--space-4) + var(--space-6));
   display: grid;
   grid-template-columns: 260px 1fr;
   overflow: hidden;
-}
-
-.founder-home-sidebar {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border-subtle);
-}
-
-.founder-home-sidebar-header {
-  padding: var(--space-2);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.founder-home-conversations {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-2);
 }
 
 .founder-home-workspace {
@@ -68,7 +44,7 @@
   min-width: 0;
   height: 100%;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   background: var(--surface-base);
 }
 
@@ -90,49 +66,163 @@
   font-size: 13px;
 }
 
-.founder-home-scroll {
+.founder-ai-content {
   min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-3);
+  overflow: hidden;
 }
 
-/* Centers the four cards in the space actually left between the title bar
-   and the composer — real flex alignment, not a fixed margin/padding fake. */
-.founder-home-cards-wrapper {
-  min-height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.founder-home-cards {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-3);
-  max-width: 880px;
-  width: 100%;
-}
-
-@media (max-width: 720px) {
-  .founder-home-cards {
+@media (max-width: 860px) {
+  .founder-home {
     grid-template-columns: 1fr;
+    height: auto;
   }
 }
 
-.founder-home-composer {
+/* --- Left sidebar: feature navigation --- */
+
+.founder-ai-sidebar {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+.founder-ai-new-wrap {
+  position: relative;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.founder-ai-new-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  appearance: none;
+  border: 1px solid var(--border-subtle);
+  background: var(--ai-accent);
+  color: white;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: var(--font-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.founder-ai-new-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: var(--space-2);
+  right: var(--space-2);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  box-shadow: var(--shadow-floating);
+  overflow: hidden;
+}
+
+.founder-ai-new-menu button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 10px 12px;
+  font: var(--font-body);
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.founder-ai-new-menu button:hover {
+  background: var(--surface-sunken);
+}
+
+.founder-ai-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.founder-ai-nav-group {
+  margin-bottom: var(--space-2);
+}
+
+.founder-ai-nav-group-label {
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 6px 10px;
+}
+
+.founder-ai-nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.founder-ai-nav-item:hover {
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+}
+
+.founder-ai-nav-item.is-active {
+  background: var(--ai-accent-soft);
+  color: var(--ai-accent);
+  font-weight: 600;
+}
+
+.founder-ai-nav-item svg {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+/* --- Shared view shells --- */
+
+.founder-ai-view-shell {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.founder-ai-decision-center {
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.founder-ai-view-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.founder-ai-command-bar {
+  display: flex;
+  gap: 10px;
   border-top: 1px solid var(--border-subtle);
   padding: var(--space-3);
   background: var(--surface-raised);
 }
 
-.founder-home-input {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  margin: 0 0 10px;
-}
-
-.founder-home-input input {
+.founder-ai-command-bar input {
   flex: 1;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
@@ -142,25 +232,222 @@
   color: var(--text-primary);
 }
 
-.founder-home-quick-actions {
+/* --- Overview cards (Decision Center) --- */
+
+.founder-ai-overview-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+@media (max-width: 900px) {
+  .founder-ai-overview-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.founder-ai-overview-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.founder-ai-overview-value {
+  font: var(--font-display);
+  font-size: 30px;
+}
+
+.founder-ai-overview-label {
+  font: var(--font-caption);
+  color: var(--text-secondary);
+}
+
+/* --- Generic section/list building blocks reused across every view --- */
+
+.founder-ai-section-title {
+  font: var(--font-title);
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.founder-ai-section-title:first-child {
+  margin-top: 0;
+}
+
+.founder-ai-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.founder-ai-row-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.founder-ai-row-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.founder-ai-meta {
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+  margin: 4px 0;
+}
+
+.founder-ai-ai-suggestion {
+  font-size: 13px;
+  color: var(--ai-accent);
+  margin: 6px 0;
+}
+
+.founder-ai-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  justify-content: center;
-  max-width: 880px;
-  margin: 0 auto;
+  margin-top: 10px;
 }
 
-@media (max-width: 860px) {
-  .founder-home {
-    grid-template-columns: 1fr;
-    height: auto;
-  }
+.founder-ai-empty {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
 
-  .founder-home-sidebar {
-    border-right: none;
-    border-bottom: 1px solid var(--border-subtle);
-    max-height: 40vh;
+.founder-ai-progress-track {
+  background: var(--surface-sunken);
+  border-radius: 6px;
+  height: 8px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.founder-ai-progress-fill {
+  height: 100%;
+  background: var(--ai-accent);
+}
+
+.founder-ai-saved-note {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--signal-success);
+}
+
+/* --- Functional Argumentation / Model Meeting --- */
+
+.founder-ai-textarea {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font: var(--font-body);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.founder-ai-argument-result {
+  margin-top: var(--space-3);
+}
+
+.founder-ai-definition-grid {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 6px 12px;
+  margin: 10px 0 0;
+}
+
+.founder-ai-definition-grid dt {
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+}
+
+.founder-ai-definition-grid dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+@media (max-width: 720px) {
+  .founder-ai-definition-grid {
+    grid-template-columns: 1fr;
   }
+}
+
+.founder-ai-model-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .founder-ai-model-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.founder-ai-model-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.founder-ai-model-chip.is-selected {
+  border-color: var(--ai-accent);
+}
+
+.founder-ai-model-chip label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.founder-ai-model-chip select {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 4px 6px;
+  font-size: 12px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.founder-ai-model-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.founder-ai-model-column h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.founder-ai-model-column p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* --- System Overview --- */
+
+.founder-ai-system-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.founder-ai-system-card {
+  cursor: pointer;
 }
 
