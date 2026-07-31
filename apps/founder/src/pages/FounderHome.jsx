@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   useApiState,
   listConversations,
@@ -16,11 +15,16 @@ import {
 // not a dashboard. Conversation history is stored under the "founder" persona id,
 // the same key the full-screen SinoFUT workspace already uses, so history carries
 // over between the two surfaces without touching packages/ui/src/sino/SinoWorkspace.jsx.
+//
+// Layout is modeled on the Operator AI workspace (SinoWorkspace.jsx): fixed
+// conversation sidebar on the left, a fixed-height main workspace on the right
+// with a non-scrolling title bar, a scrollable middle area, and a composer
+// pinned to the bottom — not a copy of that shared component, just the same
+// proportions/spacing, since Founder needs its own single implementation.
 const PERSONA_ID = "founder";
 const GROUP_ORDER = ["pinned", "today", "yesterday", "last7", "last30", "earlier"];
 
-// Founder AI 是技术与系统开发入口，不是经营驾驶舱——Quick Actions 与 AI 专家
-// 均围绕架构/Agent/Workflow/版本/系统诊断展开。
+// Founder AI 是技术与系统开发入口，不是经营驾驶舱。
 const QUICK_ACTIONS = [
   { key: "architecture-review", label: "架构审查" },
   { key: "dev-task", label: "开发任务" },
@@ -29,19 +33,6 @@ const QUICK_ACTIONS = [
   { key: "version-check", label: "版本检查" },
   { key: "system-diagnostics", label: "系统诊断" },
 ];
-
-const AI_EXPERTS = [
-  { key: "system-architect", label: "系统架构师", desc: "评估架构分层与模块边界" },
-  { key: "agent-engineer", label: "Agent 工程师", desc: "设计与调试 Agent 职责与调用链" },
-  { key: "workflow-engineer", label: "Workflow 工程师", desc: "编排多 Agent/多步骤 Workflow" },
-  { key: "prompt-engineer", label: "Prompt 工程师", desc: "打磨 Prompt 版本与评测" },
-  { key: "qa-expert", label: "测试与质量专家", desc: "把关自动化测试与构建质量" },
-  { key: "release-expert", label: "版本发布专家", desc: "管理版本发布与回滚策略" },
-];
-
-function fmtCNY(v) {
-  return `¥${Number(v || 0).toLocaleString("zh-CN", { maximumFractionDigits: 0 })}`;
-}
 
 function buildQuickActionReply(key, state) {
   if (!state) return "数据加载中，请稍后再试。";
@@ -138,22 +129,26 @@ export function FounderHome() {
     refresh();
   }
 
-  const pendingApprovals = state?.approvals.filter((a) => a.status === "pending") || [];
-  const totalProfit = state?.profits.reduce((s, p) => s + p.netProfit, 0) || 0;
-  const unsettledOrders = state?.orders.filter((o) => o.status === "unsettled").length || 0;
+  const recentTasks = (state?.tasks || []).slice(-5).reverse();
+  const recentApprovals = (state?.approvals || []).slice(-5).reverse();
+  const capabilities = state?.capabilities || [];
+  const validatedCount = capabilities.filter((c) => c.status === "validated").length;
+  const aiQuota = state?.cloud?.aiQuota;
 
   return (
     <div className="founder-home">
       <aside className="founder-home-sidebar">
-        <button type="button" className="sino-new-conversation" onClick={() => setActiveId(null)}>
-          + 新建对话
-        </button>
-        <input
-          className="sino-search-input"
-          placeholder="搜索对话…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div className="founder-home-sidebar-header">
+          <button type="button" className="sino-new-conversation" onClick={() => setActiveId(null)}>
+            + 新建对话
+          </button>
+          <input
+            className="sino-search-input"
+            placeholder="搜索对话…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
 
         <div className="founder-home-conversations">
           {GROUP_ORDER.map((groupKey) =>
@@ -223,79 +218,66 @@ export function FounderHome() {
             <p style={{ padding: 8, fontSize: 12, color: "var(--text-tertiary)" }}>暂无历史对话</p>
           )}
         </div>
-
-        <div className="founder-home-recents">
-          <div className="founder-home-recent-block">
-            <h4>最近任务</h4>
-            <ul>
-              {(state?.tasks || []).slice(-3).reverse().map((t) => (
-                <li key={t.id}>{t.title}</li>
-              ))}
-              {(!state || state.tasks.length === 0) && <li>暂无任务</li>}
-            </ul>
-          </div>
-          <div className="founder-home-recent-block">
-            <h4>最近审批</h4>
-            <ul>
-              {pendingApprovals.map((a) => (
-                <li key={a.id}>{a.id}：{a.aiSuggestion}</li>
-              ))}
-              {pendingApprovals.length === 0 && <li>暂无待审批事项</li>}
-            </ul>
-          </div>
-          <div className="founder-home-recent-block">
-            <h4>最近经营</h4>
-            <ul>
-              <li>今日利润：{fmtCNY(totalProfit)}</li>
-              <li>待结算订单：{unsettledOrders} 笔</li>
-              <li>异常提醒：暂无</li>
-            </ul>
-          </div>
-          <div className="founder-home-recent-block">
-            <h4>最近 AI</h4>
-            <ul>
-              {(state?.capabilities || []).map((c) => (
-                <li key={c.id}>{c.name}：{c.status}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
       </aside>
 
-      <main className="founder-home-center">
-        {!activeConversation ? (
-          <>
-            <div className="founder-home-hero">
-              <h1>Founder AI</h1>
-              <p>早上好，Founder。今天的经营、生产、增长与能力升级都在这里。</p>
-              <form
-                className="founder-home-input"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  sendMessage(input);
-                }}
-              >
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="问 Founder AI，或输入操作指令……"
-                />
-                <button type="submit" className="sf-button-primary">发送</button>
-              </form>
-              <div className="founder-home-quick-actions">
-                {QUICK_ACTIONS.map((action) => (
-                  <button key={action.key} type="button" className="sf-icon-button" onClick={() => handleQuickAction(action)}>
-                    {action.label}
-                  </button>
-                ))}
+      <main className="founder-home-workspace">
+        <div className="founder-home-topbar">
+          <h1>Founder AI</h1>
+          <p>早上好，Founder。今天的架构、开发任务、Agent 与 Workflow 都在这里。</p>
+        </div>
+
+        <div className="founder-home-scroll" ref={scrollRef}>
+          {!activeConversation ? (
+            <div className="founder-home-cards">
+              <div className="sf-card">
+                <h3>最近开发任务</h3>
+                <ul>
+                  {recentTasks.map((t) => (
+                    <li key={t.id}>{t.title}</li>
+                  ))}
+                  {recentTasks.length === 0 && <li>暂无开发任务</li>}
+                </ul>
               </div>
-              <Link className="founder-home-cockpit-link" to="/cockpit">
-                查看完整经营驾驶舱 →
-              </Link>
+              <div className="sf-card">
+                <h3>最近系统变更</h3>
+                <ul>
+                  {capabilities.map((c) => (
+                    <li key={c.id}>
+                      {c.name}：{c.status}
+                      {c.latestSuggestion ? `（${c.latestSuggestion}）` : ""}
+                    </li>
+                  ))}
+                  {capabilities.length === 0 && <li>暂无系统变更</li>}
+                </ul>
+              </div>
+              <div className="sf-card">
+                <h3>最近审批</h3>
+                <ul>
+                  {recentApprovals.map((a) => (
+                    <li key={a.id}>
+                      {a.id}：{a.status}
+                    </li>
+                  ))}
+                  {recentApprovals.length === 0 && <li>暂无审批记录</li>}
+                </ul>
+              </div>
+              <div className="sf-card">
+                <h3>当前系统状态</h3>
+                <ul>
+                  <li>Mock API 连接：正常</li>
+                  <li>
+                    能力验证：{validatedCount}/{capabilities.length} 已通过
+                  </li>
+                  {aiQuota && (
+                    <li>
+                      AI 经营额度：{aiQuota.used.toLocaleString("zh-CN")} / {aiQuota.total.toLocaleString("zh-CN")}
+                      （{aiQuota.cycle}）
+                    </li>
+                  )}
+                </ul>
+              </div>
             </div>
-          </>
-        ) : (
-          <div className="founder-home-thread" ref={scrollRef}>
+          ) : (
             <div className="sino-messages">
               {activeConversation.messages.map((m) => (
                 <div key={m.id} className={`sino-message role-${m.role}`}>
@@ -303,34 +285,33 @@ export function FounderHome() {
                 </div>
               ))}
             </div>
-            <form
-              className="founder-home-input founder-home-input-inline"
-              onSubmit={(e) => {
-                e.preventDefault();
-                sendMessage(input);
-              }}
-            >
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="问 Founder AI，或输入操作指令……"
-              />
-              <button type="submit" className="sf-button-primary">发送</button>
-            </form>
-          </div>
-        )}
-      </main>
+          )}
+        </div>
 
-      <aside className="founder-home-experts">
-        <h3>AI 专家</h3>
-        <p className="founder-home-experts-hint">仅做展示，后续接入真实 Agent</p>
-        {AI_EXPERTS.map((expert) => (
-          <div key={expert.key} className="founder-home-expert-card">
-            <h4>{expert.label}</h4>
-            <p>{expert.desc}</p>
+        <div className="founder-home-composer">
+          <form
+            className="founder-home-input"
+            onSubmit={(e) => {
+              e.preventDefault();
+              sendMessage(input);
+            }}
+          >
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="问 Founder AI，或输入操作指令……"
+            />
+            <button type="submit" className="sf-button-primary">发送</button>
+          </form>
+          <div className="founder-home-quick-actions">
+            {QUICK_ACTIONS.map((action) => (
+              <button key={action.key} type="button" className="sf-icon-button" onClick={() => handleQuickAction(action)}>
+                {action.label}
+              </button>
+            ))}
           </div>
-        ))}
-      </aside>
+        </div>
+      </main>
     </div>
   );
 }
