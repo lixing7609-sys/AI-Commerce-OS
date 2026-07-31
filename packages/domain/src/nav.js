@@ -18,6 +18,26 @@ export const PRIMARY_NAV = [
   { key: "admin", label: "系统管理", tagline: "账户、权限、Connector 鉴权、系统配置", app: "founder", href: "/admin", internal: true },
 ];
 
+// Navigation V2 (nav freeze task): the top bar is a single row split into four
+// groups — Logo | Current workspace nav | Product switch | Fullscreen. This does
+// not change any menu content — it only regroups the existing PRIMARY_NAV entries.
+
+// Current workspace nav — whatever menu the current workspace already owns.
+// For Founder today that's every PRIMARY_NAV item marked `internal: true`.
+// Content/order is untouched; nothing added, nothing removed.
+export const CURRENT_WORKSPACE_NAV = PRIMARY_NAV.filter((item) => item.internal);
+
+// Product switch — the cross-app entry points, grouped separately and styled
+// distinctly from the current workspace's own menu. Growth doesn't have its own
+// deployed app yet, so its product-switch entry still points at Founder's
+// internal /growth route; only the visual grouping changes in this task.
+export const PRODUCT_SWITCH_NAV = [
+  { key: "studio", label: "Studio", href: "http://localhost:5182" },
+  { key: "growth", label: "Growth", href: "/growth" },
+  { key: "operator", label: "Operator", href: "http://localhost:5181" },
+  { key: "operator-cloud", label: "Operator Cloud", href: "http://localhost:5183" },
+];
+
 export const COCKPIT_QUESTIONS = [
   { key: "opportunity", question: "今天有什么机会？", object: "Opportunity" },
   { key: "production", question: "今天生产什么？", object: "Content / Strategy" },

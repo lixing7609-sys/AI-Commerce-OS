@@ -4,17 +4,35 @@
   flex-direction: column;
 }
 
+/*
+  Navigation V2 — single row, four groups, no second tier:
+  [ Brand ] | [ Current workspace nav ] | [ Product switch ] | [ trailing: theme + Fullscreen ]
+  Groups are separated by a thin vertical divider, never by wrapping onto a new row.
+*/
 .sf-topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-raised);
   position: sticky;
   top: 0;
   z-index: 20;
+}
+
+.sf-topbar-brand-zone {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.sf-topbar-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 0;
+  background: var(--border-subtle);
 }
 
 .sf-brand {
@@ -41,14 +59,22 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
   margin-left: var(--space-2);
+  white-space: nowrap;
 }
 
-.sf-nav {
+/* Current workspace nav — this workspace's own menu, unchanged content. */
+.sf-current-nav {
   display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  flex: 1;
-  justify-content: center;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sf-current-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .sf-nav-item {
@@ -63,6 +89,7 @@
   transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
   text-decoration: none;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .sf-nav-item:hover {
@@ -76,10 +103,63 @@
   font-weight: 600;
 }
 
+/* Product switch — visually distinct segmented group, separate from the current
+   workspace's own menu. Studio / Growth / Operator / Operator Cloud live here. */
+.sf-product-switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 3px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sf-product-switch::-webkit-scrollbar {
+  display: none;
+}
+
+.sf-product-switch-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--font-caption);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+  text-decoration: none;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.sf-product-switch-item:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.sf-topbar-trailing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+/* Retained for apps/studio's own StudioShell.jsx (out of scope for this nav
+   refactor — Studio keeps its existing left-sidebar shell and top bar as-is). */
 .sf-topbar-actions {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+.sf-cross-app-links {
+  display: flex;
+  gap: 6px;
 }
 
 .sf-icon-button {
@@ -91,16 +171,12 @@
   padding: 6px 14px;
   font: var(--font-caption);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .sf-icon-button:hover {
   color: var(--text-primary);
   border-color: var(--ai-accent);
-}
-
-.sf-cross-app-links {
-  display: flex;
-  gap: 6px;
 }
 
 .sf-main {

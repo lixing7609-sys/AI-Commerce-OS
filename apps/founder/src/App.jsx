@@ -1,6 +1,6 @@
 import { Route, Routes, useLocation } from "react-router-dom";
 import { AppShell, SinoFUTWidget, SinoWorkspace, useSinoFullScreen } from "@sinofut/ui";
-import { PRIMARY_NAV, SINO_PERSONAS } from "@sinofut/domain";
+import { CURRENT_WORKSPACE_NAV, PRODUCT_SWITCH_NAV, SINO_PERSONAS } from "@sinofut/domain";
 import { SinoFUTHome } from "./pages/SinoFUTHome.jsx";
 import { Cockpit } from "./pages/Cockpit.jsx";
 import { Growth } from "./pages/Growth.jsx";
@@ -9,9 +9,9 @@ import { Marketplace } from "./pages/Marketplace.jsx";
 import { DataCenter } from "./pages/DataCenter.jsx";
 import { Admin } from "./pages/Admin.jsx";
 
-// V2-002 §4: unified nav order — Studio/Operator/Operator Cloud are cross-app links
-// interleaved in place, not shoved into a separate "quick switch" group.
-const NAV_ITEMS = PRIMARY_NAV;
+// Navigation V2: current workspace nav (Founder's own menu, unchanged) is a
+// separate group from the product switch (Studio/Growth/Operator/Operator Cloud).
+const NAV_ITEMS = CURRENT_WORKSPACE_NAV;
 
 function useActiveKey() {
   const { pathname } = useLocation();
@@ -34,6 +34,7 @@ function Shell({ children }) {
       appLabel="Founder"
       navItems={NAV_ITEMS}
       activeKey={activeKey}
+      crossAppLinks={PRODUCT_SWITCH_NAV}
       onOpenFullScreen={openFullScreen}
     >
       {children}
