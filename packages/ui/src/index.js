@@ -7,6 +7,16 @@ export { useThemeToggle } from "./useThemeToggle.js";
 export { useApiState } from "./useApiState.js";
 export { SinoWorkspace } from "./sino/SinoWorkspace.jsx";
 export { useSinoFullScreen } from "./sino/useSinoFullScreen.js";
+export {
+  listConversations,
+  createConversation,
+  renameConversation,
+  deleteConversation,
+  togglePin,
+  appendMessage,
+  groupConversationsByRecency,
+  CONVERSATION_GROUP_LABELS,
+} from "./sino/sinoConversationStore.js";
 
 import "./shell.css";
 import "./cards.css";

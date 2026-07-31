@@ -1,7 +1,7 @@
 import { Route, Routes, useLocation } from "react-router-dom";
 import { AppShell, SinoFUTWidget, SinoWorkspace, useSinoFullScreen } from "@sinofut/ui";
 import { CURRENT_WORKSPACE_NAV, PRODUCT_SWITCH_NAV, SINO_PERSONAS } from "@sinofut/domain";
-import { SinoFUTHome } from "./pages/SinoFUTHome.jsx";
+import { FounderHome } from "./pages/FounderHome.jsx";
 import { Cockpit } from "./pages/Cockpit.jsx";
 import { Growth } from "./pages/Growth.jsx";
 import { Capability } from "./pages/Capability.jsx";
@@ -9,17 +9,19 @@ import { Marketplace } from "./pages/Marketplace.jsx";
 import { DataCenter } from "./pages/DataCenter.jsx";
 import { Admin } from "./pages/Admin.jsx";
 
-// Navigation V2: current workspace nav (Founder's own menu, unchanged) is a
-// separate group from the product switch (Studio/Growth/Operator/Operator Cloud).
-const NAV_ITEMS = CURRENT_WORKSPACE_NAV;
+// Founder AI Home V1: 经营驾驶舱 is no longer a top-level nav entry — its
+// capabilities were merged into Founder AI's home workspace. The /cockpit route
+// and Cockpit.jsx page still exist (linked from the home page as "查看完整经营驾驶舱"),
+// they're just not in the top bar's current-workspace nav anymore.
+const NAV_ITEMS = CURRENT_WORKSPACE_NAV.filter((item) => item.key !== "cockpit");
 
 function useActiveKey() {
   const { pathname } = useLocation();
-  const found = NAV_ITEMS.find((item) => item.internal && item.href === pathname);
-  return found?.key || "sinofut";
+  return NAV_ITEMS.find((item) => item.internal && item.href === pathname)?.key || null;
 }
 
 function Shell({ children }) {
+  const { pathname } = useLocation();
   const activeKey = useActiveKey();
   const { isFullScreenOpen, openFullScreen, closeFullScreen } = useSinoFullScreen();
 
@@ -38,7 +40,7 @@ function Shell({ children }) {
       onOpenFullScreen={openFullScreen}
     >
       {children}
-      {activeKey !== "sinofut" ? <SinoFUTWidget onOpen={openFullScreen} /> : null}
+      {pathname !== "/" ? <SinoFUTWidget onOpen={openFullScreen} /> : null}
     </AppShell>
   );
 }
@@ -47,7 +49,7 @@ export default function App() {
   return (
     <Shell>
       <Routes>
-        <Route path="/" element={<SinoFUTHome />} />
+        <Route path="/" element={<FounderHome />} />
         <Route path="/cockpit" element={<Cockpit />} />
         <Route path="/growth" element={<Growth />} />
         <Route path="/capability" element={<Capability />} />
