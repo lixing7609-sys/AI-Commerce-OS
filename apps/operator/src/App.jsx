@@ -1,5 +1,5 @@
-import { AppShell, SinoFUTWidget, PlaceholderCard, StatCard, useApiState } from "@sinofut/ui";
-import { api } from "@sinofut/domain";
+import { AppShell, SinoFUTWidget, SinoWorkspace, PlaceholderCard, StatCard, useApiState, useSinoFullScreen } from "@sinofut/ui";
+import { api, SINO_PERSONAS } from "@sinofut/domain";
 import "./app.css";
 
 const CROSS_APP_LINKS = [
@@ -14,10 +14,15 @@ function fmtCNY(v) {
 
 export default function App() {
   const { state, refresh } = useApiState();
+  const { isFullScreenOpen, openFullScreen, closeFullScreen } = useSinoFullScreen();
+
+  if (isFullScreenOpen) {
+    return <SinoWorkspace persona={SINO_PERSONAS.operator} variant="overlay" onExit={closeFullScreen} />;
+  }
 
   if (!state) {
     return (
-      <AppShell appLabel="Operator" crossAppLinks={CROSS_APP_LINKS}>
+      <AppShell appLabel="Operator" crossAppLinks={CROSS_APP_LINKS} onOpenFullScreen={openFullScreen}>
         <p>加载中…</p>
       </AppShell>
     );
@@ -51,7 +56,7 @@ export default function App() {
   };
 
   return (
-    <AppShell appLabel="Operator · 经营中心" crossAppLinks={CROSS_APP_LINKS}>
+    <AppShell appLabel="Operator · 经营中心" crossAppLinks={CROSS_APP_LINKS} onOpenFullScreen={openFullScreen}>
       <div className="sf-page-header">
         <h1>经营中心</h1>
         <p>店铺/商品/客户/广告/订单/客服/利润的真实经营执行层。</p>
@@ -168,7 +173,7 @@ export default function App() {
         />
       </div>
 
-      <SinoFUTWidget contextLabel="Operator · 经营中心" />
+      <SinoFUTWidget onOpen={openFullScreen} />
     </AppShell>
   );
 }

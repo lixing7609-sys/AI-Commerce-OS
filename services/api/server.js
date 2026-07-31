@@ -62,9 +62,9 @@ const routes = [
     method: "POST",
     pattern: /^\/api\/content$/,
     handler: async (_m, res, req) => {
-      const { strategyId } = await readBody(req);
+      const { strategyId, contentType } = await readBody(req);
       try {
-        json(res, 201, store.createContent(strategyId));
+        json(res, 201, store.createContent(strategyId, contentType));
       } catch (err) {
         json(res, 400, { error: err.message });
       }
@@ -74,9 +74,20 @@ const routes = [
     method: "PATCH",
     pattern: /^\/api\/content\/([^/]+)$/,
     handler: async (match, res, req) => {
-      const { stage } = await readBody(req);
+      const patch = await readBody(req);
       try {
-        json(res, 200, store.advanceContent(match[1], stage));
+        json(res, 200, store.updateContent(match[1], patch));
+      } catch (err) {
+        json(res, 404, { error: err.message });
+      }
+    },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/content\/([^/]+)\/reference$/,
+    handler: (match, res) => {
+      try {
+        json(res, 200, store.incrementReference(match[1]));
       } catch (err) {
         json(res, 404, { error: err.message });
       }

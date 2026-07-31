@@ -169,7 +169,8 @@
   margin-bottom: var(--space-3);
 }
 
-.sf-form-row input {
+.sf-form-row input,
+.sf-form-row select {
   flex: 1;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;

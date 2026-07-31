@@ -23,7 +23,7 @@ function loadFromStorage(key, fallback) {
   }
 }
 
-export function InfiniteCanvas({ storageKey = "sinofut-studio-canvas", initialNodes, initialEdges }) {
+export function InfiniteCanvas({ storageKey = "sinofut-studio-canvas", initialNodes, initialEdges, immersive = false, height }) {
   const [nodes, setNodes] = useState(() =>
     loadFromStorage(`${storageKey}:nodes`, initialNodes || [])
   );
@@ -113,7 +113,7 @@ export function InfiniteCanvas({ storageKey = "sinofut-studio-canvas", initialNo
   }, [nodes, edges]);
 
   return (
-    <div className="sf-canvas-wrapper">
+    <div className={`sf-canvas-wrapper${immersive ? " is-immersive" : ""}`}>
       <div className="sf-canvas-toolbar">
         <button type="button" className="sf-icon-button" onClick={() => setViewport((v) => ({ ...v, scale: Math.min(2, v.scale + 0.15) }))}>
           放大
@@ -131,6 +131,7 @@ export function InfiniteCanvas({ storageKey = "sinofut-studio-canvas", initialNo
       </div>
       <div
         className="sf-canvas-viewport"
+        style={height ? { height } : undefined}
         onWheel={onWheel}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}

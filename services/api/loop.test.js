@@ -90,3 +90,35 @@ test("reset restores the seed dataset", () => {
   const resetState = store.reset();
   assert.equal(resetState.opportunities.length, 2);
 });
+
+test("createContent defaults contentType and supports an explicit channel type", () => {
+  const store = createStore();
+  const opportunity = store.getState().opportunities[0];
+  const { strategy } = store.generateStrategy(opportunity.id);
+
+  const defaultContent = store.createContent(strategy.id);
+  assert.equal(defaultContent.contentType, "短视频");
+  assert.deepEqual(defaultContent.tags, []);
+  assert.equal(defaultContent.referenceCount, 0);
+
+  const opportunity2 = store.createOpportunity({ title: "第二个机会" });
+  const { strategy: strategy2 } = store.generateStrategy(opportunity2.id);
+  const article = store.createContent(strategy2.id, "公众号文章");
+  assert.equal(article.contentType, "公众号文章");
+  assert.match(article.title, /^公众号文章草稿/);
+});
+
+test("updateContent merges tags without disturbing stage, and incrementReference bumps the counter", () => {
+  const store = createStore();
+  const opportunity = store.getState().opportunities[0];
+  const { strategy } = store.generateStrategy(opportunity.id);
+  const content = store.createContent(strategy.id);
+
+  store.updateContent(content.id, { tags: ["爆款", "夜灯"] });
+  assert.deepEqual(content.tags, ["爆款", "夜灯"]);
+  assert.equal(content.stage, "brief");
+
+  store.incrementReference(content.id);
+  store.incrementReference(content.id);
+  assert.equal(content.referenceCount, 2);
+});

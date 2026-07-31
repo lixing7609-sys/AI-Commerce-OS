@@ -5,7 +5,10 @@ export { StatCard, QueueList } from "./StatCard.jsx";
 export { InfiniteCanvas, CANVAS_STAGE_META } from "./InfiniteCanvas.jsx";
 export { useThemeToggle } from "./useThemeToggle.js";
 export { useApiState } from "./useApiState.js";
+export { SinoWorkspace } from "./sino/SinoWorkspace.jsx";
+export { useSinoFullScreen } from "./sino/useSinoFullScreen.js";
 
 import "./shell.css";
 import "./cards.css";
 import "./canvas.css";
+import "./sino/sino.css";

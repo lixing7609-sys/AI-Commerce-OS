@@ -1,5 +1,5 @@
-import { AppShell, SinoFUTWidget, StatCard, PlaceholderCard, useApiState } from "@sinofut/ui";
-import { api } from "@sinofut/domain";
+import { AppShell, SinoFUTWidget, SinoWorkspace, StatCard, PlaceholderCard, useApiState, useSinoFullScreen } from "@sinofut/ui";
+import { api, SINO_PERSONAS } from "@sinofut/domain";
 
 const CROSS_APP_LINKS = [
   { label: "Founder", href: "http://localhost:5180" },
@@ -7,12 +7,35 @@ const CROSS_APP_LINKS = [
   { label: "Studio", href: "http://localhost:5182" },
 ];
 
+const DEVICE_COLUMNS = [
+  { key: "id", label: "编号" },
+  { key: "name", label: "设备名称" },
+  { key: "owner", label: "所有者" },
+  { key: "version", label: "版本" },
+  { key: "aiQuota", label: "AI额度" },
+  { key: "status", label: "在线状态" },
+  { key: "lastSeenAt", label: "最近在线" },
+  { key: "os", label: "操作系统" },
+  { key: "hardware", label: "硬件配置" },
+  { key: "license", label: "许可证" },
+  { key: "updatedAt", label: "更新时间" },
+];
+
+function fmtDateTime(iso) {
+  return new Date(iso).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
 export default function App() {
   const { state, refresh } = useApiState();
+  const { isFullScreenOpen, openFullScreen, closeFullScreen } = useSinoFullScreen();
+
+  if (isFullScreenOpen) {
+    return <SinoWorkspace persona={SINO_PERSONAS.cloud} variant="overlay" onExit={closeFullScreen} />;
+  }
 
   if (!state) {
     return (
-      <AppShell appLabel="Operator Cloud" crossAppLinks={CROSS_APP_LINKS}>
+      <AppShell appLabel="Operator Cloud" crossAppLinks={CROSS_APP_LINKS} onOpenFullScreen={openFullScreen}>
         <p>加载中…</p>
       </AppShell>
     );
@@ -28,7 +51,7 @@ export default function App() {
   };
 
   return (
-    <AppShell appLabel="Operator Cloud" crossAppLinks={CROSS_APP_LINKS}>
+    <AppShell appLabel="Operator Cloud" crossAppLinks={CROSS_APP_LINKS} onOpenFullScreen={openFullScreen}>
       <div className="sf-page-header">
         <h1>Operator Cloud</h1>
         <p>
@@ -47,20 +70,39 @@ export default function App() {
         <StatCard label="许可证状态" value={cloud.license.status === "active" ? "有效" : "已过期"} hint={cloud.license.type} />
       </div>
 
-      <div className="sf-grid sf-grid-2">
-        <div className="sf-card">
-          <h3>设备状态</h3>
-          {cloud.devices.map((d) => (
-            <div key={d.id} className="sf-opportunity-item">
-              <h4>{d.name}</h4>
-              <div className="sf-opportunity-meta">
-                <span className={`sf-badge ${d.status === "online" ? "success" : "danger"}`}>{d.status}</span>
-                <span>版本 {d.version}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+      <div className="sf-card" style={{ marginBottom: "var(--space-3)", overflowX: "auto" }}>
+        <h3>设备清单</h3>
+        <table className="sf-cloud-device-table">
+          <thead>
+            <tr>
+              {DEVICE_COLUMNS.map((col) => (
+                <th key={col.key}>{col.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {cloud.devices.map((d) => (
+              <tr key={d.id}>
+                <td>{d.id}</td>
+                <td>{d.name}</td>
+                <td>{d.owner}</td>
+                <td>{d.version}</td>
+                <td>{d.aiQuota}</td>
+                <td>
+                  <span className={`sf-badge ${d.status === "online" ? "success" : "danger"}`}>{d.status}</span>
+                </td>
+                <td>{fmtDateTime(d.lastSeenAt)}</td>
+                <td>{d.os}</td>
+                <td>{d.hardware}</td>
+                <td>{d.license}</td>
+                <td>{fmtDateTime(d.updatedAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
+      <div className="sf-grid sf-grid-2">
         <div className="sf-card">
           <h3>人工智能经营额度</h3>
           <div style={{ background: "var(--surface-sunken)", borderRadius: 8, height: 12, overflow: "hidden", marginBottom: 8 }}>
@@ -107,7 +149,7 @@ export default function App() {
         />
       </div>
 
-      <SinoFUTWidget contextLabel="Operator Cloud" />
+      <SinoFUTWidget onOpen={openFullScreen} />
     </AppShell>
   );
 }

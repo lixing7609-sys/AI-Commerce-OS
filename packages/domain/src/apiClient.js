@@ -22,10 +22,14 @@ export const api = {
   generateStrategy: (opportunityId) =>
     request(`/api/opportunities/${opportunityId}/strategy`, { method: "POST" }),
 
-  createContent: (strategyId) =>
-    request("/api/content", { method: "POST", body: JSON.stringify({ strategyId }) }),
+  createContent: (strategyId, contentType) =>
+    request("/api/content", { method: "POST", body: JSON.stringify({ strategyId, contentType }) }),
   advanceContent: (contentId, stage) =>
     request(`/api/content/${contentId}`, { method: "PATCH", body: JSON.stringify({ stage }) }),
+  updateContent: (contentId, patch) =>
+    request(`/api/content/${contentId}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  incrementReference: (contentId) =>
+    request(`/api/content/${contentId}/reference`, { method: "POST" }),
   submitForApproval: (contentId) =>
     request(`/api/content/${contentId}/submit-approval`, { method: "POST" }),
   decideApproval: (approvalId, decision) =>

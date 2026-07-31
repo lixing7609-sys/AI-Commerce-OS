@@ -1,6 +1,6 @@
 import { Route, Routes, useLocation } from "react-router-dom";
-import { AppShell, SinoFUTWidget } from "@sinofut/ui";
-import { FOUNDER_APP_NAV } from "@sinofut/domain";
+import { AppShell, SinoFUTWidget, SinoWorkspace, useSinoFullScreen } from "@sinofut/ui";
+import { PRIMARY_NAV, SINO_PERSONAS } from "@sinofut/domain";
 import { SinoFUTHome } from "./pages/SinoFUTHome.jsx";
 import { Cockpit } from "./pages/Cockpit.jsx";
 import { Growth } from "./pages/Growth.jsx";
@@ -9,44 +9,35 @@ import { Marketplace } from "./pages/Marketplace.jsx";
 import { DataCenter } from "./pages/DataCenter.jsx";
 import { Admin } from "./pages/Admin.jsx";
 
-const HREF_BY_KEY = {
-  sinofut: "/",
-  cockpit: "/cockpit",
-  growth: "/growth",
-  capability: "/capability",
-  marketplace: "/marketplace",
-  data: "/data",
-  admin: "/admin",
-};
-
-const NAV_ITEMS = FOUNDER_APP_NAV.map((item) => ({ ...item, href: HREF_BY_KEY[item.key] }));
-
-const CROSS_APP_LINKS = [
-  { label: "Operator", href: "http://localhost:5181" },
-  { label: "Studio", href: "http://localhost:5182" },
-  { label: "Operator Cloud", href: "http://localhost:5183" },
-];
+// V2-002 §4: unified nav order — Studio/Operator/Operator Cloud are cross-app links
+// interleaved in place, not shoved into a separate "quick switch" group.
+const NAV_ITEMS = PRIMARY_NAV;
 
 function useActiveKey() {
   const { pathname } = useLocation();
-  const found = NAV_ITEMS.find((item) => item.href === pathname);
+  const found = NAV_ITEMS.find((item) => item.internal && item.href === pathname);
   return found?.key || "sinofut";
 }
 
 function Shell({ children }) {
   const activeKey = useActiveKey();
-  const activeItem = NAV_ITEMS.find((item) => item.key === activeKey);
+  const { isFullScreenOpen, openFullScreen, closeFullScreen } = useSinoFullScreen();
+
+  if (isFullScreenOpen) {
+    return (
+      <SinoWorkspace persona={SINO_PERSONAS.founder} variant="overlay" onExit={closeFullScreen} />
+    );
+  }
+
   return (
     <AppShell
       appLabel="Founder"
       navItems={NAV_ITEMS}
       activeKey={activeKey}
-      crossAppLinks={CROSS_APP_LINKS}
+      onOpenFullScreen={openFullScreen}
     >
       {children}
-      {activeKey !== "sinofut" ? (
-        <SinoFUTWidget contextLabel={`Founder · ${activeItem?.label}`} fullScreenHref="/" />
-      ) : null}
+      {activeKey !== "sinofut" ? <SinoFUTWidget onOpen={openFullScreen} /> : null}
     </AppShell>
   );
 }

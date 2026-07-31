@@ -2,7 +2,7 @@ import { useThemeToggle } from "./useThemeToggle.js";
 
 const THEME_LABEL = { system: "跟随系统", dark: "深色", light: "浅色" };
 
-export function AppShell({ appLabel, navItems, activeKey, crossAppLinks, children }) {
+export function AppShell({ appLabel, navItems, activeKey, crossAppLinks, onOpenFullScreen, children }) {
   const { theme, toggle } = useThemeToggle();
 
   return (
@@ -44,6 +44,11 @@ export function AppShell({ appLabel, navItems, activeKey, crossAppLinks, childre
           <button type="button" className="sf-icon-button" onClick={toggle}>
             {THEME_LABEL[theme]}
           </button>
+          {onOpenFullScreen ? (
+            <button type="button" className="sf-icon-button" onClick={onOpenFullScreen} title="进入 SinoFUT 全屏工作模式">
+              ⛶ 全屏
+            </button>
+          ) : null}
         </div>
       </header>
       <main className="sf-main">{children}</main>

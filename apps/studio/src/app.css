@@ -1,1 +1,82 @@
-/* Studio app-specific overrides — intentionally minimal; shared styling lives in @sinofut/ui. */
+.studio-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.studio-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+.studio-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.studio-sidebar {
+  width: 180px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.studio-sidebar-item {
+  display: block;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.studio-sidebar-item:hover {
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+}
+
+.studio-sidebar-item.is-active {
+  background: var(--ai-accent-soft);
+  color: var(--ai-accent);
+  font-weight: 600;
+}
+
+.studio-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+  position: relative;
+}
+
+.studio-main.is-canvas-page {
+  padding: 0;
+  overflow: hidden;
+}
+
+.studio-channel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: var(--space-2) 0 var(--space-3);
+}
+
+.studio-lifecycle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font: var(--font-caption);
+  background: var(--surface-sunken);
+}

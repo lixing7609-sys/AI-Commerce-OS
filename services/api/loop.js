@@ -49,15 +49,19 @@ export function createStore() {
     return { strategy, task };
   }
 
-  function createContent(strategyId) {
+  function createContent(strategyId, contentType) {
     const strategy = state.strategies.find((s) => s.id === strategyId);
     if (!strategy) throw new Error("strategy not found");
+    const type = contentType || "短视频";
     const content = {
       id: `content-${randomUUID().slice(0, 8)}`,
       strategyId,
-      title: "短视频草稿：机会简报 → 选题 → 脚本 → 分镜",
+      contentType: type,
+      title: `${type}草稿：机会简报 → 选题 → 脚本 → 分镜`,
       stage: "brief",
       format: "short-video",
+      tags: [],
+      referenceCount: 0,
       createdAt: new Date().toISOString(),
       productionCost: 180,
     };
@@ -69,6 +73,22 @@ export function createStore() {
     const content = state.content.find((c) => c.id === contentId);
     if (!content) throw new Error("content not found");
     content.stage = stage;
+    return content;
+  }
+
+  function updateContent(contentId, patch) {
+    const content = state.content.find((c) => c.id === contentId);
+    if (!content) throw new Error("content not found");
+    if (patch.stage !== undefined) content.stage = patch.stage;
+    if (patch.tags !== undefined) content.tags = patch.tags;
+    if (patch.title !== undefined) content.title = patch.title;
+    return content;
+  }
+
+  function incrementReference(contentId) {
+    const content = state.content.find((c) => c.id === contentId);
+    if (!content) throw new Error("content not found");
+    content.referenceCount = (content.referenceCount || 0) + 1;
     return content;
   }
 
@@ -204,6 +224,8 @@ export function createStore() {
     generateStrategy,
     createContent,
     advanceContent,
+    updateContent,
+    incrementReference,
     submitForApproval,
     decideApproval,
     publish,
