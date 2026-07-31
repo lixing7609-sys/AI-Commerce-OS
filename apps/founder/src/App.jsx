@@ -15,9 +15,13 @@ import { Admin } from "./pages/Admin.jsx";
 // audit (docs conversation) for why the old SinoWorkspace(variant="overlay")
 // branch was removed here. Other apps (Operator/Studio/Operator Cloud) keep using
 // that shared mechanism for their own full-screen AI — untouched by this change.
-const NAV_ITEMS = CURRENT_WORKSPACE_NAV.filter((item) => item.key !== "cockpit").map((item) =>
-  item.key === "sinofut" ? { ...item, label: "Founder AI" } : item
-);
+//
+// Growth is not a Founder-internal menu item — it only lives in the product
+// switch (PRODUCT_SWITCH_ITEMS below). The /growth route stays mounted (reachable
+// from the product switch), it's just excluded from the main top nav here.
+const NAV_ITEMS = CURRENT_WORKSPACE_NAV.filter(
+  (item) => item.key !== "cockpit" && item.key !== "growth"
+).map((item) => (item.key === "sinofut" ? { ...item, label: "Founder AI" } : item));
 
 const PRODUCT_SWITCH_ITEMS = PRODUCT_SWITCH_NAV.filter((item) => item.key !== "operator-cloud");
 
