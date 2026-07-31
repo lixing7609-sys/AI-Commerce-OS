@@ -1,0 +1,24 @@
+{
+  "name": "@sinofut/app-studio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "V2 SinoFUT Studio app — AI content production on an infinite canvas (docs/2608-v2/04-design-system.md §6, 09-10).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5182",
+    "build": "vite build",
+    "preview": "vite preview --port 5182",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@sinofut/design-tokens": "*",
+    "@sinofut/domain": "*",
+    "@sinofut/ui": "*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.3",
+    "vite": "^8.1.1"
+  }
+}

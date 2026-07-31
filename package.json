@@ -2,12 +2,32 @@
   "name": "ai-commerce-os",
   "private": true,
   "version": "0.1.0",
-  "description": "Repository-root scripts for AI Commerce OS. The actual application lives in frontend/ and backend/ — this file exists only to expose the Developer Bootstrap commands from the repo root.",
+  "type": "module",
+  "description": "Repository-root scripts for AI Commerce OS. V1 lives in frontend/ and backend/ (untouched). V2 (SinoFUT, 2608·V2) lives in apps/*, packages/*, services/* as an npm workspaces monorepo, physically isolated from V1 — see docs/2608-v2/.",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
   "scripts": {
     "bootstrap": "bash scripts/developer-bootstrap.sh",
     "bootstrap:status": "bash scripts/developer-bootstrap-status.sh",
     "bootstrap:stop": "bash scripts/developer-bootstrap-stop.sh",
     "bootstrap:restart": "bash scripts/developer-bootstrap-restart.sh",
-    "launcher:test": "bash scripts/developer-launcher-selftest.sh"
+    "launcher:test": "bash scripts/developer-launcher-selftest.sh",
+    "v2:api": "npm run start --workspace services/api",
+    "v2:founder": "npm run dev --workspace apps/founder",
+    "v2:operator": "npm run dev --workspace apps/operator",
+    "v2:studio": "npm run dev --workspace apps/studio",
+    "v2:operator-cloud": "npm run dev --workspace apps/operator-cloud",
+    "v2:lint": "eslint apps/*/src packages/*/src services/*/*.js",
+    "v2:test": "npm run test --workspace services/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.6.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0"
   }
 }

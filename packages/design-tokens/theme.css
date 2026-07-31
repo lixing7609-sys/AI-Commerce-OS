@@ -1,0 +1,109 @@
+/*
+  SinoFUT / AI Commerce OS 2608·V2 design tokens.
+  Source of truth: docs/2608-v2/04-design-system.md
+  Do not fork per-app — every V2 app imports this file as-is.
+*/
+
+:root {
+  color-scheme: light;
+
+  --surface-base: #FAFAF9;
+  --surface-raised: #FFFFFF;
+  --surface-sunken: #F3F3F1;
+  --text-primary: #141414;
+  --text-secondary: #6B6B68;
+  --text-tertiary: #A3A39F;
+  --border-subtle: #E7E7E4;
+  --ai-accent: #5B5BD6;
+  --ai-accent-soft: rgba(91, 91, 214, 0.12);
+  --signal-success: #1E8E5A;
+  --signal-warning: #B5750B;
+  --signal-danger: #C0362C;
+  --glass-surface: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(20, 20, 20, 0.08);
+  --glass-blur: 20px;
+
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-6: 48px;
+
+  --radius-card: 16px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 2px rgba(20, 20, 20, 0.04), 0 8px 24px rgba(20, 20, 20, 0.06);
+  --shadow-floating: 0 12px 40px rgba(20, 20, 20, 0.16);
+
+  --font-display: 600 34px/1.25 -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  --font-title: 600 21px/1.4 -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  --font-body: 400 15px/1.65 -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  --font-caption: 400 12px/1.6 -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+
+  --motion-fast: 150ms;
+  --motion-medium: 220ms;
+  --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-base: #0B0C0E;
+  --surface-raised: #16171A;
+  --surface-sunken: #1F2023;
+  --text-primary: #F2F2F0;
+  --text-secondary: #9A9A97;
+  --text-tertiary: #6B6B68;
+  --border-subtle: #2A2B2E;
+  --ai-accent: #8A8AF0;
+  --ai-accent-soft: rgba(138, 138, 240, 0.16);
+  --signal-success: #4ADE95;
+  --signal-warning: #F2B84B;
+  --signal-danger: #F2685E;
+  --glass-surface: rgba(22, 23, 26, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.10);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 24px rgba(0, 0, 0, 0.32);
+  --shadow-floating: 0 12px 40px rgba(0, 0, 0, 0.48);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-base: #0B0C0E;
+    --surface-raised: #16171A;
+    --surface-sunken: #1F2023;
+    --text-primary: #F2F2F0;
+    --text-secondary: #9A9A97;
+    --text-tertiary: #6B6B68;
+    --border-subtle: #2A2B2E;
+    --ai-accent: #8A8AF0;
+    --ai-accent-soft: rgba(138, 138, 240, 0.16);
+    --signal-success: #4ADE95;
+    --signal-warning: #F2B84B;
+    --signal-danger: #F2685E;
+    --glass-surface: rgba(22, 23, 26, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.10);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 24px rgba(0, 0, 0, 0.32);
+    --shadow-floating: 0 12px 40px rgba(0, 0, 0, 0.48);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-medium: 0ms;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}

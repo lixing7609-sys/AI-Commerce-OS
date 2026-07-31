@@ -1,0 +1,24 @@
+{
+  "name": "@sinofut/app-operator",
+  "private": true,
+  "version": "0.1.0",
+  "description": "V2 SinoFUT Operator app — independently deployable/sellable product for real commerce operation (店铺/商品/客户/订单/广告/利润).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5181",
+    "build": "vite build",
+    "preview": "vite preview --port 5181",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@sinofut/design-tokens": "*",
+    "@sinofut/domain": "*",
+    "@sinofut/ui": "*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.3",
+    "vite": "^8.1.1"
+  }
+}

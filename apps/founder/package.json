@@ -1,0 +1,25 @@
+{
+  "name": "@sinofut/app-founder",
+  "private": true,
+  "version": "0.1.0",
+  "description": "V2 SinoFUT Founder app — SinoFUT home, 经营驾驶舱, 增长网络, 能力中心, Marketplace, 数据中心, 系统管理.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5180",
+    "build": "vite build",
+    "preview": "vite preview --port 5180",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@sinofut/design-tokens": "*",
+    "@sinofut/domain": "*",
+    "@sinofut/ui": "*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.9.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.3",
+    "vite": "^8.1.1"
+  }
+}

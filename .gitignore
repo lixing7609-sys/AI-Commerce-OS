@@ -47,3 +47,9 @@ frontend/test-results/
 .env.*
 !.env.example
 !**/.env.example
+
+# V2 (apps/*, packages/*, services/*) — npm workspaces build output
+node_modules/
+dist/
+apps/*/dist/
+packages/*/dist/

@@ -7,6 +7,41 @@
       "runtimeArgs": ["run", "dev", "--", "--port", "5173"],
       "port": 5173,
       "cwd": "frontend"
+    },
+    {
+      "name": "v2-api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "port": 4700,
+      "cwd": "services/api"
+    },
+    {
+      "name": "v2-founder",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5180,
+      "cwd": "apps/founder"
+    },
+    {
+      "name": "v2-operator",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5181,
+      "cwd": "apps/operator"
+    },
+    {
+      "name": "v2-studio",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5182,
+      "cwd": "apps/studio"
+    },
+    {
+      "name": "v2-operator-cloud",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5183,
+      "cwd": "apps/operator-cloud"
     }
   ]
 }

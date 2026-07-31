@@ -1,0 +1,11 @@
+{
+  "name": "@sinofut/domain",
+  "private": true,
+  "version": "0.1.0",
+  "description": "V2 SinoFUT shared domain objects, navigation config, demo seed data and API client (docs/2608-v2/02-domain-model.md, 03-information-architecture.md).",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  }
+}
