@@ -1,6 +1,6 @@
-import { Route, Routes, useLocation } from "react-router-dom";
-import { AppShell, SinoFUTWidget, SinoWorkspace, useSinoFullScreen } from "@sinofut/ui";
-import { CURRENT_WORKSPACE_NAV, PRODUCT_SWITCH_NAV, SINO_PERSONAS } from "@sinofut/domain";
+import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { AppShell, SinoFUTWidget } from "@sinofut/ui";
+import { CURRENT_WORKSPACE_NAV, PRODUCT_SWITCH_NAV } from "@sinofut/domain";
 import { FounderHome } from "./pages/FounderHome.jsx";
 import { Cockpit } from "./pages/Cockpit.jsx";
 import { Growth } from "./pages/Growth.jsx";
@@ -9,38 +9,46 @@ import { Marketplace } from "./pages/Marketplace.jsx";
 import { DataCenter } from "./pages/DataCenter.jsx";
 import { Admin } from "./pages/Admin.jsx";
 
-// Founder AI Home V1: 经营驾驶舱 is no longer a top-level nav entry — its
-// capabilities were merged into Founder AI's home workspace. The /cockpit route
-// and Cockpit.jsx page still exist (linked from the home page as "查看完整经营驾驶舱"),
-// they're just not in the top bar's current-workspace nav anymore.
-const NAV_ITEMS = CURRENT_WORKSPACE_NAV.filter((item) => item.key !== "cockpit");
+// Founder AI has exactly one implementation: FounderHome.jsx, rendered identically
+// in normal and native-fullscreen browser modes. There is no second overlay
+// component, no fullscreen route, and no port switch — see the fullscreen-unify
+// audit (docs conversation) for why the old SinoWorkspace(variant="overlay")
+// branch was removed here. Other apps (Operator/Studio/Operator Cloud) keep using
+// that shared mechanism for their own full-screen AI — untouched by this change.
+const NAV_ITEMS = CURRENT_WORKSPACE_NAV.filter((item) => item.key !== "cockpit").map((item) =>
+  item.key === "sinofut" ? { ...item, label: "Founder AI" } : item
+);
+
+const PRODUCT_SWITCH_ITEMS = PRODUCT_SWITCH_NAV.filter((item) => item.key !== "operator-cloud");
 
 function useActiveKey() {
   const { pathname } = useLocation();
   return NAV_ITEMS.find((item) => item.internal && item.href === pathname)?.key || null;
 }
 
+function toggleNativeFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  } else {
+    document.exitFullscreen?.().catch(() => {});
+  }
+}
+
 function Shell({ children }) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const activeKey = useActiveKey();
-  const { isFullScreenOpen, openFullScreen, closeFullScreen } = useSinoFullScreen();
-
-  if (isFullScreenOpen) {
-    return (
-      <SinoWorkspace persona={SINO_PERSONAS.founder} variant="overlay" onExit={closeFullScreen} />
-    );
-  }
 
   return (
     <AppShell
-      appLabel="Founder"
       navItems={NAV_ITEMS}
       activeKey={activeKey}
-      crossAppLinks={PRODUCT_SWITCH_NAV}
-      onOpenFullScreen={openFullScreen}
+      crossAppLinks={PRODUCT_SWITCH_ITEMS}
+      onOpenFullScreen={toggleNativeFullscreen}
+      showThemeToggle={false}
     >
       {children}
-      {pathname !== "/" ? <SinoFUTWidget onOpen={openFullScreen} /> : null}
+      {pathname !== "/" ? <SinoFUTWidget onOpen={() => navigate("/")} /> : null}
     </AppShell>
   );
 }

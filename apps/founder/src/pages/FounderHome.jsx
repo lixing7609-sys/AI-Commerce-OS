@@ -19,21 +19,24 @@ import {
 const PERSONA_ID = "founder";
 const GROUP_ORDER = ["pinned", "today", "yesterday", "last7", "last30", "earlier"];
 
+// Founder AI 是技术与系统开发入口，不是经营驾驶舱——Quick Actions 与 AI 专家
+// 均围绕架构/Agent/Workflow/版本/系统诊断展开。
 const QUICK_ACTIONS = [
-  { key: "daily-report", label: "经营日报" },
-  { key: "product-analysis", label: "商品分析" },
-  { key: "data-insight", label: "数据洞察" },
-  { key: "content-creation", label: "内容创作" },
-  { key: "marketing-advice", label: "营销建议" },
-  { key: "more", label: "更多能力" },
+  { key: "architecture-review", label: "架构审查" },
+  { key: "dev-task", label: "开发任务" },
+  { key: "agent-design", label: "Agent 设计" },
+  { key: "workflow-design", label: "Workflow 设计" },
+  { key: "version-check", label: "版本检查" },
+  { key: "system-diagnostics", label: "系统诊断" },
 ];
 
 const AI_EXPERTS = [
-  { key: "biz-analyst", label: "经营分析师", desc: "解读经营数据，识别异常与机会" },
-  { key: "growth-advisor", label: "增长顾问", desc: "评估机会与增长策略" },
-  { key: "content-expert", label: "内容创作专家", desc: "生成图文/短视频/AI短剧创意" },
-  { key: "ad-optimizer", label: "广告优化专家", desc: "优化广告投放与预算分配" },
-  { key: "supply-chain-expert", label: "供应链专家", desc: "评估选品与供应链风险" },
+  { key: "system-architect", label: "系统架构师", desc: "评估架构分层与模块边界" },
+  { key: "agent-engineer", label: "Agent 工程师", desc: "设计与调试 Agent 职责与调用链" },
+  { key: "workflow-engineer", label: "Workflow 工程师", desc: "编排多 Agent/多步骤 Workflow" },
+  { key: "prompt-engineer", label: "Prompt 工程师", desc: "打磨 Prompt 版本与评测" },
+  { key: "qa-expert", label: "测试与质量专家", desc: "把关自动化测试与构建质量" },
+  { key: "release-expert", label: "版本发布专家", desc: "管理版本发布与回滚策略" },
 ];
 
 function fmtCNY(v) {
@@ -43,36 +46,31 @@ function fmtCNY(v) {
 function buildQuickActionReply(key, state) {
   if (!state) return "数据加载中，请稍后再试。";
   switch (key) {
-    case "daily-report": {
-      const totalProfit = state.profits.reduce((s, p) => s + p.netProfit, 0);
-      const unsettled = state.orders.filter((o) => o.status === "unsettled").length;
-      const pendingApprovals = state.approvals.filter((a) => a.status === "pending").length;
-      return `经营日报：今日利润 ${fmtCNY(totalProfit)} · 待结算订单 ${unsettled} 笔 · 待审批 ${pendingApprovals} 项 · 异常提醒：暂无。`;
+    case "architecture-review":
+      return "架构审查：当前基于 docs/2608-v2/01-architecture.md 的五大主体分层（SinoFUT/Founder/Growth/Studio/Operator），暂未接入自动化架构审查工具。";
+    case "dev-task": {
+      const recent = state.tasks.slice(-5).reverse();
+      return recent.length ? `开发任务：${recent.map((t) => t.title).join("；")}` : "暂无开发任务。";
     }
-    case "product-analysis":
-      return "商品分析：Product 领域对象尚未建模（见 docs/2608-v2/02-domain-model.md），敬请期待。";
-    case "data-insight": {
-      const counts = state.opportunities.reduce((acc, o) => {
-        acc[o.status] = (acc[o.status] || 0) + 1;
-        return acc;
-      }, {});
-      const summary = Object.entries(counts).map(([status, n]) => `${status} ${n}`).join(" · ");
-      return `数据洞察：机会漏斗 ${summary || "暂无数据"}。`;
+    case "agent-design": {
+      const agents = state.capabilities;
+      return agents.length
+        ? `Agent 设计现状：${agents.map((c) => `${c.name}（${c.status}）`).join("；")}`
+        : "暂无 Agent 记录。";
     }
-    case "content-creation": {
-      const recent = state.content.slice(-3).reverse();
-      return recent.length
-        ? `最近生成内容：${recent.map((c) => c.title).join("；")}`
-        : "暂无生产中的内容，前往 Studio 无限画布创建。";
+    case "workflow-design": {
+      const workflows = state.capabilities.filter((c) => c.name.includes("Workflow"));
+      return workflows.length
+        ? `Workflow 设计现状：${workflows.map((c) => `${c.name}（${c.status}）`).join("；")}`
+        : "暂无 Workflow 记录，能力中心当前尚未按 Agent/Workflow 分类存储。";
     }
-    case "marketing-advice": {
-      const recent = state.strategies.slice(-3).reverse();
-      return recent.length
-        ? `最近增长策略：${recent.map((s) => s.hypothesis).join("；")}`
-        : "暂无增长策略，前往 Growth · 增长网络生成。";
+    case "version-check":
+      return "版本检查：当前系统版本 2608·V2；Version 对象尚未接入运行时数据（见 02-domain-model.md 能力层 Version）。";
+    case "system-diagnostics": {
+      const validated = state.capabilities.filter((c) => c.status === "validated").length;
+      const total = state.capabilities.length;
+      return `系统诊断：Mock API 连接正常；能力验证状态 ${validated}/${total} 已通过验证。`;
     }
-    case "more":
-      return "更多能力持续接入中（演示状态 · SinoFUT Core 尚未接入真实意图理解）。";
     default:
       return "已记录（演示状态 · SinoFUT Core 尚未接入真实意图理解）。";
   }

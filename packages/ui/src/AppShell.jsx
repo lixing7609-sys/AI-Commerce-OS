@@ -7,7 +7,15 @@ const THEME_LABEL = { system: "跟随系统", dark: "深色", light: "浅色" };
 // `navItems` = current workspace's own menu (unchanged content, just regrouped).
 // `crossAppLinks` = product switch entries (Studio/Growth/Operator/Operator Cloud),
 // rendered as a visually distinct segmented group, not mixed with utility buttons.
-export function AppShell({ appLabel, navItems, activeKey, crossAppLinks, onOpenFullScreen, children }) {
+export function AppShell({
+  appLabel,
+  navItems,
+  activeKey,
+  crossAppLinks,
+  onOpenFullScreen,
+  showThemeToggle = true,
+  children,
+}) {
   const { theme, toggle } = useThemeToggle();
 
   return (
@@ -55,9 +63,11 @@ export function AppShell({ appLabel, navItems, activeKey, crossAppLinks, onOpenF
         ) : null}
 
         <div className="sf-topbar-trailing">
-          <button type="button" className="sf-icon-button" onClick={toggle}>
-            {THEME_LABEL[theme]}
-          </button>
+          {showThemeToggle ? (
+            <button type="button" className="sf-icon-button" onClick={toggle}>
+              {THEME_LABEL[theme]}
+            </button>
+          ) : null}
           {onOpenFullScreen ? (
             <button type="button" className="sf-icon-button" onClick={onOpenFullScreen} title="进入 SinoFUT 全屏工作模式">
               全屏
