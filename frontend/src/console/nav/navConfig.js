@@ -48,6 +48,21 @@ import { CAPABILITY_KEYS } from "../capabilities.js";
  */
 export const FOUNDER_MODULES = [
   {
+    // Workspace 母版原型展示台（本轮页面架构重建任务 第四阶段）——
+    // 五个高保真母版（Canvas/Project/Operations/Editor/Fullscreen），
+    // 只供产品负责人在浏览器里逐个确认，不是真正业务页面，同
+    // designDna 一样 hiddenFromSidebar，走 ?module=workspaceProto。
+    // 五个母版经确认后才批量迁移全部业务页面（见
+    // docs/workspace-page-mapping.md）。
+    key: "workspaceProto",
+    label: "Workspace 母版原型",
+    group: "founderWorkspaceGroup",
+    icon: "▦",
+    requiredCapability: CAPABILITY_KEYS.WORKSPACE_PROTO_VIEW,
+    hiddenFromSidebar: true,
+    bleed: true,
+  },
+  {
     // Design DNA v1.0 internal showcase (docs/01-foundation/design/).
     // Not a customer nav item — reachable only via ?module=designDna,
     // same hiddenFromSidebar pattern already used for productCenter/
@@ -415,6 +430,25 @@ export const NAV_GROUPS = [
   { key: "studioLabGroup", label: "Studio 实验室", collapsible: true, external: "studio", externalPosition: "before" },
   { key: "cloudCenterGroup", label: "Cloud Center", collapsible: true, external: "cloud", externalPosition: "before" },
 ];
+
+/**
+ * 应用壳重建（Workspace 母版任务 第二阶段）：Operator/Studio/Cloud
+ * 三个分组进入后不再一直展示 Founder 完整长侧栏——ConsoleSidebar.jsx
+ * 据此把侧栏强制收缩为窄图标轨道，ConsoleShell.jsx 据此渲染对应的
+ * LabToolbar（该分组专属的水平工具栏，承担原本长侧栏里的二级导航）。
+ * AI 能力中心不在这个列表里——它是 Founder 自身构建 AI 能力的工具，
+ * 不是独立经营/创作实验室，继续用 Founder 长侧栏的手风琴，不单独
+ * 建壳（与 Operator/Studio/Cloud 三个"离开 Founder 视角进入专属工作
+ * 环境"的场景不同）。
+ */
+export const LAB_SHELL_GROUP_KEYS = ["operatorLabGroup", "studioLabGroup", "cloudCenterGroup"];
+
+export const GROUP_SELF_MODULE_KEY = {
+  aiCapabilityCenterGroup: "agentCenter",
+  operatorLabGroup: "operatorLab",
+  studioLabGroup: "studioLab",
+  cloudCenterGroup: "cloudCenter",
+};
 
 /**
  * Design DNA v1.1 navigation shell (docs/01-foundation/design/

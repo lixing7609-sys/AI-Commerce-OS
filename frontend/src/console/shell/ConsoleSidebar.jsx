@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { FOUNDER_MODULES, NAV_GROUPS, NAV_ZONES, getGroupKeyForModule, getModuleConfig } from "../nav/navConfig.js";
+import {
+  FOUNDER_MODULES, NAV_GROUPS, NAV_ZONES, LAB_SHELL_GROUP_KEYS, GROUP_SELF_MODULE_KEY,
+  getGroupKeyForModule, getModuleConfig,
+} from "../nav/navConfig.js";
 import { useConsoleNavContext } from "../nav/ConsoleNavContext.jsx";
 import { useCapabilities } from "../useCapabilities.js";
 import { OPERATOR_V2_NAV_ITEMS } from "../labs/operatorLabV2/navigation.js";
@@ -55,13 +58,6 @@ import { SinoFUTBrand } from "../../shared/sinofut/SinoFUTBrand.jsx";
 
 const LABS_CLOUD_GROUP_KEYS = ["aiCapabilityCenterGroup", "operatorLabGroup", "studioLabGroup", "cloudCenterGroup"];
 
-const GROUP_SELF_MODULE_KEY = {
-  aiCapabilityCenterGroup: "agentCenter",
-  operatorLabGroup: "operatorLab",
-  studioLabGroup: "studioLab",
-  cloudCenterGroup: "cloudCenter",
-};
-
 const GROUP_DEFAULT_NAV = {
   aiCapabilityCenterGroup: { module: "agentCenter" },
   operatorLabGroup: { module: "operatorLab", subView: "workbench" },
@@ -115,7 +111,14 @@ export function ConsoleSidebar() {
   // activates — see navigation-shell-spec.md §Responsive. The user's
   // own manual preference (`collapsed`) is preserved independently
   // and resumes once the viewport widens back out.
-  const effectiveCollapsed = collapsed || narrowViewport;
+  //
+  // Workspace 母版任务 第二阶段（应用壳重建）：进入 Operator/Studio/
+  // Cloud 三个专属工作环境后，Founder 长侧栏同样强制收缩为窄图标
+  // 轨道——不是"一直展示完整 Founder 侧栏"，二级导航改由
+  // LabToolbar（ConsoleShell.jsx，该分组专属水平工具栏）承担，侧栏
+  // 收起态原有的 flyout 交互作为后备保留。
+  const inLabShell = LAB_SHELL_GROUP_KEYS.includes(activeGroupKey);
+  const effectiveCollapsed = collapsed || narrowViewport || inLabShell;
 
   // 店铺范围选择器是 Operator 实验室的经营上下文工具，不是 Founder
   // 全局 Shell 的通用控件——Founder 工作台/AI能力中心/Studio/Cloud
@@ -318,21 +321,31 @@ export function ConsoleSidebar() {
               className={"fdr-sidebar__item" + (groupActive ? " fdr-sidebar__item--active" : "")}
               onClick={(event) => {
                 navigateToGroupDefault(group.key);
-                toggleFlyout(group.key, event.currentTarget);
+                // Lab-shell groups (Operator/Studio/Cloud) get their
+                // own LabToolbar (ConsoleShell.jsx) as the single
+                // source of secondary nav once inside — opening this
+                // flyout too would be a second, duplicate nav surface
+                // for the same group. Non-lab-shell groups (AI 能力
+                // 中心) keep the flyout, since they have no toolbar.
+                if (!LAB_SHELL_GROUP_KEYS.includes(group.key)) {
+                  toggleFlyout(group.key, event.currentTarget);
+                }
               }}
               aria-label={group.label}
             >
               <span className="fdr-sidebar__item-icon"><Icon name={iconName || "Circle"} size={18} /></span>
             </button>
           </Tooltip>
-          <SidebarFlyout
-            rect={flyoutTarget?.key === group.key ? flyoutTarget.rect : null}
-            onClose={() => setFlyoutTarget(null)}
-            getAnchorEl={() => flyoutAnchorRefs.current[group.key]}
-          >
-            <div className="fdr-sidebar__flyout-title">{group.label}</div>
-            {renderExternalPanelContent(group, items)}
-          </SidebarFlyout>
+          {!LAB_SHELL_GROUP_KEYS.includes(group.key) ? (
+            <SidebarFlyout
+              rect={flyoutTarget?.key === group.key ? flyoutTarget.rect : null}
+              onClose={() => setFlyoutTarget(null)}
+              getAnchorEl={() => flyoutAnchorRefs.current[group.key]}
+            >
+              <div className="fdr-sidebar__flyout-title">{group.label}</div>
+              {renderExternalPanelContent(group, items)}
+            </SidebarFlyout>
+          ) : null}
         </div>
       );
     }
@@ -455,7 +468,7 @@ export function ConsoleSidebar() {
         ) : null}
       </div>
 
-      {effectiveCollapsed && !narrowViewport ? (
+      {effectiveCollapsed && !narrowViewport && !inLabShell ? (
         <div style={{ display: "flex", justifyContent: "center", padding: "8px 0", borderBottom: "1px solid var(--sidebar-border)" }}>
           <Tooltip content="展开侧边栏">
             <IconButton icon={UTILITY_ICONS.expand} aria-label="展开侧边栏" onClick={toggleCollapsed} />

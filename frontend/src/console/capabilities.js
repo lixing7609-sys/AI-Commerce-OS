@@ -67,6 +67,7 @@ export const CAPABILITY_KEYS = Object.freeze({
   MARKETPLACE_CENTER_VIEW: "marketplaceCenter.view",
   DESIGN_DNA_VIEW: "designDna.view",
   PRODUCT_REVIEW_VIEW: "productReview.view",
+  WORKSPACE_PROTO_VIEW: "workspaceProto.view",
 });
 
 function allTrue(keys) {

@@ -1,13 +1,15 @@
 import { ConsoleSidebar } from "./ConsoleSidebar.jsx";
 import { ConsoleTopBar } from "./ConsoleTopBar.jsx";
+import { LabToolbar } from "./LabToolbar.jsx";
 import { useConsoleNavContext } from "../nav/ConsoleNavContext.jsx";
 import { MODULE_COMPONENTS } from "../moduleRegistry.jsx";
-import { DEFAULT_MODULE_KEY, getModuleConfig } from "../nav/navConfig.js";
+import { DEFAULT_MODULE_KEY, LAB_SHELL_GROUP_KEYS, getGroupKeyForModule, getModuleConfig } from "../nav/navConfig.js";
 import { useCapabilities } from "../useCapabilities.js";
 import { ErrorBoundary } from "../../shared/ErrorBoundary.jsx";
 import { ModuleNotFoundState } from "../kit/ModuleNotFoundState.jsx";
 import { PermissionDeniedState } from "../kit/PermissionDeniedState.jsx";
 import { RenderErrorState } from "../kit/RenderErrorState.jsx";
+import "../workspace/workspace.css";
 
 export function ConsoleShell() {
   const { module, navigate } = useConsoleNavContext();
@@ -15,6 +17,8 @@ export function ConsoleShell() {
   const moduleConfig = getModuleConfig(module);
   const ActiveModule = moduleConfig ? MODULE_COMPONENTS[module] : null;
   const goToDefault = () => navigate(DEFAULT_MODULE_KEY);
+  const activeGroupKey = getGroupKeyForModule(module);
+  const inLabShell = LAB_SHELL_GROUP_KEYS.includes(activeGroupKey);
 
   let content;
   if (!moduleConfig) {
@@ -49,7 +53,8 @@ export function ConsoleShell() {
       <ConsoleSidebar />
       <div className="fdr-main">
         <ConsoleTopBar />
-        <main className="fdr-content">
+        {inLabShell ? <LabToolbar groupKey={activeGroupKey} /> : null}
+        <main className={"fdr-content" + (moduleConfig?.bleed ? " fdr-content--bleed" : "")}>
           <div className="fdr-content__inner">{content}</div>
         </main>
       </div>

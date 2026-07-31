@@ -7,6 +7,7 @@ import { CloudStatusModule } from "./modules/cloudStatus/CloudStatusModule.jsx";
 import { RisksModule } from "./modules/risks/RisksModule.jsx";
 import { NotificationsModule } from "./modules/notifications/NotificationsModule.jsx";
 import { DesignDnaModule } from "./modules/designDna/DesignDnaModule.jsx";
+import { WorkspaceProtoShowcase } from "./modules/workspaceProto/WorkspaceProtoShowcase.jsx";
 import { ProductReviewModule } from "./modules/productReview/ProductReviewModule.jsx";
 import { ProductCenterModule } from "./modules/productCenter/ProductCenterModule.jsx";
 import { OrderCenterModule } from "./modules/orderCenter/OrderCenterModule.jsx";
@@ -68,6 +69,7 @@ import {
  * 自我引用，必须保持可解析。
  */
 export const MODULE_COMPONENTS = {
+  workspaceProto: WorkspaceProtoShowcase,
   designDna: DesignDnaModule,
   productReview: ProductReviewModule,
   founderWorkbench: FounderWorkbenchModule,

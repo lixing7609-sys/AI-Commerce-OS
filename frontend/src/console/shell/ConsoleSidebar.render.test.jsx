@@ -95,14 +95,22 @@ describe("Founder navigation shell (Founder Master Edition Charter §3)", () => 
     expect(window.location.search).toContain("module=operatorLab");
   });
 
-  it("selecting a nested Studio sub-item marks it active", () => {
+  it("selecting a nested Studio sub-item navigates and collapses Founder into a rail (LabToolbar takes over secondary nav)", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
     const studioChevron = screen.getByRole("button", { name: /展开Studio 实验室/ });
     fireEvent.click(studioChevron);
     const subitems = document.querySelectorAll(".fdr-sidebar__subitem");
     expect(subitems.length).toBeGreaterThan(0);
     fireEvent.click(subitems[0]);
-    expect(subitems[0].className).toContain("fdr-sidebar__item--active");
+    // Workspace shell rebuild: entering a lab group forces the Founder
+    // sidebar into icon-rail mode (navigation-shell-spec.md §Application
+    // Shell Integration, "leave Founder's long sidebar behind when
+    // inside a dedicated lab shell") — LabToolbar.jsx renders the
+    // secondary nav instead, so the old expanded `.fdr-sidebar__subitem`
+    // list is gone and the group's rail icon shows the active state.
+    expect(document.querySelector(".fdr-sidebar").getAttribute("data-collapsed")).toBe("true");
+    const studioRailIcon = screen.getByRole("button", { name: "Studio 实验室" });
+    expect(studioRailIcon.className).toContain("fdr-sidebar__item--active");
   });
 
   it("collapse toggle switches to icon-rail mode and hides text labels", () => {
@@ -124,21 +132,34 @@ describe("Founder navigation shell (Founder Master Edition Charter §3)", () => 
     expect(screen.getByRole("button", { name: "展开侧边栏" })).toBeTruthy();
   });
 
+  // Operator/Studio/Cloud are lab-shell groups (LAB_SHELL_GROUP_KEYS)
+  // and get their own LabToolbar as the single secondary-nav surface
+  // once active — the collapsed-rail flyout is intentionally suppressed
+  // for them (workspace shell rebuild) to avoid two competing nav
+  // paths for the same group. AI 能力中心 is not a lab shell (no
+  // toolbar), so it's the one that still exercises the flyout here.
   it("collapsed items with nested content expose a tooltip/flyout trigger with an accessible label", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    const operatorButton = screen.getByRole("button", { name: "Operator 实验室" });
-    expect(operatorButton).toBeTruthy();
-    fireEvent.click(operatorButton);
+    const aiCapabilityButton = screen.getByRole("button", { name: "AI 能力中心" });
+    expect(aiCapabilityButton).toBeTruthy();
+    fireEvent.click(aiCapabilityButton);
     expect(document.querySelector(".fdr-sidebar__flyout")).toBeTruthy();
   });
 
   it("Escape closes the collapsed-mode flyout", () => {
     render(<Wrapper><ConsoleSidebar /></Wrapper>);
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    fireEvent.click(screen.getByRole("button", { name: "Operator 实验室" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI 能力中心" }));
     expect(document.querySelector(".fdr-sidebar__flyout")).toBeTruthy();
     fireEvent.keyDown(window, { key: "Escape" });
+    expect(document.querySelector(".fdr-sidebar__flyout")).toBeNull();
+  });
+
+  it("lab-shell groups (e.g. Operator) do not open a flyout in collapsed mode — LabToolbar owns their secondary nav", () => {
+    render(<Wrapper><ConsoleSidebar /></Wrapper>);
+    fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
+    fireEvent.click(screen.getByRole("button", { name: "Operator 实验室" }));
     expect(document.querySelector(".fdr-sidebar__flyout")).toBeNull();
   });
 
