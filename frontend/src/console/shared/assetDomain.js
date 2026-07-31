@@ -50,8 +50,24 @@ export function createAsset({ name, description = "", status = ASSET_STATUS.DRAF
  * get()按 id 取详情，create()/update()/remove() 都会维护
  * updatedAt/version，不需要每个中心各自重复这套逻辑。
  */
+/**
+ * 种子数据只需要给出 name/description/status/tags/fields 这些"内容"
+ * 字段——id/version/createdAt/updatedAt 统一在这里补齐（通过
+ * createAsset()），不要求四个中心的种子数组各自手写这些样板字段。
+ * 之前 Prompt/Skill/Knowledge/Connector 中心的种子数组都是直接手写
+ * 的裸对象，缺失 version/updatedAt，导致列表渲染出 "v" + undefined
+ * 和 "Invalid Date"——这里统一兜底，不需要逐个中心补种子数据。
+ */
+function normalizeSeedAsset(item) {
+  if (item && typeof item.id === "string" && item.version != null && item.updatedAt) {
+    return item;
+  }
+  const { name, description, status, tags, fields } = item ?? {};
+  return createAsset({ name, description, status, tags, fields });
+}
+
 export function createAssetRepository(storageKey, seedFactory) {
-  const repo = createLocalRepository(storageKey, () => tagDemo(seedFactory()));
+  const repo = createLocalRepository(storageKey, () => tagDemo(seedFactory().map(normalizeSeedAsset)));
 
   function list({ search, status } = {}) {
     let rows = repo.get();

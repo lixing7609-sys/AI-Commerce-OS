@@ -197,6 +197,11 @@
   background: var(--sidebar-active-surface);
   color: var(--sidebar-text-primary);
   font-weight: var(--type-label-weight);
+  box-shadow: inset 3px 0 0 var(--sidebar-ai-accent);
+}
+
+.fdr-sidebar__item--active .fdr-sidebar__item-icon {
+  color: var(--sidebar-ai-accent);
 }
 
 .fdr-sidebar__item-icon {
@@ -251,6 +256,11 @@
 
 .fdr-sidebar__group-row--active {
   background: var(--sidebar-active-surface);
+  box-shadow: inset 3px 0 0 var(--sidebar-ai-accent);
+}
+
+.fdr-sidebar__group-row--active .fdr-sidebar__group-label svg {
+  color: var(--sidebar-ai-accent);
 }
 
 .fdr-sidebar__group-label {
@@ -374,6 +384,7 @@
   background: var(--sidebar-active-surface);
   color: var(--sidebar-text-primary);
   font-weight: var(--type-label-weight);
+  box-shadow: inset 3px 0 0 var(--sidebar-ai-accent);
 }
 
 /* Collapsed-mode flyout — Popover-based, anchored to the group row. */

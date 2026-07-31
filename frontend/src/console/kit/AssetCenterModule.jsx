@@ -12,6 +12,12 @@ import { ASSET_STATUS, ASSET_STATUS_LABEL, ASSET_STATUS_TONE } from "../shared/a
 
 const ALL = "all";
 
+function formatUpdatedAt(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("zh-CN");
+}
+
 /**
  * 通用资产中心骨架——Founder 的 Prompt 中心/Skill 中心/Knowledge
  * 中心/Connector 中心共用同一个组件（阶段 Founder Full-System v3
@@ -122,9 +128,9 @@ export function AssetCenterModule({ moduleKey, title, subtitle, repo, fieldSchem
             columns={[
               { key: "name", label: "名称" },
               { key: "description", label: "描述", render: (r) => r.description || "—" },
-              { key: "version", label: "版本", render: (r) => `v${r.version}` },
+              { key: "version", label: "版本", render: (r) => (r.version != null ? `v${r.version}` : "—") },
               { key: "status", label: "状态", render: (r) => <StatusPill tone={ASSET_STATUS_TONE[r.status]}>{ASSET_STATUS_LABEL[r.status]}</StatusPill> },
-              { key: "updatedAt", label: "更新时间", render: (r) => new Date(r.updatedAt).toLocaleString("zh-CN") },
+              { key: "updatedAt", label: "更新时间", render: (r) => formatUpdatedAt(r.updatedAt) },
               {
                 key: "actions",
                 label: "操作",
