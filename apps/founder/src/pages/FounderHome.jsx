@@ -76,6 +76,22 @@ export function FounderHome() {
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const scrollRef = useRef(null);
+  // Measure the real top-nav height at runtime rather than assuming a fixed
+  // px value or relying on .sf-main's flex/percentage resolution — this is
+  // what makes "calc(100dvh - topbar height)" reliable regardless of how
+  // AppShell's top bar wraps at a given viewport width.
+  const [workspaceHeight, setWorkspaceHeight] = useState(null);
+
+  useEffect(() => {
+    function measure() {
+      const topbar = document.querySelector(".sf-topbar");
+      const topbarHeight = topbar ? topbar.getBoundingClientRect().height : 0;
+      setWorkspaceHeight(`calc(100dvh - ${topbarHeight}px)`);
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -136,7 +152,7 @@ export function FounderHome() {
   const aiQuota = state?.cloud?.aiQuota;
 
   return (
-    <div className="founder-home">
+    <div className="founder-home" style={workspaceHeight ? { height: workspaceHeight } : undefined}>
       <aside className="founder-home-sidebar">
         <div className="founder-home-sidebar-header">
           <button type="button" className="sino-new-conversation" onClick={() => setActiveId(null)}>
@@ -228,53 +244,55 @@ export function FounderHome() {
 
         <div className="founder-home-scroll" ref={scrollRef}>
           {!activeConversation ? (
-            <div className="founder-home-cards">
-              <div className="sf-card">
-                <h3>最近开发任务</h3>
-                <ul>
-                  {recentTasks.map((t) => (
-                    <li key={t.id}>{t.title}</li>
-                  ))}
-                  {recentTasks.length === 0 && <li>暂无开发任务</li>}
-                </ul>
-              </div>
-              <div className="sf-card">
-                <h3>最近系统变更</h3>
-                <ul>
-                  {capabilities.map((c) => (
-                    <li key={c.id}>
-                      {c.name}：{c.status}
-                      {c.latestSuggestion ? `（${c.latestSuggestion}）` : ""}
-                    </li>
-                  ))}
-                  {capabilities.length === 0 && <li>暂无系统变更</li>}
-                </ul>
-              </div>
-              <div className="sf-card">
-                <h3>最近审批</h3>
-                <ul>
-                  {recentApprovals.map((a) => (
-                    <li key={a.id}>
-                      {a.id}：{a.status}
-                    </li>
-                  ))}
-                  {recentApprovals.length === 0 && <li>暂无审批记录</li>}
-                </ul>
-              </div>
-              <div className="sf-card">
-                <h3>当前系统状态</h3>
-                <ul>
-                  <li>Mock API 连接：正常</li>
-                  <li>
-                    能力验证：{validatedCount}/{capabilities.length} 已通过
-                  </li>
-                  {aiQuota && (
+            <div className="founder-home-cards-wrapper">
+              <div className="founder-home-cards">
+                <div className="sf-card">
+                  <h3>最近开发任务</h3>
+                  <ul>
+                    {recentTasks.map((t) => (
+                      <li key={t.id}>{t.title}</li>
+                    ))}
+                    {recentTasks.length === 0 && <li>暂无开发任务</li>}
+                  </ul>
+                </div>
+                <div className="sf-card">
+                  <h3>最近系统变更</h3>
+                  <ul>
+                    {capabilities.map((c) => (
+                      <li key={c.id}>
+                        {c.name}：{c.status}
+                        {c.latestSuggestion ? `（${c.latestSuggestion}）` : ""}
+                      </li>
+                    ))}
+                    {capabilities.length === 0 && <li>暂无系统变更</li>}
+                  </ul>
+                </div>
+                <div className="sf-card">
+                  <h3>最近审批</h3>
+                  <ul>
+                    {recentApprovals.map((a) => (
+                      <li key={a.id}>
+                        {a.id}：{a.status}
+                      </li>
+                    ))}
+                    {recentApprovals.length === 0 && <li>暂无审批记录</li>}
+                  </ul>
+                </div>
+                <div className="sf-card">
+                  <h3>当前系统状态</h3>
+                  <ul>
+                    <li>Mock API 连接：正常</li>
                     <li>
-                      AI 经营额度：{aiQuota.used.toLocaleString("zh-CN")} / {aiQuota.total.toLocaleString("zh-CN")}
-                      （{aiQuota.cycle}）
+                      能力验证：{validatedCount}/{capabilities.length} 已通过
                     </li>
-                  )}
-                </ul>
+                    {aiQuota && (
+                      <li>
+                        AI 经营额度：{aiQuota.used.toLocaleString("zh-CN")} / {aiQuota.total.toLocaleString("zh-CN")}
+                        （{aiQuota.cycle}）
+                      </li>
+                    )}
+                  </ul>
+                </div>
               </div>
             </div>
           ) : (
