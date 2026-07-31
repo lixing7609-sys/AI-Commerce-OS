@@ -117,8 +117,10 @@ export function ConsoleSidebar() {
   // and resumes once the viewport widens back out.
   const effectiveCollapsed = collapsed || narrowViewport;
 
-  const onSecretaryTab = activeModule === "founderWorkbench" && subView !== "dashboard";
-  const showScopeSelector = !onSecretaryTab;
+  // 店铺范围选择器是 Operator 实验室的经营上下文工具，不是 Founder
+  // 全局 Shell 的通用控件——Founder 工作台/AI能力中心/Studio/Cloud
+  // 关注的是跨店铺聚合视角，不应该被单店铺筛选影响或误导。
+  const showScopeSelector = activeGroupKey === "operatorLabGroup";
 
   useEffect(() => {
     let cancelled = false;
