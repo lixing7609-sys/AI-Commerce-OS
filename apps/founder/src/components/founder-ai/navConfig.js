@@ -1,13 +1,11 @@
-export const DEFAULT_VIEW = "decision-center";
-
+// 固定系统导航 —— 系统工作台页面（与"对话记录"是两个不同的列表，
+// 详见 FounderAISidebar.jsx：功能论证/模型会议/决策事项/执行任务/文件分析
+// 不再作为固定导航常驻，改为对话模式，只能从"新建"悬浮菜单、快捷模式卡、
+// SinoFUT 自动意图建议、已创建的对话记录中进入）。
 export const NAV_GROUPS = [
   {
     label: "AI 董事会",
-    items: [
-      { key: "functional-argumentation", label: "功能论证", icon: "argument" },
-      { key: "model-meeting", label: "模型会议", icon: "meeting" },
-      { key: "tech-radar", label: "技术雷达", icon: "radar" },
-    ],
+    items: [{ key: "tech-radar", label: "技术雷达", icon: "radar" }],
   },
   {
     label: "公司总控",
@@ -41,9 +39,7 @@ export const VIEW_LABELS = NAV_GROUPS.flatMap((g) => g.items).reduce(
 );
 
 export const VIEW_META = {
-  "decision-center": { title: "Founder AI", subtitle: "AI 董事会 · 决策中心 · 公司总控" },
-  "functional-argumentation": { title: "功能论证", subtitle: "与 AI 一起判断一个功能是否值得做、如何验证、是否进入开发。" },
-  "model-meeting": { title: "模型会议", subtitle: "由多个大模型分别提出方案，再由 SinoFUT 汇总分歧和建议。" },
+  "decision-center": { title: "决策中心", subtitle: "AI 董事会 · 决策中心 · 公司总控" },
   "tech-radar": { title: "技术雷达", subtitle: "持续扫描值得关注的新技术，并判断与 AI Commerce OS 的关系。" },
   "system-overview": { title: "系统总览", subtitle: "Founder / Studio / Growth / Operator / Cloud 的关键变化、异常与风险。" },
   "pending-decisions": { title: "待决策", subtitle: "所有需要 Founder 处理的事项。" },
@@ -55,11 +51,30 @@ export const VIEW_META = {
   favorites: { title: "收藏", subtitle: "集中查看收藏的情报、论证、会议、文件与决策。" },
 };
 
+// 对话模式元数据 —— 悬浮新建菜单、快捷工作模式卡、模式徽章共用同一份定义。
+export const MODE_META = {
+  chat: { key: "chat", label: "普通对话", description: "从一个问题或想法开始", icon: "chat" },
+  "functional-argumentation": { key: "functional-argumentation", label: "功能论证", description: "判断一个功能是否值得开发", icon: "argument" },
+  "model-meeting": { key: "model-meeting", label: "模型会议", description: "让多个模型分别提出方案并汇总", icon: "meeting" },
+  decision: { key: "decision", label: "决策事项", description: "建立需要正式判断和跟踪的事项", icon: "decision" },
+  "execution-task": { key: "execution-task", label: "执行任务", description: "创建可执行、可跟踪的工作任务", icon: "execution" },
+  "file-analysis": { key: "file-analysis", label: "文件分析", description: "上传文件并进行研究分析", icon: "files" },
+};
+
+// 悬浮"新建"菜单 —— 6 项，按钮下方的箭头弹出，不挤压侧栏。
 export const NEW_MENU_ITEMS = [
-  { key: "functional-argumentation", label: "新建功能论证" },
-  { key: "model-meeting", label: "新建模型会议" },
-  { key: "pending-decisions", label: "新建决策事项" },
-  { key: "execution-tracking", label: "新建执行任务" },
-  { key: "decision-memory", label: "新建决策记忆" },
-  { key: "file-center", label: "新建文件分析" },
+  MODE_META.chat,
+  MODE_META["functional-argumentation"],
+  MODE_META["model-meeting"],
+  MODE_META.decision,
+  MODE_META["execution-task"],
+  MODE_META["file-analysis"],
+];
+
+// 对话首页输入框下方的快捷工作模式卡 —— 只是快捷方式，不强制。
+export const QUICK_MODE_CARDS = [
+  MODE_META["functional-argumentation"],
+  MODE_META["model-meeting"],
+  MODE_META.decision,
+  MODE_META["file-analysis"],
 ];

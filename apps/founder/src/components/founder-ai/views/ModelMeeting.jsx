@@ -24,7 +24,7 @@ function buildSummary(topic, models) {
   };
 }
 
-export function ModelMeeting() {
+export function ModelMeeting({ onResult } = {}) {
   const { addMeeting } = useFounderAI();
   const [mode, setMode] = useState(MEETING_MODES[2]);
   const [selectedModels, setSelectedModels] = useState(["Claude", "GPT", "Gemini", "DeepSeek"]);
@@ -52,6 +52,7 @@ export function ModelMeeting() {
     const record = { topic, mode, proposals, summary, recommendation: summary.recommendation };
     setResult(record);
     addMeeting(record);
+    onResult?.(record);
   }
 
   const maxModels = MODE_MODEL_COUNT[mode] || MODEL_OPTIONS.length;

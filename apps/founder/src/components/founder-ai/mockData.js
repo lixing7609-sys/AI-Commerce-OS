@@ -2,9 +2,13 @@
 // 与 services/api 的经营闭环数据是两套独立的 mock：这里是"AI 董事会 + 决策
 // 中心 + 公司总控"专属的治理/决策类数据，不复用经营对象。
 
-let idCounter = 1;
+// 每个前缀独立计数，从 100 起步 —— 避免与下面各 SEED_* 数组里手写的
+// 低位 id（如 "pd-0001"）撞车，否则 React 列表会因重复 key 报错。
+const idCounters = Object.create(null);
 export function nextId(prefix) {
-  return `${prefix}-${(idCounter++).toString().padStart(4, "0")}`;
+  const next = (idCounters[prefix] ?? 100) + 1;
+  idCounters[prefix] = next;
+  return `${prefix}-${next.toString().padStart(4, "0")}`;
 }
 
 export const RISK_LEVELS = ["低", "中", "高"];

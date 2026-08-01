@@ -62,6 +62,30 @@ const PATHS = {
     </>
   ),
   star: <path d="M9 2.5l2 4.2 4.5.6-3.3 3.2.8 4.5L9 12.8l-4 2.2.8-4.5-3.3-3.2 4.5-.6z" />,
+  chat: <path d="M3 4h12v8H7l-3 3v-3H3z" />,
+  chevronDown: <path d="M4.5 6.5L9 11l4.5-4.5" />,
+  kebab: (
+    <>
+      <circle cx="9" cy="4.5" r="1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="9" r="1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="13.5" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  mic: (
+    <>
+      <rect x="7" y="2.5" width="4" height="7" rx="2" />
+      <path d="M4.5 8.5a4.5 4.5 0 0 0 9 0M9 13v2.5M6.5 15.5h5" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="9" cy="9" r="6" />
+      <path d="M3 9h12M9 3c1.6 1.8 2.4 3.8 2.4 6s-.8 4.2-2.4 6c-1.6-1.8-2.4-3.8-2.4-6s.8-4.2 2.4-6z" />
+    </>
+  ),
+  paperclip: <path d="M12 5.5l-5.2 5.2a2.2 2.2 0 0 0 3.1 3.1l5.4-5.4a3.6 3.6 0 0 0-5.1-5.1L4.8 8.7a5 5 0 0 0 7.1 7.1" />,
+  close: <path d="M4.5 4.5l9 9M13.5 4.5l-9 9" />,
+  send: <path d="M3 9l12-6-4 6 4 6-12-6z" />,
 };
 
 export function NavIcon({ name }) {

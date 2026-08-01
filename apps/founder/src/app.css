@@ -48,6 +48,10 @@
   background: var(--surface-base);
 }
 
+.founder-home-workspace.is-conversation {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .founder-home-topbar {
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
@@ -88,14 +92,17 @@
   background: var(--surface-raised);
 }
 
-.founder-ai-new-wrap {
-  position: relative;
+/* --- Split "+ 新建对话 / ⌄" button + floating menu primitive --- */
+
+.founder-ai-new-split {
+  display: flex;
+  gap: 6px;
   padding: var(--space-2);
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.founder-ai-new-button {
-  width: 100%;
+.founder-ai-new-button-main {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -111,35 +118,262 @@
   cursor: pointer;
 }
 
-.founder-ai-new-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: var(--space-2);
-  right: var(--space-2);
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  box-shadow: var(--shadow-floating);
-  overflow: hidden;
+.founder-ai-new-arrow-wrap {
+  position: relative;
 }
 
-.founder-ai-new-menu button {
+.founder-ai-new-button-arrow {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.founder-ai-new-button-arrow:hover {
+  color: var(--text-primary);
+  background: var(--surface-sunken);
+}
+
+.founder-ai-floating-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--shadow-floating);
+  overflow: hidden;
+  padding: 4px;
+}
+
+.founder-ai-floating-menu.align-right {
+  right: 0;
+}
+
+.founder-ai-floating-menu.align-left {
+  left: 0;
+}
+
+.founder-ai-floating-menu button {
   appearance: none;
   border: none;
   background: transparent;
   text-align: left;
-  padding: 10px 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
   font: var(--font-body);
   font-size: 13px;
   color: var(--text-primary);
   cursor: pointer;
 }
 
-.founder-ai-new-menu button:hover {
+.founder-ai-floating-menu button:hover {
   background: var(--surface-sunken);
+}
+
+.founder-ai-floating-menu button.is-danger {
+  color: var(--signal-danger);
+}
+
+.founder-ai-new-menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.founder-ai-new-menu-item svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--ai-accent);
+}
+
+.founder-ai-new-menu-item strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.founder-ai-new-menu-item small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* --- Search box + 最近对话 --- */
+
+.founder-ai-search-wrap {
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.founder-ai-search-input {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  background: var(--surface-base);
+  color: var(--text-primary);
+}
+
+.founder-ai-conv-list {
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 0 var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.founder-ai-conv-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.founder-ai-conv-archive-toggle {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--ai-accent);
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.founder-ai-conv-group-label {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.founder-ai-conv-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.founder-ai-conv-item:hover,
+.founder-ai-conv-item.is-active {
+  background: var(--surface-sunken);
+}
+
+.founder-ai-conv-item.is-active .founder-ai-conv-title-text {
+  color: var(--ai-accent);
+  font-weight: 600;
+}
+
+.founder-ai-conv-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.founder-ai-conv-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.founder-ai-conv-title svg {
+  flex: 0 0 auto;
+  color: var(--ai-accent);
+}
+
+.founder-ai-conv-rename-input {
+  flex: 1;
+  border: 1px solid var(--ai-accent);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  margin: 2px 4px;
+}
+
+.founder-ai-conv-item-more {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.founder-ai-conv-kebab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.founder-ai-conv-item:hover .founder-ai-conv-kebab,
+.founder-ai-conv-item.is-active .founder-ai-conv-kebab {
+  opacity: 1;
+}
+
+.founder-ai-conv-kebab:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.founder-ai-conv-menu {
+  min-width: 160px;
+}
+
+.founder-ai-conv-delete-confirm {
+  padding: 8px;
+}
+
+.founder-ai-conv-delete-confirm p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.founder-ai-conv-delete-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.founder-ai-conv-delete-actions button {
+  flex: 1;
+  text-align: center;
+  border: 1px solid var(--border-subtle);
+}
+
+.founder-ai-conv-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-tertiary);
 }
 
 .founder-ai-nav {
@@ -449,5 +683,238 @@
 
 .founder-ai-system-card {
   cursor: pointer;
+}
+
+/* --- Conversation home ("统一 SinoFUT 对话首页") --- */
+
+.founder-ai-conv-home {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.founder-ai-conv-home-greeting {
+  text-align: center;
+}
+
+.founder-ai-conv-home-greeting h1 {
+  margin: 0;
+  font: var(--font-display);
+  font-size: 30px;
+}
+
+.founder-ai-conv-home-greeting p {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font: var(--font-body);
+}
+
+.founder-ai-conv-home-input-card {
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  padding: var(--space-3);
+  box-shadow: var(--shadow-floating);
+}
+
+.founder-ai-conv-home-textarea {
+  width: 100%;
+  border: none;
+  resize: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--font-body);
+  font-size: 15px;
+}
+
+.founder-ai-conv-home-textarea:focus {
+  outline: none;
+}
+
+.founder-ai-conv-home-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.founder-ai-conv-home-toolbar-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.founder-ai-send-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.founder-ai-mode-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  background: var(--ai-accent-soft);
+  color: var(--ai-accent);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.founder-ai-mode-tag button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  cursor: pointer;
+  padding: 0;
+}
+
+.founder-ai-quick-mode-cards {
+  width: 100%;
+  max-width: 680px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+
+@media (max-width: 720px) {
+  .founder-ai-quick-mode-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.founder-ai-quick-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  appearance: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  padding: var(--space-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.founder-ai-quick-mode-card:hover {
+  border-color: var(--ai-accent);
+}
+
+.founder-ai-quick-mode-card.is-selected {
+  border-color: var(--ai-accent);
+  background: var(--ai-accent-soft);
+}
+
+.founder-ai-quick-mode-card svg {
+  color: var(--ai-accent);
+}
+
+.founder-ai-quick-mode-card strong {
+  font-size: 13px;
+}
+
+.founder-ai-quick-mode-card span {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* --- Chat thread (chat / decision / execution-task / file-analysis /
+   functional-argumentation-chat 共用) --- */
+
+.founder-ai-chat-thread {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.founder-ai-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.founder-ai-chat-header h1 {
+  margin: 0;
+  font: var(--font-title);
+  font-size: 20px;
+}
+
+.founder-ai-chat-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.founder-ai-chat-bubble {
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.founder-ai-chat-bubble.role-sino {
+  align-self: flex-start;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.founder-ai-chat-bubble.role-user {
+  align-self: flex-end;
+  background: var(--ai-accent);
+  color: white;
+}
+
+.founder-ai-suggestion-card {
+  align-self: flex-start;
+  max-width: 80%;
+  border: 1px solid var(--ai-accent);
+  border-radius: 14px;
+  background: var(--ai-accent-soft);
+  padding: var(--space-3);
+}
+
+.founder-ai-suggestion-card p {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.founder-ai-chat-composer {
+  display: flex;
+  gap: 10px;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-3);
+  background: var(--surface-raised);
+}
+
+.founder-ai-chat-composer input {
+  flex: 1;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 12px 18px;
+  font: var(--font-body);
+  background: var(--surface-base);
+  color: var(--text-primary);
 }
 
