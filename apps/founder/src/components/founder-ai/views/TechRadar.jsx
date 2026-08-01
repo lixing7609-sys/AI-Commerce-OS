@@ -12,7 +12,7 @@ const CATEGORIES = [
   "基础设施与成本",
 ];
 
-export function TechRadar({ onNavigate }) {
+export function TechRadar({ onStartConversation }) {
   const { techOpportunities, addExecutionTask, toggleFavorite, isFavorite } = useFounderAI();
   const [category, setCategory] = useState("全部");
 
@@ -80,11 +80,8 @@ export function TechRadar({ onNavigate }) {
               预计成本：{item.estimatedCost} · 风险：{item.risk}
             </p>
             <div className="founder-ai-actions">
-              <button type="button" className="sf-icon-button" onClick={() => onNavigate("functional-argumentation")}>
-                发起功能论证
-              </button>
-              <button type="button" className="sf-icon-button" onClick={() => onNavigate("model-meeting")}>
-                加入模型会议
+              <button type="button" className="sf-icon-button" onClick={() => onStartConversation(`是否应该跟进「${item.title}」？`)}>
+                与 Sino 讨论这个机会
               </button>
               <button type="button" className="sf-icon-button" onClick={() => createTestTask(item)}>
                 创建测试任务

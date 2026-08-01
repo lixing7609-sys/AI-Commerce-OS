@@ -3,19 +3,11 @@ import { useFounderAI } from "../useFounderAI.js";
 const ACTIONS = [
   { key: "approve", label: "同意" },
   { key: "reject", label: "驳回" },
-  { key: "more-argument", label: "要求补充论证" },
-  { key: "model-meeting", label: "交给模型会议" },
   { key: "defer", label: "延后处理" },
 ];
 
-export function PendingDecisions({ onNavigate }) {
+export function PendingDecisions() {
   const { pendingDecisions, resolvePendingDecision } = useFounderAI();
-
-  function handleAction(id, action) {
-    resolvePendingDecision(id, action);
-    if (action === "model-meeting") onNavigate("model-meeting");
-    if (action === "more-argument") onNavigate("functional-argumentation");
-  }
 
   return (
     <div className="founder-ai-view-shell">
@@ -44,7 +36,7 @@ export function PendingDecisions({ onNavigate }) {
             </dl>
             <div className="founder-ai-actions">
               {ACTIONS.map((a) => (
-                <button key={a.key} type="button" className="sf-icon-button" onClick={() => handleAction(d.id, a.key)}>
+                <button key={a.key} type="button" className="sf-icon-button" onClick={() => resolvePendingDecision(d.id, a.key)}>
                   {a.label}
                 </button>
               ))}

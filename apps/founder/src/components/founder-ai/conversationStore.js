@@ -2,9 +2,25 @@
 // 与 packages/ui 的 sinoConversationStore（Studio/Growth/Operator/Cloud 全屏
 // SinoWorkspace 专用）完全独立，互不依赖、互不影响。
 // 真实实现应替换为 Memory / Conversation 服务的后端调用。
+//
+// 对话记录不再有"模式"概念 —— 用户只管自然说话，Sino 通过
+// sinoAnalysisService 自动判断 stage 并维护 topic/consensus/
+// pendingConfirmations/rejected/constraints。
 
-const STORAGE_KEY = "founder-ai-conversations";
+const STORAGE_KEY = "founder-ai-conversations-v2";
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const STAGES = {
+  EXPLORE: "探索",
+  ARGUMENT: "功能论证",
+  MULTI_MODEL: "多模型讨论",
+  PENDING_DECISION: "待决策",
+  APPROVED: "已批准",
+  EXECUTING: "执行中",
+  AWAITING_REVIEW: "待验收",
+  RETROSPECTIVE: "复盘中",
+  ARCHIVED: "已沉淀",
+};
 
 function loadAll() {
   if (typeof window === "undefined") return [];
@@ -23,63 +39,7 @@ function saveAll(conversations) {
 function seedIfEmpty() {
   const existing = loadAll();
   if (existing !== null) return existing;
-  const now = Date.now();
-  const seeded = [
-    {
-      id: "conv-seed-0001",
-      title: "Growth Center 功能论证",
-      mode: "functional-argumentation",
-      messages: [{ id: "msg-seed-0001-1", role: "user", text: "Growth Center 功能论证", createdAt: new Date(now - 2 * 60 * 60 * 1000).toISOString() }],
-      createdAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-      isArchived: false,
-    },
-    {
-      id: "conv-seed-0002",
-      title: "Operator 定价模型会议",
-      mode: "model-meeting",
-      messages: [{ id: "msg-seed-0002-1", role: "user", text: "Operator 定价模型会议", createdAt: new Date(now - 20 * 60 * 60 * 1000).toISOString() }],
-      createdAt: new Date(now - 20 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(now - 20 * 60 * 60 * 1000).toISOString(),
-      isArchived: false,
-    },
-    {
-      id: "conv-seed-0003",
-      title: "Founder V2 页面重构",
-      mode: "chat",
-      messages: [
-        { id: "msg-seed-0003-1", role: "user", text: "Founder V2 页面重构", createdAt: new Date(now - 30 * 60 * 60 * 1000).toISOString() },
-        { id: "msg-seed-0003-2", role: "sino", text: "已记录（演示状态 · SinoFUT Core 尚未接入真实意图理解）。", createdAt: new Date(now - 30 * 60 * 60 * 1000).toISOString() },
-      ],
-      createdAt: new Date(now - 30 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(now - 30 * 60 * 60 * 1000).toISOString(),
-      isArchived: false,
-    },
-    {
-      id: "conv-seed-0004",
-      title: "Studio 无限画布设计",
-      mode: "chat",
-      messages: [
-        { id: "msg-seed-0004-1", role: "user", text: "Studio 无限画布设计", createdAt: new Date(now - 4 * DAY_MS).toISOString() },
-        { id: "msg-seed-0004-2", role: "sino", text: "已记录（演示状态 · SinoFUT Core 尚未接入真实意图理解）。", createdAt: new Date(now - 4 * DAY_MS).toISOString() },
-      ],
-      createdAt: new Date(now - 4 * DAY_MS).toISOString(),
-      updatedAt: new Date(now - 4 * DAY_MS).toISOString(),
-      isArchived: false,
-    },
-    {
-      id: "conv-seed-0005",
-      title: "AI Commerce OS 商业模式",
-      mode: "chat",
-      messages: [
-        { id: "msg-seed-0005-1", role: "user", text: "AI Commerce OS 商业模式", createdAt: new Date(now - 6 * DAY_MS).toISOString() },
-        { id: "msg-seed-0005-2", role: "sino", text: "已记录（演示状态 · SinoFUT Core 尚未接入真实意图理解）。", createdAt: new Date(now - 6 * DAY_MS).toISOString() },
-      ],
-      createdAt: new Date(now - 6 * DAY_MS).toISOString(),
-      updatedAt: new Date(now - 6 * DAY_MS).toISOString(),
-      isArchived: false,
-    },
-  ];
+  const seeded = [];
   saveAll(seeded);
   return seeded;
 }
@@ -90,6 +50,9 @@ function nextConversationId() {
 }
 function nextMessageId() {
   return `msg-${Date.now()}-${(idSeq++).toString().padStart(3, "0")}`;
+}
+function nextItemId(prefix) {
+  return `${prefix}-${Date.now()}-${(idSeq++).toString().padStart(3, "0")}`;
 }
 
 export function listConversations() {
@@ -102,10 +65,24 @@ export function getConversation(id) {
   return loadAll()?.find((c) => c.id === id) || null;
 }
 
-export function createConversation({ mode = "chat", title = "新对话" } = {}) {
+export function createConversation({ title = "新对话" } = {}) {
   const conversations = seedIfEmpty();
   const now = new Date().toISOString();
-  const conversation = { id: nextConversationId(), title, mode, messages: [], createdAt: now, updatedAt: now, isArchived: false };
+  const conversation = {
+    id: nextConversationId(),
+    title,
+    topic: "",
+    stage: STAGES.EXPLORE,
+    consensus: [],
+    pendingConfirmations: [],
+    rejected: [],
+    constraints: [],
+    suggestion: null,
+    messages: [],
+    createdAt: now,
+    updatedAt: now,
+    isArchived: false,
+  };
   conversations.push(conversation);
   saveAll(conversations);
   return conversation;
@@ -136,25 +113,52 @@ export function toggleArchiveConversation(id) {
   return conversation;
 }
 
-export function setConversationMode(id, mode) {
-  const conversations = seedIfEmpty();
-  const conversation = conversations.find((c) => c.id === id);
-  if (!conversation) return null;
-  conversation.mode = mode;
-  conversation.updatedAt = new Date().toISOString();
-  saveAll(conversations);
-  return conversation;
-}
-
+// 追加一条时间线条目。type: "user" | "sino" | "multi-model" | "decision-draft"
+// | "task-package" | "execution" | "review" | "retrospective" | "knowledge"
 export function appendConversationMessage(id, message) {
   const conversations = seedIfEmpty();
   const conversation = conversations.find((c) => c.id === id);
   if (!conversation) return null;
   conversation.messages.push({ id: nextMessageId(), createdAt: new Date().toISOString(), ...message });
   conversation.updatedAt = new Date().toISOString();
-  if (conversation.title === "新对话" && message.role === "user") {
+  if (conversation.title === "新对话" && message.type === "user") {
     conversation.title = message.text.slice(0, 24);
   }
+  saveAll(conversations);
+  return conversation;
+}
+
+// 就地更新时间线里某一条（用于执行中→完成、待验收→已验收等状态流转）。
+export function updateConversationMessage(id, messageId, patch) {
+  const conversations = seedIfEmpty();
+  const conversation = conversations.find((c) => c.id === id);
+  if (!conversation) return null;
+  const message = conversation.messages.find((m) => m.id === messageId);
+  if (!message) return null;
+  Object.assign(message, patch);
+  conversation.updatedAt = new Date().toISOString();
+  saveAll(conversations);
+  return conversation;
+}
+
+export function updateConversationState(id, patch) {
+  const conversations = seedIfEmpty();
+  const conversation = conversations.find((c) => c.id === id);
+  if (!conversation) return null;
+  Object.assign(conversation, patch);
+  conversation.updatedAt = new Date().toISOString();
+  saveAll(conversations);
+  return conversation;
+}
+
+export function addSinoStateItems(id, field, texts) {
+  if (!texts || texts.length === 0) return getConversation(id);
+  const conversations = seedIfEmpty();
+  const conversation = conversations.find((c) => c.id === id);
+  if (!conversation) return null;
+  const items = texts.map((text) => ({ id: nextItemId(field.slice(0, 2)), text }));
+  conversation[field] = [...(conversation[field] || []), ...items];
+  conversation.updatedAt = new Date().toISOString();
   saveAll(conversations);
   return conversation;
 }

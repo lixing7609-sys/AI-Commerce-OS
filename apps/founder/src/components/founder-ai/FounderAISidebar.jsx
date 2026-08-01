@@ -1,8 +1,7 @@
 import { useRef, useState } from "react";
-import { NAV_GROUPS, NEW_MENU_ITEMS } from "./navConfig.js";
+import { NAV_ITEMS } from "./navConfig.js";
 import { CONVERSATION_GROUP_LABELS } from "./conversationStore.js";
 import { NavIcon } from "./icons.jsx";
-import { FloatingMenu } from "./FloatingMenu.jsx";
 import { PortalMenu } from "./PortalMenu.jsx";
 import { useFounderAI } from "./useFounderAI.js";
 
@@ -141,7 +140,6 @@ export function FounderAISidebar({
   onDeleteConversation,
   onToggleArchiveConversation,
 }) {
-  const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
 
@@ -152,40 +150,11 @@ export function FounderAISidebar({
 
   return (
     <aside className="founder-ai-sidebar">
-      <div className="founder-ai-new-split">
-        <button type="button" className="founder-ai-new-button-main" onClick={() => onCreateConversation("chat")}>
+      <div className="founder-ai-new-wrap">
+        <button type="button" className="founder-ai-new-button" onClick={() => onCreateConversation()}>
           <NavIcon name="plus" />
           新建对话
         </button>
-        <div className="founder-ai-new-arrow-wrap">
-          <button
-            type="button"
-            className="founder-ai-new-button-arrow"
-            title="更多新建方式"
-            onClick={() => setNewMenuOpen((v) => !v)}
-          >
-            <NavIcon name="chevronDown" />
-          </button>
-          <FloatingMenu open={newMenuOpen} onClose={() => setNewMenuOpen(false)} align="right" className="founder-ai-new-menu">
-            {NEW_MENU_ITEMS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className="founder-ai-new-menu-item"
-                onClick={() => {
-                  onCreateConversation(item.key);
-                  setNewMenuOpen(false);
-                }}
-              >
-                <NavIcon name={item.icon} />
-                <span>
-                  <strong>{item.key === "chat" ? "新建普通对话" : item.label}</strong>
-                  <small>{item.description}</small>
-                </span>
-              </button>
-            ))}
-          </FloatingMenu>
-        </div>
       </div>
 
       <div className="founder-ai-search-wrap">
@@ -228,21 +197,16 @@ export function FounderAISidebar({
       </div>
 
       <nav className="founder-ai-nav">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.label} className="founder-ai-nav-group">
-            <div className="founder-ai-nav-group-label">{group.label}</div>
-            {group.items.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`founder-ai-nav-item${!activeConversationId && item.key === activeView ? " is-active" : ""}`}
-                onClick={() => onSelectView(item.key)}
-              >
-                <NavIcon name={item.icon} />
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
+        {NAV_ITEMS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={`founder-ai-nav-item${!activeConversationId && item.key === activeView ? " is-active" : ""}`}
+            onClick={() => onSelectView(item.key)}
+          >
+            <NavIcon name={item.icon} />
+            <span>{item.label}</span>
+          </button>
         ))}
       </nav>
     </aside>

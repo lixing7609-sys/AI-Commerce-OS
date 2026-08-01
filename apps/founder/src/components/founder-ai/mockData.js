@@ -1,6 +1,6 @@
 // Founder AI 演示数据 — 全部为示意内容，未接入真实数据源。
-// 与 services/api 的经营闭环数据是两套独立的 mock：这里是"AI 董事会 + 决策
-// 中心 + 公司总控"专属的治理/决策类数据，不复用经营对象。
+// 与 services/api 的经营闭环数据是两套独立的 mock：这里是 Sino Founder
+// 专属的治理/决策类数据，不复用经营对象。
 
 // 每个前缀独立计数，从 100 起步 —— 避免与下面各 SEED_* 数组里手写的
 // 低位 id（如 "pd-0001"）撞车，否则 React 列表会因重复 key 报错。
@@ -10,8 +10,6 @@ export function nextId(prefix) {
   idCounters[prefix] = next;
   return `${prefix}-${next.toString().padStart(4, "0")}`;
 }
-
-export const RISK_LEVELS = ["低", "中", "高"];
 
 export const SEED_PENDING_DECISIONS = [
   {
@@ -49,25 +47,6 @@ export const SEED_PENDING_DECISIONS = [
     riskLevel: "低",
     deadline: "2026-08-05",
     status: "pending",
-  },
-];
-
-export const SEED_MAJOR_ANOMALIES = [
-  {
-    id: "an-0001",
-    source: "Operator",
-    content: "演示店铺一体机连续 3 次心跳超时",
-    impact: "可能导致订单处理延迟",
-    aiJudgement: "设备网络波动，暂未影响交易完整性",
-    suggestedAction: "远程重启心跳服务，持续观察 24 小时",
-  },
-  {
-    id: "an-0002",
-    source: "Growth",
-    content: "「LED 灯带内容增长机会」置信度连续两日下降",
-    impact: "可能是选题热度衰减，影响后续内容排期",
-    aiJudgement: "热点信号自然衰减，非系统异常",
-    suggestedAction: "降低该机会的内容排期优先级",
   },
 ];
 
@@ -152,54 +131,8 @@ export const SEED_EXECUTION_TASKS = [
   },
 ];
 
-export const SEED_SYSTEM_OVERVIEW = [
-  {
-    id: "sys-founder",
-    name: "Founder",
-    status: "正常",
-    keyMetric: "3 项待决策 · 1 项重大异常",
-    anomalyCount: 1,
-    pendingCount: 3,
-    lastUpdated: "刚刚",
-  },
-  {
-    id: "sys-studio",
-    name: "Studio",
-    status: "正常",
-    keyMetric: "1 条内容生产中",
-    anomalyCount: 0,
-    pendingCount: 1,
-    lastUpdated: "5 分钟前",
-  },
-  {
-    id: "sys-growth",
-    name: "Growth",
-    status: "关注",
-    keyMetric: "1 个机会信号衰减",
-    anomalyCount: 1,
-    pendingCount: 1,
-    lastUpdated: "12 分钟前",
-  },
-  {
-    id: "sys-operator",
-    name: "Operator",
-    status: "正常",
-    keyMetric: "0 笔待结算订单",
-    anomalyCount: 0,
-    pendingCount: 0,
-    lastUpdated: "8 分钟前",
-  },
-  {
-    id: "sys-cloud",
-    name: "Cloud",
-    status: "关注",
-    keyMetric: "设备心跳超时 3 次",
-    anomalyCount: 1,
-    pendingCount: 1,
-    lastUpdated: "2 分钟前",
-  },
-];
-
+// "知识"页面统一承载：知识库文档、长期确定的架构/决策原则（原"决策记忆"）、
+// 以及未来从复盘中沉淀出的新知识条目 —— 用 category 区分来源领域。
 export const SEED_KNOWLEDGE_ITEMS = [
   { id: "kb-0001", category: "产品宪章", title: "AI Commerce OS 2608·V2 开发宪章", summary: "永久开发原则、五大主体分层、验证闸门机制的最初定义。", lastReferencedAt: "2026-07-30", isCore: true },
   { id: "kb-0002", category: "系统架构", title: "01-architecture.md", summary: "SinoFUT/Founder/Growth/Studio/Operator 分层架构与数据流。", lastReferencedAt: "2026-07-31", isCore: true },
@@ -209,6 +142,10 @@ export const SEED_KNOWLEDGE_ITEMS = [
   { id: "kb-0006", category: "Founder 决策原则", title: "验证闸门四项判定标准", summary: "连续性/财务信号/人工介入率/可复现性。", lastReferencedAt: "2026-07-31", isCore: true },
   { id: "kb-0007", category: "Operator 经营规则", title: "内部结算价计价说明", summary: "Operator 向 Growth/Studio 采购流量与内容的记账机制。", lastReferencedAt: "2026-07-28", isCore: false },
   { id: "kb-0008", category: "Studio 内容规范", title: "内容统一生命周期七态", summary: "草稿/生产中/待审核/已审核/待发布/已发布/归档。", lastReferencedAt: "2026-07-31", isCore: false },
+  { id: "kb-0009", category: "全系统", title: "系统品牌永久确定为 SinoFUT / AI Commerce OS，版本号格式为 2608·Vx", summary: "品牌与版本号命名规则。", lastReferencedAt: "2026-07-26", isCore: true },
+  { id: "kb-0010", category: "全系统", title: "V2 禁止为兼容 V1 修改架构", summary: "冲突时直接废弃 V1 对应部分。", lastReferencedAt: "2026-07-26", isCore: true },
+  { id: "kb-0011", category: "能力层", title: "能力必须经 Founder 连续验证通过才能进入 Operator 可用范围", summary: "验证闸门机制。", lastReferencedAt: "2026-07-31", isCore: true },
+  { id: "kb-0012", category: "Operator Cloud", title: "Operator Cloud 定位为设备/许可证/AI额度/远程运维管控层", summary: "不承载流量内容订阅。", lastReferencedAt: "2026-07-31", isCore: true },
 ];
 
 export const SEED_FILES = [
@@ -222,35 +159,11 @@ export const SEED_FILES = [
   { id: "f-0008", name: "架构冻结会议记录.md", type: "会议记录", uploadedAt: "2026-07-26", tags: ["会议"] },
 ];
 
-export const SEED_DECISION_MEMORIES = [
-  { id: "dm-0001", content: "系统品牌永久确定为 SinoFUT / AI Commerce OS，版本号格式为 2608·Vx", decidedAt: "2026-07-26", source: "开发宪章", scope: "全系统", isValid: true },
-  { id: "dm-0002", content: "V2 禁止为兼容 V1 修改架构，冲突时直接废弃 V1 对应部分", decidedAt: "2026-07-26", source: "开发宪章", scope: "全系统", isValid: true },
-  { id: "dm-0003", content: "能力必须经 Founder 连续验证通过才能进入 Operator 可用范围", decidedAt: "2026-07-31", source: "05-business-ecosystem.md", scope: "能力层", isValid: true },
-  { id: "dm-0004", content: "曾考虑将 Founder 首页设计为传统 Dashboard，已否决，改为 AI 工作台", decidedAt: "2026-07-31", source: "Founder AI 首页迭代", scope: "Founder", isValid: false },
-  { id: "dm-0005", content: "Operator Cloud 定位为设备/许可证/AI额度/远程运维管控层，不承载流量内容订阅", decidedAt: "2026-07-31", source: "07-foundation-review.md", scope: "Operator Cloud", isValid: true },
-];
-
+// "时间线"页面的种子事件；新的决策/执行/验收/复盘/知识事件会在演示过程中
+// 通过 addHistory 追加到这里，形成跨对话的统一时间线。
 export const SEED_HISTORY = [
   { id: "h-0001", type: "审批决策", title: "批准 Operator Cloud 设备升级窗口", date: "2026-07-30", summary: "同意在低峰时段执行升级" },
   { id: "h-0002", type: "系统异常", title: "Growth 机会信号衰减", date: "2026-07-31", summary: "判定为自然衰减，非系统故障" },
   { id: "h-0003", type: "执行任务", title: "短视频分镜生成 Workflow 验证", date: "2026-07-25", summary: "进入连续验证阶段" },
   { id: "h-0004", type: "技术情报", title: "Claude Agent SDK 子代理编排能力", date: "2026-07-28", summary: "标记为立即测试" },
 ];
-
-export const SEED_MEETINGS = [];
-export const SEED_ARGUMENTATIONS = [];
-
-export const ARGUMENTATION_TEMPLATES = ["新产品功能", "新 Agent", "新 Workflow", "新增长能力", "新内容能力", "新设备能力"];
-
-export const MODEL_OPTIONS = ["Claude", "GPT", "DeepSeek", "Gemini", "Qwen", "Kimi"];
-export const MODEL_ROLES = ["技术负责人", "产品负责人", "研究负责人", "成本负责人", "风险负责人", "最终裁决"];
-export const MEETING_MODES = ["单模型", "双模型", "多模型", "AI 董事会"];
-
-export const MODEL_DEFAULT_ROLE = {
-  Claude: "技术负责人",
-  GPT: "产品负责人",
-  Gemini: "研究负责人",
-  DeepSeek: "成本负责人",
-  Qwen: "风险负责人",
-  Kimi: "最终裁决",
-};

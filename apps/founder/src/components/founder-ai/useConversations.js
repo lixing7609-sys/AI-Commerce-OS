@@ -5,8 +5,10 @@ import {
   renameConversation,
   deleteConversation,
   toggleArchiveConversation,
-  setConversationMode,
   appendConversationMessage,
+  updateConversationMessage,
+  updateConversationState,
+  addSinoStateItems,
 } from "./conversationStore.js";
 
 // 对话列表的 React 状态封装 —— 不引入额外状态库，遵循项目既有的
@@ -49,21 +51,52 @@ export function useConversations() {
     [refresh]
   );
 
-  const setMode = useCallback(
-    (id, mode) => {
-      setConversationMode(id, mode);
-      refresh();
-    },
-    [refresh]
-  );
-
   const appendMessage = useCallback(
     (id, message) => {
-      appendConversationMessage(id, message);
+      const result = appendConversationMessage(id, message);
       refresh();
+      return result;
     },
     [refresh]
   );
 
-  return { conversations, refresh, create, rename, remove, toggleArchive, setMode, appendMessage };
+  const updateMessage = useCallback(
+    (id, messageId, patch) => {
+      const result = updateConversationMessage(id, messageId, patch);
+      refresh();
+      return result;
+    },
+    [refresh]
+  );
+
+  const updateState = useCallback(
+    (id, patch) => {
+      const result = updateConversationState(id, patch);
+      refresh();
+      return result;
+    },
+    [refresh]
+  );
+
+  const addStateItems = useCallback(
+    (id, field, texts) => {
+      const result = addSinoStateItems(id, field, texts);
+      refresh();
+      return result;
+    },
+    [refresh]
+  );
+
+  return {
+    conversations,
+    refresh,
+    create,
+    rename,
+    remove,
+    toggleArchive,
+    appendMessage,
+    updateMessage,
+    updateState,
+    addStateItems,
+  };
 }

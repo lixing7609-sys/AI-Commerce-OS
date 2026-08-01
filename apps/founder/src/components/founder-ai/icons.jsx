@@ -86,6 +86,41 @@ const PATHS = {
   paperclip: <path d="M12 5.5l-5.2 5.2a2.2 2.2 0 0 0 3.1 3.1l5.4-5.4a3.6 3.6 0 0 0-5.1-5.1L4.8 8.7a5 5 0 0 0 7.1 7.1" />,
   close: <path d="M4.5 4.5l9 9M13.5 4.5l-9 9" />,
   send: <path d="M3 9l12-6-4 6 4 6-12-6z" />,
+  retrospective: (
+    <>
+      <path d="M9 3a6 6 0 1 1-5.2 3" />
+      <path d="M2.5 3v3.5H6" />
+      <path d="M9 6v3l2 1.2" />
+    </>
+  ),
+  check: <path d="M4 9.5l3 3 7-7" />,
+  question: (
+    <>
+      <circle cx="9" cy="9" r="6" />
+      <path d="M7 7.2c.2-1 1-1.7 2-1.7 1.2 0 2.1.8 2.1 1.9 0 1.6-2 1.5-2 3.1" />
+      <circle cx="9" cy="12.6" r="0.1" fill="currentColor" />
+    </>
+  ),
+  reject: <path d="M5 5l8 8M13 5l-8 8" />,
+  lock: (
+    <>
+      <rect x="4" y="8" width="10" height="7" rx="1.5" />
+      <path d="M6.5 8V6a2.5 2.5 0 0 1 5 0v2" />
+    </>
+  ),
+  bulb: (
+    <>
+      <path d="M9 3a4.5 4.5 0 0 0-2.5 8.2c.4.3.6.8.6 1.3V13h3.8v-.5c0-.5.2-1 .6-1.3A4.5 4.5 0 0 0 9 3z" />
+      <path d="M7.2 15.5h3.6" />
+    </>
+  ),
+  image: (
+    <>
+      <rect x="3" y="4" width="12" height="10" rx="1.2" />
+      <circle cx="7" cy="8" r="1.2" />
+      <path d="M4 13l3.5-3.5L10 12l1.5-1.5L15 13.5" />
+    </>
+  ),
 };
 
 export function NavIcon({ name }) {
