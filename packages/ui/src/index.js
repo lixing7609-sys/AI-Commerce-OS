@@ -17,6 +17,12 @@ export {
   groupConversationsByRecency,
   CONVERSATION_GROUP_LABELS,
 } from "./sino/sinoConversationStore.js";
+export {
+  SINO_STAGES,
+  classifySinoMessage,
+  getSinoNextActions,
+  buildSinoMultiModelDiscussion,
+} from "./sino/sinoStateMachine.js";
 
 import "./shell.css";
 import "./cards.css";

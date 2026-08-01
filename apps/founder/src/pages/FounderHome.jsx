@@ -69,7 +69,14 @@ function FounderAIWorkspace() {
     setSearchParams(next);
   }
 
+  // 如果当前打开的对话还是一句话都没发的空白对话，再点"新建对话"不应该
+  // 再创建一个新的空白记录——直接继续用这一条就好，避免"最近对话"里
+  // 堆积多条一模一样的空白"新对话"。
   function handleCreateConversation() {
+    if (activeConversation && activeConversation.messages.length === 0) {
+      goToConversation(activeConversation.id);
+      return;
+    }
     const conversation = conv.create({ title: "新对话" });
     goToConversation(conversation.id);
   }

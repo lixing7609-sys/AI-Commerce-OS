@@ -3,24 +3,17 @@
 // SinoWorkspace 专用）完全独立，互不依赖、互不影响。
 // 真实实现应替换为 Memory / Conversation 服务的后端调用。
 //
-// 对话记录不再有"模式"概念 —— 用户只管自然说话，Sino 通过
-// sinoAnalysisService 自动判断 stage 并维护 topic/consensus/
-// pendingConfirmations/rejected/constraints。
+// 对话记录不再有"模式"概念 —— 用户只管自然说话，Sino 的状态机
+// （packages/ui 的 sinoStateMachine.js，人格无关、可被 Studio/Growth/
+// Operator 共用）自动判断 stage 并维护 topic/consensus/
+// pendingConfirmations/rejected/constraints。新对话从 IDLE 开始，
+// 在第一条消息发出前不进入任何讨论阶段。
+import { SINO_STAGES } from "@sinofut/ui";
 
 const STORAGE_KEY = "founder-ai-conversations-v2";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export const STAGES = {
-  EXPLORE: "探索",
-  ARGUMENT: "功能论证",
-  MULTI_MODEL: "多模型讨论",
-  PENDING_DECISION: "待决策",
-  APPROVED: "已批准",
-  EXECUTING: "执行中",
-  AWAITING_REVIEW: "待验收",
-  RETROSPECTIVE: "复盘中",
-  ARCHIVED: "已沉淀",
-};
+export const STAGES = SINO_STAGES;
 
 function loadAll() {
   if (typeof window === "undefined") return [];
@@ -72,7 +65,7 @@ export function createConversation({ title = "新对话" } = {}) {
     id: nextConversationId(),
     title,
     topic: "",
-    stage: STAGES.EXPLORE,
+    stage: STAGES.IDLE,
     consensus: [],
     pendingConfirmations: [],
     rejected: [],
