@@ -9,11 +9,9 @@ from app.database.base import Base
 
 # 导入所有 ORM Model（Alembic 自动发现表必须导入）。这里的清单应该
 # 与 app.database.db 保持一致，否则 --autogenerate 会把这里遗漏的
-# 既有表误判为"需要删除"（本文件曾经因为遗漏这些导入，在新增
-# connector_runs 表时险些生成删除 shops/deliverables/token_*/
-# operation_logs 的破坏性 migration，已手工修正，见对应 migration
-# 文件顶部注释）。
-from app.models.connector_run_db import ConnectorRunDB
+# 既有表误判为"需要删除"（本文件曾经因为遗漏这些导入，险些生成一次
+# 删除 shops/deliverables/token_*/operation_logs 的破坏性 migration，
+# 已手工修正）。
 from app.models.deliverable_db import DeliverableDB, DeliverableVersionDB
 from app.models.inventory_db import InventoryDB
 from app.models.listing_db import ListingDB

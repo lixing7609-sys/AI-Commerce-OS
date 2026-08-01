@@ -121,12 +121,6 @@ const PATHS = {
       <path d="M4 13l3.5-3.5L10 12l1.5-1.5L15 13.5" />
     </>
   ),
-  settings: (
-    <>
-      <circle cx="9" cy="9" r="2.2" />
-      <path d="M9 3.2v1.6M9 14.2v1.6M14.8 9h-1.6M4.8 9H3.2M12.8 5.2l-1.1 1.1M6.3 11.7l-1.1 1.1M12.8 12.8l-1.1-1.1M6.3 6.3 5.2 5.2" />
-    </>
-  ),
 };
 
 export function NavIcon({ name }) {

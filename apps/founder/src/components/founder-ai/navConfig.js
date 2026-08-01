@@ -10,7 +10,6 @@ export const NAV_ITEMS = [
   { key: "retrospective", label: "复盘", icon: "retrospective" },
   { key: "timeline", label: "时间线", icon: "history" },
   { key: "favorites", label: "收藏", icon: "star" },
-  { key: "connector-status", label: "连接状态", icon: "settings" },
 ];
 
 export const VIEW_LABELS = NAV_ITEMS.reduce((acc, item) => ({ ...acc, [item.key]: item.label }), {});
@@ -24,5 +23,4 @@ export const VIEW_META = {
   retrospective: { title: "复盘", subtitle: "验收通过后的结构化经验总结。" },
   timeline: { title: "时间线", subtitle: "按类型追溯过往的讨论、决策、执行与知识沉淀。" },
   favorites: { title: "收藏", subtitle: "集中查看收藏的情报、对话、文件与决策。" },
-  "connector-status": { title: "连接状态", subtitle: "检查 GPT Brain 与 Claude Code Executor 是否就绪、当前是 Real 还是 Mock。" },
 };
