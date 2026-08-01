@@ -1,15 +1,19 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.agents import router as agents_router
 from app.api.v1.analytics import router as analytics_router
+from app.api.v1.connector import router as connector_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.deliverables import router as deliverables_router
 from app.api.v1.integrations import router as integrations_router
+from app.core.config import get_connector_screenshot_dir
 from app.api.v1.inventories import router as inventories_router
 from app.api.v1.knowledge import router as knowledge_router
 from app.api.v1.listings import router as listings_router
@@ -159,10 +163,21 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5180",
+        "http://127.0.0.1:5180",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+
+_connector_screenshot_dir = get_connector_screenshot_dir()
+os.makedirs(_connector_screenshot_dir, exist_ok=True)
+app.mount(
+    "/connector-screenshots",
+    StaticFiles(directory=_connector_screenshot_dir),
+    name="connector-screenshots",
 )
 
 
@@ -253,6 +268,11 @@ app.include_router(
 
 app.include_router(
     deliverables_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    connector_router,
     prefix="/api/v1",
 )
 

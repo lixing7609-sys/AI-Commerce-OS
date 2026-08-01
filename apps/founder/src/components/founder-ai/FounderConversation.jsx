@@ -16,7 +16,15 @@ function getGreeting() {
   return "晚上好";
 }
 
-export function FounderConversation({ conversation, onSend, onDecisionAction, onTaskPackageAction, onReviewAction }) {
+export function FounderConversation({
+  conversation,
+  onSend,
+  onDecisionAction,
+  onTaskPackageAction,
+  onReviewAction,
+  onExecutionInput,
+  onExecutionCancel,
+}) {
   if (!conversation) {
     return (
       <section className="founder-conversation">
@@ -64,7 +72,10 @@ export function FounderConversation({ conversation, onSend, onDecisionAction, on
               );
             case "sino":
               return (
-                <div key={entry.id} className="founder-conversation-bubble role-sino">
+                <div
+                  key={entry.id}
+                  className={`founder-conversation-bubble role-sino${entry.pending ? " is-pending" : ""}${entry.mock ? " is-mock" : ""}`}
+                >
                   {entry.text}
                 </div>
               );
@@ -75,7 +86,15 @@ export function FounderConversation({ conversation, onSend, onDecisionAction, on
             case "task-package":
               return <TaskPackageCard key={entry.id} entry={entry} onAction={onTaskPackageAction} />;
             case "execution":
-              return <ExecutionResultCard key={entry.id} entry={entry} onReview={onReviewAction} />;
+              return (
+                <ExecutionResultCard
+                  key={entry.id}
+                  entry={entry}
+                  onReview={onReviewAction}
+                  onProvideInput={onExecutionInput}
+                  onCancel={onExecutionCancel}
+                />
+              );
             case "retrospective":
               return <RetrospectiveCard key={entry.id} entry={entry} />;
             case "knowledge":

@@ -253,3 +253,111 @@ def get_llm_max_tokens() -> int:
         return int(raw)
     except ValueError:
         return _DEFAULT_LLM_MAX_TOKENS
+
+
+# === Sino Connector（GPT Brain / Claude Code Executor）===
+#
+# 与上面 AI CEO/Agent 使用的 LLM_PROVIDER（deepseek|ollama）完全
+# 独立：Sino Founder 的 Brain Adapter 固定使用 OpenAI，具体 Key/
+# Base URL/模型可替换配置，不与 Agent 网关共享 Provider 选择逻辑。
+
+_DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+_DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+_DEFAULT_CLAUDE_CODE_CLI_PATH = "claude"
+_DEFAULT_CLAUDE_CODE_TIMEOUT_SECONDS = 1800.0
+_DEFAULT_FOUNDER_DEV_SERVER_URL = "http://localhost:5180"
+
+# backend/app/core/config.py -> backend/app/core -> backend/app ->
+# backend -> 仓库根目录，一共向上 3 层 dirname。
+_REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
+
+
+@dataclass(frozen=True)
+class OpenAIBrainConfig:
+    """
+    Sino GPT Brain 配置。api_key 只在进程内存中传递给 httpx 请求头，
+    不写入日志、不写入 ConnectorRun 记录。
+    """
+
+    api_key: str
+    base_url: str
+    model: str
+
+
+def get_openai_brain_config() -> OpenAIBrainConfig | None:
+    """
+    读取 OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL。
+    API Key 未配置时返回 None（视为"未配置"），调用方必须安全失败，
+    不允许静默降级为明文请求或使用其它 Provider。
+    """
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+
+    if not api_key:
+        return None
+
+    return OpenAIBrainConfig(
+        api_key=api_key,
+        base_url=os.environ.get("OPENAI_BASE_URL", _DEFAULT_OPENAI_BASE_URL),
+        model=os.environ.get("OPENAI_MODEL", _DEFAULT_OPENAI_MODEL),
+    )
+
+
+@dataclass(frozen=True)
+class ClaudeCodeExecutorConfig:
+    """
+    Claude Code Executor 配置：复用本机已登录的 Claude Code CLI，
+    不在项目内保存任何凭证。cli_path 未安装/不可执行由调用方在
+    真正 spawn 子进程时捕获 FileNotFoundError 并安全失败。
+    """
+
+    cli_path: str
+    workdir: str
+    model: str | None
+    timeout_seconds: float
+
+
+def get_claude_code_executor_config() -> ClaudeCodeExecutorConfig:
+    """
+    读取 CLAUDE_CODE_CLI_PATH / CLAUDE_CODE_WORKDIR /
+    CLAUDE_CODE_MODEL / CLAUDE_CODE_TIMEOUT_SECONDS。
+
+    workdir 默认是仓库根目录（backend 上溯 4 层）；Executor 会把
+    Claude Code 子进程的 cwd 和 --add-dir 都固定为这个目录，禁止
+    访问目录之外的内容。本函数没有"未配置"语义 —— 总是返回一份
+    可用配置，是否能真正 spawn 子进程由调用方检测 CLI 是否存在。
+    """
+
+    raw_timeout = os.environ.get("CLAUDE_CODE_TIMEOUT_SECONDS")
+
+    try:
+        timeout_seconds = (
+            float(raw_timeout) if raw_timeout else _DEFAULT_CLAUDE_CODE_TIMEOUT_SECONDS
+        )
+    except ValueError:
+        timeout_seconds = _DEFAULT_CLAUDE_CODE_TIMEOUT_SECONDS
+
+    return ClaudeCodeExecutorConfig(
+        cli_path=os.environ.get("CLAUDE_CODE_CLI_PATH", _DEFAULT_CLAUDE_CODE_CLI_PATH),
+        workdir=os.environ.get("CLAUDE_CODE_WORKDIR", _REPO_ROOT),
+        model=os.environ.get("CLAUDE_CODE_MODEL") or None,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def get_founder_dev_server_url() -> str:
+    return os.environ.get("FOUNDER_DEV_SERVER_URL", _DEFAULT_FOUNDER_DEV_SERVER_URL)
+
+
+def get_connector_screenshot_dir() -> str:
+    """
+    执行结果截图的本地存储目录，默认在仓库既有的 .runtime/ 目录下
+    （该目录已被其它运行时数据使用，不纳入版本库）。
+    """
+
+    return os.environ.get(
+        "CONNECTOR_SCREENSHOT_DIR",
+        os.path.join(_REPO_ROOT, ".runtime", "connector", "screenshots"),
+    )

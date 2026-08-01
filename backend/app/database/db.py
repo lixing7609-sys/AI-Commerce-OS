@@ -3,6 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_sqlalchemy_echo
 from app.database.base import Base
+from app.models.connector_run_db import ConnectorRunDB
 from app.models.deliverable_db import DeliverableDB, DeliverableVersionDB
 from app.models.inventory_db import InventoryDB
 from app.models.listing_db import ListingDB

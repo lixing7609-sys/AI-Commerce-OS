@@ -17,6 +17,7 @@ import { FileCenter } from "../components/founder-ai/views/FileCenter.jsx";
 import { RetrospectiveView } from "../components/founder-ai/views/RetrospectiveView.jsx";
 import { TimelineView } from "../components/founder-ai/views/TimelineView.jsx";
 import { FavoritesView } from "../components/founder-ai/views/FavoritesView.jsx";
+import { ConnectorStatus } from "../components/founder-ai/views/ConnectorStatus.jsx";
 
 // Sino Founder — 三栏工作台：左侧对话记录 + 固定工作入口，中间自然对话，
 // 右侧 Sino 实时跟踪讨论状态。用户只管说话，不需要先选择功能论证/模型
@@ -33,6 +34,7 @@ const VIEW_COMPONENTS = {
   retrospective: RetrospectiveView,
   timeline: TimelineView,
   favorites: FavoritesView,
+  "connector-status": ConnectorStatus,
 };
 
 function FounderAIWorkspace() {
@@ -108,6 +110,8 @@ function FounderAIWorkspace() {
         onDecisionAction={(messageId, action) => sino.handleDecisionAction(activeConversation, messageId, action)}
         onTaskPackageAction={(messageId, action) => sino.handleTaskPackageAction(activeConversation, messageId, action)}
         onReviewAction={(messageId, verdict) => sino.handleReviewAction(activeConversation, messageId, verdict)}
+        onExecutionInput={(messageId, answer) => sino.handleExecutionInput(activeConversation, messageId, answer)}
+        onExecutionCancel={(messageId) => sino.handleExecutionCancel(activeConversation, messageId)}
       />
     );
   } else if (view && VIEW_COMPONENTS[view]) {
