@@ -17,15 +17,54 @@ function getGreeting() {
   return "晚上好";
 }
 
+const DAILY_BRIEFING_ITEMS = [
+  {
+    label: "今日经营重点",
+    title: "锁定今天最重要的公司结果",
+    detail: "告诉 Sino 目标、约束与截止时间，我会拆解判断并持续推进。",
+  },
+  {
+    label: "待你决策",
+    title: "暂无待处理决策",
+    detail: "需要 Founder 拍板的事项会在这里置顶，并附上 COO 建议。",
+  },
+  {
+    label: "Sino 建议",
+    title: "从一个高杠杆问题开始",
+    detail: "研究、判断、开发或执行都可以直接交给我。",
+  },
+];
+
+function DailyBriefing({ compact = false }) {
+  return (
+    <div className={`founder-daily-briefing${compact ? " is-compact" : ""}`}>
+      <div className="founder-daily-briefing-heading">
+        <span className="founder-daily-briefing-eyebrow">SINO · COO DAILY BRIEFING</span>
+        <h1>{getGreeting()}，{FOUNDER_NAME}</h1>
+        <p>这是今天的经营驾驶舱。先对齐重点，再让 Sino 推动结果发生。</p>
+      </div>
+      <div className="founder-daily-briefing-grid">
+        {DAILY_BRIEFING_ITEMS.map((item, index) => (
+          <article key={item.label} className="founder-daily-briefing-card">
+            <div className="founder-daily-briefing-card-topline">
+              <span className="founder-daily-briefing-index">0{index + 1}</span>
+              <span>{item.label}</span>
+            </div>
+            <h2>{item.title}</h2>
+            <p>{item.detail}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function FounderConversation({ conversation, onSend, onDecisionAction, onTaskPackageAction, onReviewAction, onMissionAction, onMissionRefresh }) {
   if (!conversation) {
     return (
-      <section className="founder-conversation">
+      <section className="founder-conversation is-briefing">
         <div className="founder-conversation-empty">
-          <h1>
-            {getGreeting()}，{FOUNDER_NAME}
-          </h1>
-          <p>新建一个对话，直接告诉 Sino 你想研究、判断、开发或执行什么。</p>
+          <DailyBriefing />
         </div>
       </section>
     );
@@ -39,10 +78,7 @@ export function FounderConversation({ conversation, onSend, onDecisionAction, on
       <div className="founder-conversation-scroll">
         {conversation.messages.length === 0 && (
           <div className="founder-conversation-empty-inline">
-            <h2>
-              {getGreeting()}，{FOUNDER_NAME}
-            </h2>
-            <p>今天想研究、判断、开发或执行什么？直接说就好，Sino 会自动判断当前处于哪个阶段。</p>
+            <DailyBriefing compact />
           </div>
         )}
         {conversation.messages.map((entry) => {
