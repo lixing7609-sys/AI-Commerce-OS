@@ -52,7 +52,11 @@ test("approve execution is one idempotent business command", async () => {
   let release;
   const client = {
     listWorkspaces: async () => [workspace], currentPlan: async () => ({ ...basePlan, run_id: "run-1", status: "executing" }), currentRun: async () => ({ run_id: "run-1", status: "executing" }), execution: async () => ({ ...basePlan, run_id: "run-1", status: "executing" }),
-    approveExecution: async () => { approvals += 1; await new Promise((resolve) => { release = resolve; }); },
+    approveExecution: async () => {
+      approvals += 1;
+      await new Promise((resolve) => { release = resolve; });
+      return { snapshot: { ...basePlan, run_id: "run-1", status: "executing", progress: "正在开发" } };
+    },
   };
   const adapter = createFounderDeveloperOSAdapter(client);
   const first = adapter.approve_execution("plan-1");
@@ -60,6 +64,63 @@ test("approve execution is one idempotent business command", async () => {
   release();
   await Promise.all([first, second]);
   assert.equal(approvals, 1);
+});
+
+test("approve response immediately becomes the executing conversation snapshot", async () => {
+  const client = {
+    listWorkspaces: async () => [workspace],
+    approveExecution: async () => ({
+      snapshot: { ...basePlan, run_id: "run-1", status: "executing", progress: "正在开发" },
+    }),
+  };
+
+  const snapshot = await createFounderDeveloperOSAdapter(client).approve_execution("plan-1");
+
+  assert.equal(snapshot.run.run_id, "run-1");
+  assert.equal(snapshot.run.state, "executing");
+  assert.equal(snapshot.mission.title, "接入 Founder");
+});
+
+test("known Run refresh follows SSOT from executing through testing and failed", async () => {
+  const states = [
+    { run_id: "run-1", status: "testing", progress: "正在自动测试" },
+    { run_id: "run-1", status: "failed", progress: "执行失败", error: "验证未通过" },
+  ];
+  const client = {
+    listWorkspaces: async () => [workspace],
+    currentRun: async () => states.shift(),
+  };
+  const adapter = createFounderDeveloperOSAdapter(client);
+  const initial = normalizeDeveloperOSSnapshot({
+    workspace, plan: { ...basePlan, run_id: "run-1", status: "executing" },
+    runState: { run_id: "run-1", status: "executing" },
+  });
+
+  const testing = await adapter.refresh_run(initial);
+  const failed = await adapter.refresh_run(testing);
+
+  assert.equal(testing.run.state, "testing");
+  assert.equal(failed.run.state, "failed");
+  assert.equal(failed.run.failure_summary, "验证未通过");
+  assert.equal(failed.mission.title, "接入 Founder");
+});
+
+test("refresh restores the same Run and never replaces it with a newer Plan Run", async () => {
+  const client = {
+    listWorkspaces: async () => [workspace],
+    currentRun: async () => ({ run_id: "run-new", status: "executing" }),
+  };
+  const adapter = createFounderDeveloperOSAdapter(client);
+  const oldRun = normalizeDeveloperOSSnapshot({
+    workspace, plan: { ...basePlan, plan_id: "plan-old", run_id: "run-old", status: "failed" },
+    runState: { run_id: "run-old", status: "failed", error: "旧 Run 失败" },
+  });
+
+  const restored = await adapter.refresh_run(oldRun);
+
+  assert.equal(restored, oldRun);
+  assert.equal(restored.run.run_id, "run-old");
+  assert.equal(restored.run.state, "failed");
 });
 
 test("production client uses the Developer Bridge instead of a direct executor endpoint", () => {

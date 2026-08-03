@@ -17,7 +17,7 @@ function getGreeting() {
   return "晚上好";
 }
 
-export function FounderConversation({ conversation, onSend, onDecisionAction, onTaskPackageAction, onReviewAction, onMissionAction }) {
+export function FounderConversation({ conversation, onSend, onDecisionAction, onTaskPackageAction, onReviewAction, onMissionAction, onMissionRefresh }) {
   if (!conversation) {
     return (
       <section className="founder-conversation">
@@ -82,7 +82,7 @@ export function FounderConversation({ conversation, onSend, onDecisionAction, on
             case "knowledge":
               return <KnowledgeCard key={entry.id} entry={entry} />;
             case "developer-mission-approval":
-              return <MissionApprovalCard key={entry.id} entry={entry} onAction={onMissionAction} />;
+              return <MissionApprovalCard key={entry.id} entry={entry} onAction={onMissionAction} onRefresh={onMissionRefresh} />;
             default:
               return null;
           }

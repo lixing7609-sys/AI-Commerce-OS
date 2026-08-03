@@ -114,6 +114,7 @@ function FounderAIWorkspace() {
         onTaskPackageAction={(messageId, action) => sino.handleTaskPackageAction(activeConversation, messageId, action)}
         onReviewAction={(messageId, verdict) => sino.handleReviewAction(activeConversation, messageId, verdict)}
         onMissionAction={(messageId, action) => sino.handleMissionAction(activeConversation, messageId, action)}
+        onMissionRefresh={(messageId) => sino.handleMissionRefresh(activeConversation, messageId)}
       />
     );
   } else if (view && VIEW_COMPONENTS[view]) {

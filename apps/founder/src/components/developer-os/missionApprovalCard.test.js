@@ -29,3 +29,11 @@ test("card exposes formal approve, detail and defer controls", () => {
   assert.match(cardSource, />暂缓</);
   assert.match(cardSource, /disabled=\{busy\}/);
 });
+
+test("card renders real Run labels and polls only active SSOT states", () => {
+  const cardSource = fs.readFileSync(path.join(here, "MissionApprovalCard.jsx"), "utf8");
+  assert.match(cardSource, /RUN_LABELS\[state\]/);
+  assert.match(cardSource, /POLLING_STATES\.has\(state\)/);
+  assert.match(cardSource, /snapshot\.run\?\.failure_summary/);
+  assert.doesNotMatch(cardSource, /授权已处理/);
+});

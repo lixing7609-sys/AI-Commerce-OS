@@ -17,6 +17,9 @@ export const RUN_LABELS = Object.freeze({
   testing: "正在自动测试",
   artifact_collection: "正在整理开发成果",
   reviewing: "正在自动验收",
+  scope_adjustment: "自动发现范围需要调整",
+  replanning: "正在重新规划",
+  retrying: "正在继续执行",
   waiting_commit_approval: "等待提交授权",
   commit_approved: "已批准提交",
   committing: "正在安全提交",
@@ -134,16 +137,21 @@ function businessError(error) {
 export function createFounderDeveloperOSAdapter(client = developerOSClient) {
   let inFlight = null;
 
-  async function load() {
+  async function workspace() {
     const workspaces = await client.listWorkspaces();
-    const workspace = workspaces.find((item) => item.id === WORKSPACE_ID);
-    if (!workspace) throw new Error("AI Commerce OS Workspace 未在 Developer OS 白名单中");
+    const selected = workspaces.find((item) => item.id === WORKSPACE_ID);
+    if (!selected) throw new Error("AI Commerce OS Workspace 未在 Developer OS 白名单中");
+    return selected;
+  }
+
+  async function load() {
+    const selectedWorkspace = await workspace();
     let plan = null;
     try { plan = await client.currentPlan(WORKSPACE_ID); } catch (error) {
       if (error.status !== 404) throw error;
     }
     const runState = await client.currentRun();
-    return normalizeDeveloperOSSnapshot({ workspace, plan, runState });
+    return normalizeDeveloperOSSnapshot({ workspace: selectedWorkspace, plan, runState });
   }
 
   async function guarded(action) {
@@ -159,7 +167,27 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
       await client.requestMission(WORKSPACE_ID, goal);
       return load();
     }),
-    approve_execution: (planId) => guarded(async () => { await client.approveExecution(planId); return load(); }),
+    approve_execution: (planId) => guarded(async () => {
+      const response = await client.approveExecution(planId);
+      const plan = response?.snapshot;
+      if (!plan?.run_id) throw new Error("Developer OS 未返回可恢复的 Run");
+      return normalizeDeveloperOSSnapshot({
+        workspace: await workspace(),
+        plan,
+        runState: {
+          run_id: plan.run_id, status: plan.status, progress: plan.progress,
+          updated_at: plan.updated_at || null, error: plan.error || null,
+        },
+      });
+    }),
+    refresh_run: async (snapshot) => {
+      const expectedRunId = snapshot?.run?.run_id;
+      const plan = snapshot?.raw_report?.plan;
+      if (!expectedRunId || !plan) return snapshot;
+      const runState = await client.currentRun();
+      if (runState?.run_id !== expectedRunId) return snapshot;
+      return normalizeDeveloperOSSnapshot({ workspace: await workspace(), plan, runState });
+    },
     cancel_execution: (planId) => guarded(async () => { await client.cancelExecution(planId); return load(); }),
     request_revision: async () => { throw businessError(new Error("当前 Developer OS 尚未提供版本修改命令")); },
     approve_commit: (planId) => guarded(async () => { await client.approveCommit(planId); return load(); }),

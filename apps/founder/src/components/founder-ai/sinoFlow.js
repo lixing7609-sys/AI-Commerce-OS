@@ -110,6 +110,26 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
     }
   }
 
+  async function handleMissionRefresh(conversation, messageId) {
+    if (!conversation || !developerOS?.refresh_run) return;
+    const entry = conversation.messages.find((message) => message.id === messageId);
+    if (!entry || entry.type !== "developer-mission-approval" || !entry.snapshot?.run?.run_id) return;
+    try {
+      const snapshot = await developerOS.refresh_run(entry.snapshot);
+      if (snapshot?.run?.run_id !== entry.snapshot.run.run_id) return;
+      conv.updateMessage(conversation.id, messageId, {
+        snapshot,
+        status: snapshot.run.state,
+        actionPending: false,
+        error: null,
+      });
+    } catch (error) {
+      conv.updateMessage(conversation.id, messageId, {
+        error: error?.message || "暂时无法刷新 Developer Run，请稍后重试。",
+      });
+    }
+  }
+
   function handleNextAction(conversation, key) {
     if (!conversation) return;
     if (key === "invite-models") {
@@ -233,5 +253,8 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
     }
   }
 
-  return { handleSend, handleNextAction, handleDecisionAction, handleTaskPackageAction, handleReviewAction, handleMissionAction };
+  return {
+    handleSend, handleNextAction, handleDecisionAction, handleTaskPackageAction,
+    handleReviewAction, handleMissionAction, handleMissionRefresh,
+  };
 }
