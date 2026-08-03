@@ -62,6 +62,13 @@ test("approve execution is one idempotent business command", async () => {
   assert.equal(approvals, 1);
 });
 
+test("production client uses the Developer Bridge instead of a direct executor endpoint", () => {
+  const clientSource = readFileSync(new URL("./developerOSClient.js", import.meta.url), "utf8");
+  assert.match(clientSource, /developer\/bridge\/commands/);
+  assert.match(clientSource, /command_type: "approve_execution"/);
+  assert.doesNotMatch(clientSource, /codex|claude|executor\/start|git commit/i);
+});
+
 test("Founder source has no direct Executor or Git implementation", () => {
   const dashboard = readFileSync(new URL("./FounderDeveloperOSDashboard.jsx", import.meta.url), "utf8");
   const home = readFileSync(new URL("../../pages/FounderHome.jsx", import.meta.url), "utf8");

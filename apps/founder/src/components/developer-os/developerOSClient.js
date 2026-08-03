@@ -23,13 +23,22 @@ export const developerOSClient = {
   selectWorkspace: (workspaceId) => request("/developer/workspaces/active", {
     method: "PUT", body: JSON.stringify({ workspace_id: workspaceId }),
   }),
-  currentPlan: (workspaceId) => request(`/developer/planning/current?workspace_id=${encodeURIComponent(workspaceId)}`),
+  currentPlan: (workspaceId) => request(`/developer/bridge/state?workspace_id=${encodeURIComponent(workspaceId)}`),
   requestMission: (workspaceId, goal) => request("/developer/planning", {
     method: "POST", body: JSON.stringify({ workspace_id: workspaceId, goal }),
   }),
   currentRun: () => request("/developer/run-state"),
   execution: (planId) => request(`/developer/planning/${planId}/execution`),
-  approveExecution: (planId) => request(`/developer/planning/${planId}/approve`, { method: "POST" }),
+  approveExecution: (planId) => request("/developer/bridge/commands", {
+    method: "POST",
+    body: JSON.stringify({
+      command_type: "approve_execution",
+      workspace_id: "ai-commerce-os",
+      plan_id: planId,
+      idempotency_key: `approve_execution:${planId}`,
+      contract_version: 1,
+    }),
+  }),
   cancelExecution: (planId) => request(`/developer/planning/${planId}/execution/cancel`, { method: "POST" }),
   approveCommit: (planId) => request(`/developer/planning/${planId}/commit/approve`, { method: "POST" }),
   rejectCommit: (planId) => request(`/developer/planning/${planId}/commit/reject`, { method: "POST" }),

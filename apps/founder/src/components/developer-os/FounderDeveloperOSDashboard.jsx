@@ -42,7 +42,7 @@ export function FounderDeveloperOSDashboard() {
     const start = () => {
       clearInterval(timer);
       refresh();
-      if (document.visibilityState === "visible") timer = setInterval(refresh, 5000);
+      if (document.visibilityState === "visible") timer = setInterval(refresh, 1500);
     };
     start();
     document.addEventListener("visibilitychange", start);
