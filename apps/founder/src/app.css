@@ -57,6 +57,10 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
+.founder-home-workspace.is-dashboard {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .founder-home-topbar {
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
@@ -78,6 +82,50 @@
 .founder-ai-content {
   min-height: 0;
   overflow: hidden;
+}
+
+/* Founder Developer OS — contract projection only. The cards reuse the
+   existing Design DNA and do not introduce a second application shell. */
+.founder-developer-os {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-4);
+  color: var(--text-primary);
+}
+
+.founder-developer-os__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.founder-developer-os__title h1 { margin: 2px 0 0; font: var(--font-title); font-size: 25px; }
+.founder-developer-os__eyebrow { color: var(--ai-accent); font: var(--font-caption); }
+.founder-developer-os__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.founder-developer-os__card { min-width: 0; }
+.founder-developer-os__recommendation { grid-column: span 2; }
+.founder-developer-os__facts { display: grid; grid-template-columns: minmax(90px, 0.3fr) minmax(0, 1fr); gap: 7px 12px; margin: 12px 0 0; }
+.founder-developer-os__facts dt { color: var(--text-tertiary); font: var(--font-caption); }
+.founder-developer-os__facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 13px; color: var(--text-secondary); }
+.founder-developer-os__facts dd.is-strong { color: var(--text-primary); font-weight: 650; }
+.founder-developer-os__mission { min-height: 38px; color: var(--text-primary) !important; font-weight: 600; }
+.founder-developer-os__notice { display: flex; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); border-color: var(--signal-warning); }
+.founder-developer-os__notice p { margin: 4px 0 0; }
+.founder-developer-os__danger { color: var(--signal-danger) !important; }
+.founder-developer-os__report { margin-top: var(--space-3); }
+.founder-developer-os__report pre { max-height: 280px; overflow: auto; margin: 10px 0 0; padding: 12px; border-radius: 10px; background: var(--surface-sunken); color: var(--text-secondary); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 1000px) {
+  .founder-developer-os__grid { grid-template-columns: 1fr; }
+  .founder-developer-os__recommendation { grid-column: span 1; }
+}
+
+@media (max-width: 640px) {
+  .founder-developer-os { padding: var(--space-3); }
+  .founder-developer-os__facts { grid-template-columns: 1fr; gap: 3px; }
+  .founder-developer-os__facts dd { margin-bottom: 6px; }
 }
 
 @media (max-width: 860px) {
@@ -845,4 +893,3 @@
     grid-template-columns: 240px 1fr 280px;
   }
 }
-

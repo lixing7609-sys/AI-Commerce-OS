@@ -5,6 +5,13 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5180,
+    proxy: {
+      "/developer-os": {
+        target: "http://127.0.0.1:8090",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/developer-os/, ""),
+      },
+    },
     fs: {
       allow: ["../.."],
     },

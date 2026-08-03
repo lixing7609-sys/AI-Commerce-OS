@@ -18,6 +18,7 @@ import { RetrospectiveView } from "../components/founder-ai/views/RetrospectiveV
 import { TimelineView } from "../components/founder-ai/views/TimelineView.jsx";
 import { FavoritesView } from "../components/founder-ai/views/FavoritesView.jsx";
 import { DeveloperVerificationCard } from "../components/founder-ai/timeline-cards/DeveloperVerificationCard.jsx";
+import { FounderDeveloperOSDashboard } from "../components/developer-os/FounderDeveloperOSDashboard.jsx";
 
 // Sino Founder — 三栏工作台：左侧对话记录 + 固定工作入口，中间自然对话，
 // 右侧 Sino 实时跟踪讨论状态。用户只管说话，不需要先选择功能论证/模型
@@ -99,7 +100,8 @@ function FounderAIWorkspace() {
     sino.handleSend(conversation, seedText);
   }
 
-  const isConversationMode = !!activeConversation || (!view && !activeConversationId);
+  const isDashboard = !view && !activeConversationId;
+  const isConversationMode = !!activeConversation;
   let content;
   if (activeConversation) {
     content = (
@@ -114,6 +116,8 @@ function FounderAIWorkspace() {
   } else if (view && VIEW_COMPONENTS[view]) {
     const ViewComponent = VIEW_COMPONENTS[view];
     content = <ViewComponent onStartConversation={handleStartConversation} />;
+  } else if (isDashboard) {
+    content = <FounderDeveloperOSDashboard />;
   } else {
     content = <FounderConversation conversation={null} onSend={() => {}} />;
   }
@@ -137,7 +141,7 @@ function FounderAIWorkspace() {
         onDeleteConversation={handleDeleteConversation}
         onToggleArchiveConversation={conv.toggleArchive}
       />
-      <main className={`founder-home-workspace${isConversationMode ? " is-conversation" : ""}`}>
+      <main className={`founder-home-workspace${isConversationMode ? " is-conversation" : ""}${isDashboard ? " is-dashboard" : ""}`}>
         {!isConversationMode && meta && (
           <div className="founder-home-topbar">
             <h1>{meta.title}</h1>
