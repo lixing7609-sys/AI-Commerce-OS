@@ -2,7 +2,7 @@
 
 `founder_developer_os_contract_version: 1`
 
-Status: Proposed for Founder approval  
+Status: Proposed for Founder approval
 Owners: AI Commerce OS Founder (consumer) · AI Builder Developer OS (authority)
 
 ## 1. Purpose
