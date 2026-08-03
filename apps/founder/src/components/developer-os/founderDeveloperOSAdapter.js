@@ -143,9 +143,6 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
       if (error.status !== 404) throw error;
     }
     const runState = await client.currentRun();
-    if (plan?.run_id && !["waiting_execution_approval"].includes(plan.status)) {
-      try { plan = await client.execution(plan.plan_id); } catch { /* preserve last authoritative plan */ }
-    }
     return normalizeDeveloperOSSnapshot({ workspace, plan, runState });
   }
 
@@ -157,9 +154,9 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
 
   return {
     refresh_state: async () => { try { return await load(); } catch (error) { throw businessError(error); } },
-    request_today_mission: () => guarded(async () => {
+    request_today_mission: (goal = SPRINT.goal) => guarded(async () => {
       await client.selectWorkspace(WORKSPACE_ID);
-      await client.requestMission(WORKSPACE_ID, SPRINT.goal);
+      await client.requestMission(WORKSPACE_ID, goal);
       return load();
     }),
     approve_execution: (planId) => guarded(async () => { await client.approveExecution(planId); return load(); }),

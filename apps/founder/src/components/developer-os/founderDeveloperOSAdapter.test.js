@@ -66,7 +66,23 @@ test("production client uses the Developer Bridge instead of a direct executor e
   const clientSource = readFileSync(new URL("./developerOSClient.js", import.meta.url), "utf8");
   assert.match(clientSource, /developer\/bridge\/commands/);
   assert.match(clientSource, /command_type: "approve_execution"/);
+  assert.match(clientSource, /command_type: "request_today_mission"/);
   assert.doesNotMatch(clientSource, /codex|claude|executor\/start|git commit/i);
+});
+
+test("refresh trusts Bridge state and never polls an obsolete execution Plan", async () => {
+  let executionReads = 0;
+  const client = {
+    listWorkspaces: async () => [workspace],
+    currentPlan: async () => ({ ...basePlan, run_id: "old-run", status: "stale" }),
+    currentRun: async () => ({ run_id: null, status: "idle" }),
+    execution: async () => { executionReads += 1; throw Object.assign(new Error("not found"), { status: 404 }); },
+  };
+
+  const snapshot = await createFounderDeveloperOSAdapter(client).refresh_state();
+
+  assert.equal(snapshot.run.state, "stale");
+  assert.equal(executionReads, 0);
 });
 
 test("Founder source has no direct Executor or Git implementation", () => {

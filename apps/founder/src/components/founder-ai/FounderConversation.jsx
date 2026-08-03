@@ -6,6 +6,7 @@ import { TaskPackageCard } from "./timeline-cards/TaskPackageCard.jsx";
 import { ExecutionResultCard } from "./timeline-cards/ExecutionResultCard.jsx";
 import { RetrospectiveCard } from "./timeline-cards/RetrospectiveCard.jsx";
 import { KnowledgeCard } from "./timeline-cards/KnowledgeCard.jsx";
+import { MissionApprovalCard } from "../developer-os/MissionApprovalCard.jsx";
 
 const FOUNDER_NAME = "立行";
 
@@ -16,7 +17,7 @@ function getGreeting() {
   return "晚上好";
 }
 
-export function FounderConversation({ conversation, onSend, onDecisionAction, onTaskPackageAction, onReviewAction }) {
+export function FounderConversation({ conversation, onSend, onDecisionAction, onTaskPackageAction, onReviewAction, onMissionAction }) {
   if (!conversation) {
     return (
       <section className="founder-conversation">
@@ -80,6 +81,8 @@ export function FounderConversation({ conversation, onSend, onDecisionAction, on
               return <RetrospectiveCard key={entry.id} entry={entry} />;
             case "knowledge":
               return <KnowledgeCard key={entry.id} entry={entry} />;
+            case "developer-mission-approval":
+              return <MissionApprovalCard key={entry.id} entry={entry} onAction={onMissionAction} />;
             default:
               return null;
           }

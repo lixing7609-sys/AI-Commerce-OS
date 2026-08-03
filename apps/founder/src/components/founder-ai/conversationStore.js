@@ -108,6 +108,7 @@ export function toggleArchiveConversation(id) {
 
 // 追加一条时间线条目。type: "user" | "sino" | "multi-model" | "decision-draft"
 // | "task-package" | "execution" | "review" | "retrospective" | "knowledge"
+// | "developer-mission-approval"
 export function appendConversationMessage(id, message) {
   const conversations = seedIfEmpty();
   const conversation = conversations.find((c) => c.id === id);

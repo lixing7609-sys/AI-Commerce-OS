@@ -1,5 +1,14 @@
 const BASE_URL = "/developer-os/api";
 
+function commandKey(value) {
+  let hash = 2166136261;
+  for (const character of value) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
 async function request(path, options = {}) {
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -24,8 +33,15 @@ export const developerOSClient = {
     method: "PUT", body: JSON.stringify({ workspace_id: workspaceId }),
   }),
   currentPlan: (workspaceId) => request(`/developer/bridge/state?workspace_id=${encodeURIComponent(workspaceId)}`),
-  requestMission: (workspaceId, goal) => request("/developer/planning", {
-    method: "POST", body: JSON.stringify({ workspace_id: workspaceId, goal }),
+  requestMission: (workspaceId, goal) => request("/developer/bridge/commands", {
+    method: "POST", body: JSON.stringify({
+      command_type: "request_today_mission",
+      workspace_id: workspaceId,
+      plan_id: null,
+      idempotency_key: `request_today_mission:${workspaceId}:${commandKey(goal)}`,
+      contract_version: 1,
+      goal,
+    }),
   }),
   currentRun: () => request("/developer/run-state"),
   execution: (planId) => request(`/developer/planning/${planId}/execution`),

@@ -5,6 +5,7 @@ import { buildTaskPackage } from "./taskPackageService.js";
 import { assignToClaudeCode, simulateExecutionResult } from "./executorAdapter.js";
 import { buildReview } from "./reviewService.js";
 import { buildRetrospective, buildKnowledgeEntry } from "./knowledgeService.js";
+import { requestDeveloperMissionIfGoal } from "./founderGoalIntake.js";
 
 // 把 Sino 的整套"整理 → 论证 → 多模型 → 待决策 → 批准 → 任务包 → 执行 →
 // 验收 → 复盘 → 知识沉淀"流程集中在一处，供 FounderConversation（渲染
@@ -20,8 +21,9 @@ import { buildRetrospective, buildKnowledgeEntry } from "./knowledgeService.js";
 // handler 显式接收目标 conversation，而不是从闭包里的某个 state 变量读取。
 // 这样"新建对话并立即发送种子文本"（技术雷达/时间线的"与 Sino 讨论"）
 // 可以在同一个事件处理函数里同步完成，不需要额外一次渲染。
-export function createSinoFlow(conv, founderAI) {
-  function handleSend(conversation, text, { attachments = [], webSearch = false } = {}) {
+export function createSinoFlow(conv, founderAI, developerOS = null) {
+  const approvingMissionMessages = new Set();
+  async function handleSend(conversation, text, { attachments = [], webSearch = false } = {}) {
     if (!conversation) return;
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) return;
@@ -29,6 +31,35 @@ export function createSinoFlow(conv, founderAI) {
     const isFirstMessage = conversation.messages.filter((m) => m.type === "user").length === 0;
 
     conv.appendMessage(conversation.id, { type: "user", text: displayText, attachments, webSearch });
+
+    if (developerOS) {
+      try {
+        const snapshot = await requestDeveloperMissionIfGoal(displayText, developerOS);
+        if (snapshot) {
+          const mission = snapshot.mission;
+          conv.updateState(conversation.id, {
+            topic: displayText,
+            suggestion: "已生成 Developer OS Mission，等待 Founder 执行授权。",
+          });
+          conv.appendMessage(conversation.id, {
+            type: "developer-mission-approval",
+            snapshot,
+            status: snapshot.run?.state || mission?.status,
+            deferred: false,
+            actionPending: false,
+            error: null,
+          });
+          window.dispatchEvent(new CustomEvent("founder-developer-os:refresh"));
+          return;
+        }
+      } catch (error) {
+        conv.appendMessage(conversation.id, {
+          type: "sino",
+          text: `暂时无法提交到 Developer OS：${error?.message || "研发服务不可用"}。已有对话内容已保留。`,
+        });
+        return;
+      }
+    }
 
     const analysis = classifySinoMessage({ isFirstMessage, stage: conversation.stage, text: displayText });
     const statePatch = {};
@@ -43,6 +74,40 @@ export function createSinoFlow(conv, founderAI) {
     if (analysis.constraintAdd) conv.addStateItems(conversation.id, "constraints", analysis.constraintAdd);
 
     conv.appendMessage(conversation.id, { type: "sino", text: analysis.sinoReply });
+  }
+
+  async function handleMissionAction(conversation, messageId, action) {
+    if (!conversation || !developerOS) return;
+    const entry = conversation.messages.find((message) => message.id === messageId);
+    if (!entry || entry.type !== "developer-mission-approval") return;
+    if (action === "defer") {
+      conv.updateMessage(conversation.id, messageId, { deferred: true });
+      return;
+    }
+    if (action !== "approve" || entry.status !== "waiting_execution_approval" || approvingMissionMessages.has(messageId)) return;
+    const planId = entry.snapshot?.command_context?.plan_id;
+    if (!planId) {
+      conv.updateMessage(conversation.id, messageId, { error: "当前 Mission 缺少可用的执行计划，请刷新后重试。" });
+      return;
+    }
+    approvingMissionMessages.add(messageId);
+    conv.updateMessage(conversation.id, messageId, { actionPending: true, deferred: false, error: null });
+    try {
+      const snapshot = await developerOS.approve_execution(planId);
+      conv.updateMessage(conversation.id, messageId, {
+        snapshot,
+        status: snapshot.run?.state || "execution_approved",
+        actionPending: false,
+      });
+      window.dispatchEvent(new CustomEvent("founder-developer-os:refresh"));
+    } catch (error) {
+      conv.updateMessage(conversation.id, messageId, {
+        actionPending: false,
+        error: error?.message || "暂时无法完成执行授权，请稍后重试。",
+      });
+    } finally {
+      approvingMissionMessages.delete(messageId);
+    }
   }
 
   function handleNextAction(conversation, key) {
@@ -168,5 +233,5 @@ export function createSinoFlow(conv, founderAI) {
     }
   }
 
-  return { handleSend, handleNextAction, handleDecisionAction, handleTaskPackageAction, handleReviewAction };
+  return { handleSend, handleNextAction, handleDecisionAction, handleTaskPackageAction, handleReviewAction, handleMissionAction };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FounderAIProvider } from "../components/founder-ai/FounderAIContext.jsx";
 import { FounderAISidebar } from "../components/founder-ai/FounderAISidebar.jsx";
@@ -19,6 +19,7 @@ import { TimelineView } from "../components/founder-ai/views/TimelineView.jsx";
 import { FavoritesView } from "../components/founder-ai/views/FavoritesView.jsx";
 import { DeveloperVerificationCard } from "../components/founder-ai/timeline-cards/DeveloperVerificationCard.jsx";
 import { FounderDeveloperOSDashboard } from "../components/developer-os/FounderDeveloperOSDashboard.jsx";
+import { createFounderDeveloperOSAdapter } from "../components/developer-os/founderDeveloperOSAdapter.js";
 
 // Sino Founder — 三栏工作台：左侧对话记录 + 固定工作入口，中间自然对话，
 // 右侧 Sino 实时跟踪讨论状态。用户只管说话，不需要先选择功能论证/模型
@@ -43,8 +44,9 @@ function FounderAIWorkspace() {
   const activeConversationId = searchParams.get("conv");
   const conv = useConversations();
   const founderAI = useFounderAI();
+  const developerOS = useMemo(() => createFounderDeveloperOSAdapter(), []);
   const activeConversation = conv.conversations.find((c) => c.id === activeConversationId) || null;
-  const sino = createSinoFlow(conv, founderAI);
+  const sino = createSinoFlow(conv, founderAI, developerOS);
 
   const [workspaceHeight, setWorkspaceHeight] = useState(null);
 
@@ -111,6 +113,7 @@ function FounderAIWorkspace() {
         onDecisionAction={(messageId, action) => sino.handleDecisionAction(activeConversation, messageId, action)}
         onTaskPackageAction={(messageId, action) => sino.handleTaskPackageAction(activeConversation, messageId, action)}
         onReviewAction={(messageId, verdict) => sino.handleReviewAction(activeConversation, messageId, verdict)}
+        onMissionAction={(messageId, action) => sino.handleMissionAction(activeConversation, messageId, action)}
       />
     );
   } else if (view && VIEW_COMPONENTS[view]) {

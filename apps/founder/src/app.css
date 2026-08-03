@@ -534,6 +534,40 @@
 }
 
 /* --- 中间：FounderConversation --- */
+.founder-mission-approval-card {
+  margin: 10px 24px;
+  padding: 18px;
+  border: 1px solid rgba(126, 147, 255, 0.24);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(25, 31, 52, 0.96), rgba(16, 21, 37, 0.98));
+  color: #f2f5ff;
+}
+
+.founder-mission-approval-heading,
+.founder-mission-approval-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.founder-mission-approval-heading h3 { margin: 5px 0 0; font-size: 16px; }
+.founder-mission-approval-kicker { color: #9eace8; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.founder-mission-approval-status { flex: none; padding: 5px 9px; border-radius: 999px; background: rgba(120, 134, 164, 0.16); color: #b8c1d8; font-size: 12px; }
+.founder-mission-approval-status.is-waiting { background: rgba(231, 169, 72, 0.14); color: #f2c36f; }
+.founder-mission-approval-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
+.founder-mission-approval-summary div { min-width: 0; }
+.founder-mission-approval-summary dt { margin-bottom: 3px; color: #8f9ab6; font-size: 11px; }
+.founder-mission-approval-summary dd { margin: 0; color: #e3e8f5; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.founder-mission-approval-details { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); color: #c9d0e2; font-size: 12px; }
+.founder-mission-approval-details p { margin: 4px 0; }
+.founder-mission-approval-details strong { display: inline-block; min-width: 58px; color: #f0f3fa; }
+.founder-mission-approval-error { color: #ff9d9d; font-size: 12px; }
+.founder-mission-approval-actions { justify-content: flex-start; flex-wrap: wrap; }
+
+@media (max-width: 900px) {
+  .founder-mission-approval-summary { grid-template-columns: 1fr; }
+}
 
 .founder-conversation {
   height: 100%;

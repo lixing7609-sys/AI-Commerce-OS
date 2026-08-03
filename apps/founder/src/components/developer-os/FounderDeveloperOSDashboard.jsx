@@ -46,7 +46,13 @@ export function FounderDeveloperOSDashboard() {
     };
     start();
     document.addEventListener("visibilitychange", start);
-    return () => { active = false; clearInterval(timer); document.removeEventListener("visibilitychange", start); };
+    window.addEventListener("founder-developer-os:refresh", refresh);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", start);
+      window.removeEventListener("founder-developer-os:refresh", refresh);
+    };
   }, [adapter]);
 
   const mission = snapshot?.mission;
