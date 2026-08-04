@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { createFounderDeveloperOSAdapter, normalizeDeveloperOSSnapshot } from "./founderDeveloperOSAdapter.js";
+import { createFounderDeveloperOSAdapter, formatRunElapsed, normalizeDeveloperOSSnapshot, runElapsedSeconds, runHeartbeatStale } from "./founderDeveloperOSAdapter.js";
 
 const workspace = { id: "ai-commerce-os", name: "AI Commerce OS", path: "/approved/workspace", branch: "main", baseline: "abc", dirty: false };
 const basePlan = {
@@ -12,10 +12,41 @@ const basePlan = {
 };
 
 test("reads today's Mission and waiting execution approval", () => {
-  const snapshot = normalizeDeveloperOSSnapshot({ workspace, plan: basePlan, runState: { status: "idle" } });
+  const snapshot = normalizeDeveloperOSSnapshot({ workspace, plan: basePlan, runState: { current_run_id: null, status: "idle" } });
   assert.equal(snapshot.mission.title, "接入 Founder");
   assert.equal(snapshot.run.state, "waiting_execution_approval");
   assert.equal(snapshot.actions.approve_execution, true);
+});
+
+test("old failed Run never overrides a new waiting Mission", () => {
+  const snapshot = normalizeDeveloperOSSnapshot({
+    workspace, plan: { ...basePlan, plan_id: "plan-new", run_id: null },
+    runState: { current_run_id: "run-old", run_id: "run-old", plan_id: "plan-old", status: "failed" },
+  });
+  assert.equal(snapshot.run.run_id, null);
+  assert.equal(snapshot.run.state, "waiting_execution_approval");
+  assert.equal(snapshot.actions.approve_execution, true);
+});
+
+test("timer restores from started_at and heartbeat becomes stale after 60 seconds", () => {
+  const run = {
+    state: "executing", started_at: "2026-08-04T00:00:00.000Z",
+    last_heartbeat_at: "2026-08-04T00:00:30.000Z",
+  };
+  assert.equal(runElapsedSeconds(run, Date.parse("2026-08-04T00:01:05.000Z")), 65);
+  assert.equal(formatRunElapsed(65), "01:05");
+  assert.equal(formatRunElapsed(3661), "01:01:01");
+  assert.equal(runHeartbeatStale(run, Date.parse("2026-08-04T00:01:31.000Z")), true);
+  assert.equal(runHeartbeatStale(run, Date.parse("2026-08-04T00:01:29.000Z")), false);
+});
+
+test("waiting commit and cancelled stop elapsed timer at completed_at", () => {
+  for (const state of ["waiting_commit_approval", "cancelled", "timed_out"]) {
+    const run = {
+      state, started_at: "2026-08-04T00:00:00.000Z", completed_at: "2026-08-04T00:02:00.000Z",
+    };
+    assert.equal(runElapsedSeconds(run, Date.parse("2026-08-04T01:00:00.000Z")), 120);
+  }
 });
 
 test("uses authoritative Current Run and restores commit result", () => {

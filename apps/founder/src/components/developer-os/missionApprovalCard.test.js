@@ -38,6 +38,17 @@ test("card renders real Run labels and polls only active SSOT states", () => {
   assert.match(cardSource, /预计文件/);
   assert.doesNotMatch(cardSource, /授权已处理/);
   assert.match(cardSource, /"waiting_execution_approval"/);
+  assert.match(cardSource, /last_heartbeat_at/);
+  assert.match(cardSource, /timeout_seconds/);
+  assert.match(cardSource, /formatRunElapsed/);
+  assert.match(cardSource, /state === "timed_out"/);
+});
+
+test("new current Mission hides historical terminal authorization cards", () => {
+  const flowSource = fs.readFileSync(path.join(here, "../founder-ai/sinoFlow.js"), "utf8");
+  const cardSource = fs.readFileSync(path.join(here, "MissionApprovalCard.jsx"), "utf8");
+  assert.match(flowSource, /historical: true/);
+  assert.match(cardSource, /if \(entry\.historical\) return null/);
 });
 
 test("Mission version sync replaces the current authorization card without page refresh", () => {

@@ -20,6 +20,7 @@ export const RUN_LABELS = Object.freeze({
   scope_adjustment: "自动发现范围需要调整",
   replanning: "正在重新规划",
   retrying: "正在继续执行",
+  timed_out: "执行超时",
   waiting_commit_approval: "等待提交授权",
   commit_approved: "已批准提交",
   committing: "正在安全提交",
@@ -31,8 +32,8 @@ export const RUN_LABELS = Object.freeze({
   stale: "开发成果已过期",
 });
 
-const TERMINAL = new Set(["committed", "completed", "failed", "cancelled", "commit_rejected", "stale"]);
-const COMMIT_BLOCKED = new Set(["failed", "cancelled", "commit_rejected", "stale", "committed", "completed"]);
+const TERMINAL = new Set(["committed", "completed", "failed", "cancelled", "timed_out", "commit_rejected", "stale"]);
+const COMMIT_BLOCKED = new Set(["failed", "cancelled", "timed_out", "commit_rejected", "stale", "committed", "completed"]);
 
 function unavailable(value) {
   return value === undefined || value === null || value === "" ? "unavailable" : value;
@@ -40,10 +41,34 @@ function unavailable(value) {
 
 function mapState(plan, runState) {
   if (!plan?.run_id) return "waiting_execution_approval";
-  const raw = runState?.run_id === plan.run_id ? runState.status : plan.status;
+  const currentRunId = runState?.current_run_id ?? runState?.run_id;
+  const raw = currentRunId === plan.run_id ? runState.status : plan.status;
   const aliases = { collecting_artifacts: "artifact_collection", git_candidate: "waiting_commit_approval" };
   const state = aliases[raw] || raw;
   return RUN_LABELS[state] ? state : "failed";
+}
+
+const STOPPED_TIMER_STATES = new Set(["waiting_commit_approval", ...TERMINAL]);
+
+export function runElapsedSeconds(run, now = Date.now()) {
+  if (!run?.started_at) return 0;
+  const end = STOPPED_TIMER_STATES.has(run.state) && run.completed_at ? Date.parse(run.completed_at) : now;
+  return Math.max(0, Math.floor((end - Date.parse(run.started_at)) / 1000));
+}
+
+export function formatRunElapsed(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  const values = hours ? [hours, minutes, rest] : [minutes, rest];
+  return values.map((value) => String(value).padStart(2, "0")).join(":");
+}
+
+export function runHeartbeatStale(run, now = Date.now()) {
+  return Boolean(
+    run?.last_heartbeat_at && !STOPPED_TIMER_STATES.has(run.state)
+    && now - Date.parse(run.last_heartbeat_at) > 60000
+  );
 }
 
 export function normalizeDeveloperOSSnapshot({ workspace, plan, runState }) {
@@ -57,6 +82,7 @@ export function normalizeDeveloperOSSnapshot({ workspace, plan, runState }) {
   const validation = plan?.validation || null;
   const review = plan?.review || null;
   const artifacts = plan?.artifacts || null;
+  const currentRunId = runState?.current_run_id ?? runState?.run_id ?? null;
   return {
     contract_version: CONTRACT_VERSION,
     command_context: {
@@ -87,11 +113,17 @@ export function normalizeDeveloperOSSnapshot({ workspace, plan, runState }) {
       approval_required: state === "waiting_execution_approval", status: state,
     } : null,
     run: plan ? {
-      run_id: plan.run_id || null, mission_id: mission.id || null, workspace_id: workspace.id,
+      run_id: plan.run_id || null, current_run_id: currentRunId,
+      mission_id: mission.id || null, goal_id: plan.goal_id || null,
+      plan_id: plan.plan_id || null, approval_id: plan.approval_id || null, workspace_id: workspace.id,
       state, progress: typeof plan.progress === "number" ? plan.progress : null,
-      current_step: runState?.run_id === plan.run_id ? runState.progress : plan.progress || RUN_LABELS[state],
-      started_at: plan.started_at || null, updated_at: runState?.updated_at || null,
-      completed_at: plan.finished_at || result?.completed_at || null,
+      current_step: currentRunId === plan.run_id ? runState.current_step || runState.progress : plan.progress || RUN_LABELS[state],
+      started_at: currentRunId === plan.run_id ? runState.started_at : plan.started_at || null,
+      updated_at: currentRunId === plan.run_id ? runState.updated_at : plan.updated_at || null,
+      last_heartbeat_at: currentRunId === plan.run_id ? runState.last_heartbeat_at : plan.last_heartbeat_at || null,
+      current_step_started_at: currentRunId === plan.run_id ? runState.current_step_started_at : plan.current_step_started_at || null,
+      timeout_seconds: currentRunId === plan.run_id ? runState.timeout_seconds : plan.timeout_seconds || null,
+      completed_at: currentRunId === plan.run_id ? runState.finished_at : plan.finished_at || result?.completed_at || null,
       failure_summary: plan.error || runState?.error || null,
     } : null,
     artifact: artifacts || validation || review ? {
@@ -118,7 +150,7 @@ export function normalizeDeveloperOSSnapshot({ workspace, plan, runState }) {
     } : null,
     actions: {
       approve_execution: state === "waiting_execution_approval",
-      cancel_execution: ["execution_approved", "executing", "testing", "artifact_collection", "reviewing"].includes(state),
+      cancel_execution: ["execution_approved", "preparing", "running", "executing", "testing", "artifact_collection", "reviewing", "retrying"].includes(state),
       request_revision: ["reviewing", "waiting_commit_approval", "commit_rejected", "failed", "stale"].includes(state),
       approve_commit: state === "waiting_commit_approval" && Boolean(candidate) && !COMMIT_BLOCKED.has(state),
       reject_commit: state === "waiting_commit_approval" && Boolean(candidate),

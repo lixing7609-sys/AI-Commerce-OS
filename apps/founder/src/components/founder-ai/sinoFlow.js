@@ -47,6 +47,13 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
             message.type === "developer-mission-approval"
             && message.status === "waiting_execution_approval"
           ));
+          for (const message of conversation.messages) {
+            if (
+              message.type === "developer-mission-approval"
+              && message.id !== currentApproval?.id
+              && message.snapshot?.command_context?.plan_id !== snapshot.command_context?.plan_id
+            ) conv.updateMessage(conversation.id, message.id, { historical: true });
+          }
           const approvalEntry = {
             type: "developer-mission-approval",
             snapshot,
@@ -99,6 +106,27 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
     if (!conversation || !developerOS) return;
     const entry = conversation.messages.find((message) => message.id === messageId);
     if (!entry || entry.type !== "developer-mission-approval") return;
+    if (action === "abandon") {
+      conv.updateMessage(conversation.id, messageId, { historical: true, deferred: true });
+      return;
+    }
+    if (action === "retry" && entry.status === "timed_out") {
+      if (approvingMissionMessages.has(messageId)) return;
+      approvingMissionMessages.add(messageId);
+      conv.updateMessage(conversation.id, messageId, { actionPending: true, error: null });
+      try {
+        const snapshot = await developerOS.request_today_mission(entry.snapshot?.mission?.title || conversation.topic);
+        conv.updateMessage(conversation.id, messageId, {
+          snapshot, status: snapshot.run?.state || "waiting_execution_approval",
+          actionPending: false, historical: false,
+        });
+      } catch (error) {
+        conv.updateMessage(conversation.id, messageId, { actionPending: false, error: error?.message || "暂时无法重新规划。" });
+      } finally {
+        approvingMissionMessages.delete(messageId);
+      }
+      return;
+    }
     if (action === "defer") {
       conv.updateMessage(conversation.id, messageId, { deferred: true });
       return;

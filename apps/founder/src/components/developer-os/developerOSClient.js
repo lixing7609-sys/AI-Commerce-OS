@@ -43,7 +43,7 @@ export const developerOSClient = {
       goal,
     }),
   }),
-  currentRun: () => request("/developer/run-state"),
+  currentRun: (workspaceId = "ai-commerce-os") => request(`/developer/run-state?workspace_id=${encodeURIComponent(workspaceId)}`),
   execution: (planId) => request(`/developer/planning/${planId}/execution`),
   approveExecution: (planId, approvalId) => request("/developer/bridge/commands", {
     method: "POST",

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFounderDeveloperOSAdapter, RUN_LABELS } from "./founderDeveloperOSAdapter.js";
+import { createFounderDeveloperOSAdapter, RUN_LABELS, formatRunElapsed, runElapsedSeconds, runHeartbeatStale } from "./founderDeveloperOSAdapter.js";
 
 function Value({ children }) {
   return <span>{children === "unavailable" || children == null ? "暂不可用" : children}</span>;
@@ -17,6 +17,7 @@ export function FounderDeveloperOSDashboard() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [now, setNow] = useState(0);
 
   async function runCommand(name, ...args) {
     if (busy) return;
@@ -61,7 +62,15 @@ export function FounderDeveloperOSDashboard() {
   const candidate = snapshot?.candidate;
   const commit = snapshot?.commit_result;
   const planId = snapshot?.command_context?.plan_id;
+  const approvalId = snapshot?.command_context?.approval_id;
   const state = run?.state || "planning";
+  useEffect(() => {
+    if (!run?.started_at || snapshot?.actions?.terminal || state === "waiting_commit_approval") return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [run?.started_at, snapshot?.actions?.terminal, state]);
+  const elapsed = formatRunElapsed(runElapsedSeconds(run, now));
+  const unresponsive = runHeartbeatStale(run, now);
 
   return (
     <div className="founder-developer-os" aria-label="Founder Developer OS">
@@ -92,19 +101,29 @@ export function FounderDeveloperOSDashboard() {
           </dl>
           <div className="founder-ai-actions">
             {!mission && <button type="button" className="sf-button-primary" onClick={() => runCommand("request_today_mission")} disabled={!!busy}>{busy === "request_today_mission" ? "正在制定…" : "获取今日建议"}</button>}
-            {snapshot?.actions?.approve_execution && <button type="button" className="sf-button-primary" onClick={() => runCommand("approve_execution", planId)} disabled={!!busy}>批准执行</button>}
+            {snapshot?.actions?.approve_execution && <button type="button" className="sf-button-primary" onClick={() => runCommand("approve_execution", planId, approvalId)} disabled={!!busy}>批准执行</button>}
             <button type="button" className="sf-icon-button" onClick={() => setReportOpen((open) => !open)}>查看详细方案</button>
           </div>
         </section>
 
         <section className="sf-card founder-developer-os__card">
-          <div className="founder-ai-row-header"><h3>当前执行</h3><span className="sf-badge warn">{RUN_LABELS[state] || "暂不可用"}</span></div>
+          <div className="founder-ai-row-header"><h3>当前执行</h3><span className="sf-badge warn">{RUN_LABELS[state] || "暂不可用"}{run?.started_at ? ` · ${elapsed}` : ""}</span></div>
           <p className="founder-developer-os__mission"><Value>{mission?.title}</Value></p>
           <div className="founder-ai-progress-track"><div className="founder-ai-progress-fill" style={{ width: `${run?.progress ?? (state === "completed" ? 100 : 0)}%` }} /></div>
           <p className="founder-ai-meta"><Value>{run?.current_step}</Value></p>
+          {run?.started_at && <dl className="founder-developer-os__facts">
+            <dt>已运行</dt><dd>{elapsed}</dd>
+            <dt>当前阶段</dt><dd>{RUN_LABELS[state] || state}</dd>
+            <dt>最近心跳</dt><dd><Value>{run.last_heartbeat_at}</Value>{unresponsive ? " · 可能无响应" : ""}</dd>
+            <dt>超时上限</dt><dd>{run.timeout_seconds ? `${Math.round(run.timeout_seconds / 60)} 分钟` : "暂不可用"}</dd>
+          </dl>}
           <p>{snapshot?.actions?.approve_execution || snapshot?.actions?.approve_commit ? "需要 Founder 授权" : "当前无需 Founder 操作"}</p>
           {snapshot?.actions?.cancel_execution && <button type="button" className="sf-icon-button" onClick={() => runCommand("cancel_execution", planId)} disabled={!!busy}>取消执行</button>}
           {run?.failure_summary && <p className="founder-developer-os__danger">{run.failure_summary}</p>}
+          {state === "timed_out" && <div className="founder-developer-os__danger">
+            <p>执行已达到安全超时上限并停止，已有修改与对话记录仍然安全。</p>
+            <p>停在：{run.current_step || "未知阶段"}；建议查看详情后重新执行或放弃任务。</p>
+          </div>}
         </section>
 
         <section className="sf-card founder-developer-os__card">
