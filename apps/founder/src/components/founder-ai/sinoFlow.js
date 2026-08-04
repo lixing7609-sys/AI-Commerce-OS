@@ -6,6 +6,7 @@ import { assignToClaudeCode, simulateExecutionResult } from "./executorAdapter.j
 import { buildReview } from "./reviewService.js";
 import { buildRetrospective, buildKnowledgeEntry } from "./knowledgeService.js";
 import { GOAL_CLASSIFICATION, routeFounderMessage } from "./founderGoalIntake.js";
+import { classifyCommitReviewRevision, resolveCommitMessage, resolveRevisionText } from "./commitReviewRevision.js";
 
 // 把 Sino 的整套"整理 → 论证 → 多模型 → 待决策 → 批准 → 任务包 → 执行 →
 // 验收 → 复盘 → 知识沉淀"流程集中在一处，供 FounderConversation（渲染
@@ -31,6 +32,70 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
     const isFirstMessage = conversation.messages.filter((m) => m.type === "user").length === 0;
 
     conv.appendMessage(conversation.id, { type: "user", text: displayText, attachments, webSearch });
+
+    const currentCommitEntry = [...conversation.messages].reverse().find((message) => (
+      message.type === "developer-mission-approval"
+      && message.status === "waiting_commit_approval"
+      && message.snapshot?.candidate?.candidate_id
+    ));
+    const commitRevision = classifyCommitReviewRevision(displayText);
+    if (currentCommitEntry && commitRevision === "message_only") {
+      const planId = currentCommitEntry.snapshot?.command_context?.plan_id;
+      const candidateId = currentCommitEntry.snapshot.candidate.candidate_id;
+      const suggestedMessage = resolveCommitMessage(displayText, currentCommitEntry.snapshot);
+      try {
+        const snapshot = await developerOS.revise_commit_message(planId, suggestedMessage);
+        conv.updateMessage(conversation.id, currentCommitEntry.id, {
+          snapshot,
+          status: "waiting_commit_approval",
+          actionPending: false,
+          error: null,
+          revision: { type: "message_only", candidate_id: candidateId },
+        });
+        return;
+      } catch (error) {
+        conv.updateMessage(conversation.id, currentCommitEntry.id, {
+          error: error?.message || "暂时无法修正 Commit Message，请稍后重试。",
+          actionPending: false,
+        });
+        return;
+      }
+    }
+    if (currentCommitEntry && ["acceptance_update", "rollback_update", "summary_update"].includes(commitRevision)) {
+      const currentSnapshot = currentCommitEntry.snapshot || {};
+      const artifact = { ...(currentSnapshot.artifact || {}) };
+      const revisionText = resolveRevisionText(displayText);
+      if (commitRevision === "acceptance_update") artifact.acceptance_note = revisionText;
+      if (commitRevision === "rollback_update") artifact.rollback_plan = revisionText;
+      if (commitRevision === "summary_update") artifact.diff_summary = revisionText;
+      conv.updateMessage(conversation.id, currentCommitEntry.id, {
+        snapshot: { ...currentSnapshot, artifact },
+        status: "waiting_commit_approval",
+        actionPending: false,
+        error: null,
+        revision: { type: commitRevision, candidate_id: currentCommitEntry.snapshot.candidate.candidate_id },
+      });
+      return;
+    }
+    if (currentCommitEntry && commitRevision === "code_revision") {
+      try {
+        const snapshot = await developerOS.request_today_mission(currentCommitEntry.snapshot.mission.title);
+        conv.updateMessage(conversation.id, currentCommitEntry.id, {
+          snapshot,
+          status: snapshot.run?.state || "waiting_execution_approval",
+          actionPending: false,
+          error: null,
+          historical: false,
+        });
+        return;
+      } catch (error) {
+        conv.updateMessage(conversation.id, currentCommitEntry.id, {
+          error: error?.message || "暂时无法退回代码修改，请稍后重试。",
+          actionPending: false,
+        });
+        return;
+      }
+    }
 
     let goalRoute = { classification: GOAL_CLASSIFICATION.DISCUSSION, snapshot: null, clarification: null };
     if (developerOS) {

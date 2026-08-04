@@ -274,6 +274,16 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
     },
     cancel_execution: (planId) => guarded(async () => { await client.cancelExecution(planId); return load(); }),
     request_revision: async () => { throw businessError(new Error("当前 Developer OS 尚未提供版本修改命令")); },
+    revise_commit_message: async (planId, suggestedMessage) => {
+      const response = await client.reviseCommitMessage(planId, suggestedMessage);
+      const plan = response?.snapshot;
+      if (!plan) throw new Error("Developer OS 未返回更新后的 Commit Candidate");
+      return normalizeDeveloperOSSnapshot({
+        workspace: await workspace(),
+        plan,
+        runState: await client.currentRun(),
+      });
+    },
     approve_commit: (planId) => guarded(async () => { await client.approveCommit(planId); return load(); }),
     reject_commit: (planId) => guarded(async () => { await client.rejectCommit(planId); return load(); }),
     open_detailed_report: (snapshot) => snapshot?.raw_report || null,

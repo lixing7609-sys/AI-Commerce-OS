@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --port 5180",
     "lint": "eslint .",
-    "test": "node --test src/components/developer-os/*.test.js"
+    "test": "node --test src/components/developer-os/*.test.js src/components/founder-ai/*.test.js"
   },
   "dependencies": {
     "@sinofut/design-tokens": "*",

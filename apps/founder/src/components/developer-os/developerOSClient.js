@@ -56,6 +56,17 @@ export const developerOSClient = {
       contract_version: 1,
     }),
   }),
+  reviseCommitMessage: (planId, suggestedCommitMessage) => request("/developer/bridge/commands", {
+    method: "POST",
+    body: JSON.stringify({
+      command_type: "revise_commit_message",
+      workspace_id: "ai-commerce-os",
+      plan_id: planId,
+      suggested_commit_message: suggestedCommitMessage,
+      idempotency_key: `revise_commit_message:${planId}:${commandKey(suggestedCommitMessage)}`,
+      contract_version: 1,
+    }),
+  }),
   cancelExecution: (planId) => request(`/developer/planning/${planId}/execution/cancel`, { method: "POST" }),
   approveCommit: (planId) => request(`/developer/planning/${planId}/commit/approve`, { method: "POST" }),
   rejectCommit: (planId) => request(`/developer/planning/${planId}/commit/reject`, { method: "POST" }),
