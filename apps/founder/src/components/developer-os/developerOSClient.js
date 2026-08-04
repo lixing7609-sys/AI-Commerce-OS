@@ -45,13 +45,14 @@ export const developerOSClient = {
   }),
   currentRun: () => request("/developer/run-state"),
   execution: (planId) => request(`/developer/planning/${planId}/execution`),
-  approveExecution: (planId) => request("/developer/bridge/commands", {
+  approveExecution: (planId, approvalId) => request("/developer/bridge/commands", {
     method: "POST",
     body: JSON.stringify({
       command_type: "approve_execution",
       workspace_id: "ai-commerce-os",
       plan_id: planId,
-      idempotency_key: `approve_execution:${planId}`,
+      approval_id: approvalId,
+      idempotency_key: `approve_execution:${planId}:${approvalId}`,
       contract_version: 1,
     }),
   }),

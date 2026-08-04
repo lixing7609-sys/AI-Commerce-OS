@@ -157,6 +157,32 @@ test("Mission Version Changed automatically returns and renders the latest Missi
   assert.equal(snapshot.run.state, "waiting_execution_approval");
 });
 
+test("baseline refresh replaces Plan and Approval binding before another approval", async () => {
+  let submitted = null;
+  const client = {
+    listWorkspaces: async () => [workspace],
+    approveExecution: async (planId, approvalId) => {
+      submitted = { planId, approvalId };
+      return {
+        snapshot: {
+          ...basePlan, plan_id: "plan-new", approval_id: "approval-new", run_id: null,
+          baseline_refreshed: true,
+          workspace: { baseline: "head-new" },
+          mission: { id: "mission-new", title: "最新 Mission", status: "waiting_execution_approval" },
+        },
+      };
+    },
+  };
+
+  const snapshot = await createFounderDeveloperOSAdapter(client).approve_execution("plan-old", "approval-old");
+
+  assert.deepEqual(submitted, { planId: "plan-old", approvalId: "approval-old" });
+  assert.equal(snapshot.command_context.plan_id, "plan-new");
+  assert.equal(snapshot.command_context.approval_id, "approval-new");
+  assert.equal(snapshot.command_context.baseline, "head-new");
+  assert.equal(snapshot.run.state, "waiting_execution_approval");
+});
+
 test("waiting approval refresh automatically replaces old Mission with latest version", async () => {
   const client = {
     listWorkspaces: async () => [workspace],

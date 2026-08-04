@@ -8,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 test("conversation approval card uses the existing Developer Bridge approval command", () => {
   const flowSource = fs.readFileSync(path.join(here, "../founder-ai/sinoFlow.js"), "utf8");
-  assert.match(flowSource, /developerOS\.approve_execution\(planId\)/);
+  assert.match(flowSource, /developerOS\.approve_execution\(planId, approvalId\)/);
   assert.match(flowSource, /approvingMissionMessages\.has\(messageId\)/);
   assert.doesNotMatch(flowSource, /git\s+(?:add|commit)|\/execute(?:\W|$)/i);
 });

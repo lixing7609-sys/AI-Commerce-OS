@@ -108,7 +108,8 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
     const commitRejection = ["revise-commit", "reject-commit"].includes(action) && entry.status === "waiting_commit_approval";
     if ((!executionApproval && !commitApproval && !commitRejection) || approvingMissionMessages.has(messageId)) return;
     const planId = entry.snapshot?.command_context?.plan_id;
-    if (!planId) {
+    const approvalId = entry.snapshot?.command_context?.approval_id;
+    if (!planId || (executionApproval && !approvalId)) {
       conv.updateMessage(conversation.id, messageId, { error: "当前 Mission 缺少可用的执行计划，请刷新后重试。" });
       return;
     }
@@ -116,7 +117,7 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
     conv.updateMessage(conversation.id, messageId, { actionPending: true, deferred: false, error: null });
     try {
       const snapshot = executionApproval
-        ? await developerOS.approve_execution(planId)
+        ? await developerOS.approve_execution(planId, approvalId)
         : commitApproval
           ? await developerOS.approve_commit(planId)
           : await developerOS.reject_commit(planId);

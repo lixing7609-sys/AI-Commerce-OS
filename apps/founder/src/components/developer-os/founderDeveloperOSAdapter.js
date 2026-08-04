@@ -59,7 +59,11 @@ export function normalizeDeveloperOSSnapshot({ workspace, plan, runState }) {
   const artifacts = plan?.artifacts || null;
   return {
     contract_version: CONTRACT_VERSION,
-    command_context: { plan_id: plan?.plan_id || null },
+    command_context: {
+      plan_id: plan?.plan_id || null,
+      approval_id: plan?.approval_id || null,
+      baseline: plan?.workspace?.baseline || plan?.approval_baseline || null,
+    },
     workspace: {
       workspace_id: workspace.id,
       name: unavailable(workspace.name),
@@ -167,11 +171,13 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
       await client.requestMission(WORKSPACE_ID, goal);
       return load();
     }),
-    approve_execution: (planId) => guarded(async () => {
-      const response = await client.approveExecution(planId);
+    approve_execution: (planId, approvalId) => guarded(async () => {
+      const response = await client.approveExecution(planId, approvalId);
       const plan = response?.snapshot;
       if (!plan) throw new Error("Developer OS 未返回可恢复的 Mission");
-      if (!plan.run_id && plan.mission_version_changed) {
+      if (!plan.run_id && (
+        plan.mission_version_changed || plan.baseline_refreshed || plan.approval_version_changed
+      )) {
         return normalizeDeveloperOSSnapshot({
           workspace: await workspace(), plan, runState: { status: "idle" },
         });
