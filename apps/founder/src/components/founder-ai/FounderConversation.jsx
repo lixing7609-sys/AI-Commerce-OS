@@ -28,6 +28,24 @@ function formatBriefingTime(value) {
   }).format(new Date(value));
 }
 
+function isSameLocalDay(value, offset = 0) {
+  if (!value) return false;
+  const expected = new Date();
+  expected.setDate(expected.getDate() + offset);
+  const actual = new Date(value);
+  return actual.getFullYear() === expected.getFullYear()
+    && actual.getMonth() === expected.getMonth()
+    && actual.getDate() === expected.getDate();
+}
+
+function displayEvidence(value) {
+  if (value === undefined || value === null || value === "" || value === "unavailable") return "暂无记录";
+  if (typeof value === "boolean") return value ? "通过" : "未通过";
+  if (Array.isArray(value)) return value.length ? value.join("、") : "暂无记录";
+  if (typeof value === "object") return value.status || value.result || value.summary || "已有记录";
+  return String(value);
+}
+
 function DailyBriefing({ compact = false }) {
   const developerOS = useMemo(() => createFounderDeveloperOSAdapter(), []);
   const [snapshot, setSnapshot] = useState(null);
@@ -71,25 +89,40 @@ function DailyBriefing({ compact = false }) {
   const run = snapshot?.run;
   const artifact = snapshot?.artifact;
   const commit = snapshot?.commit_result;
+  const plan = snapshot?.raw_report?.plan;
   const state = run?.state || "planning";
-  const progress = snapshot?.sprint?.progress || run?.progress || (snapshot?.actions?.terminal ? 100 : 0);
+  const sourceSprint = plan?.sprint || plan?.summary?.sprint;
+  const sprintCounts = {
+    total: sourceSprint?.total_missions ?? sourceSprint?.mission_count ?? plan?.summary?.total_missions,
+    completed: sourceSprint?.completed_missions ?? plan?.summary?.completed_missions,
+    active: sourceSprint?.in_progress_missions ?? plan?.summary?.in_progress_missions,
+    blocked: sourceSprint?.blocked_missions?.length ?? sourceSprint?.blocked_count ?? plan?.summary?.blocked_missions?.length,
+  };
+  const countParts = [sprintCounts.completed, sprintCounts.active, sprintCounts.blocked]
+    .filter((value) => Number.isFinite(value));
+  const derivedTotal = sprintCounts.total ?? (countParts.length ? countParts.reduce((sum, value) => sum + value, 0) : undefined);
+  const progress = derivedTotal > 0 && Number.isFinite(sprintCounts.completed)
+    ? (sprintCounts.completed / derivedTotal) * 100
+    : (Number.isFinite(sourceSprint?.progress) ? sourceSprint.progress : undefined);
   const waitingDecision = snapshot?.actions?.approve_execution
-    ? `批准执行「${mission?.title || "今日 Mission"}」`
+    ? { title: `等待批准执行「${mission?.title || "当前 Mission"}」`, reason: "执行授权是当前 Run 启动前的必要条件。" }
     : snapshot?.actions?.approve_commit
-      ? `批准提交「${mission?.title || "当前开发成果"}」`
-      : null;
-  const resultTitle = commit
-    ? `已提交 ${commit.committed_files?.length || 0} 个文件`
-    : artifact
-      ? artifact.diff_summary
-      : "昨日暂无已归档研发成果";
-  const resultDetail = commit
-    ? `${commit.commit_message || "Developer OS 已完成提交"} · ${commit.branch || snapshot?.workspace?.branch || "当前分支"}`
-    : artifact?.changed_files?.length
-      ? `涉及 ${artifact.changed_files.length} 个文件，自动验收：${artifact.review_result === "passed" ? "通过" : "进行中"}`
-      : "Developer OS 尚未返回可展示的成果记录。";
+      ? { title: `等待批准 Commit「${mission?.title || "当前开发成果"}」`, reason: "验收已完成，只有 Founder 授权后才能提交。" }
+      : ["failed", "timed_out", "commit_rejected", "stale"].includes(state)
+        ? { title: `需要决定 Retry 或 Rollback`, reason: run?.failure_summary || artifact?.rollback_plan || "当前 Run 无法继续自动推进。" }
+        : null;
+  const completedYesterday = isSameLocalDay(run?.completed_at || commit?.completed_at, -1);
+  const resultTitle = completedYesterday
+    ? `已完成「${mission?.title || "Mission"}」`
+    : "昨日暂无 Developer OS 完成记录";
+  const resultFacts = completedYesterday ? [
+    `Run：${run?.run_id ? `${run.run_id}（${RUN_LABELS[state] || state}）` : "暂无记录"}`,
+    `Commit：${commit?.commit_hash ? `${commit.commit_hash.slice(0, 8)} · ${commit.commit_message || "无说明"}` : "暂无提交"}`,
+    `Tests：${displayEvidence(artifact?.tests)}`,
+    `Build：${displayEvidence(artifact?.build)}`,
+  ].join(" · ") : "数据来自当前 Mission / Run / Commit 与验收记录，未使用示例数据。";
   const nextAction = waitingDecision
-    ? waitingDecision
+    ? waitingDecision.title
     : run && !snapshot?.actions?.terminal
       ? `跟进「${mission?.title || "当前 Mission"}」的执行状态`
       : mission
@@ -97,7 +130,7 @@ function DailyBriefing({ compact = false }) {
         : "向 Developer OS 获取今日推荐 Mission";
   const lastSyncedAt = snapshot?.workspace?.last_checked_at;
   const items = [
-    { label: "昨日成果", title: resultTitle, detail: resultDetail },
+    { label: "昨日成果", title: resultTitle, detail: resultFacts },
     {
       label: "今日建议",
       title: mission?.title || (loading ? "正在读取 Developer OS…" : "暂无推荐 Mission"),
@@ -105,19 +138,19 @@ function DailyBriefing({ compact = false }) {
     },
     {
       label: "等待决策",
-      title: waitingDecision || "当前无需 Founder 拍板",
-      detail: waitingDecision ? `COO 建议：先确认风险与范围，再完成授权。当前状态：${RUN_LABELS[state] || state}` : "Sino 会在执行或提交需要授权时立即置顶。",
+      title: waitingDecision?.title || "当前无需 Founder 拍板",
+      detail: waitingDecision ? `${waitingDecision.reason} 当前状态：${RUN_LABELS[state] || state}` : "Developer OS 当前没有返回批准、Retry 或 Rollback 待办。",
     },
     {
       label: "Sprint 进度",
-      title: snapshot?.sprint?.title || "Developer OS Sprint",
-      detail: `${Math.round(progress)}% · ${RUN_LABELS[state] || (loading ? "同步中" : "暂不可用")}`,
+      title: sourceSprint?.title || sourceSprint?.name || "暂无 Sprint 记录",
+      detail: `总 Mission ${displayEvidence(derivedTotal)} · 已完成 ${displayEvidence(sprintCounts.completed)} · 进行中 ${displayEvidence(sprintCounts.active)} · Blocked ${displayEvidence(sprintCounts.blocked)} · 完成百分比 ${Number.isFinite(progress) ? `${Math.round(progress)}%` : "暂无记录"}`,
       progress,
     },
     {
       label: "下一最佳动作",
       title: nextAction,
-      detail: waitingDecision ? "完成这一步即可解除当前推进阻塞。" : "这是基于当前 Mission、Run 与授权状态生成的建议。",
+      detail: waitingDecision ? waitingDecision.reason : `依据 Mission 优先级、当前 Sprint 与 Developer Run 状态（${RUN_LABELS[state] || state}）生成。`,
       featured: true,
     },
   ];
