@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { classifyFounderGoal, GOAL_CLASSIFICATION, requestDeveloperMissionIfGoal, routeFounderMessage } from "../founder-ai/founderGoalIntake.js";
+import { classifyFounderGoal, parseFounderGoal, GOAL_CLASSIFICATION, requestDeveloperMissionIfGoal, routeFounderMessage } from "../founder-ai/founderGoalIntake.js";
 
 const developerGoals = [
   "把‘今日经营重点’卡片标题改成‘今日最高优先事项’。",
@@ -20,6 +20,24 @@ const structuredDeveloperGoals = [
 test("one classifier prioritizes explicit development actions with concrete objects", () => {
   for (const goal of [...developerGoals, ...structuredDeveloperGoals]) {
     assert.equal(classifyFounderGoal(goal), GOAL_CLASSIFICATION.DEVELOPER_GOAL, goal);
+  }
+});
+
+test("structured natural-language capability goals classify without sentence-specific keywords", async () => {
+  const goals = [
+    "建立库存预测 Agent", "做一个库存预测能力", "我需要一个能预测库存的 Agent",
+    "帮我搭建库存预测模块", "让系统可以预测库存", "增加库存预测功能",
+    "建立财务日报", "做一个 Company Health Dashboard", "创建订单异常监控能力",
+    "增加供应链风险预警", "搭建 Decision Center", "把 Sino 升级为真正的 AI COO",
+  ];
+  for (const goal of goals) {
+    const parsed = parseFounderGoal(goal);
+    assert.equal(classifyFounderGoal(goal), GOAL_CLASSIFICATION.DEVELOPER_GOAL, goal);
+    assert.equal(parsed.requires_clarification, false, goal);
+    const fixture = routeFixture();
+    const route = await routeFounderMessage(goal, fixture.developerOS);
+    assert.equal(route.classification, GOAL_CLASSIFICATION.DEVELOPER_GOAL, goal);
+    assert.equal(route.snapshot.mission.status, "waiting_execution_approval");
   }
 });
 
@@ -42,6 +60,8 @@ test("only genuine discussion language enters Discussion", () => {
     "帮我比较两个 Founder 首页方案。",
   ]) assert.equal(classifyFounderGoal(discussion), GOAL_CLASSIFICATION.DISCUSSION, discussion);
   assert.equal(classifyFounderGoal("帮我处理一下"), GOAL_CLASSIFICATION.UNCLEAR);
+  assert.equal(classifyFounderGoal("帮我弄一下"), GOAL_CLASSIFICATION.UNCLEAR);
+  assert.equal(classifyFounderGoal("做得更好一点"), GOAL_CLASSIFICATION.UNCLEAR);
 });
 
 test("developer goal intake submits the complete original text", async () => {
