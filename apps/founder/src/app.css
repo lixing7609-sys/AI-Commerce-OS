@@ -567,6 +567,11 @@
 .founder-mission-approval-failure p { margin: 5px 0; line-height: 1.45; }
 .founder-mission-approval-failure strong { display: block; color: #ffb7b7; }
 .founder-mission-approval-actions { justify-content: flex-start; flex-wrap: wrap; }
+.founder-commit-review-package,
+.founder-commit-result { margin: 0 0 14px; padding: 14px; border: 1px solid rgba(126, 147, 255, 0.18); border-radius: 12px; background: rgba(8, 13, 27, 0.5); }
+.founder-commit-review-package .founder-mission-approval-summary,
+.founder-commit-result .founder-mission-approval-summary { margin-bottom: 0; }
+.founder-commit-full-diff { max-height: 280px; margin: 10px 0 0; padding: 10px; overflow: auto; border-radius: 8px; background: rgba(0, 0, 0, 0.28); color: #d8def0; font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (max-width: 900px) {
   .founder-mission-approval-summary { grid-template-columns: 1fr; }

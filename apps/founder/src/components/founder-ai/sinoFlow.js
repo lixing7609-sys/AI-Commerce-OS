@@ -94,7 +94,10 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
       conv.updateMessage(conversation.id, messageId, { deferred: true });
       return;
     }
-    if (action !== "approve" || entry.status !== "waiting_execution_approval" || approvingMissionMessages.has(messageId)) return;
+    const executionApproval = action === "approve" && entry.status === "waiting_execution_approval";
+    const commitApproval = action === "approve-commit" && entry.status === "waiting_commit_approval";
+    const commitRejection = ["revise-commit", "reject-commit"].includes(action) && entry.status === "waiting_commit_approval";
+    if ((!executionApproval && !commitApproval && !commitRejection) || approvingMissionMessages.has(messageId)) return;
     const planId = entry.snapshot?.command_context?.plan_id;
     if (!planId) {
       conv.updateMessage(conversation.id, messageId, { error: "当前 Mission 缺少可用的执行计划，请刷新后重试。" });
@@ -103,7 +106,11 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
     approvingMissionMessages.add(messageId);
     conv.updateMessage(conversation.id, messageId, { actionPending: true, deferred: false, error: null });
     try {
-      const snapshot = await developerOS.approve_execution(planId);
+      const snapshot = executionApproval
+        ? await developerOS.approve_execution(planId)
+        : commitApproval
+          ? await developerOS.approve_commit(planId)
+          : await developerOS.reject_commit(planId);
       conv.updateMessage(conversation.id, messageId, {
         snapshot,
         status: snapshot.run?.state || "execution_approved",
@@ -113,7 +120,7 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
     } catch (error) {
       conv.updateMessage(conversation.id, messageId, {
         actionPending: false,
-        error: error?.message || "暂时无法完成执行授权，请稍后重试。",
+        error: error?.message || "暂时无法完成 Founder 授权，请稍后重试。",
       });
     } finally {
       approvingMissionMessages.delete(messageId);

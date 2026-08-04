@@ -36,6 +36,63 @@ test("waiting commit shows only contract approval actions", () => {
   assert.equal(snapshot.actions.approve_commit, true);
   assert.equal(snapshot.actions.reject_commit, true);
   assert.equal(snapshot.actions.approve_execution, false);
+  assert.equal(snapshot.candidate.suggested_commit_message, "feat: founder");
+});
+
+test("approve commit is idempotent and calls the existing client once", async () => {
+  let approvals = 0;
+  let release;
+  const committedPlan = {
+    ...basePlan, run_id: "run-1", status: "committed",
+    commit_result: { commit_hash: "abc", commit_message: "feat: founder", branch: "main", committed_files: ["a.jsx"], final_git_status: "" },
+  };
+  const client = {
+    approveCommit: async () => {
+      approvals += 1;
+      await new Promise((resolve) => { release = resolve; });
+    },
+    listWorkspaces: async () => [workspace],
+    currentPlan: async () => committedPlan,
+    currentRun: async () => ({ run_id: "run-1", status: "committed" }),
+  };
+  const adapter = createFounderDeveloperOSAdapter(client);
+  const first = adapter.approve_commit("plan-1");
+  const second = adapter.approve_commit("plan-1");
+  release();
+  const [snapshot] = await Promise.all([first, second]);
+  assert.equal(approvals, 1);
+  assert.equal(snapshot.commit_result.commit_hash, "abc");
+});
+
+test("reject commit returns the authoritative rejected state", async () => {
+  let rejects = 0;
+  const client = {
+    rejectCommit: async () => { rejects += 1; },
+    listWorkspaces: async () => [workspace],
+    currentPlan: async () => ({ ...basePlan, run_id: "run-1", status: "commit_rejected" }),
+    currentRun: async () => ({ run_id: "run-1", status: "commit_rejected" }),
+  };
+  const snapshot = await createFounderDeveloperOSAdapter(client).reject_commit("plan-1");
+  assert.equal(rejects, 1);
+  assert.equal(snapshot.run.state, "commit_rejected");
+  assert.equal(snapshot.actions.approve_commit, false);
+});
+
+test("refresh restores the same Commit Candidate and committed result from the real Plan", async () => {
+  const candidate = { id: "candidate-1", changed_files: ["a.jsx"], suggested_message: "feat: founder" };
+  const client = {
+    listWorkspaces: async () => [workspace],
+    currentPlan: async () => ({ ...basePlan, run_id: "run-1", status: "waiting_commit_approval", commit_candidate: candidate, validation: { passed: true }, review: { passed: true } }),
+    currentRun: async () => ({ run_id: "run-1", status: "waiting_commit_approval" }),
+  };
+  const initial = normalizeDeveloperOSSnapshot({
+    workspace,
+    plan: { ...basePlan, run_id: "run-1", status: "reviewing" },
+    runState: { run_id: "run-1", status: "reviewing" },
+  });
+  const restored = await createFounderDeveloperOSAdapter(client).refresh_run(initial);
+  assert.equal(restored.run.state, "waiting_commit_approval");
+  assert.equal(restored.candidate.candidate_id, "candidate-1");
 });
 
 test("failed cancelled and stale never expose illegal approval", () => {
@@ -88,6 +145,7 @@ test("known Run refresh follows SSOT from executing through testing and failed",
   ];
   const client = {
     listWorkspaces: async () => [workspace],
+    currentPlan: async () => ({ ...basePlan, run_id: "run-1", status: states[0]?.status || "failed", error: states[0]?.error || null }),
     currentRun: async () => states.shift(),
   };
   const adapter = createFounderDeveloperOSAdapter(client);

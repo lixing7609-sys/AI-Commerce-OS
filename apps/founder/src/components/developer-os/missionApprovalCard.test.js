@@ -37,3 +37,30 @@ test("card renders real Run labels and polls only active SSOT states", () => {
   assert.match(cardSource, /snapshot\.run\?\.failure_summary/);
   assert.doesNotMatch(cardSource, /授权已处理/);
 });
+
+test("waiting commit renders the complete formal Commit Review Package", () => {
+  const cardSource = fs.readFileSync(path.join(here, "MissionApprovalCard.jsx"), "utf8");
+  for (const label of [
+    "Commit Review Package", "修改摘要", "涉及文件", "Diff 摘要", "Tests", "Lint", "Build",
+    "风险等级", "建议 Commit Message", "Rollback Plan", "批准提交", "退回修改", "放弃提交", "查看详细变更",
+  ]) assert.match(cardSource, new RegExp(label));
+  assert.match(cardSource, /waitingCommit && candidate/);
+  assert.match(cardSource, /disabled=\{busy\}/);
+});
+
+test("committed card renders the real Git result and blocked states cannot approve", () => {
+  const cardSource = fs.readFileSync(path.join(here, "MissionApprovalCard.jsx"), "utf8");
+  for (const field of ["commit_hash", "commit_message", "committed_files", "branch", "workspace_clean"]) {
+    assert.match(cardSource, new RegExp(field));
+  }
+  assert.match(cardSource, /waitingCommit && candidate/);
+  assert.match(cardSource, /const waitingCommit = state === "waiting_commit_approval"/);
+  assert.doesNotMatch(cardSource, /const waitingCommit = .*failed|const waitingCommit = .*stale/);
+});
+
+test("conversation commit actions reuse Developer OS approve and reject commands", () => {
+  const flowSource = fs.readFileSync(path.join(here, "../founder-ai/sinoFlow.js"), "utf8");
+  assert.match(flowSource, /developerOS\.approve_commit\(planId\)/);
+  assert.match(flowSource, /developerOS\.reject_commit\(planId\)/);
+  assert.doesNotMatch(flowSource, /git\s+(?:add|commit)/i);
+});

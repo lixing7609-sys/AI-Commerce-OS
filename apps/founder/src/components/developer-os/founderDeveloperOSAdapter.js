@@ -182,10 +182,12 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
     }),
     refresh_run: async (snapshot) => {
       const expectedRunId = snapshot?.run?.run_id;
-      const plan = snapshot?.raw_report?.plan;
-      if (!expectedRunId || !plan) return snapshot;
+      const expectedPlanId = snapshot?.command_context?.plan_id;
+      if (!expectedRunId || !expectedPlanId) return snapshot;
       const runState = await client.currentRun();
       if (runState?.run_id !== expectedRunId) return snapshot;
+      const plan = await client.currentPlan(WORKSPACE_ID);
+      if (plan?.plan_id !== expectedPlanId || plan?.run_id !== expectedRunId) return snapshot;
       return normalizeDeveloperOSSnapshot({ workspace: await workspace(), plan, runState });
     },
     cancel_execution: (planId) => guarded(async () => { await client.cancelExecution(planId); return load(); }),
