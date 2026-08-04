@@ -19,7 +19,7 @@ function getGreeting() {
 
 const DAILY_BRIEFING_ITEMS = [
   {
-    label: "今日经营重点",
+    label: "今日最高优先事项",
     title: "锁定今天最重要的公司结果",
     detail: "告诉 Sino 目标、约束与截止时间，我会拆解判断并持续推进。",
   },
