@@ -82,6 +82,25 @@ export function normalizeDeveloperOSSnapshot({ workspace, plan, runState }) {
   const validation = plan?.validation || null;
   const review = plan?.review || null;
   const artifacts = plan?.artifacts || null;
+  const roadmapMissions = Array.isArray(plan?.roadmap_missions) ? plan.roadmap_missions : [];
+  const recentRuns = Array.isArray(plan?.recent_runs) ? plan.recent_runs : [];
+  const recentGitCommits = Array.isArray(plan?.recent_git_commits) ? plan.recent_git_commits : [];
+  const missionHistory = roadmapMissions.map((item) => ({
+    mission_id: item.mission_id || item.id,
+    title: item.title,
+    priority: item.priority,
+    dependencies: item.dependencies || [],
+    status: item.status,
+  }));
+  if (mission?.id && !missionHistory.some((item) => item.mission_id === mission.id)) {
+    missionHistory.push({
+      mission_id: mission.id, title: mission.title, priority: mission.priority || 0,
+      dependencies: mission.dependencies || [], status: state,
+    });
+  }
+  const completedMissions = missionHistory.filter((item) => ["completed", "committed"].includes(item.status));
+  const activeMissions = missionHistory.filter((item) => ["in_progress", "waiting_execution_approval", "waiting_commit_approval"].includes(item.status));
+  const blockedMissions = missionHistory.filter((item) => ["blocked", "failed", "cancelled", "stale", "timed_out", "commit_rejected"].includes(item.status));
   const currentRunId = runState?.current_run_id ?? runState?.run_id ?? null;
   return {
     contract_version: CONTRACT_VERSION,
@@ -101,9 +120,27 @@ export function normalizeDeveloperOSSnapshot({ workspace, plan, runState }) {
     },
     sprint: {
       ...SPRINT,
-      progress: state === "completed" ? 100 : 0,
-      epics: [], blockers: summary.blocked_missions || [],
+      total_missions: missionHistory.length || undefined,
+      completed_missions: completedMissions.length,
+      in_progress_missions: activeMissions.length,
+      blocked_missions: blockedMissions,
+      progress: missionHistory.length ? Math.round((completedMissions.length / missionHistory.length) * 100) : 0,
+      missions: missionHistory,
+      epics: [], blockers: blockedMissions,
       recommended_mission_id: mission.id || null,
+    },
+    daily_briefing: {
+      recent_completed_missions: completedMissions.slice(-5).reverse(),
+      recent_runs: recentRuns,
+      recent_git_commits: recentGitCommits,
+      latest_completed_run: recentRuns.find((item) => ["completed", "committed", "waiting_commit_approval"].includes(item.status)) || null,
+      latest_build: recentRuns.find((item) => item.validation?.build)?.validation?.build || null,
+      latest_tests: recentRuns.find((item) => item.validation?.tests)?.validation?.tests || null,
+      decisions: [
+        ...activeMissions.filter((item) => item.status === "waiting_execution_approval").map((item) => ({ type: "execution", mission_id: item.mission_id, title: item.title })),
+        ...activeMissions.filter((item) => item.status === "waiting_commit_approval").map((item) => ({ type: "commit", mission_id: item.mission_id, title: item.title })),
+        ...blockedMissions.filter((item) => ["failed", "timed_out", "commit_rejected"].includes(item.status)).map((item) => ({ type: "retry_or_rollback", mission_id: item.mission_id, title: item.title, status: item.status })),
+      ],
     },
     mission: plan ? {
       mission_id: unavailable(mission.id), title: unavailable(mission.title || plan.mission),

@@ -28,16 +28,6 @@ function formatBriefingTime(value) {
   }).format(new Date(value));
 }
 
-function isSameLocalDay(value, offset = 0) {
-  if (!value) return false;
-  const expected = new Date();
-  expected.setDate(expected.getDate() + offset);
-  const actual = new Date(value);
-  return actual.getFullYear() === expected.getFullYear()
-    && actual.getMonth() === expected.getMonth()
-    && actual.getDate() === expected.getDate();
-}
-
 function displayEvidence(value) {
   if (value === undefined || value === null || value === "" || value === "unavailable") return "暂无记录";
   if (typeof value === "boolean") return value ? "通过" : "未通过";
@@ -91,7 +81,12 @@ function DailyBriefing({ compact = false }) {
   const commit = snapshot?.commit_result;
   const plan = snapshot?.raw_report?.plan;
   const state = run?.state || "planning";
-  const sourceSprint = plan?.sprint || plan?.summary?.sprint;
+  const briefing = snapshot?.daily_briefing || {};
+  const missions = snapshot?.sprint?.missions || [];
+  const sourceSprint = snapshot?.sprint || plan?.sprint || plan?.summary?.sprint;
+  const recommendedMission = [...missions]
+    .filter((item) => ["planned", "waiting_execution_approval", "in_progress", "waiting_commit_approval"].includes(item.status))
+    .sort((left, right) => (right.priority || 0) - (left.priority || 0))[0] || mission;
   const sprintCounts = {
     total: sourceSprint?.total_missions ?? sourceSprint?.mission_count ?? plan?.summary?.total_missions,
     completed: sourceSprint?.completed_missions ?? plan?.summary?.completed_missions,
@@ -111,35 +106,37 @@ function DailyBriefing({ compact = false }) {
       : ["failed", "timed_out", "commit_rejected", "stale"].includes(state)
         ? { title: `需要决定 Retry 或 Rollback`, reason: run?.failure_summary || artifact?.rollback_plan || "当前 Run 无法继续自动推进。" }
         : null;
-  const completedYesterday = isSameLocalDay(run?.completed_at || commit?.completed_at, -1);
-  const resultTitle = completedYesterday
-    ? `已完成「${mission?.title || "Mission"}」`
-    : "昨日暂无 Developer OS 完成记录";
-  const resultFacts = completedYesterday ? [
-    `Run：${run?.run_id ? `${run.run_id}（${RUN_LABELS[state] || state}）` : "暂无记录"}`,
-    `Commit：${commit?.commit_hash ? `${commit.commit_hash.slice(0, 8)} · ${commit.commit_message || "无说明"}` : "暂无提交"}`,
-    `Tests：${displayEvidence(artifact?.tests)}`,
-    `Build：${displayEvidence(artifact?.build)}`,
-  ].join(" · ") : "数据来自当前 Mission / Run / Commit 与验收记录，未使用示例数据。";
+  const completedMissions = briefing.recent_completed_missions || [];
+  const latestRun = briefing.latest_completed_run || briefing.recent_runs?.[0] || null;
+  const latestCommit = briefing.recent_git_commits?.[0] || commit;
+  const resultTitle = completedMissions.length
+    ? completedMissions.map((item) => item.title).slice(0, 5).join(" · ")
+    : "昨日暂无已完成 Mission";
+  const resultFacts = [
+    `最近 Run：${latestRun?.run_id ? `${latestRun.run_id}（${RUN_LABELS[latestRun.status] || latestRun.status}）` : "暂无记录"}`,
+    `最近 Commit：${latestCommit?.commit_hash ? `${latestCommit.commit_hash.slice(0, 8)} · ${latestCommit.commit_message || "无说明"}` : "暂无提交"}`,
+    `Tests：${displayEvidence(briefing.latest_tests || artifact?.tests)}`,
+    `Build：${displayEvidence(briefing.latest_build || artifact?.build)}`,
+  ].join(" · ");
   const nextAction = waitingDecision
     ? waitingDecision.title
     : run && !snapshot?.actions?.terminal
       ? `跟进「${mission?.title || "当前 Mission"}」的执行状态`
-      : mission
-        ? `复盘「${mission.title}」并确定后续 Mission`
+        : recommendedMission
+        ? `推进「${recommendedMission.title}」`
         : "向 Developer OS 获取今日推荐 Mission";
   const lastSyncedAt = snapshot?.workspace?.last_checked_at;
   const items = [
-    { label: "昨日成果", title: resultTitle, detail: resultFacts },
+    { label: "昨日开发成果", title: resultTitle, detail: resultFacts },
     {
       label: "今日建议",
-      title: mission?.title || (loading ? "正在读取 Developer OS…" : "暂无推荐 Mission"),
+      title: recommendedMission?.title || (loading ? "正在读取 Developer OS…" : "暂无推荐 Mission"),
       detail: mission?.business_reason || (error?.suggestion || "Developer OS 尚未生成今日建议。"),
     },
     {
       label: "等待决策",
-      title: waitingDecision?.title || "当前无需 Founder 拍板",
-      detail: waitingDecision ? `${waitingDecision.reason} 当前状态：${RUN_LABELS[state] || state}` : "Developer OS 当前没有返回批准、Retry 或 Rollback 待办。",
+      title: briefing.decisions?.length ? briefing.decisions.map((item) => item.title).slice(0, 3).join(" · ") : (waitingDecision?.title || "当前无需 Founder 拍板"),
+      detail: briefing.decisions?.length ? briefing.decisions.map((item) => item.type === "execution" ? "等待执行授权" : item.type === "commit" ? "等待提交授权" : "需要 Retry 或 Rollback").join(" · ") : (waitingDecision ? `${waitingDecision.reason} 当前状态：${RUN_LABELS[state] || state}` : "Developer OS 当前没有返回批准、Retry 或 Rollback 待办。"),
     },
     {
       label: "Sprint 进度",

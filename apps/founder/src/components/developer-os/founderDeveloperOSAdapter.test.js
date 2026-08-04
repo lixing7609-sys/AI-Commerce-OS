@@ -255,6 +255,40 @@ test("known Run refresh follows SSOT from executing through testing and failed",
   assert.equal(failed.mission.title, "接入 Founder");
 });
 
+test("daily briefing exposes real sprint missions, decisions, and progress", () => {
+  const snapshot = normalizeDeveloperOSSnapshot({
+    workspace,
+    plan: {
+      ...basePlan,
+      roadmap_missions: [
+        { mission_id: "mission-done", title: "已完成入口", priority: 10, status: "completed" },
+        { mission_id: "mission-next", title: "今日推进项", priority: 20, status: "waiting_execution_approval" },
+        { mission_id: "mission-blocked", title: "被阻塞项", priority: 30, status: "blocked" },
+      ],
+      recent_runs: [{ run_id: "run-done", status: "completed", validation: { tests: "passed", build: "passed" } }],
+      recent_git_commits: [{ commit_hash: "abc123", commit_message: "feat: daily briefing", completed_at: "2026-08-03T00:00:00Z" }],
+    },
+    runState: { current_run_id: null, status: "idle" },
+  });
+  assert.equal(snapshot.sprint.total_missions, 4); // current mission is retained alongside the roadmap history
+  assert.equal(snapshot.sprint.completed_missions, 1);
+  assert.equal(snapshot.sprint.blocked_missions.length, 1);
+  assert.equal(snapshot.daily_briefing.decisions[0].type, "execution");
+  assert.equal(snapshot.daily_briefing.latest_completed_run.run_id, "run-done");
+  assert.equal(snapshot.daily_briefing.recent_git_commits[0].commit_hash, "abc123");
+});
+
+test("empty roadmap produces an explicit empty briefing without mock missions", () => {
+  const snapshot = normalizeDeveloperOSSnapshot({
+    workspace,
+    plan: null,
+    runState: { current_run_id: null, status: "idle" },
+  });
+  assert.deepEqual(snapshot.sprint.missions, []);
+  assert.deepEqual(snapshot.daily_briefing.recent_completed_missions, []);
+  assert.deepEqual(snapshot.daily_briefing.decisions, []);
+});
+
 test("refresh restores the same Run and never replaces it with a newer Plan Run", async () => {
   const client = {
     listWorkspaces: async () => [workspace],
