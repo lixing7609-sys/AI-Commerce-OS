@@ -5,7 +5,7 @@ import { buildTaskPackage } from "./taskPackageService.js";
 import { assignToClaudeCode, simulateExecutionResult } from "./executorAdapter.js";
 import { buildReview } from "./reviewService.js";
 import { buildRetrospective, buildKnowledgeEntry } from "./knowledgeService.js";
-import { requestDeveloperMissionIfGoal } from "./founderGoalIntake.js";
+import { GOAL_CLASSIFICATION, routeFounderMessage } from "./founderGoalIntake.js";
 
 // 把 Sino 的整套"整理 → 论证 → 多模型 → 待决策 → 批准 → 任务包 → 执行 →
 // 验收 → 复盘 → 知识沉淀"流程集中在一处，供 FounderConversation（渲染
@@ -32,9 +32,11 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
 
     conv.appendMessage(conversation.id, { type: "user", text: displayText, attachments, webSearch });
 
+    let goalRoute = { classification: GOAL_CLASSIFICATION.DISCUSSION, snapshot: null, clarification: null };
     if (developerOS) {
       try {
-        const snapshot = await requestDeveloperMissionIfGoal(displayText, developerOS);
+        goalRoute = await routeFounderMessage(displayText, developerOS);
+        const snapshot = goalRoute.snapshot;
         if (snapshot) {
           const mission = snapshot.mission;
           conv.updateState(conversation.id, {
@@ -59,6 +61,14 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
         });
         return;
       }
+    }
+
+    if (goalRoute.classification === GOAL_CLASSIFICATION.UNCLEAR) {
+      conv.appendMessage(conversation.id, {
+        type: "sino",
+        text: goalRoute.clarification,
+      });
+      return;
     }
 
     const analysis = classifySinoMessage({ isFirstMessage, stage: conversation.stage, text: displayText });
