@@ -10,10 +10,26 @@ const developerGoals = [
   "优化 Founder 首页布局。",
   "修复 Mission Planner。",
 ];
+const structuredDeveloperGoals = [
+  "把 Founder 首页的 Sino COO Daily Briefing 做成真正的数据驾驶舱",
+  "把 Founder 首页的 Sino COO Daily Briefing 接入真实 Developer OS 数据",
+  "让 Founder 首页显示昨天成果、今日建议和等待决策",
+  "给 Founder 首页增加 Company Health",
+];
 
 test("one classifier prioritizes explicit development actions with concrete objects", () => {
-  for (const goal of developerGoals) {
+  for (const goal of [...developerGoals, ...structuredDeveloperGoals]) {
     assert.equal(classifyFounderGoal(goal), GOAL_CLASSIFICATION.DEVELOPER_GOAL, goal);
+  }
+});
+
+test("structured object-action-result goals route to Developer OS", async () => {
+  for (const goal of structuredDeveloperGoals) {
+    const fixture = routeFixture();
+    const route = await routeFounderMessage(goal, fixture.developerOS);
+    assert.equal(route.classification, GOAL_CLASSIFICATION.DEVELOPER_GOAL, goal);
+    assert.equal(route.snapshot.mission.status, "waiting_execution_approval");
+    assert.deepEqual(fixture.submitted, [goal]);
   }
 });
 

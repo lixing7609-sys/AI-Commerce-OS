@@ -15,6 +15,11 @@ const CONCRETE_TARGETS = [
   "AI Commerce OS", "Founder", "Developer OS", "Mission Planner", "Decision Center",
   "页面", "首页", "卡片", "标题", "布局", "组件", "功能", "工作台", "控制台", "Greeting",
 ];
+const STRUCTURED_CHANGE_PATTERNS = [
+  /^(?:请)?\s*(?:把|将)\s*(?<object>.+?)\s*(?:做成|改造成|接入|升级为)\s*(?<result>.+)$/u,
+  /^(?:请)?\s*让\s*(?<object>.+?)\s*显示\s*(?<result>.+)$/u,
+  /^(?:请)?\s*给\s*(?<object>.+?)\s*增加\s*(?<result>.+)$/u,
+];
 
 function includesAny(value, candidates) {
   const normalized = value.toLocaleLowerCase();
@@ -26,6 +31,13 @@ function hasConcreteObject(value) {
   return quotedValues.length > 0 || includesAny(value, CONCRETE_TARGETS);
 }
 
+function hasStructuredChange(value) {
+  return STRUCTURED_CHANGE_PATTERNS.some((pattern) => {
+    const match = value.match(pattern);
+    return Boolean(match?.groups?.object?.trim() && match?.groups?.result?.trim());
+  });
+}
+
 export function classifyFounderGoal(text) {
   const value = text.trim();
   if (!value) return GOAL_CLASSIFICATION.UNCLEAR;
@@ -33,6 +45,7 @@ export function classifyFounderGoal(text) {
   if (DISCUSSION_OPENERS.some((opener) => discussionValue.startsWith(opener))) {
     return GOAL_CLASSIFICATION.DISCUSSION;
   }
+  if (hasStructuredChange(value)) return GOAL_CLASSIFICATION.DEVELOPER_GOAL;
   const hasAction = includesAny(value, DEVELOPMENT_ACTIONS) || /把.+(?:改成|替换为|调整为).+/u.test(value);
   if (hasAction && hasConcreteObject(value)) return GOAL_CLASSIFICATION.DEVELOPER_GOAL;
   return GOAL_CLASSIFICATION.UNCLEAR;
