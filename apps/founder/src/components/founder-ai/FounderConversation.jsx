@@ -19,6 +19,15 @@ function getGreeting() {
   return "晚上好";
 }
 
+function formatBriefingTime(value) {
+  if (!value) return "等待首次同步";
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
+
 function DailyBriefing({ compact = false }) {
   const developerOS = useMemo(() => createFounderDeveloperOSAdapter(), []);
   const [snapshot, setSnapshot] = useState(null);
@@ -86,6 +95,7 @@ function DailyBriefing({ compact = false }) {
       : mission
         ? `复盘「${mission.title}」并确定后续 Mission`
         : "向 Developer OS 获取今日推荐 Mission";
+  const lastSyncedAt = snapshot?.workspace?.last_checked_at;
   const items = [
     { label: "昨日成果", title: resultTitle, detail: resultDetail },
     {
@@ -119,8 +129,17 @@ function DailyBriefing({ compact = false }) {
           <span className="founder-daily-briefing-eyebrow">SINO · COO DAILY BRIEFING</span>
           <button type="button" onClick={refresh} disabled={loading}>{loading ? "同步中…" : "刷新数据"}</button>
         </div>
-        <h1>{getGreeting()}，{FOUNDER_NAME}</h1>
-        <p>{error ? "Developer OS 暂时无法连接；以下保留最近一次已同步信息。" : `已接入 ${snapshot?.workspace?.name || "Developer OS"}，为你汇总成果、建议与待决策事项。`}</p>
+        <h1>Sino COO Daily Briefing</h1>
+        <p>{getGreeting()}，{FOUNDER_NAME}。{error ? "Developer OS 暂时无法连接，请稍后刷新状态。" : "这是当前最值得你关注的经营与研发信号。"}</p>
+        <div className="founder-daily-briefing-status" aria-label="Briefing 数据状态">
+          <span className={`founder-daily-briefing-live${error ? " is-error" : ""}`}>
+            <i aria-hidden="true" />
+            {error ? "数据连接异常" : loading ? "正在同步" : "数据已同步"}
+          </span>
+          <span>{snapshot?.workspace?.name || "Developer OS"}</span>
+          <span>{snapshot?.workspace?.branch ? `分支 ${snapshot.workspace.branch}` : "等待 Workspace"}</span>
+          <span>更新于 {formatBriefingTime(lastSyncedAt)}</span>
+        </div>
       </div>
       <div className="founder-daily-briefing-grid">
         {items.map((item, index) => (
