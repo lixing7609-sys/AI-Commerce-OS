@@ -43,14 +43,23 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
             topic: displayText,
             suggestion: "已生成 Developer OS Mission，等待 Founder 执行授权。",
           });
-          conv.appendMessage(conversation.id, {
+          const currentApproval = [...conversation.messages].reverse().find((message) => (
+            message.type === "developer-mission-approval"
+            && message.status === "waiting_execution_approval"
+          ));
+          const approvalEntry = {
             type: "developer-mission-approval",
             snapshot,
             status: snapshot.run?.state || mission?.status,
             deferred: false,
             actionPending: false,
             error: null,
-          });
+          };
+          if (currentApproval) {
+            conv.updateMessage(conversation.id, currentApproval.id, approvalEntry);
+          } else {
+            conv.appendMessage(conversation.id, approvalEntry);
+          }
           window.dispatchEvent(new CustomEvent("founder-developer-os:refresh"));
           return;
         }
@@ -130,10 +139,16 @@ export function createSinoFlow(conv, founderAI, developerOS = null) {
   async function handleMissionRefresh(conversation, messageId) {
     if (!conversation || !developerOS?.refresh_run) return;
     const entry = conversation.messages.find((message) => message.id === messageId);
-    if (!entry || entry.type !== "developer-mission-approval" || !entry.snapshot?.run?.run_id) return;
+    if (!entry || entry.type !== "developer-mission-approval") return;
     try {
-      const snapshot = await developerOS.refresh_run(entry.snapshot);
-      if (snapshot?.run?.run_id !== entry.snapshot.run.run_id) return;
+      const snapshot = entry.snapshot?.run?.run_id
+        ? await developerOS.refresh_run(entry.snapshot)
+        : await developerOS.refresh_mission(entry.snapshot);
+      if (!snapshot) return;
+      if (
+        entry.snapshot?.run?.run_id
+        && snapshot?.run?.run_id !== entry.snapshot.run.run_id
+      ) return;
       conv.updateMessage(conversation.id, messageId, {
         snapshot,
         status: snapshot.run.state,

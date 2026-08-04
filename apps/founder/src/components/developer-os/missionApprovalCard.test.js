@@ -35,7 +35,19 @@ test("card renders real Run labels and polls only active SSOT states", () => {
   assert.match(cardSource, /RUN_LABELS\[state\]/);
   assert.match(cardSource, /POLLING_STATES\.has\(state\)/);
   assert.match(cardSource, /snapshot\.run\?\.failure_summary/);
+  assert.match(cardSource, /预计文件/);
   assert.doesNotMatch(cardSource, /授权已处理/);
+  assert.match(cardSource, /"waiting_execution_approval"/);
+});
+
+test("Mission version sync replaces the current authorization card without page refresh", () => {
+  const flowSource = fs.readFileSync(path.join(here, "../founder-ai/sinoFlow.js"), "utf8");
+  const adapterSource = fs.readFileSync(path.join(here, "founderDeveloperOSAdapter.js"), "utf8");
+  assert.match(flowSource, /conv\.updateMessage\(conversation\.id, currentApproval\.id, approvalEntry\)/);
+  assert.match(flowSource, /developerOS\.refresh_mission\(entry\.snapshot\)/);
+  assert.match(adapterSource, /refresh_mission: async \(\) => load\(\)/);
+  assert.doesNotMatch(`${flowSource}\n${adapterSource}`, /Mission 已变化，请刷新后重新批准/);
+  assert.doesNotMatch(flowSource, /window\.location\.reload|location\.reload/);
 });
 
 test("waiting commit renders the complete formal Commit Review Package", () => {

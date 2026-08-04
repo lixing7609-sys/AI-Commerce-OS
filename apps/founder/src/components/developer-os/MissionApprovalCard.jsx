@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { RUN_LABELS } from "./founderDeveloperOSAdapter.js";
 
 const POLLING_STATES = new Set([
-  "execution_approved", "executing", "testing", "artifact_collection", "reviewing",
+  "waiting_execution_approval", "execution_approved", "executing", "testing", "artifact_collection", "reviewing",
   "scope_adjustment", "replanning", "retrying",
 ]);
 
@@ -29,7 +29,7 @@ export function MissionApprovalCard({ entry, onAction, onRefresh }) {
   useEffect(() => { onRefreshRef.current = onRefresh; }, [onRefresh]);
 
   useEffect(() => {
-    if (!snapshot.run?.run_id || !onRefreshRef.current) return undefined;
+    if ((!snapshot.run?.run_id && state !== "waiting_execution_approval") || !onRefreshRef.current) return undefined;
     let active = true;
     const refresh = async () => {
       if (!active || refreshPending.current) return;
@@ -58,6 +58,7 @@ export function MissionApprovalCard({ entry, onAction, onRefresh }) {
         <div><dt>为什么现在做</dt><dd>{display(mission.business_reason)}</dd></div>
         <div><dt>预计结果</dt><dd>{display(mission.expected_result)}</dd></div>
         <div><dt>风险</dt><dd>{display(mission.risk_level)}</dd></div>
+        <div><dt>预计文件</dt><dd>{mission.target_files?.length ?? 0} 个</dd></div>
         <div><dt>Workspace</dt><dd>{display(workspace.name)}</dd></div>
       </dl>
 

@@ -170,7 +170,13 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
     approve_execution: (planId) => guarded(async () => {
       const response = await client.approveExecution(planId);
       const plan = response?.snapshot;
-      if (!plan?.run_id) throw new Error("Developer OS 未返回可恢复的 Run");
+      if (!plan) throw new Error("Developer OS 未返回可恢复的 Mission");
+      if (!plan.run_id && plan.mission_version_changed) {
+        return normalizeDeveloperOSSnapshot({
+          workspace: await workspace(), plan, runState: { status: "idle" },
+        });
+      }
+      if (!plan.run_id) throw new Error("Developer OS 未返回可恢复的 Run");
       return normalizeDeveloperOSSnapshot({
         workspace: await workspace(),
         plan,
@@ -180,6 +186,7 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
         },
       });
     }),
+    refresh_mission: async () => load(),
     refresh_run: async (snapshot) => {
       const expectedRunId = snapshot?.run?.run_id;
       const expectedPlanId = snapshot?.command_context?.plan_id;

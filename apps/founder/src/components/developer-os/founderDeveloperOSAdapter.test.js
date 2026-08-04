@@ -138,6 +138,41 @@ test("approve response immediately becomes the executing conversation snapshot",
   assert.equal(snapshot.mission.title, "接入 Founder");
 });
 
+test("Mission Version Changed automatically returns and renders the latest Mission", async () => {
+  const client = {
+    listWorkspaces: async () => [workspace],
+    approveExecution: async () => ({
+      snapshot: {
+        ...basePlan, plan_id: "plan-new", run_id: null,
+        mission_version_changed: true,
+        mission: { id: "mission-new", title: "新的 Founder Mission", status: "waiting_execution_approval" },
+      },
+    }),
+  };
+
+  const snapshot = await createFounderDeveloperOSAdapter(client).approve_execution("plan-old");
+
+  assert.equal(snapshot.command_context.plan_id, "plan-new");
+  assert.equal(snapshot.mission.title, "新的 Founder Mission");
+  assert.equal(snapshot.run.state, "waiting_execution_approval");
+});
+
+test("waiting approval refresh automatically replaces old Mission with latest version", async () => {
+  const client = {
+    listWorkspaces: async () => [workspace],
+    currentPlan: async () => ({
+      ...basePlan, plan_id: "plan-new",
+      mission: { id: "mission-new", title: "最新 Mission", status: "waiting_execution_approval" },
+    }),
+    currentRun: async () => ({ status: "idle" }),
+  };
+
+  const snapshot = await createFounderDeveloperOSAdapter(client).refresh_mission();
+
+  assert.equal(snapshot.command_context.plan_id, "plan-new");
+  assert.equal(snapshot.mission.title, "最新 Mission");
+});
+
 test("known Run refresh follows SSOT from executing through testing and failed", async () => {
   const states = [
     { run_id: "run-1", status: "testing", progress: "正在自动测试" },
