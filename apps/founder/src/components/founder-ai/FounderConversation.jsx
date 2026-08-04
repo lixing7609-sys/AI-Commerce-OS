@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FounderComposer } from "./FounderComposer.jsx";
 import { NavIcon } from "./icons.jsx";
 import { MultiModelBlock } from "./timeline-cards/MultiModelBlock.jsx";
@@ -7,6 +8,7 @@ import { ExecutionResultCard } from "./timeline-cards/ExecutionResultCard.jsx";
 import { RetrospectiveCard } from "./timeline-cards/RetrospectiveCard.jsx";
 import { KnowledgeCard } from "./timeline-cards/KnowledgeCard.jsx";
 import { MissionApprovalCard } from "../developer-os/MissionApprovalCard.jsx";
+import { createFounderDeveloperOSAdapter, RUN_LABELS } from "../developer-os/founderDeveloperOSAdapter.js";
 
 const FOUNDER_NAME = "立行";
 
@@ -17,41 +19,123 @@ function getGreeting() {
   return "晚上好";
 }
 
-const DAILY_BRIEFING_ITEMS = [
-  {
-    label: "今日最高优先事项",
-    title: "锁定今天最重要的公司结果",
-    detail: "告诉 Sino 目标、约束与截止时间，我会拆解判断并持续推进。",
-  },
-  {
-    label: "待你决策",
-    title: "暂无待处理决策",
-    detail: "需要 Founder 拍板的事项会在这里置顶，并附上 COO 建议。",
-  },
-  {
-    label: "Sino 建议",
-    title: "从一个高杠杆问题开始",
-    detail: "研究、判断、开发或执行都可以直接交给我。",
-  },
-];
-
 function DailyBriefing({ compact = false }) {
+  const developerOS = useMemo(() => createFounderDeveloperOSAdapter(), []);
+  const [snapshot, setSnapshot] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      setSnapshot(await developerOS.refresh_state());
+      setError(null);
+    } catch (nextError) {
+      setError(nextError);
+    } finally {
+      setLoading(false);
+    }
+  }, [developerOS]);
+
+  useEffect(() => {
+    let active = true;
+    developerOS.refresh_state().then((nextSnapshot) => {
+      if (active) {
+        setSnapshot(nextSnapshot);
+        setError(null);
+        setLoading(false);
+      }
+    }).catch((nextError) => {
+      if (active) {
+        setError(nextError);
+        setLoading(false);
+      }
+    });
+    window.addEventListener("founder-developer-os:refresh", refresh);
+    return () => {
+      active = false;
+      window.removeEventListener("founder-developer-os:refresh", refresh);
+    };
+  }, [developerOS, refresh]);
+
+  const mission = snapshot?.mission;
+  const run = snapshot?.run;
+  const artifact = snapshot?.artifact;
+  const commit = snapshot?.commit_result;
+  const state = run?.state || "planning";
+  const progress = snapshot?.sprint?.progress || run?.progress || (snapshot?.actions?.terminal ? 100 : 0);
+  const waitingDecision = snapshot?.actions?.approve_execution
+    ? `批准执行「${mission?.title || "今日 Mission"}」`
+    : snapshot?.actions?.approve_commit
+      ? `批准提交「${mission?.title || "当前开发成果"}」`
+      : null;
+  const resultTitle = commit
+    ? `已提交 ${commit.committed_files?.length || 0} 个文件`
+    : artifact
+      ? artifact.diff_summary
+      : "昨日暂无已归档研发成果";
+  const resultDetail = commit
+    ? `${commit.commit_message || "Developer OS 已完成提交"} · ${commit.branch || snapshot?.workspace?.branch || "当前分支"}`
+    : artifact?.changed_files?.length
+      ? `涉及 ${artifact.changed_files.length} 个文件，自动验收：${artifact.review_result === "passed" ? "通过" : "进行中"}`
+      : "Developer OS 尚未返回可展示的成果记录。";
+  const nextAction = waitingDecision
+    ? waitingDecision
+    : run && !snapshot?.actions?.terminal
+      ? `跟进「${mission?.title || "当前 Mission"}」的执行状态`
+      : mission
+        ? `复盘「${mission.title}」并确定后续 Mission`
+        : "向 Developer OS 获取今日推荐 Mission";
+  const items = [
+    { label: "昨日成果", title: resultTitle, detail: resultDetail },
+    {
+      label: "今日建议",
+      title: mission?.title || (loading ? "正在读取 Developer OS…" : "暂无推荐 Mission"),
+      detail: mission?.business_reason || (error?.suggestion || "Developer OS 尚未生成今日建议。"),
+    },
+    {
+      label: "等待决策",
+      title: waitingDecision || "当前无需 Founder 拍板",
+      detail: waitingDecision ? `COO 建议：先确认风险与范围，再完成授权。当前状态：${RUN_LABELS[state] || state}` : "Sino 会在执行或提交需要授权时立即置顶。",
+    },
+    {
+      label: "Sprint 进度",
+      title: snapshot?.sprint?.title || "Developer OS Sprint",
+      detail: `${Math.round(progress)}% · ${RUN_LABELS[state] || (loading ? "同步中" : "暂不可用")}`,
+      progress,
+    },
+    {
+      label: "下一最佳动作",
+      title: nextAction,
+      detail: waitingDecision ? "完成这一步即可解除当前推进阻塞。" : "这是基于当前 Mission、Run 与授权状态生成的建议。",
+      featured: true,
+    },
+  ];
+
   return (
     <div className={`founder-daily-briefing${compact ? " is-compact" : ""}`}>
       <div className="founder-daily-briefing-heading">
-        <span className="founder-daily-briefing-eyebrow">SINO · COO DAILY BRIEFING</span>
+        <div className="founder-daily-briefing-kicker">
+          <span className="founder-daily-briefing-eyebrow">SINO · COO DAILY BRIEFING</span>
+          <button type="button" onClick={refresh} disabled={loading}>{loading ? "同步中…" : "刷新数据"}</button>
+        </div>
         <h1>{getGreeting()}，{FOUNDER_NAME}</h1>
-        <p>这是今天的经营驾驶舱。先对齐重点，再让 Sino 推动结果发生。</p>
+        <p>{error ? "Developer OS 暂时无法连接；以下保留最近一次已同步信息。" : `已接入 ${snapshot?.workspace?.name || "Developer OS"}，为你汇总成果、建议与待决策事项。`}</p>
       </div>
       <div className="founder-daily-briefing-grid">
-        {DAILY_BRIEFING_ITEMS.map((item, index) => (
-          <article key={item.label} className="founder-daily-briefing-card">
+        {items.map((item, index) => (
+          <article key={item.label} className={`founder-daily-briefing-card${item.featured ? " is-featured" : ""}`}>
             <div className="founder-daily-briefing-card-topline">
               <span className="founder-daily-briefing-index">0{index + 1}</span>
               <span>{item.label}</span>
             </div>
             <h2>{item.title}</h2>
             <p>{item.detail}</p>
+            {item.progress !== undefined && (
+              <div className="founder-daily-briefing-progress" aria-label={`Sprint 进度 ${Math.round(item.progress)}%`}>
+                <span style={{ width: `${Math.min(100, Math.max(0, item.progress))}%` }} />
+              </div>
+            )}
           </article>
         ))}
       </div>
