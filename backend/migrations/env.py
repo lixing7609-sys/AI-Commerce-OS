@@ -30,6 +30,7 @@ from app.models.token_adjustment_db import TokenAdjustmentDB
 from app.models.token_ledger_entry_db import TokenLedgerEntryDB
 from app.models.token_lot_db import TokenGrantDB, TokenLotDB
 from app.models.token_pricing_snapshot_db import TokenPricingSnapshotDB
+from app.core.application_system.model import ApplicationSystemDB
 
 config = context.config
 
