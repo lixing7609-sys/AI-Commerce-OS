@@ -71,7 +71,7 @@ export function runHeartbeatStale(run, now = Date.now()) {
   );
 }
 
-export function normalizeDeveloperOSSnapshot({ workspace, plan, runState }) {
+export function normalizeDeveloperOSSnapshot({ workspace, plan, runState, conversationId = null }) {
   if (!workspace) throw new Error("研发 Workspace 当前不可用");
   const state = plan ? mapState(plan, runState) : "planning";
   const mission = plan?.mission || {};
@@ -105,6 +105,7 @@ export function normalizeDeveloperOSSnapshot({ workspace, plan, runState }) {
   return {
     contract_version: CONTRACT_VERSION,
     command_context: {
+      conversation_id: plan?.conversation_id || conversationId,
       plan_id: plan?.plan_id || null,
       approval_id: plan?.approval_id || null,
       baseline: plan?.workspace?.baseline || plan?.approval_baseline || null,
@@ -207,7 +208,7 @@ function businessError(error) {
   };
 }
 
-export function createFounderDeveloperOSAdapter(client = developerOSClient) {
+export function createFounderDeveloperOSAdapter(client = developerOSClient, { conversationId = null } = {}) {
   let inFlight = null;
 
   async function workspace() {
@@ -220,10 +221,10 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
   async function load() {
     const selectedWorkspace = await workspace();
     let plan = null;
-    try { plan = await client.currentPlan(WORKSPACE_ID); } catch (error) {
+    try { plan = await client.currentPlan(WORKSPACE_ID, conversationId); } catch (error) {
       if (error.status !== 404) throw error;
     }
-    const runState = await client.currentRun();
+    const runState = await client.currentRun(WORKSPACE_ID, conversationId);
     return normalizeDeveloperOSSnapshot({ workspace: selectedWorkspace, plan, runState });
   }
 
@@ -237,11 +238,11 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
     refresh_state: async () => { try { return await load(); } catch (error) { throw businessError(error); } },
     request_today_mission: (goal = SPRINT.goal) => guarded(async () => {
       await client.selectWorkspace(WORKSPACE_ID);
-      await client.requestMission(WORKSPACE_ID, goal);
+      await client.requestMission(WORKSPACE_ID, goal, conversationId);
       return load();
     }),
     approve_execution: (planId, approvalId) => guarded(async () => {
-      const response = await client.approveExecution(planId, approvalId);
+      const response = await client.approveExecution(planId, approvalId, conversationId);
       const plan = response?.snapshot;
       if (!plan) throw new Error("Developer OS 未返回可恢复的 Mission");
       if (!plan.run_id && (
@@ -266,22 +267,22 @@ export function createFounderDeveloperOSAdapter(client = developerOSClient) {
       const expectedRunId = snapshot?.run?.run_id;
       const expectedPlanId = snapshot?.command_context?.plan_id;
       if (!expectedRunId || !expectedPlanId) return snapshot;
-      const runState = await client.currentRun();
+      const runState = await client.currentRun(WORKSPACE_ID, conversationId);
       if (runState?.run_id !== expectedRunId) return snapshot;
-      const plan = await client.currentPlan(WORKSPACE_ID);
+      const plan = await client.currentPlan(WORKSPACE_ID, conversationId);
       if (plan?.plan_id !== expectedPlanId || plan?.run_id !== expectedRunId) return snapshot;
       return normalizeDeveloperOSSnapshot({ workspace: await workspace(), plan, runState });
     },
     cancel_execution: (planId) => guarded(async () => { await client.cancelExecution(planId); return load(); }),
     request_revision: async () => { throw businessError(new Error("当前 Developer OS 尚未提供版本修改命令")); },
     revise_commit_message: async (planId, suggestedMessage) => {
-      const response = await client.reviseCommitMessage(planId, suggestedMessage);
+      const response = await client.reviseCommitMessage(planId, suggestedMessage, conversationId);
       const plan = response?.snapshot;
       if (!plan) throw new Error("Developer OS 未返回更新后的 Commit Candidate");
       return normalizeDeveloperOSSnapshot({
         workspace: await workspace(),
         plan,
-        runState: await client.currentRun(),
+        runState: await client.currentRun(WORKSPACE_ID, conversationId),
       });
     },
     approve_commit: (planId) => guarded(async () => { await client.approveCommit(planId); return load(); }),

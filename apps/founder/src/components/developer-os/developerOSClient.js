@@ -29,23 +29,28 @@ async function request(path, options = {}) {
 
 export const developerOSClient = {
   listWorkspaces: () => request("/developer/workspaces"),
+  setActiveConversation: (workspaceId, conversationId) => request("/developer/conversation/active", {
+    method: "PUT",
+    body: JSON.stringify({ workspace_id: workspaceId, conversation_id: conversationId || null }),
+  }),
   selectWorkspace: (workspaceId) => request("/developer/workspaces/active", {
     method: "PUT", body: JSON.stringify({ workspace_id: workspaceId }),
   }),
-  currentPlan: (workspaceId) => request(`/developer/bridge/state?workspace_id=${encodeURIComponent(workspaceId)}`),
-  requestMission: (workspaceId, goal) => request("/developer/bridge/commands", {
+  currentPlan: (workspaceId, conversationId = null) => request(`/developer/bridge/state?workspace_id=${encodeURIComponent(workspaceId)}${conversationId ? `&conversation_id=${encodeURIComponent(conversationId)}` : ""}`),
+  requestMission: (workspaceId, goal, conversationId = null) => request("/developer/bridge/commands", {
     method: "POST", body: JSON.stringify({
       command_type: "request_today_mission",
       workspace_id: workspaceId,
       plan_id: null,
-      idempotency_key: `request_today_mission:${workspaceId}:${commandKey(goal)}`,
+      idempotency_key: `request_today_mission:${workspaceId}:${conversationId || "global"}:${commandKey(goal)}`,
       contract_version: 1,
       goal,
+      conversation_id: conversationId,
     }),
   }),
-  currentRun: (workspaceId = "ai-commerce-os") => request(`/developer/run-state?workspace_id=${encodeURIComponent(workspaceId)}`),
+  currentRun: (workspaceId = "ai-commerce-os", conversationId = null) => request(`/developer/run-state?workspace_id=${encodeURIComponent(workspaceId)}${conversationId ? `&conversation_id=${encodeURIComponent(conversationId)}` : ""}`),
   execution: (planId) => request(`/developer/planning/${planId}/execution`),
-  approveExecution: (planId, approvalId) => request("/developer/bridge/commands", {
+  approveExecution: (planId, approvalId, conversationId = null) => request("/developer/bridge/commands", {
     method: "POST",
     body: JSON.stringify({
       command_type: "approve_execution",
@@ -54,9 +59,10 @@ export const developerOSClient = {
       approval_id: approvalId,
       idempotency_key: `approve_execution:${planId}:${approvalId}`,
       contract_version: 1,
+      conversation_id: conversationId,
     }),
   }),
-  reviseCommitMessage: (planId, suggestedCommitMessage) => request("/developer/bridge/commands", {
+  reviseCommitMessage: (planId, suggestedCommitMessage, conversationId = null) => request("/developer/bridge/commands", {
     method: "POST",
     body: JSON.stringify({
       command_type: "revise_commit_message",
@@ -65,6 +71,7 @@ export const developerOSClient = {
       suggested_commit_message: suggestedCommitMessage,
       idempotency_key: `revise_commit_message:${planId}:${commandKey(suggestedCommitMessage)}`,
       contract_version: 1,
+      conversation_id: conversationId,
     }),
   }),
   cancelExecution: (planId) => request(`/developer/planning/${planId}/execution/cancel`, { method: "POST" }),

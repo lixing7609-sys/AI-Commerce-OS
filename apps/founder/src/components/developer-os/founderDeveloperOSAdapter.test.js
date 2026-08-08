@@ -289,6 +289,35 @@ test("empty roadmap produces an explicit empty briefing without mock missions", 
   assert.deepEqual(snapshot.daily_briefing.decisions, []);
 });
 
+test("Founder adapter sends conversation_id for plan, run, and goal commands", async () => {
+  const calls = [];
+  const client = {
+    listWorkspaces: async () => [workspace],
+    currentPlan: async (...args) => { calls.push(["plan", ...args]); return { ...basePlan, conversation_id: "conversation-b" }; },
+    currentRun: async (...args) => { calls.push(["run", ...args]); return { current_run_id: null, status: "idle" }; },
+    selectWorkspace: async () => {},
+    requestMission: async (...args) => { calls.push(["mission", ...args]); },
+  };
+  const adapter = createFounderDeveloperOSAdapter(client, { conversationId: "conversation-b" });
+  await adapter.refresh_state();
+  await adapter.request_today_mission("把 Sino 升级为 AI COO");
+  assert.ok(calls.some(([kind, workspaceId, conversationId]) => kind === "plan" && workspaceId === "ai-commerce-os" && conversationId === "conversation-b"));
+  assert.ok(calls.some(([kind, workspaceId, conversationId]) => kind === "run" && workspaceId === "ai-commerce-os" && conversationId === "conversation-b"));
+  assert.ok(calls.some(([kind, workspaceId, goal, conversationId]) => kind === "mission" && workspaceId === "ai-commerce-os" && goal.includes("AI COO") && conversationId === "conversation-b"));
+});
+
+test("conversation briefing is scoped to the active conversation", () => {
+  const source = readFileSync(new URL("../founder-ai/FounderConversation.jsx", import.meta.url), "utf8");
+  assert.match(source, /createFounderDeveloperOSAdapter\(undefined, \{ conversationId \}\)/);
+  assert.match(source, /<DailyBriefing compact conversationId=\{conversation\.id\} \/>/);
+});
+
+test("FounderHome publishes the selected conversation as Developer OS active state", () => {
+  const home = readFileSync(new URL("../../pages/FounderHome.jsx", import.meta.url), "utf8");
+  assert.match(home, /setActiveConversation\("ai-commerce-os", activeConversationId \|\| null\)/);
+  assert.match(home, /\[activeConversationId\]/);
+});
+
 test("refresh restores the same Run and never replaces it with a newer Plan Run", async () => {
   const client = {
     listWorkspaces: async () => [workspace],

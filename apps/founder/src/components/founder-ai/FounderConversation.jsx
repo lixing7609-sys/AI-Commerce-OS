@@ -36,8 +36,22 @@ function displayEvidence(value) {
   return String(value);
 }
 
-function DailyBriefing({ compact = false }) {
-  const developerOS = useMemo(() => createFounderDeveloperOSAdapter(), []);
+function isYesterday(value) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return date.getFullYear() === yesterday.getFullYear()
+    && date.getMonth() === yesterday.getMonth()
+    && date.getDate() === yesterday.getDate();
+}
+
+function DailyBriefing({ compact = false, conversationId = null }) {
+  const developerOS = useMemo(
+    () => createFounderDeveloperOSAdapter(undefined, { conversationId }),
+    [conversationId],
+  );
   const [snapshot, setSnapshot] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -108,33 +122,54 @@ function DailyBriefing({ compact = false }) {
         : null;
   const completedMissions = briefing.recent_completed_missions || [];
   const latestRun = briefing.latest_completed_run || briefing.recent_runs?.[0] || null;
-  const latestCommit = briefing.recent_git_commits?.[0] || commit;
-  const resultTitle = completedMissions.length
-    ? completedMissions.map((item) => item.title).slice(0, 5).join(" · ")
-    : "昨日暂无已完成 Mission";
+  const recentCommits = briefing.recent_git_commits || [];
+  const yesterdayCommits = recentCommits.filter((item) => isYesterday(item.completed_at));
+  const latestCommit = yesterdayCommits[0] || recentCommits[0] || commit;
+  const resultTitle = yesterdayCommits.length
+    ? yesterdayCommits.map((item) => item.commit_message || item.commit_hash?.slice(0, 8)).slice(0, 3).join(" · ")
+    : "昨天暂无可确认的 Git 提交";
   const resultFacts = [
+    completedMissions.length ? `最近完成 Mission：${completedMissions.map((item) => item.title).slice(0, 3).join("、")}` : "最近完成 Mission：暂无记录",
     `最近 Run：${latestRun?.run_id ? `${latestRun.run_id}（${RUN_LABELS[latestRun.status] || latestRun.status}）` : "暂无记录"}`,
-    `最近 Commit：${latestCommit?.commit_hash ? `${latestCommit.commit_hash.slice(0, 8)} · ${latestCommit.commit_message || "无说明"}` : "暂无提交"}`,
+    `Git：${latestCommit?.commit_hash ? `${latestCommit.commit_hash.slice(0, 8)} · ${latestCommit.commit_message || "无说明"}` : "暂无提交"}`,
     `Tests：${displayEvidence(briefing.latest_tests || artifact?.tests)}`,
     `Build：${displayEvidence(briefing.latest_build || artifact?.build)}`,
   ].join(" · ");
+  const highestBlockedMission = [...missions]
+    .filter((item) => ["blocked", "failed", "cancelled", "stale", "timed_out", "commit_rejected"].includes(item.status))
+    .sort((left, right) => (right.priority || 0) - (left.priority || 0))[0];
+  const riskTitle = highestBlockedMission
+    ? `「${highestBlockedMission.title}」处于 ${RUN_LABELS[highestBlockedMission.status] || highestBlockedMission.status}`
+    : ["failed", "timed_out", "commit_rejected", "stale"].includes(state)
+      ? `当前 Developer Run：${RUN_LABELS[state] || state}`
+      : mission?.risk_level && mission.risk_level !== "unavailable"
+        ? `当前 Mission 风险等级：${mission.risk_level}`
+        : "当前没有已记录的阻塞风险";
+  const riskDetail = highestBlockedMission
+    ? `这是 Sprint 中优先级最高的异常 Mission（优先级 ${highestBlockedMission.priority ?? "未记录"}），应先解除阻塞再扩展范围。`
+    : run?.failure_summary || `依据 Sprint 阻塞项与当前 Developer Run（${RUN_LABELS[state] || state}）判断。`;
+  const focusMission = recommendedMission || mission;
+  const focusTitle = focusMission?.title
+    ? `把两小时投入「${focusMission.title}」`
+    : "先用两小时确认下一项 Mission";
   const nextAction = waitingDecision
-    ? waitingDecision.title
+    ? `${waitingDecision.title}；批准后让 Sino 继续跟进 Run`
     : run && !snapshot?.actions?.terminal
-      ? `跟进「${mission?.title || "当前 Mission"}」的执行状态`
-        : recommendedMission
-        ? `推进「${recommendedMission.title}」`
-        : "向 Developer OS 获取今日推荐 Mission";
+      ? `Sino 主动跟进「${mission?.title || "当前 Mission"}」并在状态变化时更新 Briefing`
+      : focusMission
+        ? `Sino 建议立即推进「${focusMission.title}」并建立 Developer Run`
+        : "Sino 建议先从 Developer OS 获取今日 Mission，再按业务价值与风险排序";
   const lastSyncedAt = snapshot?.workspace?.last_checked_at;
   const items = [
-    { label: "昨日开发成果", title: resultTitle, detail: resultFacts },
+    { label: "昨天完成了什么", title: resultTitle, detail: resultFacts },
     {
-      label: "今日建议",
+      label: "今天优先推进",
       title: recommendedMission?.title || (loading ? "正在读取 Developer OS…" : "暂无推荐 Mission"),
       detail: mission?.business_reason || (error?.suggestion || "Developer OS 尚未生成今日建议。"),
     },
+    { label: "当前最大风险", title: riskTitle, detail: riskDetail },
     {
-      label: "等待决策",
+      label: "等待 Founder 决策",
       title: briefing.decisions?.length ? briefing.decisions.map((item) => item.title).slice(0, 3).join(" · ") : (waitingDecision?.title || "当前无需 Founder 拍板"),
       detail: briefing.decisions?.length ? briefing.decisions.map((item) => item.type === "execution" ? "等待执行授权" : item.type === "commit" ? "等待提交授权" : "需要 Retry 或 Rollback").join(" · ") : (waitingDecision ? `${waitingDecision.reason} 当前状态：${RUN_LABELS[state] || state}` : "Developer OS 当前没有返回批准、Retry 或 Rollback 待办。"),
     },
@@ -145,7 +180,12 @@ function DailyBriefing({ compact = false }) {
       progress,
     },
     {
-      label: "下一最佳动作",
+      label: "Founder 的两小时",
+      title: focusTitle,
+      detail: focusMission ? `该 Mission 当前优先级 ${focusMission.priority ?? "未记录"}，状态为 ${RUN_LABELS[focusMission.status] || focusMission.status || RUN_LABELS[state] || state}。` : "当前没有可排序的 Mission，先确定业务结果与验收标准。",
+    },
+    {
+      label: "Sino 主动下一步",
       title: nextAction,
       detail: waitingDecision ? waitingDecision.reason : `依据 Mission 优先级、当前 Sprint 与 Developer Run 状态（${RUN_LABELS[state] || state}）生成。`,
       featured: true,
@@ -211,7 +251,7 @@ export function FounderConversation({ conversation, onSend, onDecisionAction, on
       <div className="founder-conversation-scroll">
         {conversation.messages.length === 0 && (
           <div className="founder-conversation-empty-inline">
-            <DailyBriefing compact />
+            <DailyBriefing compact conversationId={conversation.id} />
           </div>
         )}
         {conversation.messages.map((entry) => {

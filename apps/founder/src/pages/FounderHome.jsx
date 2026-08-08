@@ -20,6 +20,7 @@ import { FavoritesView } from "../components/founder-ai/views/FavoritesView.jsx"
 import { DeveloperVerificationCard } from "../components/founder-ai/timeline-cards/DeveloperVerificationCard.jsx";
 import { FounderDeveloperOSDashboard } from "../components/developer-os/FounderDeveloperOSDashboard.jsx";
 import { createFounderDeveloperOSAdapter } from "../components/developer-os/founderDeveloperOSAdapter.js";
+import { developerOSClient } from "../components/developer-os/developerOSClient.js";
 
 // Sino Founder — 三栏工作台：左侧对话记录 + 固定工作入口，中间自然对话，
 // 右侧 Sino 实时跟踪讨论状态。用户只管说话，不需要先选择功能论证/模型
@@ -44,7 +45,17 @@ function FounderAIWorkspace() {
   const activeConversationId = searchParams.get("conv");
   const conv = useConversations();
   const founderAI = useFounderAI();
-  const developerOS = useMemo(() => createFounderDeveloperOSAdapter(), []);
+  const developerOS = useMemo(
+    () => createFounderDeveloperOSAdapter(undefined, { conversationId: activeConversationId }),
+    [activeConversationId],
+  );
+
+  // The Founder-selected conversation is the cross-client Developer OS SSOT.
+  // AI Builder consumes this value before reading Mission/Run state, so a
+  // history switch never leaves a stale workspace-global task on screen.
+  useEffect(() => {
+    developerOSClient.setActiveConversation("ai-commerce-os", activeConversationId || null).catch(() => {});
+  }, [activeConversationId]);
   const activeConversation = conv.conversations.find((c) => c.id === activeConversationId) || null;
   const sino = createSinoFlow(conv, founderAI, developerOS);
 

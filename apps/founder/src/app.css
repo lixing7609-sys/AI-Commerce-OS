@@ -610,6 +610,9 @@
 
 .founder-daily-briefing {
   width: min(100%, 860px);
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .founder-daily-briefing-heading {
