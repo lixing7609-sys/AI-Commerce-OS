@@ -1,6 +1,7 @@
 from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
+from app.core.context.model import ConversationContextDB
 from app.database.db import SessionLocal
 
 FOUNDER_SYSTEM_KEY = "founder_ai"
@@ -17,6 +18,13 @@ def create_conversation(*, title: str | None = None) -> ConversationDB:
             title=(title or "New Conversation").strip() or "New Conversation",
         )
         session.add(record)
+        session.flush()
+        session.add(
+            ConversationContextDB(
+                conversation_id=record.id,
+                system_id=FOUNDER_SYSTEM_KEY,
+            )
+        )
         session.commit()
         session.refresh(record)
         return record

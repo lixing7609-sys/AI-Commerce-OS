@@ -23,6 +23,7 @@ from app.models.token_lot_db import TokenGrantDB, TokenLotDB
 from app.models.token_pricing_snapshot_db import TokenPricingSnapshotDB
 from app.core.application_system.model import ApplicationSystemDB
 from app.core.conversation.model import ConversationDB
+from app.core.context.model import ConversationContextDB
 
 
 DATABASE_URL = (
