@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, Float, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database.base import Base
+from database.base import Base
 
 
 class MemoryAssetDB(Base):
