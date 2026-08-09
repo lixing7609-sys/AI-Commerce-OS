@@ -47,6 +47,9 @@ import {
 import {
   StudioLogsModule, StudioCostsModule, StudioReleasesModule,
 } from "./modules/studioLab/StudioOpsModules.jsx";
+import { FounderTasksModule } from "./modules/founderAssets/FounderTasksModule.jsx";
+import { FounderArtifactsModule } from "./modules/founderAssets/FounderArtifactsModule.jsx";
+import { FounderMemoryModule } from "./modules/founderAssets/FounderMemoryModule.jsx";
 
 /**
  * 模块 key -> 组件的唯一映射，ConsoleShell 从这里查表渲染当前
@@ -124,4 +127,7 @@ export const MODULE_COMPONENTS = {
   studioLogs: StudioLogsModule,
   studioCosts: StudioCostsModule,
   studioReleases: StudioReleasesModule,
+  founderTasks: FounderTasksModule,
+  founderArtifacts: FounderArtifactsModule,
+  founderMemory: FounderMemoryModule,
 };

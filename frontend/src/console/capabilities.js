@@ -68,6 +68,9 @@ export const CAPABILITY_KEYS = Object.freeze({
   DESIGN_DNA_VIEW: "designDna.view",
   PRODUCT_REVIEW_VIEW: "productReview.view",
   WORKSPACE_PROTO_VIEW: "workspaceProto.view",
+  FOUNDER_TASK_ASSETS_VIEW: "founderTaskAssets.view",
+  FOUNDER_ARTIFACTS_VIEW: "founderArtifacts.view",
+  FOUNDER_MEMORY_VIEW: "founderMemory.view",
 });
 
 function allTrue(keys) {

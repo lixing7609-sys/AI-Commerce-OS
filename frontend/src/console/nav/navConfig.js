@@ -102,6 +102,27 @@ export const FOUNDER_MODULES = [
     requiredCapability: CAPABILITY_KEYS.DECISIONS_VIEW,
   },
   {
+    key: "founderTasks",
+    label: "任务资产",
+    group: "founderWorkspaceGroup",
+    icon: "▣",
+    requiredCapability: CAPABILITY_KEYS.FOUNDER_TASK_ASSETS_VIEW,
+  },
+  {
+    key: "founderArtifacts",
+    label: "成果资产",
+    group: "founderWorkspaceGroup",
+    icon: "◇",
+    requiredCapability: CAPABILITY_KEYS.FOUNDER_ARTIFACTS_VIEW,
+  },
+  {
+    key: "founderMemory",
+    label: "记忆资产",
+    group: "founderWorkspaceGroup",
+    icon: "◌",
+    requiredCapability: CAPABILITY_KEYS.FOUNDER_MEMORY_VIEW,
+  },
+  {
     key: "development",
     label: "开发进度",
     group: "founderWorkspaceGroup",
