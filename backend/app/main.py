@@ -24,6 +24,7 @@ from app.api.v1.suppliers import router as suppliers_router
 from app.api.v1.tasks import router as tasks_router
 from app.api.v1.wecom import router as wecom_router
 from app.core.application_system.api import router as application_system_router
+from app.core.conversation.api import router as conversation_router
 from app.services.database_readiness_service import (
     DatabaseReadinessError,
     DatabaseReadinessService,
@@ -259,6 +260,11 @@ app.include_router(
 
 app.include_router(
     application_system_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    conversation_router,
     prefix="/api/v1",
 )
 
