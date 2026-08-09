@@ -34,6 +34,7 @@ from app.core.application_system.model import ApplicationSystemDB
 from app.core.conversation.model import ConversationDB
 from app.core.context.model import ConversationContextDB
 from app.core.decision.model import DecisionAssetDB
+from app.core.task_asset.model import TaskAssetDB
 
 config = context.config
 

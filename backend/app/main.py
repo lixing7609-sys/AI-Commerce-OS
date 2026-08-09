@@ -27,6 +27,7 @@ from app.core.application_system.api import router as application_system_router
 from app.core.conversation.api import router as conversation_router
 from app.core.context.api import router as context_router
 from app.core.decision.api import router as decision_router
+from app.core.task_asset.api import router as task_asset_router
 from app.services.database_readiness_service import (
     DatabaseReadinessError,
     DatabaseReadinessService,
@@ -280,6 +281,10 @@ app.include_router(
     prefix="/api/v1",
 )
 
+app.include_router(
+    task_asset_router,
+    prefix="/api/v1",
+)
 
 @app.get("/health", tags=["System"])
 def health():
