@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { analyzeFounderConversation, analyzeWithSinoBrain, createFounderConversation, executeFounderExecution, getFounderBriefing, getFounderStrategy } from "./founderAiApi";
+import { analyzeFounderConversation, analyzeWithSinoBrain, buildSystemBlueprint, createFounderConversation, executeFounderExecution, getFounderBriefing, getFounderStrategy } from "./founderAiApi";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -21,6 +21,13 @@ describe("Founder AI conversation API", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ current_phase: "AI System Builder" }) });
     await getFounderStrategy();
     expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/strategy");
+  });
+
+  it("requests an approval-gated system blueprint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ system_blueprint: {} }) });
+    await buildSystemBlueprint("创建 Operator AI", "conv-1");
+    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/system-builder/blueprint");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ system_goal: "创建 Operator AI", conversation_id: "conv-1" });
   });
 
   it("analyzes a goal in the same conversation", async () => {

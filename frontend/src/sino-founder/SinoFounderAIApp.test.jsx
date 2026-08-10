@@ -2,12 +2,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SinoFounderAIApp from "./SinoFounderAIApp.jsx";
-import { analyzeWithSinoBrain, createFounderConversation, createFounderExecution, getFounderBriefing, getFounderStrategy } from "../services/founderAiApi.js";
+import { analyzeWithSinoBrain, buildSystemBlueprint, createFounderConversation, createFounderExecution, getFounderBriefing, getFounderStrategy } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 
 vi.mock("../services/founderAiApi.js", () => ({
   createFounderConversation: vi.fn(), analyzeWithSinoBrain: vi.fn(),
-  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(), getFounderBriefing: vi.fn(), getFounderStrategy: vi.fn(),
+  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(), getFounderBriefing: vi.fn(), getFounderStrategy: vi.fn(), buildSystemBlueprint: vi.fn(),
 }));
 vi.mock("../services/taskAssetApi.js", () => ({ createTaskAsset: vi.fn() }));
 
@@ -87,5 +87,26 @@ describe("SinoFounderAIApp", () => {
     expect(screen.getByText("blueprint")).toBeTruthy();
     expect(screen.getByText("Build AI System Builder")).toBeTruthy();
     expect(screen.getByText("等待 Founder 授权")).toBeTruthy();
+  });
+
+  it("builds a system blueprint and hands its execution plan to Founder approval", async () => {
+    createFounderConversation.mockResolvedValue({ id: "conv-builder" });
+    buildSystemBlueprint.mockResolvedValue({
+      system_blueprint: { system_key: "operator_ai", system_name: "Operator AI", purpose: "创建 Operator AI" },
+      generated_capabilities: { capabilities: ["Operations Planning"], agents: ["Operator Lead Agent"], skills: ["Operations Planning Skill"], workflows: ["Approval Workflow"] },
+      agent_architecture: { roles: [{ role: "Operator Lead Agent" }] },
+      task_asset_draft: { title: "Build Operator AI", description: "Approved blueprint build", scope: { target_application: "operator_ai" } },
+      execution_package: { goal: "Build Operator AI", commit_requirement: "Founder approval required before commit" },
+    });
+    createTaskAsset.mockResolvedValue({ id: "task-operator" });
+    createFounderExecution.mockResolvedValue({ id: "execution-operator", status: "draft" });
+    render(<SinoFounderAIApp />);
+    fireEvent.change(screen.getByLabelText("AI System Goal"), { target: { value: "创建 Operator AI" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成 Blueprint" }));
+    expect(await screen.findByText("Operator AI", { selector: ".sino-builder-flow strong" })).toBeTruthy();
+    expect(buildSystemBlueprint).toHaveBeenCalledWith("创建 Operator AI", "conv-builder");
+    expect(createFounderExecution).toHaveBeenCalledWith("task-operator", expect.objectContaining({ goal: "Build Operator AI" }));
+    expect(screen.getByRole("button", { name: "批准执行" }).disabled).toBe(false);
+    expect(screen.getByText("等待 Founder 授权", { selector: ".sino-builder-flow strong" })).toBeTruthy();
   });
 });

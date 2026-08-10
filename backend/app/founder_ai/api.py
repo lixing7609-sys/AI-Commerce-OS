@@ -10,6 +10,7 @@ from app.core.context.service import get_founder_context
 from app.core.conversation.service import get_conversation
 from app.founder_ai.orchestrator import (
     FOUNDER_SYSTEM_KEY,
+    TaskAssetDraft,
     build_execution_package,
     generate_task_asset_draft,
 )
@@ -20,6 +21,7 @@ from app.founder_ai.codex_adapter import SubprocessCodexAdapter
 from app.founder_ai.sino_brain import SinoBrain
 from app.founder_ai.self_management import SinoStateAnalyzer
 from app.founder_ai.autonomous_planning import SinoStrategicAnalyzer
+from app.founder_ai.system_builder import ApplicationRegistry, SinoSystemBuilder
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -107,6 +109,21 @@ class FounderStrategyOut(BaseModel):
     recommended_next_phase: str
 
 
+class SystemBuildIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    system_goal: str = Field(min_length=1, max_length=10000)
+    conversation_id: str | None = None
+
+
+class SystemBuildOut(BaseModel):
+    system_blueprint: dict[str, Any]
+    generated_capabilities: dict[str, Any]
+    agent_architecture: dict[str, Any]
+    task_asset_draft: TaskAssetDraftOut
+    execution_package: ExecutionPackageOut
+
+
 class ExecutionCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -133,6 +150,26 @@ router = APIRouter(prefix="/founder-ai", tags=["Founder AI"])
 brain = SinoBrain()
 state_analyzer = SinoStateAnalyzer()
 strategic_analyzer = SinoStrategicAnalyzer(state_analyzer=state_analyzer)
+application_registry = ApplicationRegistry()
+system_builder = SinoSystemBuilder(registry=application_registry)
+
+
+@router.get("/applications", response_model=list[dict[str, str]])
+def list_founder_application_registry():
+    return [asdict(item) for item in application_registry.list()]
+
+
+@router.post("/system-builder/blueprint", response_model=SystemBuildOut)
+def build_application_system_blueprint(request: SystemBuildIn):
+    if request.conversation_id:
+        conversation = get_conversation(request.conversation_id)
+        if conversation is None or conversation.system_id != FOUNDER_SYSTEM_KEY:
+            raise HTTPException(status_code=404, detail="Founder AI conversation not found")
+    try:
+        plan = system_builder.build(request.system_goal, conversation_id=request.conversation_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return SystemBuildOut(**plan.to_dict())
 
 
 @router.get("/strategy", response_model=FounderStrategyOut)
@@ -207,7 +244,7 @@ def analyze_with_sino_brain(conversation_id: str, request: SinoBrainIn):
 @router.post("/executions", response_model=ExecutionSessionOut)
 def create_founder_execution(request: ExecutionCreateIn):
     package = request.execution_package
-    draft = generate_task_asset_draft(package.goal)
+    draft = TaskAssetDraft(**package.task_asset.model_dump())
     execution_package = build_execution_package(
         draft,
         verification=package.verification,

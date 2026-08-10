@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { analyzeWithSinoBrain, approveFounderExecution, createFounderConversation, createFounderExecution, executeFounderExecution, getFounderBriefing, getFounderStrategy } from "../services/founderAiApi.js";
+import { analyzeWithSinoBrain, approveFounderExecution, buildSystemBlueprint, createFounderConversation, createFounderExecution, executeFounderExecution, getFounderBriefing, getFounderStrategy } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { ArtifactPanel } from "./ArtifactPanel.jsx";
@@ -15,6 +15,7 @@ import { StrategicOverviewCard } from "./StrategicOverviewCard.jsx";
 import { RoadmapPanel } from "./RoadmapPanel.jsx";
 import { CapabilityMapPanel } from "./CapabilityMapPanel.jsx";
 import { NextStrategicActionsPanel } from "./NextStrategicActionsPanel.jsx";
+import { SystemBuilderPanel } from "./SystemBuilderPanel.jsx";
 
 export function ConversationWorkspace() {
   const [conversationId, setConversationId] = useState(null);
@@ -77,6 +78,18 @@ export function ConversationWorkspace() {
     finally { setBusy(false); }
   }
 
+  async function prepareSystem(systemGoal) {
+    const conversation = conversationId ? { id: conversationId } : await createFounderConversation(systemGoal.slice(0, 200));
+    setConversationId(conversation.id);
+    const plan = await buildSystemBlueprint(systemGoal, conversation.id);
+    const draft = plan.task_asset_draft;
+    const taskAsset = await createTaskAsset({ title: draft.title, description: draft.description, scope: draft.scope, conversation_id: conversation.id });
+    const nextExecution = await createFounderExecution(taskAsset.id, plan.execution_package);
+    setExecutionId(nextExecution.id); setApproved(false); setExecution(null);
+    loadBriefing();
+    return plan;
+  }
+
   async function execute() {
     if (!executionId || !approved || busy) return;
     setBusy(true); setError("");
@@ -91,6 +104,7 @@ export function ConversationWorkspace() {
       <header className="sino-hero"><div><span className="sino-kicker">Development Orchestrator</span><h1>把目标变成可控的执行</h1><p>Sino 理解目标、组织上下文、生成任务与执行包。每一步都清晰，每次执行都需要授权。</p></div><span className="sino-online">在线</span></header>
       <section className="sino-briefing-grid" id="briefing"><SinoDailyBriefingCard briefing={briefing} loading={briefingLoading} error={briefingError} /><ProjectStatePanel state={briefing?.project_state} /><RecommendedActionsPanel actions={briefing?.recommendations} /></section>
       <section className="sino-strategy-grid" id="strategy"><StrategicOverviewCard strategy={strategy} /><RoadmapPanel roadmap={strategy?.roadmap} /><CapabilityMapPanel capabilityStatus={strategy?.capability_status} /><NextStrategicActionsPanel actions={strategy?.recommendations} /></section>
+      <SystemBuilderPanel onPrepare={prepareSystem} />
       <form className="sino-composer" onSubmit={analyze}><label htmlFor="sino-goal">告诉 Sino 你想完成什么</label><div><textarea id="sino-goal" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="例如：重构 Founder 应用，并保留现有后端能力…" rows="3" /><button className="sino-button" disabled={busy || !message.trim()}>{busy && !approved ? "分析中…" : "分析目标"}</button></div></form>
       {error && <p className="sino-error" role="alert">{error}</p>}
       <section className="sino-card-grid" id="tasks"><GoalAnalysisCard analysis={result?.goal_analysis} /><TaskDraftCard draft={result?.task_asset_draft} plan={result?.task_plan} /><ExecutionPackageCard executionPackage={result?.execution_package} recommendation={result?.recommended_action} /></section>

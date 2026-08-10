@@ -22,6 +22,14 @@ export function getFounderStrategy() {
   return request("/founder-ai/strategy", undefined, "获取 Sino 战略规划失败");
 }
 
+export function buildSystemBlueprint(systemGoal, conversationId) {
+  return request("/founder-ai/system-builder/blueprint", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system_goal: systemGoal, conversation_id: conversationId }),
+  }, "创建 AI System Blueprint 失败");
+}
+
 export function analyzeFounderConversation(conversationId, message, context) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/analyze`, {
     method: "POST",
