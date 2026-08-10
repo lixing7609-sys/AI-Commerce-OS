@@ -8,7 +8,7 @@ from .codex_adapter import CodexExecutionResult, SubprocessCodexAdapter
 from .orchestrator import ExecutionPackage, MemoryAssetDraft, build_memory_asset_draft
 
 
-EXECUTION_STATES = {"draft", "approved", "executing", "testing", "completed", "failed"}
+EXECUTION_STATES = {"draft", "approved", "queued", "executing", "testing", "completed", "failed"}
 
 
 @dataclass
@@ -23,6 +23,8 @@ class ExecutionSession:
     result: dict[str, Any] | None = None
     commit_hash: str | None = None
     error_message: str | None = None
+    artifact: dict[str, Any] | None = None
+    memory: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -45,8 +47,9 @@ class ExecutionApprovalError(PermissionError):
 
 
 class FounderExecutionLoop:
-    def __init__(self, adapter: CodexAdapter):
+    def __init__(self, adapter: CodexAdapter, on_status=None):
         self.adapter = adapter
+        self.on_status = on_status or (lambda _status: None)
 
     def approve(self, session: ExecutionSession) -> ExecutionSession:
         if session.status != "draft":
@@ -61,22 +64,26 @@ class FounderExecutionLoop:
         *,
         cwd: Path,
     ) -> tuple[ExecutionSession, ArtifactAssetDraft, MemoryAssetDraft]:
-        if session.status != "approved" or not package.execution_allowed:
+        if session.status not in {"approved", "queued"} or not package.execution_allowed:
             raise ExecutionApprovalError("Founder approval is required before Codex execution")
         session.status = "executing"
+        self.on_status("executing")
         try:
             result = self.adapter.execute(package, cwd=cwd)
             if result.exit_code != 0:
                 raise RuntimeError(result.stderr or "Codex execution failed")
             session.status = "testing"
+            self.on_status("testing")
             session.result = {
                 "stdout": result.stdout,
                 "stderr": result.stderr,
+                "exit_code": result.exit_code,
                 "changed_files": result.changed_files,
                 "tests": result.tests,
             }
             session.commit_hash = result.commit_hash
             session.status = "completed"
+            self.on_status("completed")
             artifact = ArtifactAssetDraft(
                 execution_id=session.id,
                 commit_hash=result.commit_hash,

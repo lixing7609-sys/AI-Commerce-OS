@@ -37,6 +37,7 @@ htmlcov/
 
 # Developer Bootstrap runtime state (PID files, session metadata, logs)
 .runtime/
+backend/.founder-execution/
 
 # Playwright output (reports, screenshots, traces from `npm run test:e2e`)
 frontend/e2e-report/

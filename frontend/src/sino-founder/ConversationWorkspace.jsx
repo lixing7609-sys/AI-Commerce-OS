@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { analyzeWithSinoBrain, approveFounderExecution, buildSystemBlueprint, createFounderConversation, createFounderExecution, executeFounderExecution, getFounderBriefing, getFounderStrategy } from "../services/founderAiApi.js";
+import { analyzeWithSinoBrain, approveFounderExecution, buildSystemBlueprint, createFounderConversation, createFounderExecution, getFounderBriefing, getFounderExecution, getFounderStrategy } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { ArtifactPanel } from "./ArtifactPanel.jsx";
@@ -49,6 +49,18 @@ export function ConversationWorkspace() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (!executionId || !["queued", "executing", "testing"].includes(execution?.status)) return undefined;
+    const timer = window.setInterval(async () => {
+      try {
+        const nextExecution = await getFounderExecution(executionId);
+        setExecution(nextExecution);
+        if (["completed", "failed"].includes(nextExecution.status)) loadBriefing();
+      } catch (requestError) { setError(requestError.message || "执行状态更新失败"); }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [executionId, execution?.status, loadBriefing]);
+
   async function analyze(event) {
     event.preventDefault();
     const goal = message.trim();
@@ -75,7 +87,7 @@ export function ConversationWorkspace() {
   async function approve() {
     if (!executionId || busy) return;
     setBusy(true); setError("");
-    try { const response = await approveFounderExecution(executionId); setApproved(Boolean(response.execution_allowed)); }
+    try { const response = await approveFounderExecution(executionId); setApproved(Boolean(response.execution_allowed)); setExecution(response); }
     catch (requestError) { setError(requestError.message || "授权失败"); }
     finally { setBusy(false); }
   }
@@ -92,15 +104,6 @@ export function ConversationWorkspace() {
     return plan;
   }
 
-  async function execute() {
-    if (!executionId || !approved || busy) return;
-    setBusy(true); setError("");
-    try { setExecution(await executeFounderExecution(executionId)); loadBriefing(); }
-    catch (requestError) { setError(requestError.message || "执行失败"); }
-    finally { setBusy(false); }
-  }
-
-  const stage = execution ? 5 : busy && approved ? 4 : approved ? 3 : result ? 2 : message ? 0 : 0;
   return (
     <main className="sino-workspace" id="conversation">
       <header className="sino-hero"><div><span className="sino-kicker">Development Orchestrator</span><h1>把目标变成可控的执行</h1><p>Sino 理解目标、组织上下文、生成任务与执行包。每一步都清晰，每次执行都需要授权。</p></div><span className="sino-online">在线</span></header>
@@ -110,8 +113,8 @@ export function ConversationWorkspace() {
       <form className="sino-composer" onSubmit={analyze}><label htmlFor="sino-goal">告诉 Sino 你想完成什么</label><div><textarea id="sino-goal" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="例如：重构 Founder 应用，并保留现有后端能力…" rows="3" /><button className="sino-button" disabled={busy || !message.trim()}>{busy && !approved ? "分析中…" : "分析目标"}</button></div></form>
       {error && <p className="sino-error" role="alert">{error}</p>}
       <section className="sino-reasoning-grid" id="tasks"><AnalysisCard analysis={result?.analysis} /><EvidenceCard evidence={result?.evidence} /><SolutionCard solution={result?.solution} /><TaskPlanCard draft={result?.task_asset_draft} plan={result?.task_plan} /><ExecutionCard requirement={result?.execution_requirement} executionPackage={result?.execution_package} risk={result?.risk} /></section>
-      <ExecutionTimeline stage={stage} />
-      <section className="sino-detail-grid"><ApprovalPanel ready={Boolean(executionId)} approved={approved} busy={busy} onApprove={approve} onExecute={execute} /><ArtifactPanel execution={execution} /><MemoryPanel result={result} /></section>
+      <ExecutionTimeline status={execution?.status} />
+      <section className="sino-detail-grid"><ApprovalPanel ready={Boolean(executionId)} approved={approved} busy={busy} status={execution?.status} onApprove={approve} /><ArtifactPanel execution={execution} /><MemoryPanel result={execution || result} /></section>
     </main>
   );
 }

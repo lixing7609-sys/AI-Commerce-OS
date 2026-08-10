@@ -1,6 +1,4 @@
 from dataclasses import asdict
-from pathlib import Path
-import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -16,8 +14,7 @@ from app.founder_ai.orchestrator import (
 )
 from app.founder_ai.execution_registry import approve_execution_session, create_execution_session
 from app.founder_ai.execution_registry import get_execution_session
-from app.founder_ai.execution_loop import FounderExecutionLoop
-from app.founder_ai.codex_adapter import SubprocessCodexAdapter
+from app.founder_ai.execution_worker import enqueue_execution, execution_queue
 from app.founder_ai.sino_brain import SinoBrain
 from app.founder_ai.self_management import SinoStateAnalyzer
 from app.founder_ai.autonomous_planning import SinoStrategicAnalyzer
@@ -143,6 +140,7 @@ class ExecutionSessionOut(BaseModel):
     executor: str
     status: str
     execution_allowed: bool
+    queue: dict[str, Any] | None = None
 
 
 class ExecutionResultOut(ExecutionSessionOut):
@@ -297,35 +295,34 @@ def approve_founder_execution(execution_id: str):
     if approved is None:
         raise HTTPException(status_code=404, detail="Execution session not found")
     session, package = approved
+    queue_item = enqueue_execution(execution_id)
     return ExecutionSessionOut(
         id=session.id,
         task_asset_id=session.task_asset_id,
         execution_package_id=session.execution_package_id,
         executor=session.executor,
-        status=session.status,
+        status=queue_item.status,
         execution_allowed=package.execution_allowed,
+        queue=queue_item.to_dict(),
     )
 
 
 @router.post("/executions/{execution_id}/execute", response_model=ExecutionResultOut)
 def execute_founder_execution(execution_id: str):
+    """Compatibility endpoint: enqueue approved work and return observable state."""
     record = get_execution_session(execution_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Execution session not found")
     session, package = record
-    if session.status != "approved" or not package.execution_allowed:
+    if session.status in {"approved", "queued"} and package.execution_allowed:
+        enqueue_execution(execution_id)
+    elif session.status not in {"executing", "testing", "completed", "failed"}:
         raise HTTPException(status_code=403, detail="Founder approval is required before execution")
+    return _execution_result(session, package)
 
-    root = Path(os.environ.get("FOUNDER_EXECUTION_ROOT", Path.cwd())).resolve()
-    workspace = root / ".founder-execution" / execution_id
-    try:
-        session, artifact, memory = FounderExecutionLoop(SubprocessCodexAdapter()).run(
-            session,
-            package,
-            cwd=workspace,
-        )
-    except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
+
+def _execution_result(session, package) -> ExecutionResultOut:
+    queue_item = execution_queue.get(session.id)
     return ExecutionResultOut(
         id=session.id,
         task_asset_id=session.task_asset_id,
@@ -333,10 +330,19 @@ def execute_founder_execution(execution_id: str):
         executor=session.executor,
         status=session.status,
         execution_allowed=package.execution_allowed,
+        queue=queue_item.to_dict() if queue_item else None,
         result=session.result,
-        artifact=asdict(artifact),
-        memory=asdict(memory),
+        artifact=session.artifact,
+        memory=session.memory,
     )
+
+
+@router.get("/executions/{execution_id}", response_model=ExecutionResultOut)
+def get_founder_execution(execution_id: str):
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Execution session not found")
+    return _execution_result(*record)
 
 
 @router.post("/conversations/{conversation_id}/analyze", response_model=FounderAnalyzeOut)

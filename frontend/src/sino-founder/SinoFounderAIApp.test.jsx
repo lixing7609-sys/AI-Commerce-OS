@@ -7,7 +7,7 @@ import { createTaskAsset } from "../services/taskAssetApi.js";
 
 vi.mock("../services/founderAiApi.js", () => ({
   createFounderConversation: vi.fn(), analyzeWithSinoBrain: vi.fn(),
-  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(), getFounderBriefing: vi.fn(), getFounderStrategy: vi.fn(), buildSystemBlueprint: vi.fn(),
+  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(), getFounderExecution: vi.fn(), getFounderBriefing: vi.fn(), getFounderStrategy: vi.fn(), buildSystemBlueprint: vi.fn(),
 }));
 vi.mock("../services/taskAssetApi.js", () => ({ createTaskAsset: vi.fn() }));
 
@@ -28,6 +28,10 @@ describe("SinoFounderAIApp", () => {
     expect(screen.getByTestId("solution-card")).toBeTruthy();
     expect(screen.getByTestId("task-plan-card")).toBeTruthy();
     expect(screen.getByTestId("execution-card")).toBeTruthy();
+    expect(screen.getByText("Approved")).toBeTruthy();
+    expect(screen.getByText("Queued")).toBeTruthy();
+    expect(screen.getByText("Testing")).toBeTruthy();
+    expect(screen.getByText("Completed")).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "Sino Founder AI" })).toBeTruthy();
   });
 

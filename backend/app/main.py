@@ -31,6 +31,7 @@ from app.core.task_asset.api import router as task_asset_router
 from app.core.artifact.api import router as artifact_router
 from app.core.memory.api import router as memory_router
 from app.founder_ai.api import router as founder_ai_router
+from app.founder_ai.execution_worker import execution_worker
 from app.services.database_readiness_service import (
     DatabaseReadinessError,
     DatabaseReadinessService,
@@ -121,6 +122,11 @@ async def lifespan(app: FastAPI):
             "task consumer startup failed: %s", type(error).__name__
         )
 
+    try:
+        execution_worker.start()
+    except Exception as error:
+        logger.error("Founder execution worker startup failed: %s", type(error).__name__)
+
     heartbeat_task = asyncio.create_task(
         _heartbeat_loop(HEARTBEAT_INTERVAL_SECONDS)
     )
@@ -129,6 +135,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        try:
+            execution_worker.stop()
+        except Exception as error:
+            logger.error("Founder execution worker stop failed: %s", type(error).__name__)
+
         try:
             await task_consumer_service.stop()
         except Exception as error:

@@ -61,3 +61,7 @@ export function approveFounderExecution(executionId) {
 export function executeFounderExecution(executionId) {
   return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/execute`, { method: "POST" }, "执行 Founder 任务失败");
 }
+
+export function getFounderExecution(executionId) {
+  return request(`/founder-ai/executions/${encodeURIComponent(executionId)}`, undefined, "获取执行状态失败");
+}
