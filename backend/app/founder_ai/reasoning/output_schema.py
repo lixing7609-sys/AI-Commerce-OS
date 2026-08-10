@@ -15,6 +15,7 @@ class Evidence:
     source: str
     fact: str
     relevance: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

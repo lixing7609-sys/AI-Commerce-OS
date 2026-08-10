@@ -39,7 +39,7 @@ describe("SinoFounderAIApp", () => {
     createFounderConversation.mockResolvedValue({ id: "conv-1" });
     analyzeWithSinoBrain.mockResolvedValue({
       analysis: { interpretation: "当前目标需要补齐推理能力缺口", current_state: "Founder Intelligence active", desired_outcome: "Evidence-led reasoning", gap: "Reasoning Engine 未验证" },
-      evidence: [{ source: "Project State", fact: "当前处于 execution", relevance: "确定交付边界" }],
+      evidence: [{ source: "Project State", fact: "当前处于 execution", relevance: "确定交付边界" }, { source: "Code Evidence", fact: "定位到 EvidenceCard", relevance: "确定具体修改位置", metadata: { relevant_files: [{ path: "frontend/src/sino-founder/EvidenceCard.jsx", reason: "Matches Evidence Card" }], impact: ["frontend/src/sino-founder/ConversationWorkspace.jsx"], risk: "medium" } }],
       solution: { summary: "建立结构化 Reasoning Engine", approach: ["收集上下文", "生成证据", "准备执行"], architecture_impact: "保留 TaskAsset 与 Execution Loop" },
       risk: { level: "medium", items: ["范围扩张"], mitigation: ["Founder 审批"] },
       execution_requirement: { executor: "codex", approval_required: true, recommendation: "审阅证据后准备执行" },
@@ -66,6 +66,9 @@ describe("SinoFounderAIApp", () => {
     expect(screen.getAllByText("继续推进 AI Commerce OS").length).toBeGreaterThan(0);
     expect(screen.getByText("完成 Intelligence Core")).toBeTruthy();
     expect(screen.getByText("当前处于 execution")).toBeTruthy();
+    expect(screen.getByText("Code Evidence")).toBeTruthy();
+    expect(screen.getByText("frontend/src/sino-founder/EvidenceCard.jsx")).toBeTruthy();
+    expect(screen.getByText("medium")).toBeTruthy();
     expect(screen.getByText("建立结构化 Reasoning Engine")).toBeTruthy();
     expect(screen.getByText("审阅证据后准备执行")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
