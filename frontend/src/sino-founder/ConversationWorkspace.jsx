@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { analyzeWithSinoBrain, approveFounderExecution, createFounderConversation, createFounderExecution, executeFounderExecution } from "../services/founderAiApi.js";
+import { useCallback, useEffect, useState } from "react";
+import { analyzeWithSinoBrain, approveFounderExecution, createFounderConversation, createFounderExecution, executeFounderExecution, getFounderBriefing } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { ArtifactPanel } from "./ArtifactPanel.jsx";
@@ -8,6 +8,9 @@ import { ExecutionTimeline } from "./ExecutionTimeline.jsx";
 import { GoalAnalysisCard } from "./GoalAnalysisCard.jsx";
 import { MemoryPanel } from "./MemoryPanel.jsx";
 import { TaskDraftCard } from "./TaskDraftCard.jsx";
+import { SinoDailyBriefingCard } from "./SinoDailyBriefingCard.jsx";
+import { ProjectStatePanel } from "./ProjectStatePanel.jsx";
+import { RecommendedActionsPanel } from "./RecommendedActionsPanel.jsx";
 
 export function ConversationWorkspace() {
   const [conversationId, setConversationId] = useState(null);
@@ -18,6 +21,25 @@ export function ConversationWorkspace() {
   const [execution, setExecution] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [briefing, setBriefing] = useState(null);
+  const [briefingLoading, setBriefingLoading] = useState(true);
+  const [briefingError, setBriefingError] = useState("");
+
+  const loadBriefing = useCallback(async () => {
+    setBriefingLoading(true); setBriefingError("");
+    try { setBriefing(await getFounderBriefing()); }
+    catch (requestError) { setBriefingError(requestError.message || "项目简报加载失败"); }
+    finally { setBriefingLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getFounderBriefing()
+      .then((nextBriefing) => { if (active) setBriefing(nextBriefing); })
+      .catch((requestError) => { if (active) setBriefingError(requestError.message || "项目简报加载失败"); })
+      .finally(() => { if (active) setBriefingLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   async function analyze(event) {
     event.preventDefault();
@@ -37,6 +59,7 @@ export function ConversationWorkspace() {
       });
       const nextExecution = await createFounderExecution(taskAsset.id, nextResult.execution_package);
       setResult(nextResult); setExecutionId(nextExecution.id); setApproved(false); setExecution(null); setMessage("");
+      loadBriefing();
     } catch (requestError) { setError(requestError.message || "Sino 分析失败"); }
     finally { setBusy(false); }
   }
@@ -52,7 +75,7 @@ export function ConversationWorkspace() {
   async function execute() {
     if (!executionId || !approved || busy) return;
     setBusy(true); setError("");
-    try { setExecution(await executeFounderExecution(executionId)); }
+    try { setExecution(await executeFounderExecution(executionId)); loadBriefing(); }
     catch (requestError) { setError(requestError.message || "执行失败"); }
     finally { setBusy(false); }
   }
@@ -61,6 +84,7 @@ export function ConversationWorkspace() {
   return (
     <main className="sino-workspace" id="conversation">
       <header className="sino-hero"><div><span className="sino-kicker">Development Orchestrator</span><h1>把目标变成可控的执行</h1><p>Sino 理解目标、组织上下文、生成任务与执行包。每一步都清晰，每次执行都需要授权。</p></div><span className="sino-online">在线</span></header>
+      <section className="sino-briefing-grid" id="briefing"><SinoDailyBriefingCard briefing={briefing} loading={briefingLoading} error={briefingError} /><ProjectStatePanel state={briefing?.project_state} /><RecommendedActionsPanel actions={briefing?.recommendations} /></section>
       <form className="sino-composer" onSubmit={analyze}><label htmlFor="sino-goal">告诉 Sino 你想完成什么</label><div><textarea id="sino-goal" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="例如：重构 Founder 应用，并保留现有后端能力…" rows="3" /><button className="sino-button" disabled={busy || !message.trim()}>{busy && !approved ? "分析中…" : "分析目标"}</button></div></form>
       {error && <p className="sino-error" role="alert">{error}</p>}
       <section className="sino-card-grid" id="tasks"><GoalAnalysisCard analysis={result?.goal_analysis} /><TaskDraftCard draft={result?.task_asset_draft} plan={result?.task_plan} /><ExecutionPackageCard executionPackage={result?.execution_package} recommendation={result?.recommended_action} /></section>

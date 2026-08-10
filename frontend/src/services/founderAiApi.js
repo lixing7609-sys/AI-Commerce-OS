@@ -14,6 +14,10 @@ export function createFounderConversation(title) {
   }, "创建 Founder Conversation 失败");
 }
 
+export function getFounderBriefing() {
+  return request("/founder-ai/briefing", undefined, "获取 Sino 项目简报失败");
+}
+
 export function analyzeFounderConversation(conversationId, message, context) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/analyze`, {
     method: "POST",

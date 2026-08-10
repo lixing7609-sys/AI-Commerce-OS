@@ -2,16 +2,19 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SinoFounderAIApp from "./SinoFounderAIApp.jsx";
-import { analyzeWithSinoBrain, createFounderConversation, createFounderExecution } from "../services/founderAiApi.js";
+import { analyzeWithSinoBrain, createFounderConversation, createFounderExecution, getFounderBriefing } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 
 vi.mock("../services/founderAiApi.js", () => ({
   createFounderConversation: vi.fn(), analyzeWithSinoBrain: vi.fn(),
-  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(),
+  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(), getFounderBriefing: vi.fn(),
 }));
 vi.mock("../services/taskAssetApi.js", () => ({ createTaskAsset: vi.fn() }));
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  getFounderBriefing.mockResolvedValue({ status: "ready", progress: { completed: 0, total: 0, percent: 0 }, risks: [], recommendations: [], project_state: { current_phase: "planning", completed_capabilities: [], active_tasks: [], blocked_items: [] } });
+});
 afterEach(() => cleanup());
 
 describe("SinoFounderAIApp", () => {
@@ -50,5 +53,21 @@ describe("SinoFounderAIApp", () => {
     expect(screen.getByText("完成 Intelligence Core")).toBeTruthy();
     expect(screen.getByText("下一步 · 执行下一项任务")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("renders briefing, project state, and approval-gated recommended actions", async () => {
+    getFounderBriefing.mockResolvedValue({
+      status: "active",
+      progress: { completed: 4, total: 5, percent: 80 },
+      risks: ["阻塞：Provider setup"],
+      recommendations: [{ title: "继续任务：Runtime", reason: "TaskAsset 正在推进", priority: "high", requires_approval: true }],
+      project_state: { current_phase: "execution", completed_capabilities: ["Sino Brain"], active_tasks: [{ title: "Runtime" }], blocked_items: [{ title: "Provider setup" }] },
+    });
+    render(<SinoFounderAIApp />);
+    expect(await screen.findByText("已完成 4 / 5 项 · 进度 80%")).toBeTruthy();
+    expect(screen.getByText("execution")).toBeTruthy();
+    expect(screen.getByText("继续任务：Runtime")).toBeTruthy();
+    expect(screen.getByText("high · 需授权")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "批准执行" }).disabled).toBe(true);
   });
 });

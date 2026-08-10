@@ -18,6 +18,7 @@ from app.founder_ai.execution_registry import get_execution_session
 from app.founder_ai.execution_loop import FounderExecutionLoop
 from app.founder_ai.codex_adapter import SubprocessCodexAdapter
 from app.founder_ai.sino_brain import SinoBrain
+from app.founder_ai.self_management import SinoStateAnalyzer
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -80,6 +81,17 @@ class SinoBrainOut(BaseModel):
     execution_package: ExecutionPackageOut
 
 
+class FounderBriefingOut(BaseModel):
+    status: str
+    completed: list[str]
+    active: list[dict[str, Any]]
+    blocked: list[dict[str, Any]]
+    recommendations: list[dict[str, Any]]
+    progress: dict[str, Any]
+    risks: list[str]
+    project_state: dict[str, Any]
+
+
 class ExecutionCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -104,6 +116,24 @@ class ExecutionResultOut(ExecutionSessionOut):
 
 router = APIRouter(prefix="/founder-ai", tags=["Founder AI"])
 brain = SinoBrain()
+state_analyzer = SinoStateAnalyzer()
+
+
+@router.get("/briefing", response_model=FounderBriefingOut)
+def get_founder_briefing():
+    analysis = state_analyzer.analyze()
+    data = analysis.to_dict()
+    state = data["project_state"]
+    return FounderBriefingOut(
+        status=analysis.status,
+        completed=state["completed_capabilities"],
+        active=state["active_tasks"],
+        blocked=state["blocked_items"],
+        recommendations=data["recommendations"],
+        progress=data["progress"],
+        risks=data["risks"],
+        project_state=state,
+    )
 
 
 @router.post("/brain/conversations/{conversation_id}/analyze", response_model=SinoBrainOut)

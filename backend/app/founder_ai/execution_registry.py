@@ -36,3 +36,8 @@ def get_execution_session(execution_id: str) -> tuple[ExecutionSession, Executio
     session = _sessions.get(execution_id)
     package = _packages.get(execution_id)
     return (session, package) if session is not None and package is not None else None
+
+
+def list_execution_sessions() -> list[ExecutionSession]:
+    """Return a read-only snapshot for Founder state analysis."""
+    return list(_sessions.values())
