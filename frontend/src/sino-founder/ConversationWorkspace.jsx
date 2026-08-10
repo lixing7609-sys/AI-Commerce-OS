@@ -3,11 +3,13 @@ import { analyzeWithSinoBrain, approveFounderExecution, buildSystemBlueprint, cr
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { ArtifactPanel } from "./ArtifactPanel.jsx";
-import { ExecutionPackageCard } from "./ExecutionPackageCard.jsx";
+import { AnalysisCard } from "./AnalysisCard.jsx";
+import { EvidenceCard } from "./EvidenceCard.jsx";
+import { ExecutionCard } from "./ExecutionCard.jsx";
 import { ExecutionTimeline } from "./ExecutionTimeline.jsx";
-import { GoalAnalysisCard } from "./GoalAnalysisCard.jsx";
 import { MemoryPanel } from "./MemoryPanel.jsx";
-import { TaskDraftCard } from "./TaskDraftCard.jsx";
+import { SolutionCard } from "./SolutionCard.jsx";
+import { TaskPlanCard } from "./TaskPlanCard.jsx";
 import { SinoDailyBriefingCard } from "./SinoDailyBriefingCard.jsx";
 import { ProjectStatePanel } from "./ProjectStatePanel.jsx";
 import { RecommendedActionsPanel } from "./RecommendedActionsPanel.jsx";
@@ -107,7 +109,7 @@ export function ConversationWorkspace() {
       <SystemBuilderPanel onPrepare={prepareSystem} />
       <form className="sino-composer" onSubmit={analyze}><label htmlFor="sino-goal">告诉 Sino 你想完成什么</label><div><textarea id="sino-goal" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="例如：重构 Founder 应用，并保留现有后端能力…" rows="3" /><button className="sino-button" disabled={busy || !message.trim()}>{busy && !approved ? "分析中…" : "分析目标"}</button></div></form>
       {error && <p className="sino-error" role="alert">{error}</p>}
-      <section className="sino-card-grid" id="tasks"><GoalAnalysisCard analysis={result?.goal_analysis} /><TaskDraftCard draft={result?.task_asset_draft} plan={result?.task_plan} /><ExecutionPackageCard executionPackage={result?.execution_package} recommendation={result?.recommended_action} /></section>
+      <section className="sino-reasoning-grid" id="tasks"><AnalysisCard analysis={result?.analysis} /><EvidenceCard evidence={result?.evidence} /><SolutionCard solution={result?.solution} /><TaskPlanCard draft={result?.task_asset_draft} plan={result?.task_plan} /><ExecutionCard requirement={result?.execution_requirement} executionPackage={result?.execution_package} risk={result?.risk} /></section>
       <ExecutionTimeline stage={stage} />
       <section className="sino-detail-grid"><ApprovalPanel ready={Boolean(executionId)} approved={approved} busy={busy} onApprove={approve} onExecute={execute} /><ArtifactPanel execution={execution} /><MemoryPanel result={result} /></section>
     </main>

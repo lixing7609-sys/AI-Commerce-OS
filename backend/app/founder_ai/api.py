@@ -75,6 +75,11 @@ class SinoBrainIn(BaseModel):
 
 
 class SinoBrainOut(BaseModel):
+    analysis: dict[str, Any]
+    evidence: list[dict[str, Any]]
+    solution: dict[str, Any]
+    risk: dict[str, Any]
+    execution_requirement: dict[str, Any]
     goal_analysis: dict[str, Any]
     decision: dict[str, Any]
     task_plan: list[dict[str, Any]]
@@ -222,18 +227,40 @@ def analyze_with_sino_brain(conversation_id: str, request: SinoBrainIn):
         project_context=request.project_context,
     )
     brain_data = result.to_dict()
+    reasoning = brain_data.get("reasoning")
+    if reasoning is None:
+        reasoning = {
+            "analysis": {"interpretation": brain_data["goal_analysis"]["objective"], "current_state": brain_data["goal_analysis"]["current_phase"], "desired_outcome": brain_data["decision"]["summary"], "gap": "Reasoning details unavailable"},
+            "evidence": [],
+            "solution": {"summary": brain_data["decision"]["summary"], "approach": [item["title"] for item in brain_data["task_plan"]], "architecture_impact": "Preserve existing Founder AI boundaries"},
+            "risk": {"level": "medium", "items": [], "mitigation": []},
+            "task_plan": brain_data["task_plan"],
+            "execution_requirement": {"executor": "codex", "approval_required": True, "constraints": ["Founder approval is required before execution"], "verification": ["Run required tests"], "recommendation": result.recommended_action},
+        }
     context = {
         "system_id": FOUNDER_SYSTEM_KEY,
         "founder_context": brain_data["founder_context"],
         "decision": brain_data["decision"],
         "recommended_action": result.recommended_action,
+        "reasoning": reasoning,
     }
-    draft = generate_task_asset_draft(request.user_goal, conversation_id=conversation_id, context=context)
-    package = build_execution_package(draft)
+    draft = generate_task_asset_draft(
+        request.user_goal,
+        conversation_id=conversation_id,
+        context=context,
+        constraints=reasoning["execution_requirement"]["constraints"],
+        risk=reasoning["risk"]["level"],
+    )
+    package = build_execution_package(draft, verification=reasoning["execution_requirement"]["verification"])
     return SinoBrainOut(
+        analysis=reasoning["analysis"],
+        evidence=reasoning["evidence"],
+        solution=reasoning["solution"],
+        risk=reasoning["risk"],
+        execution_requirement=reasoning["execution_requirement"],
         goal_analysis=brain_data["goal_analysis"],
         decision=brain_data["decision"],
-        task_plan=brain_data["task_plan"],
+        task_plan=reasoning["task_plan"],
         recommended_action=result.recommended_action,
         project_state=brain_data["founder_context"]["project_state"],
         task_asset_draft=asdict(draft),

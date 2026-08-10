@@ -23,13 +23,22 @@ describe("SinoFounderAIApp", () => {
     render(<SinoFounderAIApp />);
     expect(screen.getByText("Sino", { selector: ".sino-brand div" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "把目标变成可控的执行" })).toBeTruthy();
-    expect(screen.getByTestId("goal-analysis-card")).toBeTruthy();
+    expect(screen.getByTestId("analysis-card")).toBeTruthy();
+    expect(screen.getByTestId("evidence-card")).toBeTruthy();
+    expect(screen.getByTestId("solution-card")).toBeTruthy();
+    expect(screen.getByTestId("task-plan-card")).toBeTruthy();
+    expect(screen.getByTestId("execution-card")).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "Sino Founder AI" })).toBeTruthy();
   });
 
   it("turns a Founder goal into Brain cards and a canonical execution session", async () => {
     createFounderConversation.mockResolvedValue({ id: "conv-1" });
     analyzeWithSinoBrain.mockResolvedValue({
+      analysis: { interpretation: "当前目标需要补齐推理能力缺口", current_state: "Founder Intelligence active", desired_outcome: "Evidence-led reasoning", gap: "Reasoning Engine 未验证" },
+      evidence: [{ source: "Project State", fact: "当前处于 execution", relevance: "确定交付边界" }],
+      solution: { summary: "建立结构化 Reasoning Engine", approach: ["收集上下文", "生成证据", "准备执行"], architecture_impact: "保留 TaskAsset 与 Execution Loop" },
+      risk: { level: "medium", items: ["范围扩张"], mitigation: ["Founder 审批"] },
+      execution_requirement: { executor: "codex", approval_required: true, recommendation: "审阅证据后准备执行" },
       goal_analysis: { goal_type: "development", objective: "继续推进 AI Commerce OS", current_phase: "execution" },
       task_plan: [{ title: "完成 Intelligence Core" }],
       recommended_action: "执行下一项任务",
@@ -52,7 +61,9 @@ describe("SinoFounderAIApp", () => {
     });
     expect(screen.getAllByText("继续推进 AI Commerce OS").length).toBeGreaterThan(0);
     expect(screen.getByText("完成 Intelligence Core")).toBeTruthy();
-    expect(screen.getByText("下一步 · 执行下一项任务")).toBeTruthy();
+    expect(screen.getByText("当前处于 execution")).toBeTruthy();
+    expect(screen.getByText("建立结构化 Reasoning Engine")).toBeTruthy();
+    expect(screen.getByText("审阅证据后准备执行")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
