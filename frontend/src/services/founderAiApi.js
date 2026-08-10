@@ -18,6 +18,10 @@ export function getFounderBriefing() {
   return request("/founder-ai/briefing", undefined, "获取 Sino 项目简报失败");
 }
 
+export function getFounderStrategy() {
+  return request("/founder-ai/strategy", undefined, "获取 Sino 战略规划失败");
+}
+
 export function analyzeFounderConversation(conversationId, message, context) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/analyze`, {
     method: "POST",

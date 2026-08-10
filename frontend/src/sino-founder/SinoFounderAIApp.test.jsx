@@ -2,18 +2,19 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SinoFounderAIApp from "./SinoFounderAIApp.jsx";
-import { analyzeWithSinoBrain, createFounderConversation, createFounderExecution, getFounderBriefing } from "../services/founderAiApi.js";
+import { analyzeWithSinoBrain, createFounderConversation, createFounderExecution, getFounderBriefing, getFounderStrategy } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 
 vi.mock("../services/founderAiApi.js", () => ({
   createFounderConversation: vi.fn(), analyzeWithSinoBrain: vi.fn(),
-  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(), getFounderBriefing: vi.fn(),
+  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(), getFounderBriefing: vi.fn(), getFounderStrategy: vi.fn(),
 }));
 vi.mock("../services/taskAssetApi.js", () => ({ createTaskAsset: vi.fn() }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   getFounderBriefing.mockResolvedValue({ status: "ready", progress: { completed: 0, total: 0, percent: 0 }, risks: [], recommendations: [], project_state: { current_phase: "planning", completed_capabilities: [], active_tasks: [], blocked_items: [] } });
+  getFounderStrategy.mockResolvedValue({ current_phase: "Founder Intelligence Foundation", roadmap: { milestones: [] }, capability_status: { applications: [] }, recommendations: [] });
 });
 afterEach(() => cleanup());
 
@@ -69,5 +70,22 @@ describe("SinoFounderAIApp", () => {
     expect(screen.getByText("继续任务：Runtime")).toBeTruthy();
     expect(screen.getByText("high · 需授权")).toBeTruthy();
     expect(screen.getByRole("button", { name: "批准执行" }).disabled).toBe(true);
+  });
+
+  it("renders roadmap, capability blueprints, and strategic actions", async () => {
+    getFounderStrategy.mockResolvedValue({
+      current_phase: "AI System Builder",
+      current_strategic_position: "Founder intelligence is active",
+      recommended_next_phase: "AI System Builder",
+      roadmap: { milestones: [{ phase: "Founder Intelligence Foundation", status: "completed" }, { phase: "AI System Builder", status: "current" }] },
+      capability_status: { applications: [{ key: "founder_ai", name: "Sino Founder AI", status: "active", role: "Strategic intelligence" }, { key: "operator_ai", name: "Operator AI", status: "blueprint", role: "Commerce operations" }] },
+      recommendations: [{ title: "Build AI System Builder", reason: "具备系统创建基础", priority: 1, requires_approval: true }],
+    });
+    render(<SinoFounderAIApp />);
+    expect(await screen.findByText("AI System Builder", { selector: ".sino-strategy-card--overview > strong" })).toBeTruthy();
+    expect(screen.getByText("Operator AI")).toBeTruthy();
+    expect(screen.getByText("blueprint")).toBeTruthy();
+    expect(screen.getByText("Build AI System Builder")).toBeTruthy();
+    expect(screen.getByText("等待 Founder 授权")).toBeTruthy();
   });
 });

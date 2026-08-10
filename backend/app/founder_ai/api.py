@@ -19,6 +19,7 @@ from app.founder_ai.execution_loop import FounderExecutionLoop
 from app.founder_ai.codex_adapter import SubprocessCodexAdapter
 from app.founder_ai.sino_brain import SinoBrain
 from app.founder_ai.self_management import SinoStateAnalyzer
+from app.founder_ai.autonomous_planning import SinoStrategicAnalyzer
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -90,6 +91,20 @@ class FounderBriefingOut(BaseModel):
     progress: dict[str, Any]
     risks: list[str]
     project_state: dict[str, Any]
+    current_strategic_phase: str
+    major_achievement: str
+    strategic_risk: str
+    recommended_decision: str
+
+
+class FounderStrategyOut(BaseModel):
+    current_phase: str
+    roadmap: dict[str, Any]
+    capability_status: dict[str, Any]
+    recommendations: list[dict[str, Any]]
+    current_strategic_position: str
+    missing_capabilities: list[str]
+    recommended_next_phase: str
 
 
 class ExecutionCreateIn(BaseModel):
@@ -117,11 +132,28 @@ class ExecutionResultOut(ExecutionSessionOut):
 router = APIRouter(prefix="/founder-ai", tags=["Founder AI"])
 brain = SinoBrain()
 state_analyzer = SinoStateAnalyzer()
+strategic_analyzer = SinoStrategicAnalyzer(state_analyzer=state_analyzer)
+
+
+@router.get("/strategy", response_model=FounderStrategyOut)
+def get_founder_strategy():
+    analysis = strategic_analyzer.analyze()
+    data = analysis.to_dict()
+    return FounderStrategyOut(
+        current_phase=analysis.roadmap.current_phase,
+        roadmap=data["roadmap"],
+        capability_status=data["capability_map"],
+        recommendations=data["recommendations"],
+        current_strategic_position=analysis.current_strategic_position,
+        missing_capabilities=analysis.missing_capabilities,
+        recommended_next_phase=analysis.recommended_next_phase,
+    )
 
 
 @router.get("/briefing", response_model=FounderBriefingOut)
 def get_founder_briefing():
     analysis = state_analyzer.analyze()
+    strategy = strategic_analyzer.analyze(state_analysis=analysis)
     data = analysis.to_dict()
     state = data["project_state"]
     return FounderBriefingOut(
@@ -129,10 +161,14 @@ def get_founder_briefing():
         completed=state["completed_capabilities"],
         active=state["active_tasks"],
         blocked=state["blocked_items"],
-        recommendations=data["recommendations"],
+        recommendations=strategy.to_dict()["recommendations"],
         progress=data["progress"],
         risks=data["risks"],
         project_state=state,
+        current_strategic_phase=strategy.roadmap.current_phase,
+        major_achievement=strategy.major_achievement,
+        strategic_risk=strategy.strategic_risk,
+        recommended_decision=strategy.recommended_decision,
     )
 
 

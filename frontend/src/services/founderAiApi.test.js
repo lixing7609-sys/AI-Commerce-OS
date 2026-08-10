@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { analyzeFounderConversation, analyzeWithSinoBrain, createFounderConversation, executeFounderExecution, getFounderBriefing } from "./founderAiApi";
+import { analyzeFounderConversation, analyzeWithSinoBrain, createFounderConversation, executeFounderExecution, getFounderBriefing, getFounderStrategy } from "./founderAiApi";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -15,6 +15,12 @@ describe("Founder AI conversation API", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ status: "ready" }) });
     await getFounderBriefing();
     expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/briefing");
+  });
+
+  it("loads the Founder autonomous strategy", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ current_phase: "AI System Builder" }) });
+    await getFounderStrategy();
+    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/strategy");
   });
 
   it("analyzes a goal in the same conversation", async () => {
