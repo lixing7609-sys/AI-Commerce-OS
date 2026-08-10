@@ -4,7 +4,8 @@ import Sidebar from "../components/layout/Sidebar";
 import RecoveryCandidatesPanel from "../components/tasks/RecoveryCandidatesPanel";
 import TaskDetailDrawer from "../components/tasks/TaskDetailDrawer";
 import ShopScopeSelector from "../components/shops/ShopScopeSelector";
-import { getTasks, getTaskStats } from "../services/api";
+import { getTaskStats } from "../services/api";
+import { getTasks } from "../services/taskReadService";
 import { getShops } from "../services/shopApi";
 import { getTask } from "../services/taskApi";
 import {
