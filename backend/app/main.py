@@ -30,6 +30,7 @@ from app.core.decision.api import router as decision_router
 from app.core.task_asset.api import router as task_asset_router
 from app.core.artifact.api import router as artifact_router
 from app.core.memory.api import router as memory_router
+from app.founder_ai.api import router as founder_ai_router
 from app.services.database_readiness_service import (
     DatabaseReadinessError,
     DatabaseReadinessService,
@@ -295,6 +296,11 @@ app.include_router(
 
 app.include_router(
     memory_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    founder_ai_router,
     prefix="/api/v1",
 )
 

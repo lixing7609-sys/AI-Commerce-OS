@@ -4,6 +4,7 @@ import { DemoBadge } from "../../kit/StatusPill.jsx";
 import { useConsoleNavContext } from "../../nav/ConsoleNavContext.jsx";
 import { SecretaryModule } from "../secretary/SecretaryModule.jsx";
 import { DashboardModule } from "../dashboard/DashboardModule.jsx";
+import { FounderSinoPanel } from "./FounderSinoPanel.jsx";
 
 /**
  * 今日总览（founderWorkbench）——阶段 Founder Full-System v3 Batch 2
@@ -28,7 +29,7 @@ export function FounderWorkbenchModule() {
     <div>
       <PageHeader title="今日总览" subtitle="Founder 每日入口——AI 秘书给出优先决策，今日经营看完整数据" actions={<DemoBadge />} />
       <Tabs tabs={TABS} activeTab={activeTab} onChange={(t) => navigate("founderWorkbench", { subView: t })} />
-      {activeTab === "dashboard" ? <DashboardModule /> : <SecretaryModule />}
+      {activeTab === "dashboard" ? <DashboardModule /> : <><FounderSinoPanel /><SecretaryModule /></>}
     </div>
   );
 }
