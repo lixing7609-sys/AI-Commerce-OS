@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { analyzeWithSinoBrain, approveFounderExecution, createFounderConversation, createFounderExecution, executeFounderExecution } from "../services/founderAiApi.js";
+import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { ArtifactPanel } from "./ArtifactPanel.jsx";
 import { ExecutionPackageCard } from "./ExecutionPackageCard.jsx";
@@ -27,7 +28,14 @@ export function ConversationWorkspace() {
       const conversation = conversationId ? { id: conversationId } : await createFounderConversation(goal.slice(0, 200));
       setConversationId(conversation.id);
       const nextResult = await analyzeWithSinoBrain(conversation.id, goal);
-      const nextExecution = await createFounderExecution(nextResult.task_asset_draft.title, nextResult.execution_package);
+      const draft = nextResult.task_asset_draft;
+      const taskAsset = await createTaskAsset({
+        title: draft.title,
+        description: draft.description,
+        scope: draft.scope,
+        conversation_id: conversation.id,
+      });
+      const nextExecution = await createFounderExecution(taskAsset.id, nextResult.execution_package);
       setResult(nextResult); setExecutionId(nextExecution.id); setApproved(false); setExecution(null); setMessage("");
     } catch (requestError) { setError(requestError.message || "Sino 分析失败"); }
     finally { setBusy(false); }
