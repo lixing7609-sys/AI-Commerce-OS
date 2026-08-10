@@ -17,6 +17,7 @@ from app.founder_ai.execution_registry import approve_execution_session, create_
 from app.founder_ai.execution_registry import get_execution_session
 from app.founder_ai.execution_loop import FounderExecutionLoop
 from app.founder_ai.codex_adapter import SubprocessCodexAdapter
+from app.founder_ai.sino_brain import SinoBrain
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -61,6 +62,24 @@ class FounderAnalyzeOut(BaseModel):
     execution_package: ExecutionPackageOut
 
 
+class SinoBrainIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_goal: str = Field(min_length=1, max_length=10000)
+    conversation_context: dict[str, Any] | None = None
+    project_context: dict[str, Any] | None = None
+
+
+class SinoBrainOut(BaseModel):
+    goal_analysis: dict[str, Any]
+    decision: dict[str, Any]
+    task_plan: list[dict[str, Any]]
+    recommended_action: str
+    project_state: dict[str, Any]
+    task_asset_draft: TaskAssetDraftOut
+    execution_package: ExecutionPackageOut
+
+
 class ExecutionCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -84,6 +103,39 @@ class ExecutionResultOut(ExecutionSessionOut):
 
 
 router = APIRouter(prefix="/founder-ai", tags=["Founder AI"])
+brain = SinoBrain()
+
+
+@router.post("/brain/conversations/{conversation_id}/analyze", response_model=SinoBrainOut)
+def analyze_with_sino_brain(conversation_id: str, request: SinoBrainIn):
+    conversation = get_conversation(conversation_id)
+    if conversation is None or conversation.system_id != FOUNDER_SYSTEM_KEY:
+        raise HTTPException(status_code=404, detail="Founder AI conversation not found")
+
+    result = brain.analyze(
+        user_goal=request.user_goal,
+        conversation_id=conversation_id,
+        conversation_context=request.conversation_context,
+        project_context=request.project_context,
+    )
+    brain_data = result.to_dict()
+    context = {
+        "system_id": FOUNDER_SYSTEM_KEY,
+        "founder_context": brain_data["founder_context"],
+        "decision": brain_data["decision"],
+        "recommended_action": result.recommended_action,
+    }
+    draft = generate_task_asset_draft(request.user_goal, conversation_id=conversation_id, context=context)
+    package = build_execution_package(draft)
+    return SinoBrainOut(
+        goal_analysis=brain_data["goal_analysis"],
+        decision=brain_data["decision"],
+        task_plan=brain_data["task_plan"],
+        recommended_action=result.recommended_action,
+        project_state=brain_data["founder_context"]["project_state"],
+        task_asset_draft=asdict(draft),
+        execution_package=asdict(package),
+    )
 
 
 @router.post("/executions", response_model=ExecutionSessionOut)

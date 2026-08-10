@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import SinoFounderAIApp from "./SinoFounderAIApp.jsx";
 
 vi.mock("../services/founderAiApi.js", () => ({
-  createFounderConversation: vi.fn(), analyzeFounderConversation: vi.fn(),
+  createFounderConversation: vi.fn(), analyzeWithSinoBrain: vi.fn(),
   createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(),
 }));
 

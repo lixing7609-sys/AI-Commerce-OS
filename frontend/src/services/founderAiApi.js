@@ -22,6 +22,14 @@ export function analyzeFounderConversation(conversationId, message, context) {
   }, "Founder AI 分析失败");
 }
 
+export function analyzeWithSinoBrain(conversationId, userGoal, conversationContext, projectContext) {
+  return request(`/founder-ai/brain/conversations/${encodeURIComponent(conversationId)}/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_goal: userGoal, conversation_context: conversationContext, project_context: projectContext }),
+  }, "Sino Brain 分析失败");
+}
+
 export function createFounderExecution(taskAssetId, executionPackage) {
   return request("/founder-ai/executions", {
     method: "POST",
