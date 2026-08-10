@@ -21,3 +21,15 @@ export function analyzeFounderConversation(conversationId, message, context) {
     body: JSON.stringify({ message, context }),
   }, "Founder AI 分析失败");
 }
+
+export function createFounderExecution(taskAssetId, executionPackage) {
+  return request("/founder-ai/executions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ task_asset_id: taskAssetId, execution_package: executionPackage }),
+  }, "创建执行会话失败");
+}
+
+export function approveFounderExecution(executionId) {
+  return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/approve`, { method: "POST" }, "授权执行失败");
+}

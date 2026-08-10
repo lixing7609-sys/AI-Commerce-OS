@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { analyzeFounderConversation, createFounderConversation } from "../../../services/founderAiApi";
+import { analyzeFounderConversation, approveFounderExecution, createFounderConversation, createFounderExecution } from "../../../services/founderAiApi";
 
 export function FounderSinoPanel() {
   const [conversationId, setConversationId] = useState(null);
@@ -8,6 +8,8 @@ export function FounderSinoPanel() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [executionId, setExecutionId] = useState(null);
+  const [approval, setApproval] = useState(null);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -22,11 +24,24 @@ export function FounderSinoPanel() {
       setConversationId(conversation.id);
       const next = await analyzeFounderConversation(conversation.id, goal);
       setResult(next);
+      const execution = await createFounderExecution(next.task_asset_draft.title, next.execution_package);
+      setExecutionId(execution.id);
+      setApproval(null);
       setMessage("");
     } catch (requestError) {
       setError(requestError.message || "Founder AI 分析失败");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleApprove() {
+    if (!executionId || approval?.execution_allowed) return;
+    try {
+      const nextApproval = await approveFounderExecution(executionId);
+      setApproval(nextApproval);
+    } catch (requestError) {
+      setError(requestError.message || "授权执行失败");
     }
   }
 
@@ -53,7 +68,7 @@ export function FounderSinoPanel() {
         <div className="founder-sino-panel__result">
           <article><h3>目标分类</h3><p>{result.goal_classification.goal_type}</p></article>
           <article><h3>TaskAsset Draft</h3><p>{result.task_asset_draft.title}</p><small>{result.task_asset_draft.description}</small></article>
-          <article><h3>Execution Package</h3><p>{result.execution_package.commit_requirement}</p><small>等待 Founder 授权 · 不会自动执行</small></article>
+          <article><h3>Execution Package</h3><p>{result.execution_package.commit_requirement}</p><small>{approval?.execution_allowed ? "Approved · 等待执行" : "等待 Founder 授权 · 不会自动执行"}</small><button type="button" onClick={handleApprove} disabled={!executionId || approval?.execution_allowed}>{approval?.execution_allowed ? "已授权" : "批准执行"}</button></article>
         </div>
       )}
     </section>
