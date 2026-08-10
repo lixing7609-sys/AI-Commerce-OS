@@ -10,8 +10,16 @@ import Agents from "./pages/Agents";
 import Analytics from "./pages/Analytics";
 import KnowledgeBase from "./pages/KnowledgeBase";
 import Settings from "./pages/Settings";
+import SinoFounderAIPage from "./pages/SinoFounderAIPage";
 
 function App() {
+  if (window.location.pathname === "/founder/sino") {
+    return <SinoFounderAIPage />;
+  }
+  return <LegacyApp />;
+}
+
+function LegacyApp() {
   const [activePage, setActivePage] = useState("dashboard");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [selectedDeliverableId, setSelectedDeliverableId] = useState(null);

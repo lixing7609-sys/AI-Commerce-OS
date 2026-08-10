@@ -1,0 +1,44 @@
+.sino-founder-page { min-height: 100vh; display: grid; grid-template-columns: 220px minmax(0, 1fr) 260px; background: #0b0d12; color: #eef1f6; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.sino-founder-page__nav, .sino-founder-page__context { border-color: rgba(255,255,255,.08); background: rgba(17,20,28,.82); padding: 28px 20px; }
+.sino-founder-page__nav { border-right: 1px solid rgba(255,255,255,.08); display: flex; flex-direction: column; }
+.sino-founder-page__brand { font-size: 22px; font-weight: 700; letter-spacing: -.04em; margin-bottom: 52px; }
+.sino-founder-page__brand span { color: #aab4c7; font-size: 14px; letter-spacing: .02em; }
+.sino-founder-page__nav nav { display: grid; gap: 8px; }
+.sino-founder-page__nav a { color: #8791a3; text-decoration: none; border-radius: 9px; padding: 10px 12px; font-size: 14px; }
+.sino-founder-page__nav a.active, .sino-founder-page__nav a:hover { color: #fff; background: rgba(255,255,255,.08); }
+.sino-founder-page__nav-foot { margin-top: auto; color: #697386; font-size: 12px; line-height: 1.7; }
+.sino-founder-page__nav-foot small { color: #4f596b; }
+.sino-founder-page__main { min-width: 0; display: flex; flex-direction: column; padding: 48px clamp(24px, 6vw, 92px) 24px; }
+.sino-founder-page__header { display: flex; justify-content: space-between; align-items: flex-start; max-width: 920px; width: 100%; margin: 0 auto 28px; }
+.eyebrow { color: #8d99ad; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.sino-founder-page h1 { font-size: clamp(28px, 4vw, 46px); letter-spacing: -.05em; margin: 12px 0 0; }
+.status-dot { color: #8dd6a4; font-size: 13px; }
+.sino-founder-page__conversation { width: 100%; max-width: 920px; margin: 0 auto; flex: 1; }
+.founder-sino-panel { background: transparent; border: 0; padding: 0; }
+.founder-sino-panel__header { border-bottom: 1px solid rgba(255,255,255,.08); padding-bottom: 18px; }
+.founder-sino-panel__header h2 { font-size: 16px; margin: 0 0 5px; }
+.founder-sino-panel__header p { color: #7d8799; font-size: 13px; margin: 0; }
+.founder-sino-panel__badge { color: #aeb9cb; font-size: 12px; }
+.founder-sino-panel__form { display: flex; gap: 10px; margin: 34px 0 28px; }
+.founder-sino-panel__form input { flex: 1; min-width: 0; color: #eef1f6; background: #151923; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 16px 18px; outline: none; }
+.founder-sino-panel__form button, .founder-sino-panel__result button { color: #10131a; background: #e8edf5; border: 0; border-radius: 10px; padding: 0 18px; font-weight: 600; cursor: pointer; }
+.founder-sino-panel__form button:disabled, .founder-sino-panel__result button:disabled { opacity: .45; cursor: not-allowed; }
+.founder-sino-panel__result { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.founder-sino-panel__result article { border: 1px solid rgba(255,255,255,.1); background: rgba(22,26,36,.72); border-radius: 14px; padding: 18px; min-height: 120px; }
+.founder-sino-panel__result h3 { font-size: 12px; color: #94a0b3; margin: 0 0 14px; }
+.founder-sino-panel__result p { margin: 0 0 8px; font-size: 15px; }
+.founder-sino-panel__result small { color: #8d98aa; line-height: 1.5; display: block; }
+.founder-sino-panel__result button { margin-top: 16px; padding: 8px 12px; font-size: 12px; }
+.founder-sino-panel__error { color: #ff9a9a; font-size: 13px; }
+.sino-founder-page__timeline { max-width: 920px; width: 100%; margin: 38px auto 0; border-top: 1px solid rgba(255,255,255,.08); padding-top: 16px; }
+.timeline-title { color: #778296; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
+.timeline-steps { display: flex; justify-content: space-between; color: #596477; font-size: 12px; margin-top: 12px; }
+.timeline-steps .active { color: #e7edf8; }
+.sino-founder-page__context { border-left: 1px solid rgba(255,255,255,.08); }
+.sino-founder-page__context h2 { color: #a5afc0; font-size: 13px; font-weight: 600; margin: 0 0 28px; }
+.sino-founder-page__context dl { display: grid; gap: 20px; }
+.sino-founder-page__context dl div { display: grid; gap: 5px; }
+.sino-founder-page__context dt { color: #667185; font-size: 11px; }
+.sino-founder-page__context dd { color: #dbe1ea; font-size: 13px; margin: 0; }
+.sino-founder-page__guard { border-top: 1px solid rgba(255,255,255,.08); color: #687386; font-size: 12px; line-height: 1.6; margin-top: 38px; padding-top: 18px; }
+@media (max-width: 900px) { .sino-founder-page { grid-template-columns: 180px minmax(0, 1fr); } .sino-founder-page__context { display: none; } .founder-sino-panel__result { grid-template-columns: 1fr; } }
