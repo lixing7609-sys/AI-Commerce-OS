@@ -40,12 +40,13 @@ def test_execution_requires_approval():
 def test_approved_package_calls_adapter_and_captures_result():
     loop = FounderExecutionLoop(FakeCodexAdapter())
     session = loop.approve(ExecutionSession("session-1", "task-1", "package-1"))
-    completed, memory = loop.run(session, make_package(execution_allowed=True), cwd=Path("."))
+    completed, artifact, memory = loop.run(session, make_package(execution_allowed=True), cwd=Path("."))
     assert completed.status == "completed"
     assert completed.commit_hash == "abc123"
     assert completed.result["changed_files"] == ["src/example.py"]
     assert memory.commit == "abc123"
     assert memory.artifact == "src/example.py"
+    assert artifact.execution_id == "session-1"
 
 
 def test_adapter_failure_marks_session_failed():

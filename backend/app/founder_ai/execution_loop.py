@@ -1,10 +1,10 @@
 """Approved Founder AI execution loop with an injectable Codex adapter."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-import subprocess
 from typing import Any, Protocol
 
+from .codex_adapter import CodexExecutionResult, SubprocessCodexAdapter
 from .orchestrator import ExecutionPackage, MemoryAssetDraft, build_memory_asset_draft
 
 
@@ -26,14 +26,15 @@ class ExecutionSession:
 
 
 @dataclass(frozen=True)
-class CodexExecutionResult:
-    stdout: str
-    stderr: str
-    changed_files: list[str] = field(default_factory=list)
-    tests: list[str] = field(default_factory=list)
-    commit_hash: str | None = None
+class ArtifactAssetDraft:
+    execution_id: str
+    commit_hash: str | None
+    changed_files: list[str]
+    result_summary: str
+    system_id: str = "founder_ai"
 
 
+@dataclass(frozen=True)
 class CodexAdapter(Protocol):
     def execute(self, package: ExecutionPackage, *, cwd: Path) -> CodexExecutionResult:
         ...
@@ -41,33 +42,6 @@ class CodexAdapter(Protocol):
 
 class ExecutionApprovalError(PermissionError):
     """Raised whenever execution is attempted without Founder approval."""
-
-
-class SubprocessCodexAdapter:
-    """Thin Codex CLI adapter; it never runs unless the loop passes approval."""
-
-    def __init__(self, command: str = "codex", timeout_seconds: int = 1800):
-        self.command = command
-        self.timeout_seconds = timeout_seconds
-
-    def execute(self, package: ExecutionPackage, *, cwd: Path) -> CodexExecutionResult:
-        instruction = (
-            f"Goal: {package.goal}\n"
-            f"Constraints: {package.constraints}\n"
-            f"Verification: {package.verification}\n"
-            f"Commit requirement: {package.commit_requirement}\n"
-        )
-        completed = subprocess.run(
-            [self.command, "exec", instruction],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=self.timeout_seconds,
-            check=False,
-        )
-        if completed.returncode != 0:
-            raise RuntimeError(completed.stderr or "Codex execution failed")
-        return CodexExecutionResult(stdout=completed.stdout, stderr=completed.stderr)
 
 
 class FounderExecutionLoop:
@@ -86,12 +60,14 @@ class FounderExecutionLoop:
         package: ExecutionPackage,
         *,
         cwd: Path,
-    ) -> tuple[ExecutionSession, MemoryAssetDraft]:
+    ) -> tuple[ExecutionSession, ArtifactAssetDraft, MemoryAssetDraft]:
         if session.status != "approved" or not package.execution_allowed:
             raise ExecutionApprovalError("Founder approval is required before Codex execution")
         session.status = "executing"
         try:
             result = self.adapter.execute(package, cwd=cwd)
+            if result.exit_code != 0:
+                raise RuntimeError(result.stderr or "Codex execution failed")
             session.status = "testing"
             session.result = {
                 "stdout": result.stdout,
@@ -101,12 +77,19 @@ class FounderExecutionLoop:
             }
             session.commit_hash = result.commit_hash
             session.status = "completed"
-            return session, build_memory_asset_draft(
+            artifact = ArtifactAssetDraft(
+                execution_id=session.id,
+                commit_hash=result.commit_hash,
+                changed_files=list(result.changed_files or []),
+                result_summary=result.stdout[-2000:] or "Execution completed",
+            )
+            memory = build_memory_asset_draft(
                 decision="Founder approved execution",
                 artifact=", ".join(result.changed_files) or None,
                 commit=result.commit_hash,
                 learning="Execution completed through the approved Codex adapter",
             )
+            return session, artifact, memory
         except Exception as error:
             session.status = "failed"
             session.error_message = str(error)

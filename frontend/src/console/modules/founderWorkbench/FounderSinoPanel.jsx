@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { analyzeFounderConversation, approveFounderExecution, createFounderConversation, createFounderExecution } from "../../../services/founderAiApi";
+import { analyzeFounderConversation, approveFounderExecution, createFounderConversation, createFounderExecution, executeFounderExecution } from "../../../services/founderAiApi";
 
 export function FounderSinoPanel() {
   const [conversationId, setConversationId] = useState(null);
@@ -10,6 +10,7 @@ export function FounderSinoPanel() {
   const [error, setError] = useState(null);
   const [executionId, setExecutionId] = useState(null);
   const [approval, setApproval] = useState(null);
+  const [execution, setExecution] = useState(null);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -27,6 +28,7 @@ export function FounderSinoPanel() {
       const execution = await createFounderExecution(next.task_asset_draft.title, next.execution_package);
       setExecutionId(execution.id);
       setApproval(null);
+      setExecution(null);
       setMessage("");
     } catch (requestError) {
       setError(requestError.message || "Founder AI 分析失败");
@@ -42,6 +44,18 @@ export function FounderSinoPanel() {
       setApproval(nextApproval);
     } catch (requestError) {
       setError(requestError.message || "授权执行失败");
+    }
+  }
+
+  async function handleExecute() {
+    if (!executionId || !approval?.execution_allowed || execution) return;
+    try {
+      setExecution({ status: "executing" });
+      const nextExecution = await executeFounderExecution(executionId);
+      setExecution(nextExecution);
+    } catch (requestError) {
+      setExecution({ status: "failed" });
+      setError(requestError.message || "执行 Founder 任务失败");
     }
   }
 
@@ -68,7 +82,7 @@ export function FounderSinoPanel() {
         <div className="founder-sino-panel__result">
           <article><h3>目标分类</h3><p>{result.goal_classification.goal_type}</p></article>
           <article><h3>TaskAsset Draft</h3><p>{result.task_asset_draft.title}</p><small>{result.task_asset_draft.description}</small></article>
-          <article><h3>Execution Package</h3><p>{result.execution_package.commit_requirement}</p><small>{approval?.execution_allowed ? "Approved · 等待执行" : "等待 Founder 授权 · 不会自动执行"}</small><button type="button" onClick={handleApprove} disabled={!executionId || approval?.execution_allowed}>{approval?.execution_allowed ? "已授权" : "批准执行"}</button></article>
+          <article><h3>Execution Package</h3><p>{result.execution_package.commit_requirement}</p><small>{execution ? execution.status : approval?.execution_allowed ? "Approved · 等待执行" : "等待 Founder 授权 · 不会自动执行"}</small><button type="button" onClick={handleApprove} disabled={!executionId || approval?.execution_allowed}>{approval?.execution_allowed ? "已授权" : "批准执行"}</button>{approval?.execution_allowed && !execution && <button type="button" onClick={handleExecute}>Execute</button>}</article>
         </div>
       )}
     </section>

@@ -33,3 +33,7 @@ export function createFounderExecution(taskAssetId, executionPackage) {
 export function approveFounderExecution(executionId) {
   return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/approve`, { method: "POST" }, "授权执行失败");
 }
+
+export function executeFounderExecution(executionId) {
+  return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/execute`, { method: "POST" }, "执行 Founder 任务失败");
+}

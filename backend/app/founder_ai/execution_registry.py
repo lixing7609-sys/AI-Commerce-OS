@@ -30,3 +30,9 @@ def approve_execution_session(execution_id: str) -> tuple[ExecutionSession, Exec
     package = replace(package, execution_allowed=True)
     _packages[execution_id] = package
     return session, package
+
+
+def get_execution_session(execution_id: str) -> tuple[ExecutionSession, ExecutionPackage] | None:
+    session = _sessions.get(execution_id)
+    package = _packages.get(execution_id)
+    return (session, package) if session is not None and package is not None else None

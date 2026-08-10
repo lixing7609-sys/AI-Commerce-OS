@@ -1,4 +1,6 @@
 from dataclasses import asdict
+from pathlib import Path
+import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -12,6 +14,9 @@ from app.founder_ai.orchestrator import (
     generate_task_asset_draft,
 )
 from app.founder_ai.execution_registry import approve_execution_session, create_execution_session
+from app.founder_ai.execution_registry import get_execution_session
+from app.founder_ai.execution_loop import FounderExecutionLoop
+from app.founder_ai.codex_adapter import SubprocessCodexAdapter
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -72,6 +77,12 @@ class ExecutionSessionOut(BaseModel):
     execution_allowed: bool
 
 
+class ExecutionResultOut(ExecutionSessionOut):
+    result: dict[str, Any] | None = None
+    artifact: dict[str, Any] | None = None
+    memory: dict[str, Any] | None = None
+
+
 router = APIRouter(prefix="/founder-ai", tags=["Founder AI"])
 
 
@@ -111,6 +122,38 @@ def approve_founder_execution(execution_id: str):
         executor=session.executor,
         status=session.status,
         execution_allowed=package.execution_allowed,
+    )
+
+
+@router.post("/executions/{execution_id}/execute", response_model=ExecutionResultOut)
+def execute_founder_execution(execution_id: str):
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Execution session not found")
+    session, package = record
+    if session.status != "approved" or not package.execution_allowed:
+        raise HTTPException(status_code=403, detail="Founder approval is required before execution")
+
+    root = Path(os.environ.get("FOUNDER_EXECUTION_ROOT", Path.cwd())).resolve()
+    workspace = root / ".founder-execution" / execution_id
+    try:
+        session, artifact, memory = FounderExecutionLoop(SubprocessCodexAdapter()).run(
+            session,
+            package,
+            cwd=workspace,
+        )
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    return ExecutionResultOut(
+        id=session.id,
+        task_asset_id=session.task_asset_id,
+        execution_package_id=session.execution_package_id,
+        executor=session.executor,
+        status=session.status,
+        execution_allowed=package.execution_allowed,
+        result=session.result,
+        artifact=asdict(artifact),
+        memory=asdict(memory),
     )
 
 
