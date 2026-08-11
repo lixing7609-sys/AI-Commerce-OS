@@ -14,12 +14,34 @@ export function createFounderConversation(title) {
   }, "创建 Founder Conversation 失败");
 }
 
+export function getConversationWorkspace(conversationId) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/workspace`, undefined, "恢复 Sino 讨论失败");
+}
+
+export function discussWithSino(conversationId, content, intent) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, intent }),
+  }, "发送讨论消息失败");
+}
+
+export function confirmCandidateGoal(conversationId, candidateGoalId) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/candidate-goals/${encodeURIComponent(candidateGoalId)}/confirm`, { method: "POST" }, "确认目标失败");
+}
+
+export function reasonConfirmedGoal(goalId) {
+  return request(`/founder-ai/goals/${encodeURIComponent(goalId)}/reason`, { method: "POST" }, "目标推理失败");
+}
+
 export function getFounderBriefing() {
   return request("/founder-ai/briefing", undefined, "获取 Sino 项目简报失败");
 }
 
 export function getFounderStrategy() {
   return request("/founder-ai/strategy", undefined, "获取 Sino 战略规划失败");
+}
+
+export function getAssetMemoryCenter() {
+  return request("/founder-ai/asset-memory-center", undefined, "获取资产与记忆历史失败");
 }
 
 export function buildSystemBlueprint(systemGoal, conversationId) {
@@ -46,12 +68,20 @@ export function analyzeWithSinoBrain(conversationId, userGoal, conversationConte
   }, "Sino Brain 分析失败");
 }
 
-export function createFounderExecution(taskAssetId, executionPackage) {
+export function createFounderExecution(taskAssetId, executionPackage, goalId) {
   return request("/founder-ai/executions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ task_asset_id: taskAssetId, execution_package: executionPackage }),
+    body: JSON.stringify({ task_asset_id: taskAssetId, execution_package: executionPackage, goal_id: goalId }),
   }, "创建执行会话失败");
+}
+
+export function submitExecutionDelta(executionId, payload) {
+  return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/deltas`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "发送执行补充失败");
+}
+
+export function decideExecutionDelta(executionId, deltaId, action) {
+  return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/deltas/${encodeURIComponent(deltaId)}/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "处理执行补充失败");
 }
 
 export function approveFounderExecution(executionId) {

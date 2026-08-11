@@ -12,7 +12,7 @@ from typing import Callable
 
 from app.core.artifact.service import create_artifact
 from app.founder_ai.codex_adapter import SubprocessCodexAdapter
-from app.founder_ai.execution_loop import FounderExecutionLoop
+from app.founder_ai.execution_loop import ExecutionPausedForDelta, FounderExecutionLoop
 from app.founder_ai.execution_events import append_event
 from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions, save_execution_session
 from app.founder_ai.sino_memory import SinoMemoryRepository
@@ -159,7 +159,7 @@ class ExecutionWorker:
                 artifact_type="execution_result",
                 title=f"Execution {execution_id}",
                 description=artifact_draft.result_summary,
-                content_ref=json.dumps({"execution_id": execution_id, "commit_hash": artifact_draft.commit_hash, "files": artifact_draft.changed_files}, ensure_ascii=False),
+                content_ref=json.dumps({"execution_id": execution_id, "commit_hash": artifact_draft.commit_hash, "files": artifact_draft.changed_files, "package_version": package.package_version, "execution_deltas": package.execution_deltas}, ensure_ascii=False),
                 task_asset_id=session.task_asset_id,
             )
             append_event(
@@ -172,7 +172,7 @@ class ExecutionWorker:
             save_execution_session(session, package)
             decision = self.memory_repository.save_decision(title=f"Execution decision {execution_id}", decision={"decision": memory_draft.decision, "execution_id": execution_id})
             learning = self.memory_repository.save_learning(title=f"Execution learning {execution_id}", learning={"learning": memory_draft.learning, "execution_id": execution_id}, task_asset_id=session.task_asset_id)
-            execution_memory = self.memory_repository.save_execution_result(title=f"Execution result {execution_id}", result={**(session.result or {}), "commit_hash": session.commit_hash}, task_asset_id=session.task_asset_id, artifact_id=artifact.id)
+            execution_memory = self.memory_repository.save_execution_result(title=f"Execution result {execution_id}", result={**(session.result or {}), "commit_hash": session.commit_hash, "package_version": package.package_version, "execution_deltas": package.execution_deltas}, task_asset_id=session.task_asset_id, artifact_id=artifact.id)
             session.artifact = {
                 "id": artifact.id,
                 "execution_id": artifact_draft.execution_id,
@@ -195,6 +195,9 @@ class ExecutionWorker:
             save_execution_session(session, package)
             self.queue.transition(execution_id, "completed")
             logger.info("Execution completed execution_id=%s", execution_id)
+        except ExecutionPausedForDelta:
+            save_execution_session(session, package)
+            logger.info("Execution paused for delta execution_id=%s", execution_id)
         except Exception as error:
             previous_event = session.events[-1] if session.events else None
             result = session.result or {}
@@ -327,6 +330,13 @@ def resume_execution(execution_id: str) -> ExecutionQueueItem:
     session.completed_at = None
     session.pause_reason = None
     session.recoverable = False
+    append_event(
+        session,
+        "execution_resumed",
+        status="queued",
+        message="Founder confirmed recovery and execution resumed",
+        metadata={"resumed": True},
+    )
     append_event(
         session,
         "queued",

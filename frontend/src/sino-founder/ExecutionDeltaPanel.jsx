@@ -1,0 +1,5 @@
+const TYPE = { requirement_addition: "补充需求", constraint_update: "约束调整", clarification: "澄清", correction: "纠正", ui_adjustment: "UI 调整", future_idea: "未来想法", new_goal_candidate: "新目标候选" };
+const IMPACT = { low: "低影响", medium: "中等影响", high: "高影响" };
+export function ExecutionDeltaPanel({ deltas = [], onDecision }) {
+  return <section className="sino-delta-panel" aria-label="执行增量"><header><span className="sino-kicker">执行中对话</span><h3>Execution Delta</h3></header>{deltas.length ? <ol>{deltas.map((delta) => <li key={delta.delta_id}><div><strong>{TYPE[delta.delta_type] || delta.delta_type}</strong><span>{IMPACT[delta.impact_level] || delta.impact_level}</span></div><p>{delta.content}</p><small>{delta.status === "applied" ? `已加入执行包 V${delta.package_version}` : delta.decision}</small>{delta.status === "pending_confirmation" && <div><button type="button" onClick={() => onDecision(delta, "confirm_adjustment")}>确认调整</button><button type="button" onClick={() => onDecision(delta, "continue_original")}>继续原计划</button><button type="button" onClick={() => onDecision(delta, "convert_to_goal")}>转为新目标</button></div>}</li>)}</ol> : <p>执行中的补充与处理结果会显示在这里。</p>}</section>;
+}

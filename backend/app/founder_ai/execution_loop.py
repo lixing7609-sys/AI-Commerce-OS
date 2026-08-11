@@ -37,6 +37,7 @@ class ExecutionSession:
     failure_reason: str | None = None
     pause_reason: str | None = None
     recoverable: bool = False
+    deltas: list[dict[str, Any]] = field(default_factory=list)
 
     def log(self, stage: str, message: str, *, timestamp: str | None = None) -> None:
         self.execution_logs.append({"timestamp": timestamp or datetime.now(timezone.utc).isoformat(), "stage": stage, "message": message})
@@ -59,6 +60,10 @@ class CodexAdapter(Protocol):
 
 class ExecutionApprovalError(PermissionError):
     """Raised whenever execution is attempted without Founder approval."""
+
+
+class ExecutionPausedForDelta(RuntimeError):
+    """Raised at a safe stage boundary when a Founder delta requested replanning."""
 
 
 class FounderExecutionLoop:
@@ -105,6 +110,8 @@ class FounderExecutionLoop:
                 metadata={"exit_code": result.exit_code, "stderr_summary": (result.stderr or "")[-2000:]},
             )
             self.on_status("executing")
+            if session.status == "paused":
+                raise ExecutionPausedForDelta(session.pause_reason or "Execution paused for Founder delta")
             if result.exit_code != 0:
                 raise RuntimeError(result.stderr or "Codex execution failed")
             session.status = "testing"
@@ -138,6 +145,8 @@ class FounderExecutionLoop:
                 append_event(session, "completed", status="completed", message="Execution completed", timestamp=session.completed_at)
                 self.on_status("completed")
             return session, artifact, memory
+        except ExecutionPausedForDelta:
+            raise
         except Exception as error:
             session.status = "failed"
             session.error_message = str(error)

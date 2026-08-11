@@ -29,6 +29,8 @@ def create_decision(
     status: str = "active",
     conversation_id: str | None = None,
     context_id: str | None = None,
+    source_message_ids: list[str] | None = None,
+    confirmed: bool = True,
 ) -> DecisionAssetDB:
     with SessionLocal() as session:
         _validate_reference(session, ConversationDB, conversation_id, "conversation")
@@ -41,6 +43,8 @@ def create_decision(
             decision=decision,
             reason=reason,
             impact=impact,
+            source_message_ids=source_message_ids or [],
+            confirmed=confirmed,
             status=status,
         )
         session.add(record)

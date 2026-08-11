@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { analyzeFounderConversation, analyzeWithSinoBrain, buildSystemBlueprint, createFounderConversation, executeFounderExecution, getFounderBriefing, getFounderExecution, getFounderStrategy, resumeFounderExecution } from "./founderAiApi";
+import { analyzeFounderConversation, analyzeWithSinoBrain, buildSystemBlueprint, confirmCandidateGoal, createFounderConversation, decideExecutionDelta, discussWithSino, executeFounderExecution, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderStrategy, reasonConfirmedGoal, resumeFounderExecution, submitExecutionDelta } from "./founderAiApi";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -9,6 +9,31 @@ describe("Founder AI conversation API", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ id: "conversation-1" }) });
     await createFounderConversation("Build an agent");
     expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/conversations");
+  });
+
+  it("persists discussion messages and restores the workspace", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ conversation: { id: "conv-1" } }) });
+    await discussWithSino("conv/1", "继续讨论", "discussion");
+    expect(fetchMock.mock.calls[0][0]).toContain("/founder-ai/conversations/conv%2F1/messages");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ content: "继续讨论", intent: "discussion" });
+    await getConversationWorkspace("conv/1");
+    expect(fetchMock.mock.calls[1][0]).toContain("/founder-ai/conversations/conv%2F1/workspace");
+  });
+
+  it("confirms a candidate before Goal reasoning", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ goal_id: "goal-1" }) });
+    await confirmCandidateGoal("conv-1", "candidate-1");
+    await reasonConfirmedGoal("goal-1");
+    expect(fetchMock.mock.calls[0][0]).toContain("/candidate-goals/candidate-1/confirm");
+    expect(fetchMock.mock.calls[1][0]).toContain("/goals/goal-1/reason");
+  });
+
+  it("submits and decides an Execution Delta", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ delta_id: "delta-1" }) });
+    await submitExecutionDelta("execution-1", { conversation_id: "conv-1", goal_id: "goal-1", task_id: "task-1", content: "补充标题" });
+    await decideExecutionDelta("execution-1", "delta-1", "confirm_adjustment");
+    expect(fetchMock.mock.calls[0][0]).toContain("/executions/execution-1/deltas");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ action: "confirm_adjustment" });
   });
 
   it("loads the Founder self-management briefing", async () => {
@@ -21,6 +46,12 @@ describe("Founder AI conversation API", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ current_phase: "AI System Builder" }) });
     await getFounderStrategy();
     expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/strategy");
+  });
+
+  it("loads the durable asset and memory center", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ artifacts: [], memories: [] }) });
+    await getAssetMemoryCenter();
+    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/asset-memory-center");
   });
 
   it("requests an approval-gated system blueprint", async () => {

@@ -42,6 +42,8 @@ class ExecutionPackage:
     commit_requirement: str
     approval_required: bool = True
     execution_allowed: bool = False
+    package_version: int = 1
+    execution_deltas: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

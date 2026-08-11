@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, String, Text, text
+from sqlalchemy import Boolean, DateTime, JSON, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base
@@ -22,6 +22,8 @@ class DecisionAssetDB(Base):
     decision: Mapped[str] = mapped_column(Text, nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     impact: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_message_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")

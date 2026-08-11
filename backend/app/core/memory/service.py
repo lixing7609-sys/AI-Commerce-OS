@@ -34,6 +34,7 @@ def create_memory(
     decision_id: str | None = None,
     task_asset_id: str | None = None,
     artifact_id: str | None = None,
+    source_message_ids: list[str] | None = None,
 ) -> MemoryAssetDB:
     with SessionLocal() as session:
         _validate_reference(session, ConversationDB, conversation_id, "conversation")
@@ -52,6 +53,7 @@ def create_memory(
             summary=summary,
             confidence=confidence,
             status=status,
+            source_message_ids=source_message_ids or [],
         )
         session.add(record)
         session.commit()

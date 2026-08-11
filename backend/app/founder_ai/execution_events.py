@@ -19,6 +19,12 @@ EXECUTION_EVENT_NAMES = {
     "completed",
     "failed",
     "backend_restarted",
+    "founder_delta_received",
+    "delta_classified",
+    "delta_applied",
+    "execution_paused_for_delta",
+    "execution_replanned",
+    "execution_resumed",
 }
 
 LEGACY_EVENT_NAMES = {
@@ -148,8 +154,10 @@ def _legacy_status(event_name: str, final_status: str) -> str:
         return "completed"
     if event_name in {"testing_started", "testing_finished", "artifact_saved", "memory_saved"}:
         return "testing"
-    if event_name in {"worker_started", "codex_started", "codex_finished"}:
+    if event_name in {"worker_started", "codex_started", "codex_finished", "founder_delta_received", "delta_classified", "delta_applied", "execution_replanned", "execution_resumed"}:
         return "executing"
+    if event_name == "execution_paused_for_delta":
+        return "paused"
     if event_name in {"approved", "queued"}:
         return event_name
     return final_status

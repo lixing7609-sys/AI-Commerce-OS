@@ -13,12 +13,18 @@ from app.founder_ai.orchestrator import (
     generate_task_asset_draft,
 )
 from app.founder_ai.execution_registry import approve_execution_session, create_execution_session
-from app.founder_ai.execution_registry import get_execution_session
+from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions
 from app.founder_ai.execution_worker import enqueue_execution, execution_queue, resume_execution
 from app.founder_ai.sino_brain import SinoBrain
 from app.founder_ai.self_management import SinoStateAnalyzer
 from app.founder_ai.autonomous_planning import SinoStrategicAnalyzer
+from app.founder_ai.asset_memory_center import build_asset_memory_center
 from app.founder_ai.system_builder import ApplicationRegistry, SinoSystemBuilder
+from app.founder_ai.secretary import SinoSecretaryService
+from app.founder_ai.execution_delta import ExecutionDeltaService
+from app.core.conversation_first.model import GoalAssetDB
+from app.database.db import SessionLocal
+from app.core.task_asset.service import get_founder_task_asset
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -55,6 +61,8 @@ class ExecutionPackageOut(BaseModel):
     commit_requirement: str
     approval_required: bool
     execution_allowed: bool
+    package_version: int = 1
+    execution_deltas: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class FounderAnalyzeOut(BaseModel):
@@ -131,6 +139,26 @@ class ExecutionCreateIn(BaseModel):
 
     task_asset_id: str = Field(min_length=1, max_length=100)
     execution_package: ExecutionPackageOut
+    goal_id: str | None = None
+
+
+class DiscussionMessageIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str = Field(min_length=1, max_length=10000)
+    intent: str | None = None
+
+
+class DeltaCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    conversation_id: str
+    goal_id: str
+    task_id: str
+    content: str = Field(min_length=1, max_length=10000)
+
+
+class DeltaDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str
 
 
 class ExecutionSessionOut(BaseModel):
@@ -154,6 +182,8 @@ class ExecutionSessionOut(BaseModel):
     pause_reason: str | None = None
     recoverable: bool = False
     current_stage: str | None = None
+    package_version: int = 1
+    deltas: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ExecutionResultOut(ExecutionSessionOut):
@@ -170,11 +200,70 @@ state_analyzer = SinoStateAnalyzer()
 strategic_analyzer = SinoStrategicAnalyzer(state_analyzer=state_analyzer)
 application_registry = ApplicationRegistry()
 system_builder = SinoSystemBuilder(registry=application_registry)
+secretary = SinoSecretaryService()
+delta_service = ExecutionDeltaService(secretary=secretary)
+
+
+@router.get("/conversations/{conversation_id}/workspace", response_model=dict[str, Any])
+def get_conversation_workspace(conversation_id: str):
+    try:
+        snapshot = secretary.snapshot(conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    active = next((item for item in reversed(list_execution_sessions()) if item.status in {"draft", "approved", "queued", "executing", "testing", "paused"}), None)
+    if active:
+        record = get_execution_session(active.id)
+        package = record[1] if record else None
+        if package and package.task_asset.conversation_id == conversation_id:
+            snapshot["active_execution"] = _execution_result(active, package).model_dump()
+            snapshot["execution_deltas"] = delta_service.list_for_execution(active.id)
+            task = get_founder_task_asset(active.task_asset_id)
+            snapshot["task_asset"] = ({"id": task.id, "conversation_id": task.conversation_id, "decision_id": task.decision_id, "title": task.title, "description": task.description, "scope": task.scope, "status": task.status, "approval_status": task.approval_status, "execution_status": task.execution_status, "result": task.result} if task else {"id": active.task_asset_id, "title": package.task_asset.title, "description": package.task_asset.description, "scope": package.task_asset.scope, "status": "draft", "approval_status": "pending", "execution_status": active.status})
+    return snapshot
+
+
+@router.post("/conversations/{conversation_id}/messages", response_model=dict[str, Any])
+def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
+    try:
+        return secretary.append_message(conversation_id, request.content, intent=request.intent)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/candidate-goals/{candidate_goal_id}/confirm", response_model=dict[str, Any])
+def confirm_candidate_goal(conversation_id: str, candidate_goal_id: str):
+    try:
+        return secretary.confirm_goal(conversation_id, candidate_goal_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/goals/{goal_id}/reason", response_model=SinoBrainOut)
+def reason_confirmed_goal(goal_id: str):
+    goal = secretary.get_goal(goal_id)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal["status"] != "goal_confirmed":
+        raise HTTPException(status_code=409, detail="Only confirmed goals can enter reasoning")
+    response = analyze_with_sino_brain(goal["conversation_id"], SinoBrainIn(user_goal=goal["description"], conversation_context={"goal_id": goal_id, "constraints": goal["constraints"], "acceptance_criteria": goal["acceptance_criteria"]}))
+    with SessionLocal() as session:
+        record = session.get(GoalAssetDB, goal_id)
+        record.status = "planning"
+        session.commit()
+    return response
 
 
 @router.get("/applications", response_model=list[dict[str, str]])
 def list_founder_application_registry():
     return [asdict(item) for item in application_registry.list()]
+
+
+@router.get("/asset-memory-center", response_model=dict[str, Any])
+def get_asset_memory_center():
+    """Return all durable Founder artifacts and memories with execution links."""
+    return build_asset_memory_center()
 
 
 @router.post("/system-builder/blueprint", response_model=SystemBuildOut)
@@ -256,6 +345,8 @@ def analyze_with_sino_brain(conversation_id: str, request: SinoBrainIn):
         "decision": brain_data["decision"],
         "recommended_action": result.recommended_action,
         "reasoning": reasoning,
+        "goal_id": (request.conversation_context or {}).get("goal_id"),
+        "acceptance_criteria": (request.conversation_context or {}).get("acceptance_criteria", []),
     }
     draft = generate_task_asset_draft(
         request.user_goal,
@@ -283,6 +374,10 @@ def analyze_with_sino_brain(conversation_id: str, request: SinoBrainIn):
 
 @router.post("/executions", response_model=ExecutionSessionOut)
 def create_founder_execution(request: ExecutionCreateIn):
+    if request.goal_id:
+        goal = secretary.get_goal(request.goal_id)
+        if goal is None or goal["status"] not in {"goal_confirmed", "planning"}:
+            raise HTTPException(status_code=409, detail="A confirmed Goal Asset is required before execution")
     package = request.execution_package
     draft = TaskAssetDraft(**package.task_asset.model_dump())
     execution_package = build_execution_package(
@@ -305,6 +400,8 @@ def create_founder_execution(request: ExecutionCreateIn):
         started_at=session.started_at,
         testing_at=session.testing_at,
         completed_at=session.completed_at,
+        package_version=execution_package.package_version,
+        deltas=list(session.deltas),
         **_execution_observability(session),
     )
 
@@ -374,6 +471,8 @@ def _execution_result(session, package) -> ExecutionResultOut:
         memory=session.memory,
         error_message=session.error_message,
         execution_logs=session.execution_logs,
+        package_version=package.package_version,
+        deltas=list(session.deltas),
         **_execution_observability(session),
     )
 
@@ -443,8 +542,39 @@ def resume_founder_execution(execution_id: str):
         started_at=session.started_at,
         testing_at=session.testing_at,
         completed_at=session.completed_at,
+        package_version=package.package_version,
+        deltas=list(session.deltas),
         **_execution_observability(session),
     )
+
+
+@router.post("/executions/{execution_id}/deltas", response_model=dict[str, Any])
+def submit_execution_delta(execution_id: str, request: DeltaCreateIn):
+    try:
+        return delta_service.submit(execution_id=execution_id, conversation_id=request.conversation_id, goal_id=request.goal_id, task_id=request.task_id, content=request.content)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/executions/{execution_id}/deltas/{delta_id}/decision", response_model=dict[str, Any])
+def decide_execution_delta(execution_id: str, delta_id: str, request: DeltaDecisionIn):
+    try:
+        delta = delta_service.decide(delta_id, request.action)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    if delta["execution_id"] != execution_id:
+        raise HTTPException(status_code=404, detail="Execution delta not found")
+    record = get_execution_session(execution_id)
+    if record and record[0].status == "paused":
+        try:
+            resume_execution(execution_id)
+        except (PermissionError, RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+    return delta
 
 
 @router.post("/conversations/{conversation_id}/analyze", response_model=FounderAnalyzeOut)

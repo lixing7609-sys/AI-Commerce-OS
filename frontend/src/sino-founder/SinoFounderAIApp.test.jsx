@@ -2,171 +2,110 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SinoFounderAIApp from "./SinoFounderAIApp.jsx";
-import { analyzeWithSinoBrain, buildSystemBlueprint, createFounderConversation, createFounderExecution, getFounderBriefing, getFounderExecution, getFounderStrategy } from "../services/founderAiApi.js";
+import { confirmCandidateGoal, createFounderConversation, createFounderExecution, discussWithSino, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderStrategy, reasonConfirmedGoal, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({
-  createFounderConversation: vi.fn(), analyzeWithSinoBrain: vi.fn(),
-  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(), resumeFounderExecution: vi.fn(), getFounderExecution: vi.fn(), getFounderBriefing: vi.fn(), getFounderStrategy: vi.fn(), buildSystemBlueprint: vi.fn(),
-}));
+vi.mock("../services/founderAiApi.js", () => ({ approveFounderExecution: vi.fn(), buildSystemBlueprint: vi.fn(), confirmCandidateGoal: vi.fn(), createFounderConversation: vi.fn(), createFounderExecution: vi.fn(), decideExecutionDelta: vi.fn(), discussWithSino: vi.fn(), getAssetMemoryCenter: vi.fn(), getConversationWorkspace: vi.fn(), getFounderBriefing: vi.fn(), getFounderExecution: vi.fn(), getFounderStrategy: vi.fn(), reasonConfirmedGoal: vi.fn(), resumeFounderExecution: vi.fn(), submitExecutionDelta: vi.fn() }));
 vi.mock("../services/taskAssetApi.js", () => ({ createTaskAsset: vi.fn() }));
 
+const emptySnapshot = { conversation: { id: "conv-1", state: "exploring" }, messages: [], digest: { summary: "", topics: [], decisions: [], knowledge_items: [], candidate_goals: [], pending_questions: [] }, goals: [] };
+
 beforeEach(() => {
-  vi.clearAllMocks();
-  window.localStorage.clear();
-  getFounderBriefing.mockResolvedValue({ status: "ready", progress: { completed: 0, total: 0, percent: 0 }, risks: [], recommendations: [], project_state: { current_phase: "planning", completed_capabilities: [], active_tasks: [], blocked_items: [] } });
-  getFounderStrategy.mockResolvedValue({ current_phase: "Founder Intelligence Foundation", roadmap: { milestones: [] }, capability_status: { applications: [] }, recommendations: [] });
+  vi.clearAllMocks(); window.localStorage.clear();
+  getFounderBriefing.mockResolvedValue({ recommendations: [], project_state: {} });
+  getFounderStrategy.mockResolvedValue({ roadmap: { milestones: [] }, capability_status: { applications: [] }, recommendations: [] });
+  getAssetMemoryCenter.mockResolvedValue({ artifacts: [], memories: [], executions: [] });
+  getConversationWorkspace.mockResolvedValue(emptySnapshot);
 });
 afterEach(() => cleanup());
 
-describe("SinoFounderAIApp", () => {
-  it("renders the independent application workspace", () => {
+describe("Sino Founder AI Conversation First", () => {
+  it("defaults to Discussion Mode with Secretary navigation and capability navigation", () => {
     render(<SinoFounderAIApp />);
-    expect(screen.getByText("Sino", { selector: ".sino-brand div" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "早上好，Founder。今天推进什么？" })).toBeTruthy();
-    expect(screen.getByLabelText("项目关键指标")).toBeTruthy();
-    expect(screen.getByTestId("analysis-card")).toBeTruthy();
-    expect(screen.getByTestId("evidence-card")).toBeTruthy();
-    expect(screen.getByTestId("solution-card")).toBeTruthy();
-    expect(screen.getByTestId("task-plan-card")).toBeTruthy();
-    expect(screen.getByTestId("execution-card")).toBeTruthy();
-    expect(screen.getByText("Approved")).toBeTruthy();
-    expect(screen.getByText("Queued")).toBeTruthy();
-    expect(screen.getByText("Testing")).toBeTruthy();
-    expect(screen.getByText("Completed")).toBeTruthy();
-    expect(screen.getByRole("navigation", { name: "Sino Founder AI" })).toBeTruthy();
-    const workspace = screen.getByRole("main", { name: "Founder AI workspace content" });
-    expect(workspace.getAttribute("tabindex")).toBe("0");
+    expect(screen.getByPlaceholderText("与 Sino 讨论……")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "发送" })).toBeTruthy();
+    for (const label of ["今日讨论", "已形成决策", "新增知识", "候选目标", "待确认问题", "资产与记忆"]) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    const capabilities = screen.getByRole("navigation", { name: "Founder AI 能力入口" });
+    for (const label of ["战略与路线", "系统构建器", "目标推理", "执行中心", "资产与记忆"]) expect(capabilities.textContent).toContain(label);
+    expect(screen.queryByText("今天推进什么？")).toBeNull();
   });
 
-  it("turns a Founder goal into Brain cards and a canonical execution session", async () => {
+  it("sends an ordinary message without creating Goal, Task Plan, or Execution", async () => {
     createFounderConversation.mockResolvedValue({ id: "conv-1" });
-    analyzeWithSinoBrain.mockResolvedValue({
-      analysis: { interpretation: "当前目标需要补齐推理能力缺口", current_state: "Founder Intelligence active", desired_outcome: "Evidence-led reasoning", gap: "Reasoning Engine 未验证" },
-      evidence: [{ source: "Project State", fact: "当前处于 execution", relevance: "确定交付边界" }, { source: "Code Evidence", fact: "定位到 EvidenceCard", relevance: "确定具体修改位置", metadata: { relevant_files: [{ path: "frontend/src/sino-founder/EvidenceCard.jsx", reason: "Matches Evidence Card" }], impact: ["frontend/src/sino-founder/ConversationWorkspace.jsx"], risk: "medium" } }],
-      solution: { summary: "建立结构化 Reasoning Engine", approach: ["收集上下文", "生成证据", "准备执行"], architecture_impact: "保留 TaskAsset 与 Execution Loop" },
-      risk: { level: "medium", items: ["范围扩张"], mitigation: ["Founder 审批"] },
-      execution_requirement: { executor: "codex", approval_required: true, recommendation: "审阅证据后准备执行" },
-      goal_analysis: { goal_type: "development", objective: "继续推进 AI Commerce OS", current_phase: "execution" },
-      task_plan: [{ title: "完成 Intelligence Core" }],
-      recommended_action: "执行下一项任务",
-      task_asset_draft: { title: "继续推进 AI Commerce OS", description: "Founder plan", scope: { goal_type: "development" } },
-      execution_package: { goal: "继续推进 AI Commerce OS" },
-    });
-    createTaskAsset.mockResolvedValue({ id: "task-asset-1" });
-    createFounderExecution.mockResolvedValue({ id: "execution-1", status: "draft" });
-
+    discussWithSino.mockResolvedValue({ ...emptySnapshot, messages: [{ message_id: "m1", role: "founder", content: "聊聊产品方向" }], digest: { ...emptySnapshot.digest, summary: "聊聊产品方向" } });
     render(<SinoFounderAIApp />);
-    fireEvent.change(screen.getByLabelText(/你现在最想推进什么/), { target: { value: "继续推进 AI Commerce OS" } });
-    fireEvent.click(screen.getByRole("button", { name: "开始推理 →" }));
-
-    await waitFor(() => expect(createFounderExecution).toHaveBeenCalledWith("task-asset-1", { goal: "继续推进 AI Commerce OS" }));
-    expect(createTaskAsset).toHaveBeenCalledWith({
-      title: "继续推进 AI Commerce OS",
-      description: "Founder plan",
-      scope: { goal_type: "development" },
-      conversation_id: "conv-1",
-    });
-    expect(screen.getAllByText("继续推进 AI Commerce OS").length).toBeGreaterThan(0);
-    expect(screen.getByText("完成 Intelligence Core")).toBeTruthy();
-    expect(screen.getByText("当前处于 execution")).toBeTruthy();
-    expect(screen.getByText("Code Evidence")).toBeTruthy();
-    expect(screen.getByText("frontend/src/sino-founder/EvidenceCard.jsx")).toBeTruthy();
-    expect(screen.getByText("medium")).toBeTruthy();
-    expect(screen.getByText("建立结构化 Reasoning Engine")).toBeTruthy();
-    expect(screen.getByText("审阅证据后准备执行")).toBeTruthy();
-    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.change(screen.getByLabelText("与 Sino 讨论"), { target: { value: "聊聊产品方向" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(discussWithSino).toHaveBeenCalledWith("conv-1", "聊聊产品方向"));
+    expect(reasonConfirmedGoal).not.toHaveBeenCalled(); expect(createTaskAsset).not.toHaveBeenCalled(); expect(createFounderExecution).not.toHaveBeenCalled();
+    expect(screen.getByText("普通讨论不会自动生成 Task Plan。")).toBeTruthy();
   });
 
-  it("uses a suggested goal as the next reasoning prompt", () => {
+  it("turns explicit execution intent into one confirmed Goal and one approval-gated Execution", async () => {
+    createFounderConversation.mockResolvedValue({ id: "conv-1" });
+    const formalGoal = { goal_id: "goal-explicit", conversation_id: "conv-1", title: "实施 Timeline", description: "按这个执行，开始实施 Timeline", status: "goal_confirmed" };
+    discussWithSino.mockResolvedValue({ ...emptySnapshot, conversation: { id: "conv-1", state: "goal_confirmed" }, goals: [formalGoal] });
+    reasonConfirmedGoal.mockResolvedValue({ analysis: {}, evidence: [], solution: {}, task_plan: [], risk: {}, execution_requirement: {}, task_asset_draft: { title: "实施 Timeline", description: "plan", scope: {} }, execution_package: { goal: "实施 Timeline" } });
+    createTaskAsset.mockResolvedValue({ id: "task-explicit" });
+    createFounderExecution.mockResolvedValue({ id: "execution-explicit", task_asset_id: "task-explicit", status: "draft", execution_allowed: false });
     render(<SinoFounderAIApp />);
-    fireEvent.click(screen.getByRole("button", { name: "梳理当前最高优先级任务" }));
-    expect(screen.getByLabelText(/你现在最想推进什么/).value).toBe("梳理当前最高优先级任务");
-    expect(screen.getByRole("button", { name: "开始推理 →" }).disabled).toBe(false);
-  });
-
-  it("renders briefing, project state, and approval-gated recommended actions", async () => {
-    getFounderBriefing.mockResolvedValue({
-      status: "active",
-      progress: { completed: 4, total: 5, percent: 80 },
-      risks: ["阻塞：Provider setup"],
-      recommendations: [{ title: "继续任务：Runtime", reason: "TaskAsset 正在推进", priority: "high", requires_approval: true }],
-      project_state: { current_phase: "execution", completed_capabilities: ["Sino Brain"], active_tasks: [{ title: "Runtime" }], blocked_items: [{ title: "Provider setup" }] },
-    });
-    render(<SinoFounderAIApp />);
-    expect(await screen.findByText("已完成 4 / 5 项 · 进度 80%")).toBeTruthy();
-    expect(screen.getByText("execution")).toBeTruthy();
-    expect(screen.getByText("继续任务：Runtime")).toBeTruthy();
-    expect(screen.getByText("high · 需授权")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "批准执行" }).disabled).toBe(true);
-  });
-
-  it("restores the execution session and timeline after a page refresh", async () => {
-    window.localStorage.setItem("sino-founder-active-execution", "execution-restored");
-    getFounderExecution.mockResolvedValue({
-      id: "execution-restored",
-      status: "testing",
-      execution_allowed: true,
-      timeline: {
-        approved: "2026-08-10T01:00:00Z",
-        queued: "2026-08-10T01:00:01Z",
-        executing: "2026-08-10T01:00:02Z",
-        testing: "2026-08-10T01:00:03Z",
-        completed: null,
-      },
-      events: [
-        { event_id: "event-1", execution_id: "execution-restored", event_name: "approved", timestamp: "2026-08-10T01:00:00Z", status: "approved", message: "Approved", metadata: {} },
-        { event_id: "event-2", execution_id: "execution-restored", event_name: "queued", timestamp: "2026-08-10T01:00:01Z", status: "queued", message: "Queued", metadata: {} },
-        { event_id: "event-3", execution_id: "execution-restored", event_name: "worker_started", timestamp: "2026-08-10T01:00:02Z", status: "executing", message: "Worker started", metadata: {} },
-        { event_id: "event-4", execution_id: "execution-restored", event_name: "codex_started", timestamp: "2026-08-10T01:00:03Z", status: "executing", message: "Codex started", metadata: {} },
-        { event_id: "event-5", execution_id: "execution-restored", event_name: "codex_finished", timestamp: "2026-08-10T01:04:15Z", status: "executing", message: "Codex finished", metadata: {} },
-        { event_id: "event-6", execution_id: "execution-restored", event_name: "testing_started", timestamp: "2026-08-10T01:04:16Z", status: "testing", message: "Testing started", metadata: {} },
-      ],
-    });
-
-    render(<SinoFounderAIApp />);
-
-    await waitFor(() => expect(getFounderExecution).toHaveBeenCalledWith("execution-restored"));
-    expect(await screen.findByText("testing", { selector: '[data-status="testing"]' })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "已授权" })).toBeTruthy();
-    expect(document.querySelector('time[datetime="2026-08-10T01:04:16Z"]')).toBeTruthy();
-  });
-
-  it("renders roadmap, capability blueprints, and strategic actions", async () => {
-    getFounderStrategy.mockResolvedValue({
-      current_phase: "AI System Builder",
-      current_strategic_position: "Founder intelligence is active",
-      recommended_next_phase: "AI System Builder",
-      roadmap: { milestones: [{ phase: "Founder Intelligence Foundation", status: "completed" }, { phase: "AI System Builder", status: "current" }] },
-      capability_status: { applications: [{ key: "founder_ai", name: "Sino Founder AI", status: "active", role: "Strategic intelligence" }, { key: "operator_ai", name: "Operator AI", status: "blueprint", role: "Commerce operations" }] },
-      recommendations: [{ title: "Build AI System Builder", reason: "具备系统创建基础", priority: 1, requires_approval: true }],
-    });
-    render(<SinoFounderAIApp />);
-    expect(await screen.findByText("AI System Builder", { selector: ".sino-strategy-card--overview > strong" })).toBeTruthy();
-    expect(screen.getByText("Operator AI")).toBeTruthy();
-    expect(screen.getByText("blueprint")).toBeTruthy();
-    expect(screen.getByText("Build AI System Builder")).toBeTruthy();
-    expect(screen.getByText("等待 Founder 授权")).toBeTruthy();
-  });
-
-  it("builds a system blueprint and hands its execution plan to Founder approval", async () => {
-    createFounderConversation.mockResolvedValue({ id: "conv-builder" });
-    buildSystemBlueprint.mockResolvedValue({
-      system_blueprint: { system_key: "operator_ai", system_name: "Operator AI", purpose: "创建 Operator AI" },
-      generated_capabilities: { capabilities: ["Operations Planning"], agents: ["Operator Lead Agent"], skills: ["Operations Planning Skill"], workflows: ["Approval Workflow"] },
-      agent_architecture: { roles: [{ role: "Operator Lead Agent" }] },
-      task_asset_draft: { title: "Build Operator AI", description: "Approved blueprint build", scope: { target_application: "operator_ai" } },
-      execution_package: { goal: "Build Operator AI", commit_requirement: "Founder approval required before commit" },
-    });
-    createTaskAsset.mockResolvedValue({ id: "task-operator" });
-    createFounderExecution.mockResolvedValue({ id: "execution-operator", status: "draft" });
-    render(<SinoFounderAIApp />);
-    fireEvent.change(screen.getByLabelText("AI System Goal"), { target: { value: "创建 Operator AI" } });
-    fireEvent.click(screen.getByRole("button", { name: "生成 Blueprint" }));
-    expect(await screen.findByText("Operator AI", { selector: ".sino-builder-flow strong" })).toBeTruthy();
-    expect(buildSystemBlueprint).toHaveBeenCalledWith("创建 Operator AI", "conv-builder");
-    expect(createFounderExecution).toHaveBeenCalledWith("task-operator", expect.objectContaining({ goal: "Build Operator AI" }));
+    fireEvent.change(screen.getByLabelText("与 Sino 讨论"), { target: { value: "按这个执行，开始实施 Timeline" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(reasonConfirmedGoal).toHaveBeenCalledTimes(1));
+    expect(confirmCandidateGoal).not.toHaveBeenCalled();
+    expect(createTaskAsset).toHaveBeenCalledTimes(1);
+    expect(createFounderExecution).toHaveBeenCalledWith("task-explicit", { goal: "实施 Timeline" }, "goal-explicit");
     expect(screen.getByRole("button", { name: "批准执行" }).disabled).toBe(false);
-    expect(screen.getByText("等待 Founder 授权", { selector: ".sino-builder-flow strong" })).toBeTruthy();
+  });
+
+  it("continues discussing a candidate or confirms it before reasoning", async () => {
+    window.localStorage.setItem("sino-founder-active-conversation", "conv-1");
+    const candidate = { goal_id: "candidate-1", title: "修复 Timeline", description: "修复 Timeline", status: "candidate" };
+    getConversationWorkspace.mockResolvedValue({ ...emptySnapshot, digest: { ...emptySnapshot.digest, candidate_goals: [candidate] } });
+    confirmCandidateGoal.mockResolvedValue({ goal_id: "goal-1", conversation_id: "conv-1", title: "修复 Timeline", description: "修复 Timeline", status: "goal_confirmed" });
+    reasonConfirmedGoal.mockResolvedValue({ analysis: {}, evidence: [], solution: {}, task_plan: [], risk: {}, execution_requirement: {}, task_asset_draft: { title: "修复 Timeline", description: "plan", scope: {} }, execution_package: { goal: "修复 Timeline" } });
+    createTaskAsset.mockResolvedValue({ id: "task-1" }); createFounderExecution.mockResolvedValue({ id: "execution-1", task_asset_id: "task-1", status: "draft" });
+    render(<SinoFounderAIApp />);
+    expect((await screen.findAllByText("修复 Timeline")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
+    expect(screen.getByLabelText("与 Sino 讨论").value).toBe("修复 Timeline");
+    fireEvent.click(screen.getByRole("button", { name: "确认为目标" }));
+    await waitFor(() => expect(reasonConfirmedGoal).toHaveBeenCalledWith("goal-1"));
+    expect(createFounderExecution).toHaveBeenCalledWith("task-1", { goal: "修复 Timeline" }, "goal-1");
+  });
+
+  it("switches the composer to Execution Conversation and shows received deltas", async () => {
+    window.localStorage.setItem("sino-founder-active-conversation", "conv-1");
+    const active = { id: "execution-1", task_asset_id: "task-1", status: "executing", execution_allowed: true, events: [], deltas: [] };
+    getConversationWorkspace.mockResolvedValue({ ...emptySnapshot, goals: [{ goal_id: "goal-1", status: "planning", title: "Runtime" }], active_execution: active, execution_deltas: [] });
+    submitExecutionDelta.mockResolvedValue({ delta_id: "delta-1", content: "标题后加中文", delta_type: "ui_adjustment", impact_level: "low", status: "applied", package_version: 2 });
+    getFounderExecution.mockResolvedValue({ ...active, deltas: [{ delta_id: "delta-1", content: "标题后加中文", delta_type: "ui_adjustment", impact_level: "low", status: "applied", package_version: 2 }] });
+    render(<SinoFounderAIApp />);
+    expect(await screen.findByPlaceholderText("补充当前执行……")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("与 Sino 讨论"), { target: { value: "标题后加中文" } }); fireEvent.click(screen.getByRole("button", { name: "发送补充" }));
+    expect(await screen.findByText("已加入执行包 V2")).toBeTruthy();
+  });
+
+  it("renders high-impact delta confirmation controls", async () => {
+    window.localStorage.setItem("sino-founder-active-conversation", "conv-1");
+    const delta = { delta_id: "delta-high", content: "改为 Event Stream", delta_type: "correction", impact_level: "high", status: "pending_confirmation", decision: "pause_and_replan" };
+    getConversationWorkspace.mockResolvedValue({ ...emptySnapshot, goals: [{ goal_id: "goal-1", status: "planning" }], active_execution: { id: "execution-1", task_asset_id: "task-1", status: "paused", deltas: [delta] }, execution_deltas: [delta] });
+    render(<SinoFounderAIApp />);
+    expect(await screen.findByPlaceholderText("补充信息或调整执行方案……")).toBeTruthy();
+    expect(screen.getByText("高影响")).toBeTruthy(); expect(screen.getByRole("button", { name: "确认调整" })).toBeTruthy();
+  });
+
+  it("restores Conversation, Digest and Execution Delta history after refresh", async () => {
+    window.localStorage.setItem("sino-founder-active-conversation", "conv-restored");
+    const restoredDelta = { delta_id: "delta-restored", content: "保持当前颜色", delta_type: "constraint_update", impact_level: "low", status: "applied", package_version: 2 };
+    getConversationWorkspace.mockResolvedValue({ ...emptySnapshot, conversation: { id: "conv-restored", state: "executing" }, messages: [{ message_id: "m-restored", role: "founder", content: "保持当前颜色" }], digest: { ...emptySnapshot.digest, summary: "已恢复的讨论" }, goals: [{ goal_id: "goal-restored", status: "planning", title: "恢复任务" }], task_asset: { id: "task-restored", status: "approved" }, active_execution: { id: "execution-restored", task_asset_id: "task-restored", status: "paused", execution_allowed: true, events: [], deltas: [restoredDelta], artifact: { id: "artifact-restored" }, memory: { decision: "memory-decision" } }, execution_deltas: [restoredDelta] });
+    render(<SinoFounderAIApp />);
+    await waitFor(() => expect(getConversationWorkspace).toHaveBeenCalledWith("conv-restored"));
+    expect(await screen.findByText("已恢复的讨论")).toBeTruthy();
+    expect(screen.getAllByText("保持当前颜色").length).toBeGreaterThan(0);
+    expect(screen.getByText("已加入执行包 V2")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "已授权" })).toBeTruthy();
+    expect(createFounderConversation).not.toHaveBeenCalled();
+    expect(createFounderExecution).not.toHaveBeenCalled();
   });
 });

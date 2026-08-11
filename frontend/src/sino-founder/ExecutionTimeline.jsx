@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 
 const STEPS = [
-  { key: "approved", label: "Approved", start: "approved", end: "queued" },
-  { key: "queued", label: "Queued", start: "queued", end: "worker_started" },
-  { key: "worker", label: "Worker Started", start: "worker_started", end: "codex_started" },
-  { key: "codex", label: "Codex Running", start: "codex_started", end: "codex_finished" },
-  { key: "testing", label: "Testing", start: "testing_started", end: "testing_finished" },
-  { key: "artifact", label: "Artifact", start: "testing_finished", end: "artifact_saved" },
-  { key: "memory", label: "Memory", start: "artifact_saved", end: "memory_saved" },
-  { key: "completed", label: "Completed", start: "completed", end: "completed" },
+  { key: "approved", label: "已审批", start: "approved", end: "queued" },
+  { key: "queued", label: "已排队", start: "queued", end: "worker_started" },
+  { key: "worker", label: "Worker 已启动", start: "worker_started", end: "codex_started" },
+  { key: "codex", label: "Codex 运行中", start: "codex_started", end: "codex_finished" },
+  { key: "testing", label: "测试", start: "testing_started", end: "testing_finished" },
+  { key: "artifact", label: "成果", start: "testing_finished", end: "artifact_saved" },
+  { key: "memory", label: "记忆", start: "artifact_saved", end: "memory_saved" },
+  { key: "completed", label: "已完成", start: "completed", end: "completed" },
 ];
+
+const STATUS_LABELS = { draft: "草稿", approved: "已审批", queued: "已排队", executing: "执行中", testing: "测试中", paused: "已暂停", completed: "已完成", failed: "失败" };
+const EVENT_LABELS = { approved: "已审批", queued: "已排队", worker_started: "Worker 已启动", codex_started: "Codex 已启动", codex_finished: "Codex 已完成", testing_started: "测试已开始", testing_finished: "测试已完成", artifact_saved: "成果已保存", memory_saved: "记忆已保存", completed: "已完成", failed: "失败", backend_restarted: "后端已重启", founder_delta_received: "已收到 Founder 补充", delta_classified: "增量已分类", delta_applied: "增量已应用", execution_paused_for_delta: "执行因增量暂停", execution_replanned: "执行计划已更新", execution_resumed: "执行已恢复" };
 
 function formatTime(value) {
   if (!value) return "Waiting";
@@ -48,10 +51,10 @@ export function ExecutionTimeline({ status, timeline = {}, events = [], error, f
   const lastObserved = lastEvent || events.at(-1);
   const reason = failureReason || error;
   return (
-    <section className="sino-timeline sino-timeline--v2" aria-label="Execution Timeline" aria-live="polite">
+    <section className="sino-timeline sino-timeline--v2" aria-label="执行时间线" aria-live="polite">
       <header className="sino-timeline__header">
-        <span className="sino-kicker">Execution timeline V2</span>
-        {status && <strong data-status={status}>{status === "paused" ? "Paused" : status === "failed" ? "Failed" : status.replace("_", " ")}</strong>}
+        <span className="sino-kicker">执行时间线 V2</span>
+        {status && <strong data-status={status}>{STATUS_LABELS[status] || status}</strong>}
       </header>
       <ol>{STEPS.map((step, index) => {
         const startedAt = indexed[step.start]?.timestamp;
@@ -62,8 +65,9 @@ export function ExecutionTimeline({ status, timeline = {}, events = [], error, f
         const className = [startedAt ? "is-active" : "", isCurrent ? "is-current" : "", finishedAt ? "is-complete" : ""].filter(Boolean).join(" ");
         return <li key={step.key} className={className}><span>{index + 1}</span><div><strong>{step.label}</strong><time dateTime={startedAt || undefined}>{startedAt ? `${formatTime(startedAt)}${finishedAt && finishedAt !== startedAt ? ` – ${formatTime(finishedAt)}` : ""}` : "Waiting"}</time>{duration && <small>{duration}</small>}</div></li>;
       })}</ol>
-      {status === "failed" && <div className="sino-execution-notice sino-execution-notice--failed" role="alert"><strong>Failed</strong><p><b>Reason:</b> {reason || "Execution failed without a captured reason."}</p><p><b>Last Event:</b> {lastObserved ? `${lastObserved.event_name} · ${formatTime(lastObserved.timestamp)}` : "Unavailable"}</p></div>}
-      {status === "paused" && <div className="sino-execution-notice sino-execution-notice--paused" role="status"><strong>Paused</strong><p><b>Reason:</b> {pauseReason || "Backend restarted"}</p><p><b>Last Event:</b> {lastObserved ? `${lastObserved.event_name} · ${formatTime(lastObserved.timestamp)}` : "Unavailable"}</p>{recoverable && onResume && <button className="sino-button" type="button" onClick={onResume}>Resume Execution</button>}</div>}
+      {events.length > 0 && <ul className="sino-timeline-events" aria-label="执行事件日志">{events.map((event) => <li key={event.event_id}><time dateTime={event.timestamp}>{formatTime(event.timestamp)}</time><strong>{EVENT_LABELS[event.event_name] || event.event_name}</strong><span>{event.message}</span></li>)}</ul>}
+      {status === "failed" && <div className="sino-execution-notice sino-execution-notice--failed" role="alert"><strong>失败</strong><p><b>原因：</b> {reason || "执行失败，但没有捕获到具体原因。"}</p><p><b>最后事件：</b> {lastObserved ? `${EVENT_LABELS[lastObserved.event_name] || lastObserved.event_name} · ${formatTime(lastObserved.timestamp)}` : "暂无"}</p></div>}
+      {status === "paused" && <div className="sino-execution-notice sino-execution-notice--paused" role="status"><strong>已暂停</strong><p><b>原因：</b> {pauseReason || "后端已重启"}</p><p><b>最后事件：</b> {lastObserved ? `${EVENT_LABELS[lastObserved.event_name] || lastObserved.event_name} · ${formatTime(lastObserved.timestamp)}` : "暂无"}</p>{recoverable && onResume && <button className="sino-button" type="button" onClick={onResume}>恢复执行</button>}</div>}
     </section>
   );
 }

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Float, String, Text, text
+from sqlalchemy import DateTime, Float, JSON, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base
@@ -25,6 +25,7 @@ class MemoryAssetDB(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_message_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")

@@ -37,6 +37,7 @@ from app.core.decision.model import DecisionAssetDB
 from app.core.task_asset.model import TaskAssetDB
 from app.core.artifact.model import ArtifactAssetDB
 from app.core.memory.model import MemoryAssetDB
+from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
 
 config = context.config
 
