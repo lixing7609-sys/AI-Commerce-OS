@@ -1,11 +1,80 @@
-from dataclasses import replace
+from dataclasses import asdict, replace
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+from threading import RLock
 from uuid import uuid4
 
 from .execution_loop import ExecutionSession
-from .orchestrator import ExecutionPackage
+from .execution_events import append_event, migrate_legacy_events, migrate_restart_failure
+from .orchestrator import ExecutionPackage, TaskAssetDraft
 
 _sessions: dict[str, ExecutionSession] = {}
 _packages: dict[str, ExecutionPackage] = {}
+_lock = RLock()
+
+
+def _registry_path() -> Path:
+    configured = os.getenv("FOUNDER_EXECUTION_REGISTRY_PATH")
+    return Path(configured).resolve() if configured else Path(__file__).resolve().parents[3] / ".founder-execution" / "registry.json"
+
+
+def _package_from_dict(data: dict) -> ExecutionPackage:
+    return ExecutionPackage(**{**data, "task_asset": TaskAssetDraft(**data["task_asset"])})
+
+
+def _session_path(execution_id: str) -> Path:
+    return _registry_path().parent / "sessions" / f"{execution_id}.json"
+
+
+def _persist(execution_id: str) -> None:
+    path = _session_path(execution_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".json.tmp")
+    payload = {"session": asdict(_sessions[execution_id]), "package": asdict(_packages[execution_id])}
+    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(path)
+
+
+def load_execution_sessions() -> None:
+    sessions = {}
+    packages = {}
+    path = _registry_path()
+    if path.exists():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            legacy_sessions = {key: ExecutionSession(**value) for key, value in payload.get("sessions", {}).items()}
+            for session in legacy_sessions.values():
+                migrate_legacy_events(session)
+                migrate_restart_failure(session)
+            sessions.update(legacy_sessions)
+            packages.update({key: _package_from_dict(value) for key, value in payload.get("packages", {}).items()})
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+    for item in sorted((path.parent / "sessions").glob("execution-*.json")):
+        try:
+            payload = json.loads(item.read_text(encoding="utf-8"))
+            session = ExecutionSession(**payload["session"])
+            migrate_legacy_events(session)
+            migrate_restart_failure(session)
+            package = _package_from_dict(payload["package"])
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        sessions[session.id] = session
+        packages[session.id] = package
+    with _lock:
+        _sessions.update(sessions)
+        _packages.update(packages)
+
+
+def save_execution_session(session: ExecutionSession, package: ExecutionPackage | None = None) -> None:
+    with _lock:
+        _sessions[session.id] = session
+        if package is not None:
+            _packages[session.id] = package
+        if session.id in _packages:
+            _persist(session.id)
 
 
 def create_execution_session(task_asset_id: str, package: ExecutionPackage) -> ExecutionSession:
@@ -14,8 +83,7 @@ def create_execution_session(task_asset_id: str, package: ExecutionPackage) -> E
         task_asset_id=task_asset_id,
         execution_package_id=f"package-{uuid4().hex[:16]}",
     )
-    _sessions[session.id] = session
-    _packages[session.id] = package
+    save_execution_session(session, package)
     return session
 
 
@@ -27,8 +95,10 @@ def approve_execution_session(execution_id: str) -> tuple[ExecutionSession, Exec
     if session.status != "draft":
         raise ValueError("only draft executions can be approved")
     session.status = "approved"
+    session.approved_at = datetime.now(timezone.utc).isoformat()
+    append_event(session, "approved", status="approved", message="Founder approval granted", timestamp=session.approved_at)
     package = replace(package, execution_allowed=True)
-    _packages[execution_id] = package
+    save_execution_session(session, package)
     return session, package
 
 
@@ -41,3 +111,6 @@ def get_execution_session(execution_id: str) -> tuple[ExecutionSession, Executio
 def list_execution_sessions() -> list[ExecutionSession]:
     """Return a read-only snapshot for Founder state analysis."""
     return list(_sessions.values())
+
+
+load_execution_sessions()

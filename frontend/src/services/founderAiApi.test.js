@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { analyzeFounderConversation, analyzeWithSinoBrain, buildSystemBlueprint, createFounderConversation, executeFounderExecution, getFounderBriefing, getFounderStrategy } from "./founderAiApi";
+import { analyzeFounderConversation, analyzeWithSinoBrain, buildSystemBlueprint, createFounderConversation, executeFounderExecution, getFounderBriefing, getFounderExecution, getFounderStrategy, resumeFounderExecution } from "./founderAiApi";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -52,5 +52,18 @@ describe("Founder AI conversation API", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ status: "completed" }) });
     await executeFounderExecution("execution/1");
     expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/executions/execution%2F1/execute");
+  });
+
+  it("polls the canonical execution status endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ status: "testing" }) });
+    await getFounderExecution("execution/1");
+    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/executions/execution%2F1/status");
+  });
+
+  it("resumes a paused execution through the recovery endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ status: "queued" }) });
+    await resumeFounderExecution("execution/1");
+    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/executions/execution%2F1/resume");
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
   });
 });

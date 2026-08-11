@@ -63,5 +63,9 @@ export function executeFounderExecution(executionId) {
 }
 
 export function getFounderExecution(executionId) {
-  return request(`/founder-ai/executions/${encodeURIComponent(executionId)}`, undefined, "获取执行状态失败");
+  return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/status`, undefined, "获取执行状态失败");
+}
+
+export function resumeFounderExecution(executionId) {
+  return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/resume`, { method: "POST" }, "恢复执行失败");
 }

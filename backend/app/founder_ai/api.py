@@ -14,7 +14,7 @@ from app.founder_ai.orchestrator import (
 )
 from app.founder_ai.execution_registry import approve_execution_session, create_execution_session
 from app.founder_ai.execution_registry import get_execution_session
-from app.founder_ai.execution_worker import enqueue_execution, execution_queue
+from app.founder_ai.execution_worker import enqueue_execution, execution_queue, resume_execution
 from app.founder_ai.sino_brain import SinoBrain
 from app.founder_ai.self_management import SinoStateAnalyzer
 from app.founder_ai.autonomous_planning import SinoStrategicAnalyzer
@@ -140,13 +140,28 @@ class ExecutionSessionOut(BaseModel):
     executor: str
     status: str
     execution_allowed: bool
+    created_at: str | None = None
     queue: dict[str, Any] | None = None
+    timeline: dict[str, str | None] | None = None
+    approved_at: str | None = None
+    queued_at: str | None = None
+    started_at: str | None = None
+    testing_at: str | None = None
+    completed_at: str | None = None
+    events: list[dict[str, Any]] = Field(default_factory=list)
+    last_event: dict[str, Any] | None = None
+    failure_reason: str | None = None
+    pause_reason: str | None = None
+    recoverable: bool = False
+    current_stage: str | None = None
 
 
 class ExecutionResultOut(ExecutionSessionOut):
     result: dict[str, Any] | None = None
     artifact: dict[str, Any] | None = None
     memory: dict[str, Any] | None = None
+    error_message: str | None = None
+    execution_logs: list[dict[str, str]] = Field(default_factory=list)
 
 
 router = APIRouter(prefix="/founder-ai", tags=["Founder AI"])
@@ -283,6 +298,14 @@ def create_founder_execution(request: ExecutionCreateIn):
         executor=session.executor,
         status=session.status,
         execution_allowed=False,
+        created_at=session.created_at,
+        timeline=_execution_timeline(session),
+        approved_at=session.approved_at,
+        queued_at=session.queued_at,
+        started_at=session.started_at,
+        testing_at=session.testing_at,
+        completed_at=session.completed_at,
+        **_execution_observability(session),
     )
 
 
@@ -303,7 +326,15 @@ def approve_founder_execution(execution_id: str):
         executor=session.executor,
         status=queue_item.status,
         execution_allowed=package.execution_allowed,
+        created_at=session.created_at,
         queue=queue_item.to_dict(),
+        timeline=_execution_timeline(session),
+        approved_at=session.approved_at,
+        queued_at=session.queued_at,
+        started_at=session.started_at,
+        testing_at=session.testing_at,
+        completed_at=session.completed_at,
+        **_execution_observability(session),
     )
 
 
@@ -330,11 +361,46 @@ def _execution_result(session, package) -> ExecutionResultOut:
         executor=session.executor,
         status=session.status,
         execution_allowed=package.execution_allowed,
+        created_at=session.created_at,
         queue=queue_item.to_dict() if queue_item else None,
+        timeline=_execution_timeline(session),
+        approved_at=session.approved_at,
+        queued_at=session.queued_at,
+        started_at=session.started_at,
+        testing_at=session.testing_at,
+        completed_at=session.completed_at,
         result=session.result,
         artifact=session.artifact,
         memory=session.memory,
+        error_message=session.error_message,
+        execution_logs=session.execution_logs,
+        **_execution_observability(session),
     )
+
+
+def _execution_observability(session) -> dict[str, Any]:
+    last_event = session.events[-1] if session.events else None
+    if last_event and last_event.get("event_name") == "failed":
+        last_event = last_event.get("metadata", {}).get("last_event") or last_event
+    return {
+        "events": session.events,
+        "last_event": last_event,
+        "failure_reason": session.failure_reason or session.error_message,
+        "pause_reason": session.pause_reason,
+        "recoverable": session.recoverable,
+        "current_stage": session.current_stage,
+    }
+
+
+def _execution_timeline(session) -> dict[str, str | None]:
+    return {
+        "approved": session.approved_at,
+        "queued": session.queued_at,
+        "executing": session.started_at,
+        "testing": session.testing_at,
+        "completed": session.completed_at if session.status == "completed" else None,
+        "failed": session.completed_at if session.status == "failed" else None,
+    }
 
 
 @router.get("/executions/{execution_id}", response_model=ExecutionResultOut)
@@ -343,6 +409,42 @@ def get_founder_execution(execution_id: str):
     if record is None:
         raise HTTPException(status_code=404, detail="Execution session not found")
     return _execution_result(*record)
+
+
+@router.get("/executions/{execution_id}/status", response_model=ExecutionResultOut)
+def get_founder_execution_status(execution_id: str):
+    """Canonical polling and refresh-recovery contract for execution runtime state."""
+    return get_founder_execution(execution_id)
+
+
+@router.post("/executions/{execution_id}/resume", response_model=ExecutionSessionOut)
+def resume_founder_execution(execution_id: str):
+    try:
+        queue_item = resume_execution(execution_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except (ValueError, RuntimeError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    session, package = get_execution_session(execution_id)
+    return ExecutionSessionOut(
+        id=session.id,
+        task_asset_id=session.task_asset_id,
+        execution_package_id=session.execution_package_id,
+        executor=session.executor,
+        status=session.status,
+        execution_allowed=package.execution_allowed,
+        created_at=session.created_at,
+        queue=queue_item.to_dict(),
+        timeline=_execution_timeline(session),
+        approved_at=session.approved_at,
+        queued_at=session.queued_at,
+        started_at=session.started_at,
+        testing_at=session.testing_at,
+        completed_at=session.completed_at,
+        **_execution_observability(session),
+    )
 
 
 @router.post("/conversations/{conversation_id}/analyze", response_model=FounderAnalyzeOut)

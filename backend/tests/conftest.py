@@ -11,8 +11,18 @@ pytest session 级别做一次外层快照/恢复，作为最终的安全网，
 """
 
 from datetime import datetime, timezone
+import os
+from pathlib import Path
+import tempfile
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
+
+# Founder execution runtime state must never share the developer's live registry.
+os.environ.setdefault(
+    "FOUNDER_EXECUTION_REGISTRY_PATH",
+    str(Path(tempfile.mkdtemp(prefix="sino-execution-tests-")) / "registry.json"),
+)
 
 from app.agents.agent_registry import AgentRegistry
 from app.database.db import SessionLocal
@@ -45,11 +55,19 @@ def _snapshot_runtime_state_row():
             "recovery_failure_count": row.recovery_failure_count,
         }
 
+    except SQLAlchemyError:
+        # Pure unit tests must remain runnable when the developer PostgreSQL
+        # instance is unavailable (for example inside a network sandbox).
+        return _DATABASE_UNAVAILABLE
+
     finally:
         db.close()
 
 
 def _restore_runtime_state_row(snapshot):
+    if snapshot is _DATABASE_UNAVAILABLE:
+        return
+
     db = SessionLocal()
 
     try:
@@ -80,6 +98,9 @@ def _restore_runtime_state_row(snapshot):
 
     finally:
         db.close()
+
+
+_DATABASE_UNAVAILABLE = object()
 
 
 @pytest.fixture(scope="session", autouse=True)

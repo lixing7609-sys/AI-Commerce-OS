@@ -1,0 +1,155 @@
+"""Canonical, durable events for Founder execution observability."""
+
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from typing import Any
+from uuid import NAMESPACE_URL, uuid4, uuid5
+
+
+EXECUTION_EVENT_NAMES = {
+    "approved",
+    "queued",
+    "worker_started",
+    "codex_started",
+    "codex_finished",
+    "testing_started",
+    "testing_finished",
+    "artifact_saved",
+    "memory_saved",
+    "completed",
+    "failed",
+    "backend_restarted",
+}
+
+LEGACY_EVENT_NAMES = {
+    "executing": "codex_started",
+    "testing": "testing_started",
+    "persisting": "testing_finished",
+}
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionEvent:
+    event_id: str
+    execution_id: str
+    event_name: str
+    timestamp: str
+    status: str
+    message: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def create(
+        cls,
+        execution_id: str,
+        event_name: str,
+        *,
+        status: str,
+        message: str,
+        timestamp: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> "ExecutionEvent":
+        if event_name not in EXECUTION_EVENT_NAMES:
+            raise ValueError(f"unsupported execution event: {event_name}")
+        return cls(
+            event_id=f"event-{uuid4().hex[:20]}",
+            execution_id=execution_id,
+            event_name=event_name,
+            timestamp=timestamp or utc_now(),
+            status=status,
+            message=message,
+            metadata=dict(metadata or {}),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def append_event(
+    session,
+    event_name: str,
+    *,
+    status: str,
+    message: str,
+    timestamp: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    event = ExecutionEvent.create(
+        session.id,
+        event_name,
+        status=status,
+        message=message,
+        timestamp=timestamp,
+        metadata=metadata,
+    ).to_dict()
+    session.events.append(event)
+    session.current_stage = event_name
+    # Preserve the old response and persisted shape while clients migrate to events.
+    session.execution_logs.append({"timestamp": event["timestamp"], "stage": event_name, "message": message})
+    return event
+
+
+def migrate_legacy_events(session) -> None:
+    """Populate canonical events once for sessions written before Timeline V2."""
+    if session.events:
+        return
+    for index, log in enumerate(session.execution_logs):
+        raw_name = str(log.get("stage", ""))
+        event_name = LEGACY_EVENT_NAMES.get(raw_name, raw_name)
+        if event_name not in EXECUTION_EVENT_NAMES:
+            continue
+        timestamp = str(log.get("timestamp") or session.created_at)
+        event_id = f"event-{uuid5(NAMESPACE_URL, f'{session.id}:{timestamp}:{event_name}:{index}').hex[:20]}"
+        session.events.append(
+            {
+                "event_id": event_id,
+                "execution_id": session.id,
+                "event_name": event_name,
+                "timestamp": timestamp,
+                "status": _legacy_status(event_name, session.status),
+                "message": str(log.get("message") or event_name.replace("_", " ").title()),
+                "metadata": {},
+            }
+        )
+    if session.events:
+        session.current_stage = session.events[-1]["event_name"]
+
+
+def migrate_restart_failure(session) -> None:
+    """Turn the former restart-as-failure representation into a paused session."""
+    if session.status != "failed" or not str(session.error_message or "").startswith("Backend restarted during execution"):
+        return
+    interrupted_status = "testing" if session.testing_at else "executing"
+    session.status = "paused"
+    session.pause_reason = "Backend restarted"
+    session.recoverable = not any((session.result, session.artifact, session.memory))
+    session.failure_reason = None
+    session.error_message = None
+    session.completed_at = None
+    append_event(
+        session,
+        "backend_restarted",
+        status="paused",
+        message="Backend restarted during execution; review and resume when safe",
+        metadata={"interrupted_status": interrupted_status, "recoverable": session.recoverable, "migrated": True},
+    )
+
+
+def _legacy_status(event_name: str, final_status: str) -> str:
+    if event_name == "failed":
+        return "failed"
+    if event_name == "backend_restarted":
+        return "paused"
+    if event_name == "completed":
+        return "completed"
+    if event_name in {"testing_started", "testing_finished", "artifact_saved", "memory_saved"}:
+        return "testing"
+    if event_name in {"worker_started", "codex_started", "codex_finished"}:
+        return "executing"
+    if event_name in {"approved", "queued"}:
+        return event_name
+    return final_status

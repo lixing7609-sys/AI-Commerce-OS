@@ -2,17 +2,18 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SinoFounderAIApp from "./SinoFounderAIApp.jsx";
-import { analyzeWithSinoBrain, buildSystemBlueprint, createFounderConversation, createFounderExecution, getFounderBriefing, getFounderStrategy } from "../services/founderAiApi.js";
+import { analyzeWithSinoBrain, buildSystemBlueprint, createFounderConversation, createFounderExecution, getFounderBriefing, getFounderExecution, getFounderStrategy } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 
 vi.mock("../services/founderAiApi.js", () => ({
   createFounderConversation: vi.fn(), analyzeWithSinoBrain: vi.fn(),
-  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(), getFounderExecution: vi.fn(), getFounderBriefing: vi.fn(), getFounderStrategy: vi.fn(), buildSystemBlueprint: vi.fn(),
+  createFounderExecution: vi.fn(), approveFounderExecution: vi.fn(), executeFounderExecution: vi.fn(), resumeFounderExecution: vi.fn(), getFounderExecution: vi.fn(), getFounderBriefing: vi.fn(), getFounderStrategy: vi.fn(), buildSystemBlueprint: vi.fn(),
 }));
 vi.mock("../services/taskAssetApi.js", () => ({ createTaskAsset: vi.fn() }));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   getFounderBriefing.mockResolvedValue({ status: "ready", progress: { completed: 0, total: 0, percent: 0 }, risks: [], recommendations: [], project_state: { current_phase: "planning", completed_capabilities: [], active_tasks: [], blocked_items: [] } });
   getFounderStrategy.mockResolvedValue({ current_phase: "Founder Intelligence Foundation", roadmap: { milestones: [] }, capability_status: { applications: [] }, recommendations: [] });
 });
@@ -22,7 +23,8 @@ describe("SinoFounderAIApp", () => {
   it("renders the independent application workspace", () => {
     render(<SinoFounderAIApp />);
     expect(screen.getByText("Sino", { selector: ".sino-brand div" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "把目标变成可控的执行" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "早上好，Founder。今天推进什么？" })).toBeTruthy();
+    expect(screen.getByLabelText("项目关键指标")).toBeTruthy();
     expect(screen.getByTestId("analysis-card")).toBeTruthy();
     expect(screen.getByTestId("evidence-card")).toBeTruthy();
     expect(screen.getByTestId("solution-card")).toBeTruthy();
@@ -33,6 +35,8 @@ describe("SinoFounderAIApp", () => {
     expect(screen.getByText("Testing")).toBeTruthy();
     expect(screen.getByText("Completed")).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "Sino Founder AI" })).toBeTruthy();
+    const workspace = screen.getByRole("main", { name: "Founder AI workspace content" });
+    expect(workspace.getAttribute("tabindex")).toBe("0");
   });
 
   it("turns a Founder goal into Brain cards and a canonical execution session", async () => {
@@ -53,8 +57,8 @@ describe("SinoFounderAIApp", () => {
     createFounderExecution.mockResolvedValue({ id: "execution-1", status: "draft" });
 
     render(<SinoFounderAIApp />);
-    fireEvent.change(screen.getByLabelText("告诉 Sino 你想完成什么"), { target: { value: "继续推进 AI Commerce OS" } });
-    fireEvent.click(screen.getByRole("button", { name: "分析目标" }));
+    fireEvent.change(screen.getByLabelText(/你现在最想推进什么/), { target: { value: "继续推进 AI Commerce OS" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始推理 →" }));
 
     await waitFor(() => expect(createFounderExecution).toHaveBeenCalledWith("task-asset-1", { goal: "继续推进 AI Commerce OS" }));
     expect(createTaskAsset).toHaveBeenCalledWith({
@@ -74,6 +78,13 @@ describe("SinoFounderAIApp", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("uses a suggested goal as the next reasoning prompt", () => {
+    render(<SinoFounderAIApp />);
+    fireEvent.click(screen.getByRole("button", { name: "梳理当前最高优先级任务" }));
+    expect(screen.getByLabelText(/你现在最想推进什么/).value).toBe("梳理当前最高优先级任务");
+    expect(screen.getByRole("button", { name: "开始推理 →" }).disabled).toBe(false);
+  });
+
   it("renders briefing, project state, and approval-gated recommended actions", async () => {
     getFounderBriefing.mockResolvedValue({
       status: "active",
@@ -88,6 +99,37 @@ describe("SinoFounderAIApp", () => {
     expect(screen.getByText("继续任务：Runtime")).toBeTruthy();
     expect(screen.getByText("high · 需授权")).toBeTruthy();
     expect(screen.getByRole("button", { name: "批准执行" }).disabled).toBe(true);
+  });
+
+  it("restores the execution session and timeline after a page refresh", async () => {
+    window.localStorage.setItem("sino-founder-active-execution", "execution-restored");
+    getFounderExecution.mockResolvedValue({
+      id: "execution-restored",
+      status: "testing",
+      execution_allowed: true,
+      timeline: {
+        approved: "2026-08-10T01:00:00Z",
+        queued: "2026-08-10T01:00:01Z",
+        executing: "2026-08-10T01:00:02Z",
+        testing: "2026-08-10T01:00:03Z",
+        completed: null,
+      },
+      events: [
+        { event_id: "event-1", execution_id: "execution-restored", event_name: "approved", timestamp: "2026-08-10T01:00:00Z", status: "approved", message: "Approved", metadata: {} },
+        { event_id: "event-2", execution_id: "execution-restored", event_name: "queued", timestamp: "2026-08-10T01:00:01Z", status: "queued", message: "Queued", metadata: {} },
+        { event_id: "event-3", execution_id: "execution-restored", event_name: "worker_started", timestamp: "2026-08-10T01:00:02Z", status: "executing", message: "Worker started", metadata: {} },
+        { event_id: "event-4", execution_id: "execution-restored", event_name: "codex_started", timestamp: "2026-08-10T01:00:03Z", status: "executing", message: "Codex started", metadata: {} },
+        { event_id: "event-5", execution_id: "execution-restored", event_name: "codex_finished", timestamp: "2026-08-10T01:04:15Z", status: "executing", message: "Codex finished", metadata: {} },
+        { event_id: "event-6", execution_id: "execution-restored", event_name: "testing_started", timestamp: "2026-08-10T01:04:16Z", status: "testing", message: "Testing started", metadata: {} },
+      ],
+    });
+
+    render(<SinoFounderAIApp />);
+
+    await waitFor(() => expect(getFounderExecution).toHaveBeenCalledWith("execution-restored"));
+    expect(await screen.findByText("testing", { selector: '[data-status="testing"]' })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "已授权" })).toBeTruthy();
+    expect(document.querySelector('time[datetime="2026-08-10T01:04:16Z"]')).toBeTruthy();
   });
 
   it("renders roadmap, capability blueprints, and strategic actions", async () => {

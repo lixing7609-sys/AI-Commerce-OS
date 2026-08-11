@@ -2,11 +2,29 @@
 
 from dataclasses import dataclass
 import hashlib
+import logging
+import os
 from pathlib import Path
+import signal
 import subprocess
-from uuid import uuid4
+import time
 
 from .orchestrator import ExecutionPackage
+from .task_package import TaskPackageBuilder
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_CODEX_TIMEOUT_SECONDS = 3600
+
+
+class CodexExecutionTimeout(TimeoutError):
+    """Raised after a timed-out Codex process and its process group are stopped."""
+
+    def __init__(self, timeout_seconds: float, stdout: str = "", stderr: str = ""):
+        super().__init__(f"Codex execution timed out after {timeout_seconds:g} seconds")
+        self.stdout = stdout
+        self.stderr = stderr
+        self.timeout_seconds = timeout_seconds
 
 
 @dataclass(frozen=True)
@@ -19,38 +37,45 @@ class CodexExecutionResult:
     commit_hash: str | None = None
 
 
-def write_codex_instruction(package: ExecutionPackage, workspace: Path) -> Path:
-    workspace.mkdir(parents=True, exist_ok=True)
-    instruction_path = workspace / f"codex_instruction-{uuid4().hex}.md"
-    instruction_path.write_text(
-        "# Founder AI Codex Execution\n\n"
-        f"## Goal\n{package.goal}\n\n"
-        f"## Context\n{package.context}\n\n"
-        f"## Constraints\n{package.constraints}\n\n"
-        f"## Verification\n{package.verification}\n\n"
-        "## Approval\nFounder approval is granted. Execute the work, run the required verification, and create the required commit.\n\n"
-        f"## Commit Requirement\n{package.commit_requirement}\n",
-        encoding="utf-8",
-    )
-    return instruction_path
-
-
 class SubprocessCodexAdapter:
-    def __init__(self, command: str = "codex", timeout_seconds: int = 1800):
+    def __init__(self, command: str = "codex", timeout_seconds: float | None = None, task_package_builder=None):
         self.command = command
-        self.timeout_seconds = timeout_seconds
+        self.task_package_builder = task_package_builder or TaskPackageBuilder()
+        # Founder execution packages commonly include the full backend/frontend
+        # verification suite. Ten minutes is too short for that bounded workflow,
+        # especially on the first run when tool caches are cold.
+        configured_timeout = os.getenv("FOUNDER_CODEX_TIMEOUT_SECONDS", str(DEFAULT_CODEX_TIMEOUT_SECONDS))
+        self.timeout_seconds = timeout_seconds if timeout_seconds is not None else float(configured_timeout)
+        if self.timeout_seconds <= 0:
+            raise ValueError("Codex timeout must be greater than zero")
 
     def execute(self, package: ExecutionPackage, *, cwd: Path) -> CodexExecutionResult:
-        instruction_path = write_codex_instruction(package, cwd / ".founder-execution")
+        instruction_path = self.task_package_builder.write(package, cwd / ".founder-execution")
+        instruction = instruction_path.read_text(encoding="utf-8")
         before = self._working_tree_snapshot(cwd)
         before_head = self._git_head(cwd)
-        completed = subprocess.run(
-            [self.command, "exec", instruction_path.read_text(encoding="utf-8")],
+        started = time.monotonic()
+        logger.info("Codex started instruction=%s timeout_seconds=%s", instruction_path.name, self.timeout_seconds)
+        process = subprocess.Popen(
+            [self.command, "exec", "-"],
             cwd=str(cwd),
-            capture_output=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=self.timeout_seconds,
-            check=False,
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr = process.communicate(input=instruction, timeout=self.timeout_seconds)
+        except subprocess.TimeoutExpired as error:
+            stdout, stderr = self._stop_process_group(process, error)
+            logger.error("Codex timed out after %.2fs instruction=%s", time.monotonic() - started, instruction_path.name)
+            raise CodexExecutionTimeout(self.timeout_seconds, stdout, stderr) from error
+        logger.info(
+            "Codex finished instruction=%s exit_code=%s duration_seconds=%.2f",
+            instruction_path.name,
+            process.returncode,
+            time.monotonic() - started,
         )
         after = self._working_tree_snapshot(cwd)
         after_head = self._git_head(cwd)
@@ -59,13 +84,32 @@ class SubprocessCodexAdapter:
         changed = sorted(working_tree_changes | committed_changes)
         commit_hash = after_head if after_head != before_head else None
         return CodexExecutionResult(
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-            exit_code=completed.returncode,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=process.returncode,
             changed_files=changed,
             tests=list(package.verification),
             commit_hash=commit_hash,
         )
+
+    @staticmethod
+    def _stop_process_group(process: subprocess.Popen, error: subprocess.TimeoutExpired) -> tuple[str, str]:
+        """Terminate Codex and descendants, escalating to SIGKILL after a short grace period."""
+        stdout = error.stdout or ""
+        stderr = error.stderr or ""
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            final_stdout, final_stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            final_stdout, final_stderr = process.communicate()
+        return final_stdout or stdout, final_stderr or stderr
 
     @staticmethod
     def _git_status(cwd: Path) -> dict[str, str]:
