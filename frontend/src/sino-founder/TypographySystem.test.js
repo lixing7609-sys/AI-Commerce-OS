@@ -5,12 +5,14 @@ import { describe, expect, it } from "vitest";
 const css = readFileSync(new URL("./sino-founder-ai.css", import.meta.url), "utf8");
 
 describe("Global Typography System V1", () => {
-  it("removes the shared Conversation Composer separators at their source", () => {
+  it("keeps the shared Composer dock seamless and the toolbar inside its outer border", () => {
     const dockRule = css.match(/\.sino-conversation-composer-dock\s*\{([^}]*)\}/)?.[1] || "";
     const toolbarRule = css.match(/\.sino-composer\.sino-global-composer--toolbar \.sino-composer__toolbar\s*\{([^}]*)\}/)?.[1] || "";
-    expect(dockRule).not.toContain("border-top");
-    expect(toolbarRule).not.toContain("border-top");
-    expect(css).not.toContain(".sino-conversation-composer-dock .sino-global-composer--toolbar .sino-composer__toolbar");
+    expect(dockRule).toContain("background: transparent");
+    expect(toolbarRule).toContain("margin: 18px 0 0");
+    expect(toolbarRule).toContain("padding: 0");
+    expect(toolbarRule).not.toContain("-26px");
+    expect(toolbarRule).not.toContain("-20px");
     expect(css).toMatch(/\.sino-composer\s*\{[^}]*border:\s*1px solid/);
   });
   it("defines the shared Founder typography tokens", () => {
