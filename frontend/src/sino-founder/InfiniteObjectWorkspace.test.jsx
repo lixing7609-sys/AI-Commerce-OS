@@ -61,12 +61,10 @@ describe("Founder Object Infinite Workspace", () => {
     expect(evolution.edges.map((item) => item.relation)).toEqual(["version", "artifact", "memory"]);
   });
 
-  it("switches projections as filters inside one Object Workspace", async () => {
-    const onViewChange = vi.fn();
-    render(<InfiniteObjectWorkspace view="all" onViewChange={onViewChange} selectedObject={null} onSelectionChange={vi.fn()} />);
+  it("leaves projection navigation to the shared top bar", async () => {
+    render(<InfiniteObjectWorkspace view="all" selectedObject={null} onSelectionChange={vi.fn()} />);
     expect(await screen.findByRole("region", { name: "Object Workspace Infinite Workspace" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "执行" }));
-    expect(onViewChange).toHaveBeenCalledWith("execution");
-    expect(screen.getByRole("button", { name: "全部" }).classList.contains("is-active")).toBe(true);
+    expect(screen.queryByRole("navigation", { name: "Object Workspace 筛选" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Object Workspace" })).toBeNull();
   });
 });

@@ -20,7 +20,7 @@ const restoredWidth = (key, fallback, min, max) => {
 };
 const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
 
-export function SinoFounderShell({ active, onNavigate, sidebarProps, main, context }) {
+export function SinoFounderShell({ active, onNavigate, workspaceFilter, onWorkspaceFilter, sidebarProps, main, context }) {
   const shellRef = useRef(null);
   const mainRef = useRef(null);
   const [sidebarWidth, setSidebarWidth] = useState(() => restoredWidth(SIDEBAR_KEY, DEFAULT_SIDEBAR, MIN_SIDEBAR, MAX_SIDEBAR));
@@ -70,7 +70,7 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
     <SecretarySidebar active={active} onNavigate={onNavigate} {...sidebarProps} />
     <div className={`sino-shell-divider sino-shell-divider--left${dragging === "sidebar" ? " is-active" : ""}`} role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" aria-valuemin={MIN_SIDEBAR} aria-valuemax={MAX_SIDEBAR} aria-valuenow={sidebarWidth} onMouseDown={(event) => startResize("sidebar", event)} onDoubleClick={() => reset("sidebar")} />
     <header className="sino-founder-topbar">
-      <CapabilityNavigation active={active} onNavigate={onNavigate} />
+      <CapabilityNavigation active={active} workspaceFilter={workspaceFilter} onWorkspaceFilter={onWorkspaceFilter} />
     </header>
     <main ref={mainRef} className={`sino-founder-main${["conversation", "project", "objects"].includes(active) ? " sino-founder-main--fixed-workspace" : ""}${active === "objects" ? " sino-founder-main--object-workspace" : ""}`} tabIndex={0} aria-label="Founder AI 工作区内容">{main}</main>
     <div className={`sino-shell-divider sino-shell-divider--right${dragging === "context" ? " is-active" : ""}`} role="separator" aria-label="调整右侧上下文宽度" aria-orientation="vertical" aria-valuemin={MIN_CONTEXT} aria-valuemax={MAX_CONTEXT} aria-valuenow={contextWidth} onMouseDown={(event) => startResize("context", event)} onDoubleClick={() => reset("context")} />

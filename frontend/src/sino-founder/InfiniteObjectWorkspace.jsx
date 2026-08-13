@@ -48,8 +48,6 @@ export function projectFounderObjects(objects, view) {
   return { nodes, edges: edges.filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to)) };
 }
 
-export const OBJECT_WORKSPACE_FILTERS = [["all", "全部"], ["builder", "系统关系"], ["capability-center", "能力"], ["execution", "执行"], ["assets", "演化"]];
-
 export function ObjectInspector({ object, onContinue, onApprove, onOpenExecution, onShowRevisions }) {
   const [showRevisions, setShowRevisions] = useState(false);
   if (!object) return <section className="sino-object-inspector-panel" aria-label="对象详情"><span className="sino-kicker">对象详情</span><h2>当前未选择对象</h2><p>点击画布中的对象，可查看版本、关系、执行、资产、记忆和历史。</p></section>;
@@ -64,7 +62,7 @@ export function ObjectInspector({ object, onContinue, onApprove, onOpenExecution
   </dl>{showRevisions && <div className="sino-object-inspector-revisions">{object.revisions?.length ? object.revisions.map((revision) => <article key={revision.revision_id}><strong>V{revision.version} · {statusLabel(revision.status)}</strong><p>{revision.description || "暂无变更说明"}</p><small>{date(revision.created_at)} · {revision.source_conversation_id || "暂无来源会话"}</small></article>) : <p>暂无版本记录</p>}</div>}<footer><button type="button" onClick={() => onContinue(object)}>继续讨论</button>{object.status !== "approved" && <button type="button" onClick={() => onApprove(object)}>批准</button>}{object.execution_refs?.length ? <button type="button" onClick={() => onOpenExecution(object)}>查看执行</button> : null}<button type="button" onClick={() => { setShowRevisions((value) => !value); onShowRevisions?.(object); }}>查看版本历史</button></footer></section>;
 }
 
-export function InfiniteObjectWorkspace({ view = "all", onViewChange, selectedObject, onSelectionChange, refreshKey = 0, camera: persistedCamera, onCameraChange }) {
+export function InfiniteObjectWorkspace({ view = "all", selectedObject, onSelectionChange, refreshKey = 0, camera: persistedCamera, onCameraChange }) {
   const viewportRef = useRef(null);
   const dragRef = useRef(null);
   const [objects, setObjects] = useState([]);
@@ -120,7 +118,7 @@ export function InfiniteObjectWorkspace({ view = "all", onViewChange, selectedOb
   }
 
   return <section className="sino-infinite-workspace" aria-label="Object Workspace Infinite Workspace">
-    <header className="sino-infinite-workspace__header"><div><h1>Object Workspace</h1><nav className="sino-object-workspace-filters" aria-label="Object Workspace 筛选">{OBJECT_WORKSPACE_FILTERS.map(([key, label]) => <button type="button" key={key} className={view === key ? "is-active" : ""} onClick={() => onViewChange?.(key)}>{label}</button>)}</nav></div><div className="sino-infinite-workspace__controls"><button type="button" onClick={fitToObjects}>适应视图</button><span>{Math.round(camera.scale * 100)}%</span></div></header>
+    <header className="sino-infinite-workspace__header"><div className="sino-infinite-workspace__controls"><button type="button" onClick={fitToObjects}>适应视图</button><span>{Math.round(camera.scale * 100)}%</span></div></header>
     <div ref={viewportRef} className="sino-object-canvas" onPointerDown={startPan} onPointerMove={pan} onPointerUp={stopPan} onPointerCancel={stopPan} onWheel={zoom}>
       <div className="sino-object-canvas__plane" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})` }}>
         <svg className="sino-object-relations" width="1000" height="1000" aria-label="对象关系">{relations.map((relation) => { const from = positions[relation.from]; const to = positions[relation.to]; return <g key={`${relation.from}-${relation.to}-${relation.relation}`}><line x1={from.x + 118} y1={from.y + 66} x2={to.x + 118} y2={to.y + 66} /><text x={(from.x + to.x) / 2 + 118} y={(from.y + to.y) / 2 + 56}>{relationLabel(relation.relation)}</text></g>; })}</svg>
