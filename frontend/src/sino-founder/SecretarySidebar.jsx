@@ -87,7 +87,7 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
       <button type="button" title="项目" aria-label="项目" onClick={() => expandSection("projects")}><FolderIcon /></button>
       <button type="button" title="会话" aria-label="会话" onClick={() => expandSection("conversations")}><ConversationIcon /></button>
     </nav>}
-    <section className="sino-sidebar-section"><button className="sino-sidebar-section__toggle sino-sidebar-primary-title" onClick={() => setProjectsOpen((value) => !value)} aria-expanded={projectsOpen}><span><FolderIcon />项目</span><i>{projectsOpen ? "⌄" : "›"}</i></button>{projectsOpen && <div className="sino-project-list">{projects.map((project) => <button key={project.id} className={project.id === activeProjectId ? "is-active" : ""} onClick={() => onSelectProject(project.id)}><FolderIcon /><span>{project.name}</span></button>)}</div>}</section>
+    <section className="sino-sidebar-section"><button className="sino-sidebar-section__toggle sino-sidebar-primary-title" onClick={() => setProjectsOpen((value) => !value)} aria-expanded={projectsOpen}><span><FolderIcon />项目</span><i>{projectsOpen ? "⌄" : "›"}</i></button>{projectsOpen && <div className="sino-project-list">{projects.map((project) => <button key={project.id} className={project.id === activeProjectId ? "is-active" : ""} onClick={() => onSelectProject(project.id)}><i aria-hidden="true">•</i><span>{project.name}</span></button>)}</div>}</section>
     <div className="sino-sidebar__conversation-title sino-sidebar-primary-title"><span><ConversationIcon />会话</span></div>
     </div>
     <div className="sino-sidebar__scroll-region" aria-label="历史会话列表">

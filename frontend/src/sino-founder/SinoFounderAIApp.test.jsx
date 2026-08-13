@@ -64,6 +64,9 @@ describe("Sino Founder AI interaction responsibilities", () => {
     const conversationTitle = screen.getByText("会话").closest(".sino-sidebar-primary-title");
     expect(projectTitle.querySelector("svg")).toBeTruthy();
     expect(conversationTitle.querySelector("svg")).toBeTruthy();
+    const projectItem = await screen.findByRole("button", { name: /AI Commerce OS/ });
+    expect(projectItem.querySelector("svg")).toBeNull();
+    expect(projectItem.querySelector("i")?.textContent).toBe("•");
     expect((await screen.findAllByRole("button", { name: "AI Commerce OS" })).length).toBeGreaterThan(0);
     const composer = screen.getByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……").closest("form");
     const projectSelector = document.querySelector(".sino-project-selector");
