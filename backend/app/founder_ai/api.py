@@ -280,7 +280,7 @@ def get_conversation_workspace(conversation_id: str):
     try:
         snapshot = council_service.snapshot(conversation_id)
     except LookupError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
+        raise HTTPException(status_code=404, detail={"code": "conversation_not_found", "message": str(error)}) from error
     active = next((item for item in reversed(list_execution_sessions()) if item.status in {"draft", "approved", "queued", "executing", "testing", "paused"}), None)
     if active:
         record = get_execution_session(active.id)

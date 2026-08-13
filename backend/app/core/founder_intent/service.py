@@ -181,6 +181,10 @@ def get_conversation_candidate_context(conversation_id: str) -> dict | None:
     with SessionLocal() as session:
         binding = session.get(ConversationCandidateContextDB, conversation_id)
         row = session.get(FounderObjectCandidateDB, binding.candidate_id) if binding else None
+        if binding and not row:
+            session.delete(binding)
+            session.commit()
+            return None
         return _candidate_display(row) if row else None
 
 

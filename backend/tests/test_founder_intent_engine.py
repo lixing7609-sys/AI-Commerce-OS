@@ -94,3 +94,15 @@ def test_provider_and_parse_failure_never_mutate(monkeypatch):
     def fail(_ctx): raise ValueError("bad provider output")
     assert intent_service.FounderIntentEngine(fail).run(conversation.id, "m-fail", "自然讨论") == []
     assert object_service.list_founder_objects() == []
+
+
+def test_invalid_object_and_candidate_context_bindings_are_cleaned(monkeypatch):
+    factory = runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Context integrity")
+    with factory() as session:
+        session.add(ConversationObjectContextDB(conversation_id=conversation.id, object_id="missing-object"))
+        session.add(intent_service.ConversationCandidateContextDB(conversation_id=conversation.id, candidate_id="missing-candidate")); session.commit()
+    assert object_service.get_conversation_context_object(conversation.id) is None
+    assert intent_service.get_conversation_candidate_context(conversation.id) is None
+    with factory() as session:
+        assert session.get(ConversationObjectContextDB, conversation.id) is None
+        assert session.get(intent_service.ConversationCandidateContextDB, conversation.id) is None

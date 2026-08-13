@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, clearFounderObjectDiscussion, continueFounderCandidateDiscussion, continueFounderObjectDiscussion, getFounderObject, reviewFounderCandidate } from "../services/founderAiApi.js";
-import { approveFounderExecution, buildSystemBlueprint, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderProjects, getFounderStrategy, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
+import { approveFounderExecution, buildSystemBlueprint, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { AssetMemoryCenter, AssetMemoryDetailPane } from "./AssetMemoryCenter.jsx";
@@ -85,6 +85,7 @@ export function ConversationWorkspace() {
   const [workspaceCamera, setWorkspaceCamera] = useState(() => storedCamera(queryFilter() || stored(WORKSPACE_FILTER_KEY) || "all"));
   const sendLockRef = useRef(false);
   const skipNextRestoreRef = useRef(false);
+  const initialRestoreRef = useRef(Boolean(conversationId));
 
   useEffect(() => {
     const objects = snapshot?.founder_objects || [];
@@ -139,6 +140,27 @@ export function ConversationWorkspace() {
     });
   }, []);
 
+  const removeConversationHistory = useCallback((id) => {
+    setConversations((current) => {
+      const next = current.filter((item) => item.id !== id);
+      remember(CONVERSATION_HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+    if (stored(CONVERSATION_KEY) === id) remember(CONVERSATION_KEY, null);
+  }, []);
+
+  const applyConversationSnapshot = useCallback((id, restored) => {
+    setConversationId(id); setSnapshot(restored); setDiscussionMessage(""); setExecutionMessage(""); setError("");
+    setActiveProjectId(restored.conversation?.project_id || null); setProjectIntelligence(null);
+    remember(CONVERSATION_KEY, id); remember(PROJECT_KEY, restored.conversation?.project_id || null);
+    rememberConversation(id, restored.conversation?.title || restored.messages?.[0]?.content || "新讨论");
+    const restoredGoal = restored.goals?.find((item) => ["goal_confirmed", "planning"].includes(item.status)) || restored.goals?.[0] || null;
+    setGoal(restoredGoal);
+    if (restored.active_execution) { setExecution(restored.active_execution); setExecutionId(restored.active_execution.id); setApproved(Boolean(restored.active_execution.execution_allowed)); remember(EXECUTION_KEY, restored.active_execution.id); }
+    else { setExecution(null); setExecutionId(null); setApproved(false); remember(EXECUTION_KEY, null); }
+    setView("conversation");
+  }, [rememberConversation]);
+
   const restoreWorkspace = useCallback(async (id) => {
     if (!id) return;
     const restored = await getConversationWorkspace(id);
@@ -157,7 +179,8 @@ export function ConversationWorkspace() {
   }, [rememberConversation]);
 
   useEffect(() => {
-    if (!conversationId) return undefined;
+    if (!conversationId || !initialRestoreRef.current) return undefined;
+    initialRestoreRef.current = false;
     if (skipNextRestoreRef.current) { skipNextRestoreRef.current = false; return undefined; }
     let active = true;
     getConversationWorkspace(conversationId).then((restored) => {
@@ -171,9 +194,20 @@ export function ConversationWorkspace() {
       if (restored.active_execution) {
         setExecution(restored.active_execution); setExecutionId(restored.active_execution.id); setApproved(Boolean(restored.active_execution.execution_allowed)); remember(EXECUTION_KEY, restored.active_execution.id);
       }
-    }).catch((requestError) => { if (active) { setError(requestError.message); remember(CONVERSATION_KEY, null); setConversationId(null); setSnapshot(null); setView("home"); } });
+    }).catch((requestError) => { if (active) { setError(requestError.message); if (requestError.status === 404) removeConversationHistory(conversationId); remember(CONVERSATION_KEY, null); setConversationId(null); setSnapshot(null); setView("home"); } });
     return () => { active = false; };
-  }, [conversationId, rememberConversation]);
+  }, [conversationId, rememberConversation, removeConversationHistory]);
+  useEffect(() => {
+    let active = true;
+    getFounderConversations().then((items) => {
+      if (!active) return;
+      const valid = items.map((item) => ({ id: item.id, title: item.title, updatedAt: new Date(item.updated_at || item.created_at || 0).getTime() || Date.now() }));
+      setConversations(valid); remember(CONVERSATION_HISTORY_KEY, JSON.stringify(valid));
+      const activeId = stored(CONVERSATION_KEY);
+      if (activeId && !valid.some((item) => item.id === activeId) && activeId !== conversationId) remember(CONVERSATION_KEY, null);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [conversationId]);
   useEffect(() => { Promise.all([getFounderBriefing(), getFounderStrategy()]).then(([nextBriefing, nextStrategy]) => { setBriefing(nextBriefing); setStrategy(nextStrategy); }).catch(() => {}); }, []);
   useEffect(() => { getFounderProjects().then(setProjects).catch(() => {}); }, []);
   useEffect(() => {
@@ -271,12 +305,17 @@ export function ConversationWorkspace() {
     remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(PROJECT_KEY, null); remember(WORKSPACE_VIEW_KEY, null); setView("home");
   }
 
-  function selectConversation(id) {
-    remember(WORKSPACE_VIEW_KEY, "conversation");
+  async function selectConversation(id) {
     if (!id || id === conversationId) { setView("conversation"); return; }
-    setConversationId(id); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setResult(null); setExecutionId(null); setExecution(null); setApproved(false);
-    setActiveProjectId(null); setProjectIntelligence(null);
-    remember(CONVERSATION_KEY, id); remember(EXECUTION_KEY, null); remember(PROJECT_KEY, null); setView("conversation");
+    setBusy(true); setError("");
+    try {
+      const restored = await getConversationWorkspace(id);
+      remember(WORKSPACE_VIEW_KEY, "conversation");
+      applyConversationSnapshot(id, restored);
+    } catch (requestError) {
+      if (requestError.status === 404 || requestError.code === "conversation_not_found") removeConversationHistory(id);
+      setError(requestError.message);
+    } finally { setBusy(false); }
   }
 
   function selectProjectContext(id) {

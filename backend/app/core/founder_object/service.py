@@ -136,6 +136,9 @@ def get_conversation_context_object(conversation_id: str) -> dict | None:
         context = session.get(ConversationObjectContextDB, conversation_id)
         record = session.get(FounderObjectDB, context.object_id) if context else None
         if not record:
+            if context:
+                session.delete(context)
+                session.commit()
             return None
         revisions = list(session.scalars(select(FounderObjectRevisionDB).where(FounderObjectRevisionDB.object_id == record.id).order_by(FounderObjectRevisionDB.version.desc())))
         return _display(record, revisions)

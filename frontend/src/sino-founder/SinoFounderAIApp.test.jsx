@@ -3,10 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SinoFounderAIApp from "./SinoFounderAIApp.jsx";
 import { normalizeFounderView } from "./ConversationWorkspace.jsx";
-import { continueFounderObjectDiscussion, createFounderConversation, createFounderExecution, createFounderProject, discussWithCouncil, discussWithSino, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderObject, getFounderObjects, getFounderProjects, getFounderStrategy, getLibraryArtifact, getModelCenter, getProjectIntelligence, reasonConfirmedGoal, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
+import { continueFounderObjectDiscussion, createFounderConversation, createFounderExecution, createFounderProject, discussWithCouncil, discussWithSino, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderObject, getFounderObjects, getFounderProjects, getFounderStrategy, getLibraryArtifact, getModelCenter, getProjectIntelligence, reasonConfirmedGoal, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({ approveFounderExecution: vi.fn(), approveFounderObject: vi.fn(), archiveFounderObject: vi.fn(), bindFounderConversationProject: vi.fn(), buildSystemBlueprint: vi.fn(), clearFounderObjectDiscussion: vi.fn(), confirmCandidateGoal: vi.fn(), continueFounderObjectDiscussion: vi.fn(), createFounderConversation: vi.fn(), createFounderExecution: vi.fn(), createFounderProject: vi.fn(), decideExecutionDelta: vi.fn(), discussWithAutoDeliberation: vi.fn(), discussWithCouncil: vi.fn(), discussWithSino: vi.fn(), getAssetMemoryCenter: vi.fn(), getConversationWorkspace: vi.fn(), getFounderBriefing: vi.fn(), getFounderExecution: vi.fn(), getFounderObject: vi.fn(), getFounderObjects: vi.fn(), getFounderProjects: vi.fn(), getFounderStrategy: vi.fn(), getLibraryArtifact: vi.fn(), getLibraryMemory: vi.fn(), getModelCenter: vi.fn(), getProjectIntelligence: vi.fn(), createArtifactVersion: vi.fn(), createIntelligenceReference: vi.fn(), createMemoryRevision: vi.fn(), mergeLibraryMemories: vi.fn(), updateArtifactStatus: vi.fn(), updateMemoryStatus: vi.fn(), reasonConfirmedGoal: vi.fn(), resumeFounderExecution: vi.fn(), retryCouncil: vi.fn(), retrySinoReply: vi.fn(), submitExecutionDelta: vi.fn() }));
+vi.mock("../services/founderAiApi.js", () => ({ approveFounderExecution: vi.fn(), approveFounderObject: vi.fn(), archiveFounderObject: vi.fn(), bindFounderConversationProject: vi.fn(), buildSystemBlueprint: vi.fn(), clearFounderObjectDiscussion: vi.fn(), confirmCandidateGoal: vi.fn(), continueFounderObjectDiscussion: vi.fn(), createFounderConversation: vi.fn(), createFounderExecution: vi.fn(), createFounderProject: vi.fn(), decideExecutionDelta: vi.fn(), discussWithAutoDeliberation: vi.fn(), discussWithCouncil: vi.fn(), discussWithSino: vi.fn(), getAssetMemoryCenter: vi.fn(), getConversationWorkspace: vi.fn(), getFounderBriefing: vi.fn(), getFounderConversations: vi.fn(), getFounderExecution: vi.fn(), getFounderObject: vi.fn(), getFounderObjects: vi.fn(), getFounderProjects: vi.fn(), getFounderStrategy: vi.fn(), getLibraryArtifact: vi.fn(), getLibraryMemory: vi.fn(), getModelCenter: vi.fn(), getProjectIntelligence: vi.fn(), createArtifactVersion: vi.fn(), createIntelligenceReference: vi.fn(), createMemoryRevision: vi.fn(), mergeLibraryMemories: vi.fn(), updateArtifactStatus: vi.fn(), updateMemoryStatus: vi.fn(), reasonConfirmedGoal: vi.fn(), resumeFounderExecution: vi.fn(), retryCouncil: vi.fn(), retrySinoReply: vi.fn(), submitExecutionDelta: vi.fn() }));
 vi.mock("../services/taskAssetApi.js", () => ({ createTaskAsset: vi.fn() }));
 
 const emptySnapshot = { conversation: { id: "conv-1", project_id: "project-ai-commerce-os", state: "exploring" }, messages: [], digest: { summary: "", topics: [], decisions: [], knowledge_items: [], candidate_goals: [], pending_questions: [] }, goals: [] };
@@ -20,6 +20,7 @@ beforeEach(() => {
   getFounderStrategy.mockResolvedValue({ roadmap: { milestones: [] }, capability_status: { applications: [] }, recommendations: [] });
   getAssetMemoryCenter.mockResolvedValue({ artifacts: [], memories: [], executions: [] });
   getFounderProjects.mockResolvedValue(projects);
+  getFounderConversations.mockRejectedValue(new Error("history unavailable"));
   getProjectIntelligence.mockResolvedValue(intelligence);
   getConversationWorkspace.mockResolvedValue(emptySnapshot);
   getFounderObjects.mockResolvedValue([]);
@@ -314,6 +315,7 @@ describe("Sino Founder AI interaction responsibilities", () => {
 
   it("restores a selected historical Conversation without creating one", async () => {
     window.localStorage.setItem("sino-founder-conversation-history", JSON.stringify([{ id: "conv-old", title: "历史产品讨论", updatedAt: Date.now() }]));
+    getFounderConversations.mockResolvedValue([{ id: "conv-old", title: "历史产品讨论", updated_at: new Date().toISOString() }]);
     getConversationWorkspace.mockResolvedValue({ ...emptySnapshot, conversation: { id: "conv-old", project_id: "project-ai-commerce-os", state: "exploring" }, messages: [{ message_id: "m-old", role: "founder", content: "旧会话内容" }] });
     render(<SinoFounderAIApp />);
     fireEvent.click(screen.getByRole("button", { name: /历史产品讨论/ }));
@@ -321,6 +323,35 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect((await screen.findAllByText("旧会话内容")).length).toBeGreaterThan(0);
     await waitFor(() => expect(document.querySelector(".sino-project-list .is-active")?.textContent || "").toContain("AI Commerce OS"));
     expect(createFounderConversation).not.toHaveBeenCalled();
+  });
+
+  it("removes stale history and preserves the active Conversation when restore returns 404", async () => {
+    const validA = { ...emptySnapshot, conversation: { id: "conv-a", title: "正常会话 A" }, messages: [{ message_id: "a", role: "founder", content: "A 内容" }] };
+    const validB = { ...emptySnapshot, conversation: { id: "conv-b", title: "正常会话 B" }, messages: [{ message_id: "b", role: "founder", content: "B 内容" }] };
+    getFounderConversations.mockResolvedValue([{ id: "conv-a", title: "正常会话 A", updated_at: new Date().toISOString() }, { id: "missing", title: "Object Native Test", updated_at: new Date().toISOString() }, { id: "conv-b", title: "正常会话 B", updated_at: new Date().toISOString() }]);
+    getConversationWorkspace.mockImplementation(async (id) => {
+      if (id === "missing") { const error = new Error("恢复 Sino 讨论失败（状态码 404）"); error.status = 404; error.code = "conversation_not_found"; throw error; }
+      return id === "conv-b" ? validB : validA;
+    });
+    render(<SinoFounderAIApp />);
+    fireEvent.click(await screen.findByRole("button", { name: /正常会话 A/ }));
+    expect(await screen.findByText("A 内容")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Object Native Test/ }));
+    expect(await screen.findByText(/状态码 404/)).toBeTruthy();
+    expect(screen.getByText("A 内容")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Object Native Test/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /正常会话 B/ }));
+    expect(await screen.findByText("B 内容")).toBeTruthy();
+    expect(window.localStorage.getItem("sino-founder-active-conversation")).toBe("conv-b");
+  });
+
+  it("rebuilds stale local history from the authoritative Conversation list", async () => {
+    window.localStorage.setItem("sino-founder-conversation-history", JSON.stringify([{ id: "missing", title: "Object Native Test", updatedAt: Date.now() }]));
+    getFounderConversations.mockResolvedValue([{ id: "conv-valid", title: "有效会话", updated_at: new Date().toISOString() }]);
+    render(<SinoFounderAIApp />);
+    expect(await screen.findByRole("button", { name: /有效会话/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Object Native Test/ })).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem("sino-founder-conversation-history"))).toHaveLength(1);
   });
 
   it.skip("legacy page flow: moves an explicitly confirmed Goal and Task Asset into the Execution Center", async () => {

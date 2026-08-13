@@ -2,7 +2,14 @@ const BASE_URL = "http://127.0.0.1:8000/api/v1";
 
 async function request(path, options, fallback) {
   const response = await fetch(`${BASE_URL}${path}`, options);
-  if (!response.ok) throw new Error(`${fallback}（状态码 ${response.status}）`);
+  if (!response.ok) {
+    let detail = null;
+    try { detail = await response.json(); } catch { /* non-JSON error */ }
+    const error = new Error(`${fallback}（状态码 ${response.status}）`);
+    error.status = response.status;
+    error.code = detail?.detail?.code || detail?.code || null;
+    throw error;
+  }
   return response.json();
 }
 
@@ -12,6 +19,10 @@ export function createFounderConversation(title, projectId) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title, project_id: projectId || null }),
   }, "创建 Founder Conversation 失败");
+}
+
+export function getFounderConversations() {
+  return request("/conversations", undefined, "获取 Founder 历史会话失败");
 }
 
 export function bindFounderConversationProject(conversationId, projectId) {
