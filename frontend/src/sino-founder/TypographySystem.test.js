@@ -5,6 +5,11 @@ import { describe, expect, it } from "vitest";
 const css = readFileSync(new URL("./sino-founder-ai.css", import.meta.url), "utf8");
 
 describe("Global Typography System V1", () => {
+  it("removes only the Conversation Composer dock separators", () => {
+    expect(css).toMatch(/\.sino-conversation-composer-dock\s*\{[^}]*border-top:\s*0/);
+    expect(css).toMatch(/\.sino-conversation-composer-dock \.sino-global-composer--toolbar \.sino-composer__toolbar\s*\{[^}]*border-top:\s*0/);
+    expect(css).toMatch(/\.sino-composer\s*\{[^}]*border:\s*1px solid/);
+  });
   it("defines the shared Founder typography tokens", () => {
     for (const token of ["page-title", "section-title", "card-title", "body", "body-small", "label", "nav", "sidebar", "button", "helper", "metadata"]) {
       expect(css).toContain(`--font-${token}:`);

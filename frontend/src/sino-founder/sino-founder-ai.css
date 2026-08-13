@@ -354,7 +354,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-conversation-thread { --conversation-content-max-width: 900px; --conversation-content-gutter: 20px; display: grid; flex: 1 1 0; grid-template-rows: minmax(0, 1fr) auto 10px; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; box-sizing: border-box; }
 .sino-conversation-thread .sino-conversation-log { align-content: start; max-height: none; min-width: 0; min-height: 0; margin: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .sino-conversation-thread .sino-conversation-log::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.sino-conversation-composer-dock { z-index: 2; width: 100%; border-top: 1px solid var(--line); background: #090b09; box-sizing: border-box; }
+.sino-conversation-composer-dock { z-index: 2; width: 100%; border-top: 0; background: #090b09; box-sizing: border-box; }
 .sino-conversation-workspace-safe-area { min-height: 10px; pointer-events: none; }
 .sino-conversation-thread .sino-global-composer { width: calc(100% - (2 * var(--conversation-content-gutter))); max-width: calc(var(--conversation-content-max-width) - (2 * var(--conversation-content-gutter))); margin-inline: auto; }
 .sino-conversation-composer-dock .sino-global-composer { min-height: 118px; padding: 10px 14px; border-radius: 14px; box-shadow: 0 12px 38px rgba(0,0,0,.22); box-sizing: border-box; }
@@ -363,6 +363,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-conversation-composer-dock .sino-global-composer > div { min-height: 52px; gap: 10px; }
 .sino-conversation-composer-dock .sino-global-composer textarea { min-height: 52px; max-height: 180px; resize: none; overflow-y: hidden; }
 .sino-conversation-composer-dock .sino-global-composer .sino-button { min-height: 38px; height: 38px; padding-inline: 16px; }
+.sino-conversation-composer-dock .sino-global-composer--toolbar .sino-composer__toolbar { border-top: 0; }
 .sino-goal-context { margin-bottom: 24px; padding: 22px; border: 1px solid #35402f; border-radius: 12px; background: rgba(17,21,16,.82); }
 .sino-goal-context > header { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--line); }
 .sino-goal-context > header div { display: grid; gap: 7px; }.sino-goal-context > header strong { color: #e1e6de; font-size: 14px; }.sino-goal-context > header small { color: #596258; font: 12px ui-monospace, monospace; }
