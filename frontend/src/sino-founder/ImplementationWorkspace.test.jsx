@@ -24,23 +24,42 @@ describe("ImplementationWorkspace", () => {
     expect(screen.getByText("当前对象")).toBeTruthy();
     expect(screen.getByText("新增对象 · 等待确认")).toBeTruthy();
     expect(screen.getByText("Capability（能力）")).toBeTruthy();
-    expect(screen.getByText("执行：待开发")).toBeTruthy();
+    expect(screen.getByText("执行：待开发 · V2")).toBeTruthy();
   });
 
   it("renders and reviews a pending Intent candidate", () => {
     const candidate = { candidate_id: "candidate-1", intent_type: "delay", proposed_object_type: "agent", proposed_name: "广告投放 Agent", proposed_status: "deferred", reason: "当前先不开发", confidence: .94, review_status: "pending" };
     const review = vi.fn(), discuss = vi.fn();
     render(<ImplementationWorkspace candidates={[candidate]} onCandidateReview={review} onCandidateContinue={discuss} />);
-    expect(screen.getByText("待确认变更")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /广告投放 Agent/ }));
-    expect(screen.getAllByText("Delay（延期）").length).toBeGreaterThan(0);
-    expect(screen.getByText("建议状态：延期")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "待审批" })).toBeTruthy();
+    expect(screen.getByText("待审批", { selector: ".sino-status-chip" })).toBeTruthy();
+    expect(screen.getByText(/当前先不开发/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "批准" }));
     expect(review).toHaveBeenCalledWith(candidate, "approve");
     fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
     expect(discuss).toHaveBeenCalledWith(candidate);
     fireEvent.click(screen.getByRole("button", { name: "驳回" }));
     expect(review).toHaveBeenCalledWith(candidate, "reject");
+  });
+
+  it("prioritizes a pending modification over the approved target and binds execution to the old version", () => {
+    const object = { object_id: "object-chrome", object_type: "skill", name: "Chrome Extension Skill", status: "approved", version: 2, execution_refs: [{ execution_id: "exec-1", status: "draft", object_version: 2 }] };
+    const candidate = { candidate_id: "candidate-v3", intent_type: "modify", target_object_id: object.object_id, proposed_object_type: "skill", proposed_name: object.name, proposed_description: "增加浏览器数据处理流程", review_status: "pending" };
+    render(<ImplementationWorkspace objects={[object]} contextObject={object} candidates={[candidate]} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.getByText("V2 → V3")).toBeTruthy();
+    expect(screen.getByText("当前执行版本：V2 · 待开发")).toBeTruthy();
+    expect(screen.getByText("待审批", { selector: ".sino-status-chip" })).toBeTruthy();
+    expect(screen.queryByText("V2 · 已批准")).toBeNull();
+    expect(screen.getAllByRole("button", { name: /批准|继续讨论|驳回/ })).toHaveLength(3);
+  });
+
+  it("returns to the effective approved version after a candidate is rejected", () => {
+    const object = { object_id: "object-chrome", object_type: "skill", name: "Chrome Extension Skill", status: "approved", version: 3, execution_refs: [{ status: "draft", object_version: 3 }] };
+    const rejected = { candidate_id: "candidate-v4", target_object_id: object.object_id, intent_type: "modify", review_status: "rejected" };
+    render(<ImplementationWorkspace objects={[object]} candidates={[rejected]} onApprove={vi.fn()} onContinue={vi.fn()} onArchive={vi.fn()} />);
+    expect(screen.getByText("V3 · 已批准")).toBeTruthy();
+    expect(screen.getByText("执行：待开发 · V3")).toBeTruthy();
+    expect(screen.queryByText("待审批", { selector: ".sino-status-chip" })).toBeNull();
   });
 
   it("isolates recognition unavailability from the Conversation", () => {

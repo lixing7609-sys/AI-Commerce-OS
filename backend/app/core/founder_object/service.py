@@ -182,6 +182,16 @@ def approve_object(object_id: str, source_candidate_id: str | None = None) -> di
         # Approval is an idempotent lifecycle transition. Repeated browser
         # submissions must not create a second Task Asset / Execution Session.
         if record.status == "approved" and record.execution_refs:
+            # A newly-approved revision keeps the existing waiting execution
+            # identity, but explicitly advances its approved object version.
+            # Pending candidates never reach this branch, so execution cannot
+            # inherit an unapproved version.
+            refs = list(record.execution_refs or [])
+            refs[-1] = {**refs[-1], "object_version": record.version, "source_candidate_id": source_candidate_id or refs[-1].get("source_candidate_id")}
+            record.execution_refs = refs
+            if source_candidate_id: record.source_candidate_id = source_candidate_id
+            record.updated_at = datetime.now(timezone.utc)
+            session.commit(); session.refresh(record)
             return _display(record)
         if source_candidate_id and not record.source_candidate_id: record.source_candidate_id = source_candidate_id; session.commit()
         conversation_id, name, description, object_type, candidate_id = record.source_conversation_id, record.name, record.description, record.object_type, record.source_candidate_id or source_candidate_id
@@ -190,5 +200,5 @@ def approve_object(object_id: str, source_candidate_id: str | None = None) -> di
     draft = TaskAssetDraft(title=name, description=description, scope={"context": trace}, constraints=["Founder Object approval is the execution boundary"], risk="medium", approval_required=True, conversation_id=conversation_id)
     execution = create_execution_session(task.id, build_execution_package(draft))
     with SessionLocal() as session:
-        record = session.get(FounderObjectDB, object_id); record.status = "approved"; record.source_candidate_id = candidate_id; record.execution_refs = [*list(record.execution_refs or []), {"execution_id": execution.id, "task_asset_id": task.id, "status": execution.status, "source_object_id": object_id, "source_candidate_id": candidate_id}]; record.updated_at = datetime.now(timezone.utc); session.commit(); session.refresh(record)
+        record = session.get(FounderObjectDB, object_id); record.status = "approved"; record.source_candidate_id = candidate_id; record.execution_refs = [*list(record.execution_refs or []), {"execution_id": execution.id, "task_asset_id": task.id, "status": execution.status, "source_object_id": object_id, "source_candidate_id": candidate_id, "object_version": record.version}]; record.updated_at = datetime.now(timezone.utc); session.commit(); session.refresh(record)
         return _display(record)

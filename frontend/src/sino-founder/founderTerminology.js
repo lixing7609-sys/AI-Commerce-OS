@@ -13,7 +13,7 @@ export const STATUS_LABELS = {
   planning: "规划中", coding: "开发中", executing: "执行中", testing: "测试中",
   deploy: "部署中", completed: "已完成", failed: "失败", paused: "已暂停",
   persisted: "已保存",
-  deferred: "延期", pending: "等待确认", superseded: "已被替代",
+  deferred: "延期", pending: "待审批", superseded: "已被替代",
 };
 
 export const INTENT_LABELS = { create: "Create（新增）", modify: "Modify（修改）", merge: "Merge（合并）", split: "Split（拆分）", delay: "Delay（延期）", approve: "Approve（批准）", reject: "Reject（驳回）", archive: "Archive（归档）", reference_existing: "Reference（引用现有对象）" };
