@@ -23,7 +23,11 @@ Status: Frozen · Capability 1 — Founder AI V2 · Object Native Foundation
 
 ## Recognition contract
 
-Recognition is semantic, conservative and idempotent: it must decide whether intent constitutes an object, classify its type, resolve create-versus-update, and deduplicate within the Founder/project scope. The deterministic V1 compatibility recognizer only admits explicit creation language plus an object-type signal. Provider-assisted recognition may replace it later without changing the Object contract.
+Object recognition is governed by the Founder Intent Engine contract. Conversation language is evidence, not a command grammar. The system must infer intent from the whole discussion and must never require a fixed phrase such as “创建 + Object Type”.
+
+The mandatory boundary is: Conversation → Intent Recognition → Candidate Object/Change → Founder Review → Object mutation. Recognition may propose a change, but must not silently mutate the durable Object Layer before the review policy authorizes it. Create, Modify, Merge, Split, Delay, Approve, Reject, Archive and Reference Existing Object are first-class intents. The deterministic V1 recognizer is a compatibility adapter only and must not remain the product recognition policy.
+
+Intent resolution must be semantic, evidence-linked, idempotent and identity-aware. It must use the active context object, conversation history and existing Founder Object Layer to distinguish a new object from a revision, relation or lifecycle transition. Ambiguous intent remains a candidate or pending question; it must not become a duplicate durable object.
 
 ## Migration plan
 
