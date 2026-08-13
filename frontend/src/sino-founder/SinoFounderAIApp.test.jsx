@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SinoFounderAIApp from "./SinoFounderAIApp.jsx";
 import { normalizeFounderView } from "./ConversationWorkspace.jsx";
-import { createFounderConversation, createFounderExecution, createFounderProject, discussWithCouncil, discussWithSino, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderObjects, getFounderProjects, getFounderStrategy, getLibraryArtifact, getModelCenter, getProjectIntelligence, reasonConfirmedGoal, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
+import { createFounderConversation, createFounderExecution, createFounderProject, discussWithCouncil, discussWithSino, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderObject, getFounderObjects, getFounderProjects, getFounderStrategy, getLibraryArtifact, getModelCenter, getProjectIntelligence, reasonConfirmedGoal, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 
 vi.mock("../services/founderAiApi.js", () => ({ approveFounderExecution: vi.fn(), approveFounderObject: vi.fn(), archiveFounderObject: vi.fn(), bindFounderConversationProject: vi.fn(), buildSystemBlueprint: vi.fn(), confirmCandidateGoal: vi.fn(), continueFounderObjectDiscussion: vi.fn(), createFounderConversation: vi.fn(), createFounderExecution: vi.fn(), createFounderProject: vi.fn(), decideExecutionDelta: vi.fn(), discussWithAutoDeliberation: vi.fn(), discussWithCouncil: vi.fn(), discussWithSino: vi.fn(), getAssetMemoryCenter: vi.fn(), getConversationWorkspace: vi.fn(), getFounderBriefing: vi.fn(), getFounderExecution: vi.fn(), getFounderObject: vi.fn(), getFounderObjects: vi.fn(), getFounderProjects: vi.fn(), getFounderStrategy: vi.fn(), getLibraryArtifact: vi.fn(), getLibraryMemory: vi.fn(), getModelCenter: vi.fn(), getProjectIntelligence: vi.fn(), createArtifactVersion: vi.fn(), createIntelligenceReference: vi.fn(), createMemoryRevision: vi.fn(), mergeLibraryMemories: vi.fn(), updateArtifactStatus: vi.fn(), updateMemoryStatus: vi.fn(), reasonConfirmedGoal: vi.fn(), resumeFounderExecution: vi.fn(), retryCouncil: vi.fn(), retrySinoReply: vi.fn(), submitExecutionDelta: vi.fn() }));
@@ -15,7 +15,7 @@ const intelligence = { project_id: "project-ai-commerce-os", project_name: "AI C
 const active = { id: "execution-1", task_asset_id: "task-1", status: "executing", execution_allowed: true, events: [], deltas: [] };
 
 beforeEach(() => {
-  vi.resetAllMocks(); window.localStorage.clear();
+  vi.resetAllMocks(); window.localStorage.clear(); window.history.replaceState({}, "", "/");
   getFounderBriefing.mockResolvedValue({ recommendations: [], project_state: {} });
   getFounderStrategy.mockResolvedValue({ roadmap: { milestones: [] }, capability_status: { applications: [] }, recommendations: [] });
   getAssetMemoryCenter.mockResolvedValue({ artifacts: [], memories: [], executions: [] });
@@ -23,6 +23,7 @@ beforeEach(() => {
   getProjectIntelligence.mockResolvedValue(intelligence);
   getConversationWorkspace.mockResolvedValue(emptySnapshot);
   getFounderObjects.mockResolvedValue([]);
+  getFounderObject.mockRejectedValue(new Error("Founder Object not found"));
   getModelCenter.mockResolvedValue({ provider_catalog: [], providers: [], roles: [], skills: [], health_cost: [], execution_engines: [], agents: [{ agent_id: "sino_founder_ai", application_system_id: "founder_ai", display_name: "Sino AI 秘书", description: "Founder AI 核心 Agent", status: "running" }] });
 });
 afterEach(() => cleanup());
@@ -430,14 +431,25 @@ describe("Sino Founder AI interaction responsibilities", () => {
   it("uses one full-height Object Workspace and Object Inspector for every top-level work view", async () => {
     getFounderObjects.mockResolvedValue([{ object_id: "object-chrome", object_type: "skill", type_label: "Skill", name: "Chrome Extension Skill", status: "approved", version: 2, execution_refs: [{ execution_id: "exec-1", status: "draft" }] }]);
     render(<SinoFounderAIApp />);
-    for (const [label, workspaceName] of [["系统构建器", "系统构建器 Infinite Workspace"], ["能力中心", "能力中心 Infinite Workspace"], ["执行中心", "执行中心 Infinite Workspace"], ["资产与记忆", "资产与记忆 Infinite Workspace"]]) {
+    for (const [label, workspaceName] of [["系统构建器", "系统架构 Infinite Workspace"], ["能力中心", "能力网络 Infinite Workspace"], ["执行中心", "执行流程 Infinite Workspace"], ["资产与记忆", "资产与演化 Infinite Workspace"]]) {
       fireEvent.click(screen.getByRole("button", { name: label }));
       expect(await screen.findByRole("region", { name: workspaceName })).toBeTruthy();
-      expect(screen.getByRole("region", { name: "Object Inspector" })).toBeTruthy();
+      expect(screen.getByRole("region", { name: "对象详情" })).toBeTruthy();
       expect(screen.queryByText("项目上下文")).toBeNull();
       expect(screen.queryByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……")).toBeNull();
     }
     expect(document.querySelector(".sino-founder-main--object-workspace")).toBeTruthy();
+  });
+
+  it("restores workspace view and selected real object from URL after refresh", async () => {
+    const object = { object_id: "object-chrome", object_type: "skill", type_label: "Skill", name: "Chrome Extension Skill", status: "approved", version: 2, execution_refs: [{ execution_id: "exec-1", status: "draft" }] };
+    window.history.replaceState({}, "", "/?workspace=execution&object=object-chrome");
+    getFounderObjects.mockResolvedValue([object]);
+    getFounderObject.mockResolvedValue(object);
+    render(<SinoFounderAIApp />);
+    expect(await screen.findByRole("region", { name: "执行流程 Infinite Workspace" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Chrome Extension Skill" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "对象详情" }).textContent).toContain("object-chrome");
   });
 
   it.skip("legacy page flow: renders selected Asset detail in the Global Context Panel", async () => {

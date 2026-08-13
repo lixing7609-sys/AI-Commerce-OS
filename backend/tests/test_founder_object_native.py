@@ -24,10 +24,16 @@ def test_conversation_recognizes_updates_and_approves_real_skill(monkeypatch):
     assert skill["name"] == "Chrome Extension Skill"
     assert skill["status"] == "draft"
     object_service.attach_object_context(skill["object_id"], conversation.id)
+    context = object_service.get_conversation_context_object(conversation.id)
+    assert context["object_id"] == skill["object_id"]
     updated = object_service.recognize_objects(conversation.id, "message-two", "继续开发这个 Chrome Extension Skill，并增加结构化数据获取。")
     revised = next(item for item in updated if item["object_id"] == skill["object_id"])
     assert revised["version"] == 2
     assert len(object_service.get_object(skill["object_id"])["revisions"]) == 1
+    persisted_context = object_service.get_conversation_context_object(conversation.id)
+    assert persisted_context["object_id"] == skill["object_id"]
+    assert persisted_context["version"] == 2
+    assert len(persisted_context["revisions"]) == 1
     approved = object_service.approve_object(skill["object_id"])
     assert approved["status"] == "approved"
     assert approved["execution_refs"][0]["status"] == "draft"

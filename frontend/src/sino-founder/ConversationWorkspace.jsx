@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, continueFounderObjectDiscussion } from "../services/founderAiApi.js";
+import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, continueFounderObjectDiscussion, getFounderObject } from "../services/founderAiApi.js";
 import { approveFounderExecution, buildSystemBlueprint, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderProjects, getFounderStrategy, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
@@ -25,6 +25,9 @@ const CONVERSATION_HISTORY_KEY = "sino-founder-conversation-history";
 const GOAL_CONTEXT_KEY = "sino-founder-goal-execution-context";
 const PROJECT_KEY = "sino-founder-active-project";
 const WORKSPACE_VIEW_KEY = "sino-founder-object-workspace-view";
+const WORKSPACE_OBJECT_KEY = "sino-founder-object-workspace-selected";
+const WORKSPACE_CAMERA_KEY = "sino-founder-object-workspace-camera";
+const WORKSPACE_VIEWS = ["builder", "capability-center", "execution", "assets"];
 const stored = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 const remember = (key, value) => { try { if (value) window.localStorage.setItem(key, value); else window.localStorage.removeItem(key); } catch { /* unavailable */ } };
 const storedHistory = () => {
@@ -42,10 +45,13 @@ export const normalizeFounderView = (next) => {
   if (["capability", "models", "model-center"].includes(next)) return "capability-center";
   return next;
 };
+const queryView = () => { try { return new URLSearchParams(window.location.search).get("workspace"); } catch { return null; } };
+const queryObject = () => { try { return new URLSearchParams(window.location.search).get("object"); } catch { return null; } };
+const storedCamera = (view) => { try { return JSON.parse(window.localStorage.getItem(`${WORKSPACE_CAMERA_KEY}:${view}`) || "null"); } catch { return null; } };
 
 export function ConversationWorkspace() {
   const [conversationId, setConversationId] = useState(() => stored(CONVERSATION_KEY));
-  const [view, setView] = useState(() => normalizeFounderView(stored(WORKSPACE_VIEW_KEY) || (stored(CONVERSATION_KEY) ? "conversation" : "home")));
+  const [view, setView] = useState(() => normalizeFounderView(queryView() || stored(WORKSPACE_VIEW_KEY) || (stored(CONVERSATION_KEY) ? "conversation" : "home")));
   const [snapshot, setSnapshot] = useState(null);
   const [conversations, setConversations] = useState(storedHistory);
   const [projects, setProjects] = useState([]);
@@ -74,8 +80,40 @@ export function ConversationWorkspace() {
   const [discussionMode, setDiscussionMode] = useState("sino");
   const [objectRefreshKey, setObjectRefreshKey] = useState(0);
   const [selectedWorkspaceObject, setSelectedWorkspaceObject] = useState(null);
+  const [workspaceCamera, setWorkspaceCamera] = useState(() => storedCamera(normalizeFounderView(queryView() || stored(WORKSPACE_VIEW_KEY))));
   const sendLockRef = useRef(false);
   const skipNextRestoreRef = useRef(false);
+
+  const persistWorkspace = useCallback((nextView, objectId = null) => {
+    remember(WORKSPACE_VIEW_KEY, nextView);
+    remember(WORKSPACE_OBJECT_KEY, objectId);
+    try {
+      const url = new URL(window.location.href);
+      if (WORKSPACE_VIEWS.includes(nextView)) url.searchParams.set("workspace", nextView); else url.searchParams.delete("workspace");
+      if (WORKSPACE_VIEWS.includes(nextView) && objectId) url.searchParams.set("object", objectId); else url.searchParams.delete("object");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch { /* unavailable */ }
+  }, []);
+
+  const selectWorkspaceObject = useCallback((object) => {
+    setSelectedWorkspaceObject(object);
+    persistWorkspace(view, object?.object_id || null);
+  }, [persistWorkspace, view]);
+  const persistWorkspaceCamera = useCallback((camera) => {
+    setWorkspaceCamera(camera);
+    remember(`${WORKSPACE_CAMERA_KEY}:${view}`, JSON.stringify(camera));
+  }, [view]);
+
+  useEffect(() => {
+    if (!WORKSPACE_VIEWS.includes(view)) return undefined;
+    const objectId = queryObject() || stored(WORKSPACE_OBJECT_KEY);
+    if (!objectId) return undefined;
+    let active = true;
+    getFounderObject(objectId).then((object) => { if (active) setSelectedWorkspaceObject(object); }).catch(() => {
+      if (active) { setSelectedWorkspaceObject(null); persistWorkspace(view, null); }
+    });
+    return () => { active = false; };
+  }, [view, persistWorkspace]);
 
   const rememberConversation = useCallback((id, title = "新讨论") => {
     if (!id) return;
@@ -272,7 +310,7 @@ export function ConversationWorkspace() {
       await continueFounderObjectDiscussion(item.object_id, targetConversationId);
       setConversationId(targetConversationId); remember(CONVERSATION_KEY, targetConversationId);
       setSnapshot(await getConversationWorkspace(targetConversationId));
-      setDiscussionMessage(`继续讨论 ${item.name}：`); setView("conversation"); remember(WORKSPACE_VIEW_KEY, "conversation");
+      setDiscussionMessage(`继续讨论 ${item.name}：`); setView("conversation"); persistWorkspace("conversation", null);
     }
     catch (requestError) { setError(requestError.message); }
     finally { setBusy(false); }
@@ -360,9 +398,9 @@ export function ConversationWorkspace() {
   let context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />;
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
   if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} /></section>; context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} busy={busy} />; }
-  if (["builder", "capability-center", "execution", "assets"].includes(view)) { main = <InfiniteObjectWorkspace view={view} refreshKey={objectRefreshKey} selectedObject={selectedWorkspaceObject} onSelectionChange={setSelectedWorkspaceObject} />; context = <ObjectInspector object={selectedWorkspaceObject} onContinue={continueObject} onApprove={approveObject} onOpenExecution={openObjectExecution} onShowRevisions={setSelectedWorkspaceObject} />; }
+  if (WORKSPACE_VIEWS.includes(view)) { main = <InfiniteObjectWorkspace key={view} view={view} refreshKey={objectRefreshKey} selectedObject={selectedWorkspaceObject} onSelectionChange={selectWorkspaceObject} camera={workspaceCamera} onCameraChange={persistWorkspaceCamera} />; context = <ObjectInspector object={selectedWorkspaceObject} onContinue={continueObject} onApprove={approveObject} onOpenExecution={openObjectExecution} />; }
 
-  return <SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { remember(WORKSPACE_VIEW_KEY, null); newConversation(); } else { const normalized = normalizeFounderView(next); remember(WORKSPACE_VIEW_KEY, normalized); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />;
+  return <SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (WORKSPACE_VIEWS.includes(normalized)) { setWorkspaceCamera(storedCamera(normalized)); persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); } else persistWorkspace(normalized, null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />;
 }
 
 function ContextSummary({ title, children }) {

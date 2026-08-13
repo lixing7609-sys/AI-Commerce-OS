@@ -119,7 +119,10 @@ def get_conversation_context_object(conversation_id: str) -> dict | None:
     with SessionLocal() as session:
         context = session.get(ConversationObjectContextDB, conversation_id)
         record = session.get(FounderObjectDB, context.object_id) if context else None
-        return _display(record) if record else None
+        if not record:
+            return None
+        revisions = list(session.scalars(select(FounderObjectRevisionDB).where(FounderObjectRevisionDB.object_id == record.id).order_by(FounderObjectRevisionDB.version.desc())))
+        return _display(record, revisions)
 
 
 def attach_object_context(object_id: str, conversation_id: str) -> dict:

@@ -41,7 +41,7 @@ from app.founder_ai.execution_delta import ExecutionDeltaService
 from app.core.conversation_first.model import GoalAssetDB
 from app.database.db import SessionLocal
 from app.core.task_asset.service import get_founder_task_asset
-from app.core.founder_object.service import approve_object, archive_object, attach_object_context, get_object, list_conversation_objects, list_founder_objects
+from app.core.founder_object.service import approve_object, archive_object, attach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -274,6 +274,8 @@ def get_conversation_workspace(conversation_id: str):
             task = get_founder_task_asset(active.task_asset_id)
             snapshot["task_asset"] = ({"id": task.id, "conversation_id": task.conversation_id, "decision_id": task.decision_id, "title": task.title, "description": task.description, "scope": task.scope, "status": task.status, "approval_status": task.approval_status, "execution_status": task.execution_status, "result": task.result} if task else {"id": active.task_asset_id, "title": package.task_asset.title, "description": package.task_asset.description, "scope": package.task_asset.scope, "status": "draft", "approval_status": "pending", "execution_status": active.status})
     snapshot["founder_objects"] = list_conversation_objects(conversation_id)
+    snapshot["context_object"] = get_conversation_context_object(conversation_id)
+    snapshot["active_context_object_id"] = snapshot["context_object"]["object_id"] if snapshot["context_object"] else None
     return snapshot
 
 

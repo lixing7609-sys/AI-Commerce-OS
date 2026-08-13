@@ -18,11 +18,25 @@ describe("Founder Object Infinite Workspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Chrome Extension Skill/ }));
     await waitFor(() => expect(onSelectionChange.mock.calls.some(([value]) => value?.object_id === skill.object_id)).toBe(true));
     rerender(<><InfiniteObjectWorkspace view="capability-center" selectedObject={skill} onSelectionChange={onSelectionChange} /><ObjectInspector object={skill} onContinue={onContinue} onApprove={vi.fn()} onOpenExecution={vi.fn()} /></>);
-    expect(screen.getByRole("region", { name: "Object Inspector" }).textContent).toContain("V2");
+    const inspector = screen.getByRole("region", { name: "对象详情" });
+    expect(inspector.textContent).toContain("Skill（技能）");
+    expect(inspector.textContent).toContain("V2");
+    expect(inspector.textContent).toContain("已批准");
+    expect(inspector.textContent).toContain("待开发");
     fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
     expect(onContinue).toHaveBeenCalledWith(skill);
     rerender(<InfiniteObjectWorkspace view="execution" selectedObject={null} onSelectionChange={onSelectionChange} />);
     expect(await screen.findByRole("button", { name: /Chrome Extension Skill/ })).toBeTruthy();
+  });
+
+  it("renders centralized Chinese terminology for nodes and relationships", async () => {
+    const parent = { ...skill, object_id: "object-parent", object_type: "project", name: "Browser Project", execution_refs: [] };
+    getFounderObjects.mockResolvedValueOnce([{ ...skill, parent_object_id: parent.object_id }, parent]);
+    render(<InfiniteObjectWorkspace view="builder" selectedObject={null} onSelectionChange={vi.fn()} />);
+    expect(await screen.findByText("Skill（技能）")).toBeTruthy();
+    expect(screen.getByText("Project（项目）")).toBeTruthy();
+    expect(screen.getByText("父子关系")).toBeTruthy();
+    expect(screen.getAllByText(/已批准/)).toHaveLength(2);
   });
 
   it("supports canvas pan/zoom controls without creating copied data", async () => {
