@@ -29,11 +29,13 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Sino Founder AI interaction responsibilities", () => {
-  it("maps legacy blueprint and capability views to their top-level owners", () => {
-    expect(normalizeFounderView("blueprint")).toBe("builder");
-    expect(normalizeFounderView("system-builder")).toBe("builder");
-    expect(normalizeFounderView("capability")).toBe("capability-center");
-    expect(normalizeFounderView("models")).toBe("capability-center");
+  it("maps legacy work pages into the single Object Workspace", () => {
+    expect(normalizeFounderView("blueprint")).toBe("objects");
+    expect(normalizeFounderView("system-builder")).toBe("objects");
+    expect(normalizeFounderView("capability")).toBe("objects");
+    expect(normalizeFounderView("models")).toBe("objects");
+    expect(normalizeFounderView("execution")).toBe("objects");
+    expect(normalizeFounderView("assets")).toBe("objects");
   });
   it("opens on a Conversation First home without task or execution surfaces", async () => {
     render(<SinoFounderAIApp />);
@@ -425,26 +427,32 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(within(screen.getByLabelText("当前上下文")).getByText("执行上下文")).toBeTruthy();
   });
 
-  it("uses one full-height Object Workspace and Object Inspector for every top-level work view", async () => {
+  it("uses one Object Workspace with projection filters and one stable Object Inspector", async () => {
     getFounderObjects.mockResolvedValue([{ object_id: "object-chrome", object_type: "skill", type_label: "Skill", name: "Chrome Extension Skill", status: "approved", version: 2, execution_refs: [{ execution_id: "exec-1", status: "draft" }] }]);
     render(<SinoFounderAIApp />);
-    for (const [label, workspaceName] of [["系统构建器", "系统架构 Infinite Workspace"], ["能力中心", "能力网络 Infinite Workspace"], ["执行中心", "执行流程 Infinite Workspace"], ["资产与记忆", "资产与演化 Infinite Workspace"]]) {
+    const topNavigation = screen.getByRole("navigation", { name: "Founder AI 能力入口" });
+    expect(within(topNavigation).getAllByRole("button").map((button) => button.textContent)).toEqual(["Sino Founder AI", "Object Workspace"]);
+    fireEvent.click(within(topNavigation).getByRole("button", { name: "Object Workspace" }));
+    expect(await screen.findByRole("region", { name: "Object Workspace Infinite Workspace" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "对象详情" })).toBeTruthy();
+    for (const label of ["全部", "系统关系", "能力", "执行", "演化"]) {
       fireEvent.click(screen.getByRole("button", { name: label }));
-      expect(await screen.findByRole("region", { name: workspaceName })).toBeTruthy();
-      expect(screen.getByRole("region", { name: "对象详情" })).toBeTruthy();
-      expect(screen.queryByText("项目上下文")).toBeNull();
-      expect(screen.queryByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……")).toBeNull();
+      expect(screen.getByRole("region", { name: "Object Workspace Infinite Workspace" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: label }).classList.contains("is-active")).toBe(true);
     }
+    expect(screen.queryByText("项目上下文")).toBeNull();
+    expect(screen.queryByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……")).toBeNull();
     expect(document.querySelector(".sino-founder-main--object-workspace")).toBeTruthy();
   });
 
   it("restores workspace view and selected real object from URL after refresh", async () => {
     const object = { object_id: "object-chrome", object_type: "skill", type_label: "Skill", name: "Chrome Extension Skill", status: "approved", version: 2, execution_refs: [{ execution_id: "exec-1", status: "draft" }] };
-    window.history.replaceState({}, "", "/?workspace=execution&object=object-chrome");
+    window.history.replaceState({}, "", "/?workspace=objects&filter=execution&object=object-chrome");
     getFounderObjects.mockResolvedValue([object]);
     getFounderObject.mockResolvedValue(object);
     render(<SinoFounderAIApp />);
-    expect(await screen.findByRole("region", { name: "执行流程 Infinite Workspace" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "Object Workspace Infinite Workspace" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "执行" }).classList.contains("is-active")).toBe(true);
     expect(await screen.findByRole("heading", { name: "Chrome Extension Skill" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "对象详情" }).textContent).toContain("object-chrome");
   });
@@ -452,7 +460,7 @@ describe("Sino Founder AI interaction responsibilities", () => {
   it("continues from the backend-resolved source conversation and restores context after refresh", async () => {
     const object = { object_id: "object-chrome", object_type: "skill", name: "Chrome Extension Skill", status: "approved", version: 2, source_conversation_id: "conv-stale", execution_refs: [] };
     const restored = { ...emptySnapshot, conversation: { id: "conv-real", project_id: null, title: "Chrome Skill" }, context_object: object, active_context_object_id: object.object_id, founder_objects: [{ ...object, is_context_object: true }] };
-    window.history.replaceState({}, "", "/?workspace=builder&object=object-chrome");
+    window.history.replaceState({}, "", "/?workspace=objects&filter=builder&object=object-chrome");
     getFounderObjects.mockResolvedValue([object]); getFounderObject.mockResolvedValue(object);
     continueFounderObjectDiscussion.mockResolvedValue({ ...object, context_conversation_id: "conv-real" });
     getConversationWorkspace.mockResolvedValue(restored);
