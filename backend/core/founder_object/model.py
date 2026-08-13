@@ -24,6 +24,7 @@ class FounderObjectDB(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     scope_key: Mapped[str] = mapped_column(String(80), nullable=False, default="founder_ai", server_default="founder_ai")
     source_conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    source_candidate_id: Mapped[str | None] = mapped_column(String(48), nullable=True, index=True)
     source_message_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
     parent_object_id: Mapped[str | None] = mapped_column(String(48), nullable=True, index=True)
     child_object_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))

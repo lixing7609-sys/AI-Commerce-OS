@@ -48,4 +48,15 @@ describe("ImplementationWorkspace", () => {
     expect(screen.getByText("对象识别暂不可用")).toBeTruthy();
     expect(screen.getByText(/Sino 对话仍可正常继续/)).toBeTruthy();
   });
+
+  it("shows traceable bilingual detail for Discussion to Skill Pipeline", () => {
+    const candidate = { candidate_id: "candidate-pipeline", conversation_id: "conv-pipeline", intent_type: "create", proposed_object_type: "capability", proposed_name: "Discussion to Skill Pipeline", proposed_description: "distill discussions", proposed_status: "draft", source_message_refs: ["message-1"], confidence: .8, review_status: "pending" };
+    render(<ImplementationWorkspace candidates={[candidate]} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /讨论 → Skill 生成管线/ }));
+    expect(screen.getAllByText("Discussion to Skill Pipeline").length).toBeGreaterThan(0);
+    expect(screen.getByText("candidate-pipeline")).toBeTruthy();
+    expect(screen.getByText("conv-pipeline")).toBeTruthy();
+    expect(screen.getByText("message-1")).toBeTruthy();
+    expect(screen.getByText("80%")).toBeTruthy();
+  });
 });

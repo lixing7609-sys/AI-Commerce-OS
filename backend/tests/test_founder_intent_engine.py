@@ -14,6 +14,8 @@ from core.founder_object.model import FounderObjectDB, ConversationObjectContext
 def runtime(monkeypatch):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool); Base.metadata.create_all(engine); factory = sessionmaker(bind=engine)
     for module in (conversation_service, intent_service, object_service): monkeypatch.setattr(module, "SessionLocal", factory)
+    monkeypatch.setattr(object_service, "create_task_asset", lambda **kwargs: SimpleNamespace(id="task-intent", **kwargs))
+    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args: SimpleNamespace(id="execution-intent", status="draft"))
     return factory
 
 
@@ -49,7 +51,11 @@ def test_create_without_fixed_wording_and_ambiguous_reference(monkeypatch):
     output = {"intents": [{"intent_type": "create", "proposed_object_type": "capability", "proposed_name": "Browser Session", "reason": "应独立为共享能力", "confidence": .76}]}
     engine = intent_service.FounderIntentEngine(lambda _ctx: (output, "test", "intent-model")); candidates = engine.run(conversation.id, "m-natural", "浏览器会话最好独立出来，Chrome 插件和自动化流程都依赖它。")
     assert candidates[0]["candidate_kind"] == "create_object" and object_service.list_founder_objects() == []
-    intent_service.review_candidate(candidates[0]["candidate_id"], "approve"); assert object_service.list_founder_objects()[0]["name"] == "Browser Session"
+    approved = intent_service.review_candidate(candidates[0]["candidate_id"], "approve"); created = object_service.list_founder_objects()[0]
+    assert created["name"] == "Browser Session" and created["status"] == "approved" and created["source_candidate_id"] == candidates[0]["candidate_id"]
+    assert approved["mutation_result"]["execution_id"] == "execution-intent"
+    again = intent_service.review_candidate(candidates[0]["candidate_id"], "approve")
+    assert again["mutation_result"] == approved["mutation_result"] and len(object_service.list_founder_objects()) == 1
 
 
 def test_provider_and_parse_failure_never_mutate(monkeypatch):

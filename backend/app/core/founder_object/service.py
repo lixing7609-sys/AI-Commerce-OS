@@ -29,7 +29,7 @@ def _normalize_name(name: str) -> str:
 
 
 def _display(record: FounderObjectDB, revisions: list[FounderObjectRevisionDB] | None = None) -> dict:
-    return {"object_id": record.id, "object_type": record.object_type, "type_label": TYPE_LABELS.get(record.object_type, record.object_type), "name": record.name, "description": record.description, "status": record.status, "version": record.version, "source_conversation_id": record.source_conversation_id, "source_message_refs": list(record.source_message_refs or []), "parent_object_id": record.parent_object_id, "child_object_ids": list(record.child_object_ids or []), "dependency_object_ids": list(record.dependency_object_ids or []), "related_object_ids": list(record.related_object_ids or []), "execution_refs": list(record.execution_refs or []), "artifact_refs": list(record.artifact_refs or []), "memory_refs": list(record.memory_refs or []), "decision_refs": list(record.decision_refs or []), "knowledge_refs": list(record.knowledge_refs or []), "founder_question": record.founder_question, "created_at": record.created_at.isoformat() if record.created_at else None, "updated_at": record.updated_at.isoformat() if record.updated_at else None, "revisions": [{"revision_id": item.id, "version": item.version, "name": item.name, "description": item.description, "status": item.status, "source_conversation_id": item.source_conversation_id, "created_at": item.created_at.isoformat() if item.created_at else None} for item in (revisions or [])]}
+    return {"object_id": record.id, "object_type": record.object_type, "type_label": TYPE_LABELS.get(record.object_type, record.object_type), "name": record.name, "description": record.description, "status": record.status, "version": record.version, "source_candidate_id": record.source_candidate_id, "source_conversation_id": record.source_conversation_id, "source_message_refs": list(record.source_message_refs or []), "parent_object_id": record.parent_object_id, "child_object_ids": list(record.child_object_ids or []), "dependency_object_ids": list(record.dependency_object_ids or []), "related_object_ids": list(record.related_object_ids or []), "execution_refs": list(record.execution_refs or []), "artifact_refs": list(record.artifact_refs or []), "memory_refs": list(record.memory_refs or []), "decision_refs": list(record.decision_refs or []), "knowledge_refs": list(record.knowledge_refs or []), "founder_question": record.founder_question, "created_at": record.created_at.isoformat() if record.created_at else None, "updated_at": record.updated_at.isoformat() if record.updated_at else None, "revisions": [{"revision_id": item.id, "version": item.version, "name": item.name, "description": item.description, "status": item.status, "source_conversation_id": item.source_conversation_id, "created_at": item.created_at.isoformat() if item.created_at else None} for item in (revisions or [])]}
 
 
 def _recognition_candidates(text: str) -> list[dict]:
@@ -174,7 +174,7 @@ def archive_object(object_id: str) -> dict:
         return _display(record)
 
 
-def approve_object(object_id: str) -> dict:
+def approve_object(object_id: str, source_candidate_id: str | None = None) -> dict:
     with SessionLocal() as session:
         record = session.get(FounderObjectDB, object_id)
         if not record: raise LookupError("Founder Object not found")
@@ -183,10 +183,12 @@ def approve_object(object_id: str) -> dict:
         # submissions must not create a second Task Asset / Execution Session.
         if record.status == "approved" and record.execution_refs:
             return _display(record)
-        conversation_id, name, description, object_type = record.source_conversation_id, record.name, record.description, record.object_type
-    task = create_task_asset(title=name, description=description, scope={"founder_object_id": object_id, "object_type": object_type, "object_version": get_object(object_id)["version"]}, status="approved", approval_status="approved", execution_status="not_started", conversation_id=conversation_id)
-    draft = TaskAssetDraft(title=name, description=description, scope={"context": {"founder_object_id": object_id, "object_type": object_type}}, constraints=["Founder Object approval is the execution boundary"], risk="medium", approval_required=True, conversation_id=conversation_id)
+        if source_candidate_id and not record.source_candidate_id: record.source_candidate_id = source_candidate_id; session.commit()
+        conversation_id, name, description, object_type, candidate_id = record.source_conversation_id, record.name, record.description, record.object_type, record.source_candidate_id or source_candidate_id
+    trace = {"founder_object_id": object_id, "source_object_id": object_id, "source_candidate_id": candidate_id, "object_type": object_type, "object_name": name, "object_version": get_object(object_id)["version"]}
+    task = create_task_asset(title=name, description=description, scope=trace, status="approved", approval_status="approved", execution_status="not_started", conversation_id=conversation_id)
+    draft = TaskAssetDraft(title=name, description=description, scope={"context": trace}, constraints=["Founder Object approval is the execution boundary"], risk="medium", approval_required=True, conversation_id=conversation_id)
     execution = create_execution_session(task.id, build_execution_package(draft))
     with SessionLocal() as session:
-        record = session.get(FounderObjectDB, object_id); record.status = "approved"; record.execution_refs = [*list(record.execution_refs or []), {"execution_id": execution.id, "task_asset_id": task.id, "status": execution.status}]; record.updated_at = datetime.now(timezone.utc); session.commit(); session.refresh(record)
+        record = session.get(FounderObjectDB, object_id); record.status = "approved"; record.source_candidate_id = candidate_id; record.execution_refs = [*list(record.execution_refs or []), {"execution_id": execution.id, "task_asset_id": task.id, "status": execution.status, "source_object_id": object_id, "source_candidate_id": candidate_id}]; record.updated_at = datetime.now(timezone.utc); session.commit(); session.refresh(record)
         return _display(record)

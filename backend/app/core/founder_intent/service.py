@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SecretaryDigestDB
-from app.core.founder_object.service import OBJECT_TYPES, _display, _normalize_name
+from app.core.founder_object.service import OBJECT_TYPES, _display, _normalize_name, approve_object
 from app.core.model_center.service import resolve_runtime_config
 from app.database.db import SessionLocal
 from app.llm.gateway import llm_gateway
@@ -189,10 +189,27 @@ def review_candidate(candidate_id: str, action: str) -> dict:
     with SessionLocal() as session:
         candidate = session.get(FounderObjectCandidateDB, candidate_id)
         if not candidate: raise LookupError("Founder Candidate not found")
-        if candidate.review_status != "pending": return _candidate_display(candidate)
+        if candidate.review_status != "pending":
+            existing_result = dict(candidate.mutation_result or {})
+            existing_object_id = existing_result.get("object_id")
+            review_status = candidate.review_status
+            candidate_snapshot = _candidate_display(candidate)
+            if action != "approve" or review_status != "approved" or not existing_object_id: return candidate_snapshot
+        else:
+            existing_object_id = None
         if action == "reject": candidate.review_status = "rejected"; candidate.reviewed_at = datetime.now(timezone.utc); session.commit(); return _candidate_display(candidate)
-        result = _apply_mutation(session, candidate)
-        candidate.review_status = "approved"; candidate.reviewed_at = datetime.now(timezone.utc); candidate.mutation_result = result; session.commit(); return _candidate_display(candidate)
+        if not existing_object_id:
+            result = _apply_mutation(session, candidate)
+            candidate.review_status = "approved"; candidate.reviewed_at = datetime.now(timezone.utc); candidate.mutation_result = result; session.commit(); existing_object_id = result.get("object_id")
+        intent_type = candidate.intent_type
+    if existing_object_id and intent_type in {"create", "modify", "split", "merge"}:
+        approved_object = approve_object(existing_object_id, source_candidate_id=candidate_id)
+        execution = approved_object.get("execution_refs", [])[-1] if approved_object.get("execution_refs") else {}
+        with SessionLocal() as session:
+            candidate = session.get(FounderObjectCandidateDB, candidate_id)
+            candidate.mutation_result = {**dict(candidate.mutation_result or {}), "object_id": approved_object["object_id"], "version": approved_object["version"], "status": approved_object["status"], "execution_id": execution.get("execution_id"), "task_asset_id": execution.get("task_asset_id")}
+            session.commit(); session.refresh(candidate); return _candidate_display(candidate)
+    return get_candidate(candidate_id)
 
 
 def _add_revision(session, record: FounderObjectDB):
@@ -208,7 +225,7 @@ def _apply_mutation(session, candidate: FounderObjectCandidateDB) -> dict:
         existing = session.scalar(select(FounderObjectDB).where(FounderObjectDB.object_type == object_type, FounderObjectDB.normalized_name == _normalize_name(candidate.proposed_name), FounderObjectDB.scope_key == scope))
         if existing: record = existing
         else:
-            record = FounderObjectDB(object_type=object_type, name=candidate.proposed_name, normalized_name=_normalize_name(candidate.proposed_name), description=candidate.proposed_description, status="draft", scope_key=scope, source_conversation_id=candidate.conversation_id, source_message_refs=list(candidate.source_message_refs or [])); session.add(record); session.flush(); session.add(FounderObjectRevisionDB(object_id=record.id, version=1, name=record.name, description=record.description, status=record.status, source_conversation_id=record.source_conversation_id, source_message_refs=list(record.source_message_refs or []), snapshot=_display(record)))
+            record = FounderObjectDB(object_type=object_type, name=candidate.proposed_name, normalized_name=_normalize_name(candidate.proposed_name), description=candidate.proposed_description, status="draft", scope_key=scope, source_candidate_id=candidate.id, source_conversation_id=candidate.conversation_id, source_message_refs=list(candidate.source_message_refs or [])); session.add(record); session.flush(); session.add(FounderObjectRevisionDB(object_id=record.id, version=1, name=record.name, description=record.description, status=record.status, source_conversation_id=record.source_conversation_id, source_message_refs=list(record.source_message_refs or []), snapshot=_display(record)))
     else:
         record = session.get(FounderObjectDB, candidate.target_object_id) if candidate.target_object_id else None
         if not record: raise ValueError("candidate target is unresolved")

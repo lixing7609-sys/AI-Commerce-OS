@@ -2,18 +2,21 @@ import { useState } from "react";
 import { intentLabel, objectTypeLabel, statusLabel } from "./founderTerminology.js";
 
 const executionLabel = (item) => statusLabel(item.execution_refs?.at(-1)?.status, { execution: true });
+const DISPLAY_NAMES = { "Discussion to Skill Pipeline": "讨论 → Skill 生成管线" };
+const displayName = (name) => DISPLAY_NAMES[name] || name;
 
 function ObjectCard({ item, selected, onSelect }) {
   const previousVersion = item.revisions?.at(0)?.version;
   return <button type="button" className={selected ? "is-active" : ""} onClick={() => onSelect(item.object_id)}>
-    <span>{objectTypeLabel(item.object_type, item.type_label)}</span><strong>{item.name}</strong>
+    <span>{objectTypeLabel(item.object_type, item.type_label)}</span><strong>{displayName(item.name)}</strong>{displayName(item.name) !== item.name ? <small>{item.name}</small> : null}
     <small>{previousVersion && item.version > previousVersion ? `V${previousVersion} → V${item.version}` : `V${item.version}`} · {statusLabel(item.status)}</small>
     {item.execution_refs?.length ? <em>执行：{executionLabel(item)}</em> : null}
   </button>;
 }
 
 function CandidateCard({ item, selected, onSelect }) {
-  return <button type="button" className={selected ? "is-active" : ""} onClick={() => onSelect(`candidate:${item.candidate_id}`)}><span>{intentLabel(item.intent_type)}</span><strong>{item.proposed_name || "目标对象待确认"}</strong><small>{item.proposed_object_type ? objectTypeLabel(item.proposed_object_type) : "对象待解析"} · {statusLabel(item.review_status)}</small>{item.proposed_status ? <em>建议状态：{statusLabel(item.proposed_status)}</em> : null}</button>;
+  const name = item.proposed_name || "目标对象待确认";
+  return <button type="button" className={selected ? "is-active" : ""} onClick={() => onSelect(`candidate:${item.candidate_id}`)}><span>{intentLabel(item.intent_type)}</span><strong>{displayName(name)}</strong>{displayName(name) !== name ? <small>{name}</small> : null}<small>{item.proposed_object_type ? objectTypeLabel(item.proposed_object_type) : "对象待解析"} · {statusLabel(item.review_status)}</small>{item.proposed_status ? <em>建议状态：{statusLabel(item.proposed_status)}</em> : null}</button>;
 }
 
 export function ImplementationWorkspace({ objects = [], candidates = [], contextObject = null, contextCandidate = null, recognitionStatus = null, onApprove, onContinue, onArchive, onCandidateReview, onCandidateContinue, busy }) {
@@ -35,7 +38,7 @@ export function ImplementationWorkspace({ objects = [], candidates = [], context
       {group(contextObject ? "本轮讨论产生的变更" : "修改对象 / 已进入执行", changed)}
       {!objects.length && !candidates.length && <div className="sino-object-workspace__empty"><strong>当前讨论尚未形成可实现对象</strong><p>继续讨论后，Sino 会自动识别 Project、Agent、Skill、Workflow、Prompt、Capability 等技术对象。</p></div>}
     </div>
-    {selectedCandidate && <article className="sino-object-detail" aria-label="候选变更操作"><header><span>{intentLabel(selectedCandidate.intent_type)}</span><h3>{selectedCandidate.proposed_name || "目标对象待确认"}</h3></header><p>{selectedCandidate.proposed_description || selectedCandidate.reason || "等待 Founder 确认"}</p><dl><div><dt>审核状态</dt><dd>{statusLabel(selectedCandidate.review_status)}</dd></div><div><dt>建议状态</dt><dd>{statusLabel(selectedCandidate.proposed_status)}</dd></div><div><dt>置信度</dt><dd>{Math.round((selectedCandidate.confidence || 0) * 100)}%</dd></div></dl><footer>{selectedCandidate.review_status === "pending" && <button type="button" onClick={() => onCandidateReview(selectedCandidate, "approve")} disabled={busy}>批准</button>}<button type="button" onClick={() => onCandidateContinue(selectedCandidate)} disabled={busy}>继续讨论</button>{selectedCandidate.review_status === "pending" && <button type="button" onClick={() => onCandidateReview(selectedCandidate, "reject")} disabled={busy}>驳回</button>}</footer></article>}
+    {selectedCandidate && <article className="sino-object-detail" aria-label="候选变更操作"><header><span>{intentLabel(selectedCandidate.intent_type)}</span><h3>{displayName(selectedCandidate.proposed_name || "目标对象待确认")}</h3></header><p>{selectedCandidate.proposed_description || selectedCandidate.reason || "等待 Founder 确认"}</p><dl><div><dt>Candidate ID</dt><dd>{selectedCandidate.candidate_id}</dd></div><div><dt>意图类型</dt><dd>{intentLabel(selectedCandidate.intent_type)}</dd></div><div><dt>对象类型</dt><dd>{objectTypeLabel(selectedCandidate.proposed_object_type)}</dd></div><div><dt>审核状态</dt><dd>{statusLabel(selectedCandidate.review_status)}</dd></div><div><dt>建议状态</dt><dd>{statusLabel(selectedCandidate.proposed_status)}</dd></div><div><dt>来源 Conversation</dt><dd>{selectedCandidate.conversation_id}</dd></div><div><dt>来源消息</dt><dd>{selectedCandidate.source_message_refs?.join(" · ") || "暂无"}</dd></div><div><dt>Confidence</dt><dd>{Math.round((selectedCandidate.confidence || 0) * 100)}%</dd></div></dl><footer>{selectedCandidate.review_status === "pending" && <button type="button" onClick={() => onCandidateReview(selectedCandidate, "approve")} disabled={busy}>批准</button>}<button type="button" onClick={() => onCandidateContinue(selectedCandidate)} disabled={busy}>继续讨论</button>{selectedCandidate.review_status === "pending" && <button type="button" onClick={() => onCandidateReview(selectedCandidate, "reject")} disabled={busy}>驳回</button>}</footer></article>}
     {selected && <article className="sino-object-detail" aria-label="对象操作"><header><span>{objectTypeLabel(selected.object_type, selected.type_label)}</span><h3>{selected.name}</h3></header><p>{selected.description || "暂无说明"}</p><dl><div><dt>状态</dt><dd>{statusLabel(selected.status)}</dd></div><div><dt>当前版本</dt><dd>V{selected.version}</dd></div><div><dt>来源会话</dt><dd>{selected.source_conversation_id || "暂无"}</dd></div><div><dt>依赖</dt><dd>{selected.dependency_object_ids?.join(" · ") || "暂无"}</dd></div><div><dt>关联</dt><dd>{selected.related_object_ids?.join(" · ") || "暂无"}</dd></div></dl>{selected.execution_refs?.length ? <p className="sino-object-detail__execution">已进入执行 · {executionLabel(selected)}</p> : null}<footer>{selected.status === "draft" && <button type="button" onClick={() => onApprove(selected)} disabled={busy}>批准</button>}<button type="button" onClick={() => onContinue(selected)} disabled={busy}>继续讨论</button>{selected.status === "draft" && <button type="button" onClick={() => onArchive(selected)} disabled={busy}>驳回 / 归档</button>}</footer></article>}
   </section>;
 }
