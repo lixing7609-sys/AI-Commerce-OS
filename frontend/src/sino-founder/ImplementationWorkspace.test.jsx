@@ -26,4 +26,20 @@ describe("ImplementationWorkspace", () => {
     expect(screen.getByText("Capability（能力）")).toBeTruthy();
     expect(screen.getByText("执行：待开发")).toBeTruthy();
   });
+
+  it("renders and reviews a pending Intent candidate", () => {
+    const candidate = { candidate_id: "candidate-1", intent_type: "delay", proposed_object_type: "agent", proposed_name: "广告投放 Agent", proposed_status: "deferred", reason: "当前先不开发", confidence: .94, review_status: "pending" };
+    const review = vi.fn(), discuss = vi.fn();
+    render(<ImplementationWorkspace candidates={[candidate]} onCandidateReview={review} onCandidateContinue={discuss} />);
+    expect(screen.getByText("待确认变更")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /广告投放 Agent/ }));
+    expect(screen.getAllByText("Delay（延期）").length).toBeGreaterThan(0);
+    expect(screen.getByText("建议状态：延期")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "批准" }));
+    expect(review).toHaveBeenCalledWith(candidate, "approve");
+    fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
+    expect(discuss).toHaveBeenCalledWith(candidate);
+    fireEvent.click(screen.getByRole("button", { name: "驳回" }));
+    expect(review).toHaveBeenCalledWith(candidate, "reject");
+  });
 });

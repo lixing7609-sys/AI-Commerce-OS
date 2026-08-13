@@ -47,6 +47,8 @@ export async function clearFounderObjectDiscussion(conversationId) {
 }
 export function approveFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/approve`, { method: "POST" }, "批准 Founder Object 失败"); }
 export function archiveFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/archive`, { method: "POST" }, "归档 Founder Object 失败"); }
+export function reviewFounderCandidate(candidateId, action) { return request(`/founder-ai/candidates/${encodeURIComponent(candidateId)}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "审核候选变更失败"); }
+export function continueFounderCandidateDiscussion(candidateId, conversationId) { return request(`/founder-ai/candidates/${encodeURIComponent(candidateId)}/continue-discussion`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversation_id: conversationId }) }, "继续讨论候选变更失败"); }
 
 export function discussWithSino(conversationId, content, intent) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/messages`, {

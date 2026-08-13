@@ -102,12 +102,14 @@ class MultiModelCouncilService:
             if conversation is None or conversation.system_id != "founder_ai":
                 raise LookupError("Founder AI conversation not found")
             if persist_founder_message:
-                session.add(ConversationMessageDB(conversation_id=conversation_id, role="founder", content=text, message_type="council"))
+                founder_message = ConversationMessageDB(conversation_id=conversation_id, role="founder", content=text, message_type="council"); session.add(founder_message); session.flush(); founder_message_id = founder_message.id
+            else:
+                founder_message_id = session.scalar(select(ConversationMessageDB.id).where(ConversationMessageDB.conversation_id == conversation_id, ConversationMessageDB.role == "founder").order_by(ConversationMessageDB.created_at.desc()))
             conversation.updated_at = datetime.now(timezone.utc)
             session.commit()
         try:
-            from app.core.founder_object.service import recognize_objects
-            recognize_objects(conversation_id, f"council-pending:{conversation_id}:{text[:48]}", text)
+            from app.core.founder_intent.service import intent_engine
+            intent_engine.run(conversation_id, founder_message_id, text)
         except Exception:
             pass
         self._finalize_running(conversation_id, "superseded_by_retry" if not persist_founder_message else "superseded_by_new_run")
@@ -218,11 +220,6 @@ class MultiModelCouncilService:
                 )
             except Exception:
                 pass
-        try:
-            from app.core.founder_object.service import recognize_objects
-            recognize_objects(conversation_id, f"council:{run_id}", text, self._synthesis_text(synthesis))
-        except Exception:
-            pass
         return self.snapshot(conversation_id)
 
     def retry(self, conversation_id: str) -> dict:
@@ -248,8 +245,13 @@ class MultiModelCouncilService:
         with SessionLocal() as session:
             conversation = session.get(ConversationDB, conversation_id)
             if conversation is None or conversation.system_id != "founder_ai": raise LookupError("Founder AI conversation not found")
-            session.add(ConversationMessageDB(conversation_id=conversation_id, role="founder", content=text, message_type="auto_deliberation"))
+            founder_message = ConversationMessageDB(conversation_id=conversation_id, role="founder", content=text, message_type="auto_deliberation"); session.add(founder_message); session.flush(); founder_message_id = founder_message.id
             conversation.updated_at = datetime.now(timezone.utc); session.commit()
+        try:
+            from app.core.founder_intent.service import intent_engine
+            intent_engine.run(conversation_id, founder_message_id, text)
+        except Exception:
+            pass
         self._finalize_running(conversation_id, "superseded_by_new_run")
         context = self._context_package(conversation_id, text)
         targets = self._assign_perspectives(self._resolve_targets(selected_models))
@@ -299,11 +301,6 @@ class MultiModelCouncilService:
             self._persist_auto_result(run_id, conversation_id, text, context, synthesis, successful, failures, round_number, low_gain >= 2, rounds_trace)
         except Exception as error:
             self._finalize_failed(run_id, getattr(error, "error_type", type(error).__name__)); raise
-        try:
-            from app.core.founder_object.service import recognize_objects
-            recognize_objects(conversation_id, f"deliberation:{run_id}", text, self._synthesis_text(synthesis))
-        except Exception:
-            pass
         return self.snapshot(conversation_id)
 
     @staticmethod

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, clearFounderObjectDiscussion, continueFounderObjectDiscussion, getFounderObject } from "../services/founderAiApi.js";
+import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, clearFounderObjectDiscussion, continueFounderCandidateDiscussion, continueFounderObjectDiscussion, getFounderObject, reviewFounderCandidate } from "../services/founderAiApi.js";
 import { approveFounderExecution, buildSystemBlueprint, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderProjects, getFounderStrategy, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
@@ -337,6 +337,21 @@ export function ConversationWorkspace() {
     finally { setBusy(false); }
   }
 
+  async function reviewCandidate(item, action) {
+    setBusy(true); setError("");
+    try { await reviewFounderCandidate(item.candidate_id, action); if (conversationId) setSnapshot(await getConversationWorkspace(conversationId)); setObjectRefreshKey((value) => value + 1); }
+    catch (requestError) { setError(requestError.message); }
+    finally { setBusy(false); }
+  }
+
+  async function continueCandidate(item) {
+    if (!conversationId) return;
+    setBusy(true); setError("");
+    try { await continueFounderCandidateDiscussion(item.candidate_id, conversationId); setSnapshot(await getConversationWorkspace(conversationId)); setDiscussionMessage(`继续讨论候选变更 ${item.proposed_name || ""}：`); setView("conversation"); }
+    catch (requestError) { setError(requestError.message); }
+    finally { setBusy(false); }
+  }
+
   function openConversationFiles() {
     setError("文件/文档入口已预留；当前尚未接通可安全复用的上传能力。");
   }
@@ -409,9 +424,9 @@ export function ConversationWorkspace() {
 
   const executionContext = <ContextSummary title="执行上下文"><small>所属项目</small><p>{executionId ? projectName : "—"}</p><small>正式目标</small><p>{executionId ? goal?.title || "已确认" : "—"}</p><small>当前阶段</small><p>{execution?.status || "暂无执行"}</p><small>关键约束</small><p>{executionId ? result?.analysis?.constraints?.join?.(" · ") || "—" : "—"}</p><small>最近补充</small><p>{latestDelta?.content || "—"}</p><small>待审批事项</small><p>{latestDelta?.status === "pending_confirmation" ? "执行补充待确认" : approved ? "无" : executionId ? "执行方案待授权" : "无"}</p></ContextSummary>;
   let main = <FounderHome snapshot={snapshot} execution={execution} intelligence={projectIntelligence} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} onNavigate={setView} onOpenConversation={selectConversation} healthy={sinoHealthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={selectProjectContext} onCreateProject={createProject} onFiles={openConversationFiles} mode={discussionMode} onModeChange={setDiscussionMode} />;
-  let context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} contextObject={snapshot?.context_object || null} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} busy={busy} />;
+  let context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />;
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
-  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} /></section>; context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} contextObject={snapshot?.context_object || null} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} busy={busy} />; }
+  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} /></section>; context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />; }
   if (WORKSPACE_VIEWS.includes(view)) { main = <InfiniteObjectWorkspace key={view} view={view} refreshKey={objectRefreshKey} selectedObject={selectedWorkspaceObject} onSelectionChange={selectWorkspaceObject} camera={workspaceCamera} onCameraChange={persistWorkspaceCamera} />; context = <ObjectInspector object={selectedWorkspaceObject} onContinue={continueObject} onApprove={approveObject} onOpenExecution={openObjectExecution} />; }
 
   return <SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (WORKSPACE_VIEWS.includes(normalized)) { setWorkspaceCamera(storedCamera(normalized)); persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); } else persistWorkspace(normalized, null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />;

@@ -57,6 +57,7 @@ def _recognition_candidates(text: str) -> list[dict]:
 
 
 def recognize_objects(conversation_id: str, source_message_id: str, founder_text: str, sino_reply: str = "") -> list[dict]:
+    """Legacy deterministic fallback. Product runtimes use FounderIntentEngine."""
     candidates = _recognition_candidates(founder_text)
     logger.info("Object Recognition input=%r output=%s", founder_text[:500], candidates)
     if not candidates:

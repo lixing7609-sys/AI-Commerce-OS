@@ -42,6 +42,7 @@ from app.core.conversation_first.model import GoalAssetDB
 from app.database.db import SessionLocal
 from app.core.task_asset.service import get_founder_task_asset
 from app.core.founder_object.service import approve_object, archive_object, attach_object_context, detach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
+from app.core.founder_intent.service import attach_candidate_context, get_conversation_candidate_context, list_candidates, review_candidate
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -171,6 +172,9 @@ class CouncilDiscussionIn(BaseModel):
 class ObjectDiscussionIn(BaseModel):
     conversation_id: str
 
+class CandidateReviewIn(BaseModel):
+    action: str
+
 
 class DeltaCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -257,6 +261,11 @@ system_builder = SinoSystemBuilder(registry=application_registry)
 secretary = SinoSecretaryService()
 delta_service = ExecutionDeltaService(secretary=secretary)
 
+def _candidate_snapshot(snapshot: dict, conversation_id: str) -> dict:
+    snapshot["object_candidates"] = list_candidates(conversation_id)
+    snapshot["context_candidate"] = get_conversation_candidate_context(conversation_id)
+    return snapshot
+
 
 @router.get("/conversations/{conversation_id}/workspace", response_model=dict[str, Any])
 def get_conversation_workspace(conversation_id: str):
@@ -276,7 +285,7 @@ def get_conversation_workspace(conversation_id: str):
     snapshot["founder_objects"] = list_conversation_objects(conversation_id)
     snapshot["context_object"] = get_conversation_context_object(conversation_id)
     snapshot["active_context_object_id"] = snapshot["context_object"]["object_id"] if snapshot["context_object"] else None
-    return snapshot
+    return _candidate_snapshot(snapshot, conversation_id)
 
 
 @router.get("/conversations/{conversation_id}/objects", response_model=list[dict[str, Any]])
@@ -287,6 +296,20 @@ def conversation_objects(conversation_id: str):
 @router.get("/objects", response_model=list[dict[str, Any]])
 def founder_objects():
     return list_founder_objects()
+
+@router.get("/conversations/{conversation_id}/candidates", response_model=list[dict[str, Any]])
+def founder_candidates(conversation_id: str): return list_candidates(conversation_id)
+
+@router.post("/candidates/{candidate_id}/review", response_model=dict[str, Any])
+def review_founder_candidate(candidate_id: str, request: CandidateReviewIn):
+    try: return review_candidate(candidate_id, request.action)
+    except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error: raise HTTPException(status_code=409, detail=str(error)) from error
+
+@router.post("/candidates/{candidate_id}/continue-discussion", response_model=dict[str, Any])
+def continue_candidate_discussion(candidate_id: str, request: ObjectDiscussionIn):
+    try: return attach_candidate_context(candidate_id, request.conversation_id)
+    except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.get("/objects/{object_id}", response_model=dict[str, Any])
@@ -323,7 +346,7 @@ def archive_founder_object(object_id: str):
 @router.post("/conversations/{conversation_id}/messages", response_model=dict[str, Any])
 def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
     try:
-        return secretary.append_message(conversation_id, request.content, intent=request.intent)
+        return _candidate_snapshot(secretary.append_message(conversation_id, request.content, intent=request.intent), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
@@ -335,7 +358,7 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
 @router.post("/conversations/{conversation_id}/council", response_model=dict[str, Any])
 def discuss_with_council(conversation_id: str, request: CouncilDiscussionIn):
     try:
-        return council_service.run(conversation_id, request.content, request.models)
+        return _candidate_snapshot(council_service.run(conversation_id, request.content, request.models), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
@@ -347,7 +370,7 @@ def discuss_with_council(conversation_id: str, request: CouncilDiscussionIn):
 @router.post("/conversations/{conversation_id}/auto-deliberation", response_model=dict[str, Any])
 def discuss_with_auto_deliberation(conversation_id: str, request: CouncilDiscussionIn):
     try:
-        return council_service.run_auto(conversation_id, request.content, request.models)
+        return _candidate_snapshot(council_service.run_auto(conversation_id, request.content, request.models), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
@@ -359,7 +382,7 @@ def discuss_with_auto_deliberation(conversation_id: str, request: CouncilDiscuss
 @router.post("/conversations/{conversation_id}/council/retry", response_model=dict[str, Any])
 def retry_council(conversation_id: str):
     try:
-        return council_service.retry(conversation_id)
+        return _candidate_snapshot(council_service.retry(conversation_id), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
@@ -371,7 +394,7 @@ def retry_council(conversation_id: str):
 @router.post("/conversations/{conversation_id}/reply/retry", response_model=dict[str, Any])
 def retry_sino_reply(conversation_id: str):
     try:
-        return secretary.retry_reply(conversation_id)
+        return _candidate_snapshot(secretary.retry_reply(conversation_id), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:

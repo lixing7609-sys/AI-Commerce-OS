@@ -34,6 +34,7 @@ from app.core.conversation_first.model import CandidateGoalDB, ConversationMessa
 from app.core.council.model import CouncilModelRunDB, CouncilRunDB
 from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
 from core.founder_object.model import ConversationObjectContextDB, FounderObjectDB, FounderObjectRevisionDB
+from core.founder_intent.model import ConversationCandidateContextDB, FounderIntentRunDB, FounderObjectCandidateDB
 
 
 DATABASE_URL = (

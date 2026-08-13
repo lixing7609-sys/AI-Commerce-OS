@@ -43,8 +43,8 @@ class SinoSecretaryService:
         # Persist recognition before provider latency so the homepage can poll
         # and show a real Draft while Sino is still composing the reply.
         try:
-            from app.core.founder_object.service import recognize_objects
-            recognize_objects(conversation_id, message_id, text)
+            from app.core.founder_intent.service import intent_engine
+            intent_engine.run(conversation_id, message_id, text)
         except Exception:
             pass
         # The Founder message is committed before the provider is invoked. Provider
@@ -70,11 +70,6 @@ class SinoSecretaryService:
                 except Exception:
                     # Keep the last known good Project Intelligence snapshot.
                     pass
-        except Exception:
-            pass
-        try:
-            from app.core.founder_object.service import recognize_objects
-            recognize_objects(conversation_id, message_id, text, reply)
         except Exception:
             pass
         return self.snapshot(conversation_id)
@@ -108,8 +103,8 @@ class SinoSecretaryService:
         except Exception:
             pass
         try:
-            from app.core.founder_object.service import recognize_objects
-            recognize_objects(conversation_id, founder_message_id, founder_text, reply)
+            from app.core.founder_intent.service import intent_engine
+            intent_engine.run(conversation_id, founder_message_id, founder_text)
         except Exception:
             pass
         return self.snapshot(conversation_id)
