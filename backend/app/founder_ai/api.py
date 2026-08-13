@@ -41,7 +41,7 @@ from app.founder_ai.execution_delta import ExecutionDeltaService
 from app.core.conversation_first.model import GoalAssetDB
 from app.database.db import SessionLocal
 from app.core.task_asset.service import get_founder_task_asset
-from app.core.founder_object.service import approve_object, archive_object, attach_object_context, get_object, list_conversation_objects
+from app.core.founder_object.service import approve_object, archive_object, attach_object_context, get_object, list_conversation_objects, list_founder_objects
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -280,6 +280,11 @@ def get_conversation_workspace(conversation_id: str):
 @router.get("/conversations/{conversation_id}/objects", response_model=list[dict[str, Any]])
 def conversation_objects(conversation_id: str):
     return list_conversation_objects(conversation_id)
+
+
+@router.get("/objects", response_model=list[dict[str, Any]])
+def founder_objects():
+    return list_founder_objects()
 
 
 @router.get("/objects/{object_id}", response_model=dict[str, Any])

@@ -6,6 +6,7 @@ import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { AssetMemoryCenter, AssetMemoryDetailPane } from "./AssetMemoryCenter.jsx";
 import { ConversationThread } from "./ConversationThread.jsx";
 import { ImplementationWorkspace } from "./ImplementationWorkspace.jsx";
+import { InfiniteObjectWorkspace } from "./InfiniteObjectWorkspace.jsx";
 import { ComposerContextControls } from "./ComposerContextControls.jsx";
 import { ExecutionCard } from "./ExecutionCard.jsx";
 import { ExecutionContextComposer } from "./ExecutionContextComposer.jsx";
@@ -23,6 +24,7 @@ const EXECUTION_KEY = "sino-founder-active-execution";
 const CONVERSATION_HISTORY_KEY = "sino-founder-conversation-history";
 const GOAL_CONTEXT_KEY = "sino-founder-goal-execution-context";
 const PROJECT_KEY = "sino-founder-active-project";
+const WORKSPACE_VIEW_KEY = "sino-founder-object-workspace-view";
 const stored = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 const remember = (key, value) => { try { if (value) window.localStorage.setItem(key, value); else window.localStorage.removeItem(key); } catch { /* unavailable */ } };
 const storedHistory = () => {
@@ -43,7 +45,7 @@ export const normalizeFounderView = (next) => {
 
 export function ConversationWorkspace() {
   const [conversationId, setConversationId] = useState(() => stored(CONVERSATION_KEY));
-  const [view, setView] = useState(() => stored(CONVERSATION_KEY) ? "conversation" : "home");
+  const [view, setView] = useState(() => normalizeFounderView(stored(WORKSPACE_VIEW_KEY) || (stored(CONVERSATION_KEY) ? "conversation" : "home")));
   const [snapshot, setSnapshot] = useState(null);
   const [conversations, setConversations] = useState(storedHistory);
   const [projects, setProjects] = useState([]);
@@ -70,6 +72,7 @@ export function ConversationWorkspace() {
   const [replyPending, setReplyPending] = useState(false);
   const [pendingReplyMode, setPendingReplyMode] = useState("sino");
   const [discussionMode, setDiscussionMode] = useState("sino");
+  const [objectRefreshKey, setObjectRefreshKey] = useState(0);
   const sendLockRef = useRef(false);
   const skipNextRestoreRef = useRef(false);
 
@@ -212,10 +215,11 @@ export function ConversationWorkspace() {
   function newConversation() {
     setConversationId(null); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setResult(null); setExecutionId(null); setExecution(null); setApproved(false); setError("");
     setActiveProjectId(null); setProjectIntelligence(null);
-    remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(PROJECT_KEY, null); setView("home");
+    remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(PROJECT_KEY, null); remember(WORKSPACE_VIEW_KEY, null); setView("home");
   }
 
   function selectConversation(id) {
+    remember(WORKSPACE_VIEW_KEY, "conversation");
     if (!id || id === conversationId) { setView("conversation"); return; }
     setConversationId(id); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setResult(null); setExecutionId(null); setExecution(null); setApproved(false);
     setActiveProjectId(null); setProjectIntelligence(null);
@@ -252,6 +256,7 @@ export function ConversationWorkspace() {
         remember(EXECUTION_KEY, executionRef.execution_id);
         setExecution(restored?.active_execution || await getFounderExecution(executionRef.execution_id));
       }
+      setObjectRefreshKey((value) => value + 1);
       setView("execution");
     }
     catch (requestError) { setError(requestError.message); }
@@ -259,9 +264,15 @@ export function ConversationWorkspace() {
   }
 
   async function continueObject(item) {
-    if (!conversationId) return;
+    const targetConversationId = item.source_conversation_id || conversationId;
+    if (!targetConversationId) return;
     setBusy(true); setError("");
-    try { await continueFounderObjectDiscussion(item.object_id, conversationId); setSnapshot((current) => ({ ...current, founder_objects: (current?.founder_objects || []).map((value) => ({ ...value, is_context_object: value.object_id === item.object_id })) })); setDiscussionMessage(`继续讨论 ${item.name}：`); setView("conversation"); }
+    try {
+      await continueFounderObjectDiscussion(item.object_id, targetConversationId);
+      setConversationId(targetConversationId); remember(CONVERSATION_KEY, targetConversationId);
+      setSnapshot(await getConversationWorkspace(targetConversationId));
+      setDiscussionMessage(`继续讨论 ${item.name}：`); setView("conversation"); remember(WORKSPACE_VIEW_KEY, "conversation");
+    }
     catch (requestError) { setError(requestError.message); }
     finally { setBusy(false); }
   }
@@ -320,6 +331,12 @@ export function ConversationWorkspace() {
 
   function openReturnedAsset(section) { setAssetSection(section); setAssetDetail(null); setView("assets"); }
 
+  function openObjectExecution(item) {
+    const reference = item.execution_refs?.at(-1);
+    if (reference?.execution_id) { setExecutionId(reference.execution_id); remember(EXECUTION_KEY, reference.execution_id); setExecution(null); }
+    setView("execution"); remember(WORKSPACE_VIEW_KEY, "execution");
+  }
+
   const projectName = projectIntelligence?.project_name || projects.find((item) => item.id === activeProjectId)?.name || "未关联项目";
   const conversationIntelligence = snapshot?.conversation_intelligence || (snapshot?.digest ? {
     summary: snapshot.digest.summary,
@@ -342,12 +359,9 @@ export function ConversationWorkspace() {
   let context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />;
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
   if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} /></section>; context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} busy={busy} />; }
-  if (view === "builder") { main = <section className="sino-section"><SystemBuilderPanel onPrepare={prepareSystem} /></section>; context = <ContextSummary title="构建上下文"><p>选择一个构建对象查看上下文</p></ContextSummary>; }
-  if (view === "capability-center") { main = <section className="sino-section"><ModelCenter /></section>; context = <ContextSummary title="能力中心"><p>管理 Sino AI 秘书及其模型、技能与执行能力</p></ContextSummary>; }
-  if (view === "execution") { main = executionView; context = executionContext; }
-  if (view === "assets") { main = <AssetMemoryCenter initialTab={assetSection} externalDetail onDetailChange={setAssetDetail} strategy={strategy} briefing={briefing} refreshKey={execution?.status === "completed" ? execution.completed_at || execution.id : "history"} context={{ conversation_id: conversationId, goal_id: goal?.goal_id, task_asset_id: execution?.task_asset_id || snapshot?.task_asset?.id, execution_id: executionId }} />; context = assetDetail ? <AssetMemoryDetailPane {...assetDetail} /> : null; }
+  if (["builder", "capability-center", "execution", "assets"].includes(view)) { main = <InfiniteObjectWorkspace view={view} refreshKey={objectRefreshKey} onContinue={continueObject} onApprove={approveObject} onOpenExecution={openObjectExecution} />; context = <ContextSummary title="Object Workspace"><p>四个 View 读取同一个 Founder Object Layer；拖拽平移，滚轮缩放，点击节点查看详情。</p></ContextSummary>; }
 
-  return <SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => next === "home" ? newConversation() : setView(normalizeFounderView(next))} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />;
+  return <SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { remember(WORKSPACE_VIEW_KEY, null); newConversation(); } else { const normalized = normalizeFounderView(next); remember(WORKSPACE_VIEW_KEY, normalized); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />;
 }
 
 function ContextSummary({ title, children }) {

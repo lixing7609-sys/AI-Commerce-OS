@@ -1,5 +1,5 @@
 from app.core.conversation.service import create_conversation
-from app.core.founder_object.service import approve_object, attach_object_context, get_object, list_conversation_objects, recognize_objects
+from app.core.founder_object.service import approve_object, attach_object_context, get_object, list_conversation_objects, list_founder_objects, recognize_objects
 
 
 def test_conversation_recognizes_updates_and_approves_real_skill():
@@ -18,3 +18,4 @@ def test_conversation_recognizes_updates_and_approves_real_skill():
     assert approved["execution_refs"][0]["status"] == "draft"
     approved_again = approve_object(skill["object_id"])
     assert approved_again["execution_refs"] == approved["execution_refs"]
+    assert any(item["object_id"] == skill["object_id"] for item in list_founder_objects())

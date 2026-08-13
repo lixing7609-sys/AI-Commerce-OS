@@ -95,6 +95,16 @@ def list_conversation_objects(conversation_id: str) -> list[dict]:
         return [{**_display(item), "is_context_object": bool(attached and attached.object_id == item.id)} for item in records]
 
 
+def list_founder_objects(include_archived: bool = False) -> list[dict]:
+    """Return the single Object Layer used by every workspace projection."""
+    with SessionLocal() as session:
+        query = select(FounderObjectDB)
+        if not include_archived:
+            query = query.where(FounderObjectDB.status != "archived")
+        records = list(session.scalars(query.order_by(FounderObjectDB.updated_at.desc())))
+        return [_display(item) for item in records]
+
+
 def get_object(object_id: str) -> dict | None:
     with SessionLocal() as session:
         record = session.get(FounderObjectDB, object_id)

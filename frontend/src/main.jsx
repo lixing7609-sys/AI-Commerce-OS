@@ -11,9 +11,10 @@ import { EDITIONS, getActiveEdition } from './editions/editionConfig.js'
 import { ErrorBoundary } from './shared/ErrorBoundary.jsx'
 import { SinoFUTWidget } from './shared/sinofut/SinoFUTWidget.jsx'
 import SinoFounderAIApp from './sino-founder/SinoFounderAIApp.jsx'
+import { isFounderAIRoute } from './routePolicy.js'
 
 const activeEdition = getActiveEdition()
-const isSinoFounderRoute = window.location.pathname === '/founder/sino'
+const isSinoFounderRoute = isFounderAIRoute(window.location.pathname)
 
 function renderForEdition(edition) {
   if (edition === EDITIONS.OPERATOR) {
