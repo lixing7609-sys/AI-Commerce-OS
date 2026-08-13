@@ -2,7 +2,7 @@ import { useState } from "react";
 
 const SIDEBAR_COLLAPSED_KEY = "sino-founder-sidebar-collapsed";
 const HISTORY_GROUPS_KEY = "sino-founder-history-groups";
-const DEFAULT_HISTORY_GROUPS = { today: true, yesterday: true, recent7: false, recent30: false, older: false };
+const DEFAULT_HISTORY_GROUPS = { today: true, yesterday: true, recent7: false, older: false };
 
 function FolderIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M2.25 4.25h4l1.25 1.5h6.25v6.5H2.25z" /></svg>;
@@ -43,8 +43,7 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
   const today = conversations.filter((item) => now - item.updatedAt < 86400000);
   const yesterday = conversations.filter((item) => now - item.updatedAt >= 86400000 && now - item.updatedAt < 172800000);
   const recent7 = conversations.filter((item) => now - item.updatedAt >= 172800000 && now - item.updatedAt < 604800000);
-  const recent30 = conversations.filter((item) => now - item.updatedAt >= 604800000 && now - item.updatedAt < 2592000000);
-  const older = conversations.filter((item) => now - item.updatedAt >= 2592000000);
+  const older = conversations.filter((item) => now - item.updatedAt >= 604800000);
 
   function setSidebarCollapsed(next) {
     setCollapsed(next);
@@ -95,7 +94,6 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
         <ConversationGroup id="today" label="今天" items={today} expanded={historyGroups.today} onToggle={() => toggleHistoryGroup("today")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
         <ConversationGroup id="yesterday" label="昨天" items={yesterday} expanded={historyGroups.yesterday} onToggle={() => toggleHistoryGroup("yesterday")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
         <ConversationGroup id="recent7" label="最近 7 天" items={recent7} expanded={historyGroups.recent7} onToggle={() => toggleHistoryGroup("recent7")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
-        <ConversationGroup id="recent30" label="最近 30 天" items={recent30} expanded={historyGroups.recent30} onToggle={() => toggleHistoryGroup("recent30")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
         <ConversationGroup id="older" label="更早" items={older} expanded={historyGroups.older} onToggle={() => toggleHistoryGroup("older")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
       </div>
     </div>

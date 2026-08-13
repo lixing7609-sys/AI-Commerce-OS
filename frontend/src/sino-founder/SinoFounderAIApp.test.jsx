@@ -64,6 +64,12 @@ describe("Sino Founder AI interaction responsibilities", () => {
     const conversationTitle = screen.getByText("会话").closest(".sino-sidebar-primary-title");
     expect(projectTitle.querySelector("svg")).toBeTruthy();
     expect(conversationTitle.querySelector("svg")).toBeTruthy();
+    const projectStyle = window.getComputedStyle(projectTitle);
+    const conversationStyle = window.getComputedStyle(conversationTitle);
+    expect(conversationStyle.fontSize).toBe(projectStyle.fontSize);
+    expect(conversationStyle.fontWeight).toBe(projectStyle.fontWeight);
+    expect(conversationStyle.lineHeight).toBe(projectStyle.lineHeight);
+    expect(conversationStyle.color).toBe(projectStyle.color);
     const projectItem = await screen.findByRole("button", { name: /AI Commerce OS/ });
     expect(projectItem.querySelector("svg")).toBeNull();
     expect(projectItem.querySelector("i")?.textContent).toBe("•");
@@ -384,6 +390,14 @@ describe("Sino Founder AI interaction responsibilities", () => {
     unmount();
     render(<SinoFounderAIApp />);
     expect(await screen.findByRole("button", { name: /旧会话/ })).toBeTruthy();
+  });
+
+  it("places conversations older than seven days directly in 更早 without a 最近 30 天 group", async () => {
+    getFounderConversations.mockResolvedValue([{ id: "conv-20-days", title: "二十天前会话", updated_at: new Date(Date.now() - 20 * 86400000).toISOString() }]);
+    render(<SinoFounderAIApp />);
+    expect(screen.queryByRole("button", { name: /最近 30 天/ })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: /更早/ }));
+    expect(screen.getByRole("button", { name: /二十天前会话/ })).toBeTruthy();
   });
 
   it("cancels and confirms deletion of a non-active Conversation without changing the current one", async () => {
