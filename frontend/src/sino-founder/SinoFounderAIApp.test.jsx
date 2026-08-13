@@ -59,7 +59,7 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(document.querySelector(".sino-brand .sino-workspace-status")).toBeNull();
     expect(screen.getByRole("button", { name: /新建讨论/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "项目⌄" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "会话⌄" })).toBeTruthy();
+    expect(screen.getByText("会话").closest(".sino-sidebar__conversation-title")).toBeTruthy();
     expect((await screen.findAllByRole("button", { name: "AI Commerce OS" })).length).toBeGreaterThan(0);
     const composer = screen.getByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……").closest("form");
     const projectSelector = document.querySelector(".sino-project-selector");
@@ -355,13 +355,28 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(JSON.parse(window.localStorage.getItem("sino-founder-conversation-history"))).toHaveLength(1);
   });
 
-  it("renders an independently scrollable history region with a fixed footer", async () => {
+  it("keeps project and Conversation title fixed while only history groups scroll", async () => {
     getFounderConversations.mockResolvedValue(Array.from({ length: 40 }, (_, index) => ({ id: `conv-${index}`, title: `历史会话 ${index}`, updated_at: new Date(Date.now() - index * 86400000).toISOString() })));
     render(<SinoFounderAIApp />);
-    const region = await screen.findByLabelText("项目与历史会话");
+    const region = await screen.findByLabelText("历史会话列表");
     expect(region.classList.contains("sino-sidebar__scroll-region")).toBe(true);
+    expect(screen.getByText("项目").closest(".sino-sidebar__fixed-top")).toBeTruthy();
+    expect(screen.getByText("会话").closest(".sino-sidebar__fixed-top")).toBeTruthy();
+    expect(screen.getByTitle("新建讨论").closest(".sino-sidebar__fixed-top")).toBeTruthy();
     expect(screen.getByText("Founder AI Secretary").closest("footer").parentElement).toBe(document.querySelector(".sino-sidebar"));
+    fireEvent.click(screen.getByRole("button", { name: /更早/ }));
     expect(await screen.findByRole("button", { name: /历史会话 39/ })).toBeTruthy();
+  });
+
+  it("persists history accordion expansion within the browser session", async () => {
+    getFounderConversations.mockResolvedValue([{ id: "conv-old", title: "旧会话", updated_at: new Date(Date.now() - 40 * 86400000).toISOString() }]);
+    const { unmount } = render(<SinoFounderAIApp />);
+    expect(screen.queryByRole("button", { name: /旧会话/ })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: /更早/ }));
+    expect(screen.getByRole("button", { name: /旧会话/ })).toBeTruthy();
+    unmount();
+    render(<SinoFounderAIApp />);
+    expect(await screen.findByRole("button", { name: /旧会话/ })).toBeTruthy();
   });
 
   it("cancels and confirms deletion of a non-active Conversation without changing the current one", async () => {

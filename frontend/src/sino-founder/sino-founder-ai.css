@@ -382,7 +382,9 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-new-conversation:hover { border-color: #59664a; color: var(--accent); }
 .sino-conversation-navigation > span { margin: 14px 12px 5px; color: #596157; font-size: 12px; }
 .sino-conversation-group { display: grid; gap: 2px; }
-.sino-conversation-group > strong { margin: 8px 12px 3px; color: #485046; font-size: 12px; font-weight: 500; }
+.sino-conversation-group__toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 8px 12px 5px; border: 0; background: transparent; color: #596157; font-size: 12px; cursor: pointer; }
+.sino-conversation-group__toggle strong { font-weight: 500; }.sino-conversation-group__toggle i { color: #454c44; font-style: normal; }
+.sino-conversation-group__items { display: grid; gap: 2px; }
 .sino-conversation-group button { display: flex; gap: 9px; width: 100%; overflow: hidden; padding: 8px 12px; border: 0; border-radius: 7px; background: transparent; color: #737c70; font-size: 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .sino-conversation-group button span { color: #444c42; }
 .sino-conversation-group button:hover, .sino-conversation-group button.is-active { background: #151914; color: #d9ded6; }
@@ -397,24 +399,23 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-sidebar-toggle:hover, .sino-sidebar-toggle:focus-visible { background: #171a16; color: #c5cbc2; outline: 0; }
 .sino-sidebar-toggle svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.1; }
 .sino-sidebar-toggle svg path.is-expanded { transform: rotate(180deg); transform-origin: center; }
-.sino-sidebar > .sino-new-conversation { display: flex; align-items: center; gap: 10px; margin-top: 34px; border-color: transparent; background: #171a16; }
-.sino-sidebar > .sino-new-conversation span { color: var(--accent); font-size: 16px; }.sino-sidebar > .sino-new-conversation b { font-size: 12px; font-weight: 500; }
+.sino-sidebar .sino-new-conversation { flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 40px; margin-top: 34px; border-color: transparent; background: #171a16; }
+.sino-sidebar .sino-new-conversation span { color: var(--accent); font-size: 16px; }.sino-sidebar .sino-new-conversation b { font-size: 12px; font-weight: 500; }
 .sino-sidebar-section { margin-top: 26px; }
-.sino-sidebar-section--conversations { min-height: 0; overflow: hidden; }
+.sino-sidebar__conversation-title { flex: none; margin-top: 26px; padding: 7px 10px; color: #757d73; font-size: 12px; }
 .sino-sidebar-section__toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 7px 10px; border: 0; background: transparent; color: #757d73; font-size: 12px; text-align: left; cursor: pointer; }
 .sino-sidebar-section__toggle i { color: #4f574e; font-style: normal; }
 .sino-project-list { display: grid; gap: 2px; margin-top: 3px; }
 .sino-project-list button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 11px; border: 0; border-radius: 7px; background: transparent; color: #7c8479; font-size: 12px; text-align: left; cursor: pointer; }
 .sino-project-list button:hover, .sino-project-list button.is-active { background: #151914; color: #d7ddd4; }
 .sino-project-list svg { flex: none; width: 14px; fill: none; stroke: #687166; stroke-width: 1.2; }
-.sino-sidebar-section .sino-conversation-navigation { gap: 1px; margin-top: 2px; }
-.sino-sidebar-section .sino-conversation-group > strong { margin-top: 11px; }
+.sino-sidebar__scroll-region .sino-conversation-navigation { gap: 1px; padding-top: 3px; }
 .sino-sidebar--collapsed { padding-inline: 12px; }
 .sino-app:has(.sino-sidebar--collapsed) { grid-template-columns: 64px minmax(0, 1fr); }
-.sino-sidebar--collapsed .sino-brand div, .sino-sidebar--collapsed .sino-new-conversation b, .sino-sidebar--collapsed .sino-sidebar-section, .sino-sidebar--collapsed footer { display: none; }
+.sino-sidebar--collapsed .sino-brand div, .sino-sidebar--collapsed .sino-new-conversation b, .sino-sidebar--collapsed .sino-sidebar-section, .sino-sidebar--collapsed .sino-sidebar__conversation-title, .sino-sidebar--collapsed .sino-sidebar__scroll-region, .sino-sidebar--collapsed footer { display: none; }
 .sino-sidebar--collapsed .sino-sidebar-brand-row { display: grid; justify-items: center; }
 .sino-sidebar--collapsed .sino-brand { justify-content: center; }
-.sino-sidebar--collapsed > .sino-new-conversation { justify-content: center; padding: 9px; }
+.sino-sidebar--collapsed .sino-new-conversation { justify-content: center; padding: 9px; }
 .sino-collapsed-navigation { display: grid; justify-items: center; gap: 8px; margin-top: 10px; }
 .sino-collapsed-navigation button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #697168; cursor: pointer; }
 .sino-collapsed-navigation button:hover { background: #171a16; color: #d7ddd4; }
@@ -425,7 +426,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-app { display: block; }
 .sino-founder-shell { display: grid; grid-template-columns: var(--sidebar-width, 244px) 5px minmax(0, 1fr) 5px var(--context-width, 320px); grid-template-rows: 66px minmax(0, 1fr); width: 100%; height: 100dvh; overflow: hidden; }
 .sino-founder-shell > .sino-sidebar { grid-column: 1; grid-row: 1 / 3; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: 100%; min-width: 0; height: 100%; min-height: 0; overflow: hidden; border-right: 0; }
-.sino-sidebar__fixed-top { min-width: 0; }.sino-sidebar__scroll-region { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #30362e transparent; }.sino-sidebar__scroll-region::-webkit-scrollbar { width: 5px; }.sino-sidebar__scroll-region::-webkit-scrollbar-thumb { border-radius: 999px; background: #30362e; }.sino-sidebar__scroll-region .sino-sidebar-section:first-child { margin-top: 26px; }.sino-founder-shell > .sino-sidebar > footer { margin-top: 0; padding-top: 15px; background: rgba(8,10,9,.96); }
+.sino-sidebar__fixed-top { min-width: 0; min-height: 0; flex-shrink: 0; }.sino-sidebar__fixed-top .sino-sidebar-section { margin-top: 26px; }.sino-sidebar__scroll-region { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }.sino-sidebar__scroll-region::-webkit-scrollbar { display: none; width: 0; height: 0; }.sino-founder-shell > .sino-sidebar > footer { flex-shrink: 0; margin-top: 0; padding-top: 15px; background: rgba(8,10,9,.96); }
 .sino-founder-shell > .sino-sidebar::-webkit-scrollbar, .sino-founder-main::-webkit-scrollbar, .sino-founder-context::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-founder-topbar { grid-column: 3 / 6; grid-row: 1; z-index: 10; display: flex; align-items: center; justify-content: space-between; min-width: 0; height: 66px; padding: 0 30px; border-bottom: 1px solid var(--line); background: rgba(8,10,9,.88); backdrop-filter: blur(18px); }
 .sino-founder-main, .sino-founder-context { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }

@@ -1,6 +1,8 @@
 import { useState } from "react";
 
 const SIDEBAR_COLLAPSED_KEY = "sino-founder-sidebar-collapsed";
+const HISTORY_GROUPS_KEY = "sino-founder-history-groups";
+const DEFAULT_HISTORY_GROUPS = { today: true, yesterday: true, recent7: false, recent30: false, older: false };
 
 function FolderIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M2.25 4.25h4l1.25 1.5h6.25v6.5H2.25z" /></svg>;
@@ -19,9 +21,16 @@ function restoredCollapsedState() {
   catch { return false; }
 }
 
-function ConversationGroup({ label, items, activeConversationId, onSelectConversation, onDeleteConversation }) {
-  if (!items.length) return null;
-  return <div className="sino-conversation-group"><strong>{label}</strong>{items.map((item) => <div key={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b></button><button type="button" className="sino-conversation-item__menu" aria-label="会话操作" title="删除会话" onClick={() => onDeleteConversation(item)}>···</button></div>)}</div>;
+function restoredHistoryGroups() {
+  try { return { ...DEFAULT_HISTORY_GROUPS, ...JSON.parse(window.localStorage.getItem(HISTORY_GROUPS_KEY) || "{}") }; }
+  catch { return DEFAULT_HISTORY_GROUPS; }
+}
+
+function ConversationGroup({ id, label, items, expanded, onToggle, activeConversationId, onSelectConversation, onDeleteConversation }) {
+  return <section className="sino-conversation-group">
+    <button type="button" className="sino-conversation-group__toggle" aria-expanded={expanded} aria-controls={`history-${id}`} onClick={onToggle}><strong>{label}</strong><i>{expanded ? "⌄" : "›"}</i></button>
+    {expanded && <div id={`history-${id}`} className="sino-conversation-group__items">{items.map((item) => <div key={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b></button><button type="button" className="sino-conversation-item__menu" aria-label="会话操作" title="删除会话" onClick={() => onDeleteConversation(item)}>···</button></div>)}</div>}
+  </section>;
 }
 
 export function SecretarySidebar({ onNavigate, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject }) {
@@ -29,11 +38,13 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
   const [brandHovered, setBrandHovered] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(true);
   const [conversationsOpen, setConversationsOpen] = useState(true);
+  const [historyGroups, setHistoryGroups] = useState(restoredHistoryGroups);
   const now = Date.now();
   const today = conversations.filter((item) => now - item.updatedAt < 86400000);
   const yesterday = conversations.filter((item) => now - item.updatedAt >= 86400000 && now - item.updatedAt < 172800000);
-  const recent = conversations.filter((item) => now - item.updatedAt >= 172800000 && now - item.updatedAt < 604800000);
-  const older = conversations.filter((item) => now - item.updatedAt >= 604800000);
+  const recent7 = conversations.filter((item) => now - item.updatedAt >= 172800000 && now - item.updatedAt < 604800000);
+  const recent30 = conversations.filter((item) => now - item.updatedAt >= 604800000 && now - item.updatedAt < 2592000000);
+  const older = conversations.filter((item) => now - item.updatedAt >= 2592000000);
 
   function setSidebarCollapsed(next) {
     setCollapsed(next);
@@ -44,6 +55,14 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
     setSidebarCollapsed(false);
     if (section === "projects") setProjectsOpen(true);
     if (section === "conversations") setConversationsOpen(true);
+  }
+
+  function toggleHistoryGroup(id) {
+    setHistoryGroups((current) => {
+      const next = { ...current, [id]: !current[id] };
+      try { window.localStorage.setItem(HISTORY_GROUPS_KEY, JSON.stringify(next)); } catch { /* unavailable */ }
+      return next;
+    });
   }
 
   return <aside className={`sino-sidebar${collapsed ? " sino-sidebar--collapsed" : ""}`}>
@@ -68,10 +87,17 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
       <button type="button" title="项目" aria-label="项目" onClick={() => expandSection("projects")}><FolderIcon /></button>
       <button type="button" title="会话" aria-label="会话" onClick={() => expandSection("conversations")}><ConversationIcon /></button>
     </nav>}
-    </div>
-    <div className="sino-sidebar__scroll-region" aria-label="项目与历史会话">
     <section className="sino-sidebar-section"><button className="sino-sidebar-section__toggle" onClick={() => setProjectsOpen((value) => !value)} aria-expanded={projectsOpen}><span>项目</span><i>{projectsOpen ? "⌄" : "›"}</i></button>{projectsOpen && <div className="sino-project-list">{projects.map((project) => <button key={project.id} className={project.id === activeProjectId ? "is-active" : ""} onClick={() => onSelectProject(project.id)}><FolderIcon /><span>{project.name}</span></button>)}</div>}</section>
-    <section className="sino-sidebar-section sino-sidebar-section--conversations"><button className="sino-sidebar-section__toggle" onClick={() => setConversationsOpen((value) => !value)} aria-expanded={conversationsOpen}><span>会话</span><i>{conversationsOpen ? "⌄" : "›"}</i></button>{conversationsOpen && <div className="sino-conversation-navigation"><ConversationGroup label="今天" items={today} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} /><ConversationGroup label="昨天" items={yesterday} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} /><ConversationGroup label="最近 7 天" items={recent} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} /><ConversationGroup label="更早" items={older} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} /></div>}</section>
+    <div className="sino-sidebar__conversation-title"><span>会话</span></div>
+    </div>
+    <div className="sino-sidebar__scroll-region" aria-label="历史会话列表">
+      <div className="sino-conversation-navigation">
+        <ConversationGroup id="today" label="今天" items={today} expanded={historyGroups.today} onToggle={() => toggleHistoryGroup("today")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
+        <ConversationGroup id="yesterday" label="昨天" items={yesterday} expanded={historyGroups.yesterday} onToggle={() => toggleHistoryGroup("yesterday")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
+        <ConversationGroup id="recent7" label="最近 7 天" items={recent7} expanded={historyGroups.recent7} onToggle={() => toggleHistoryGroup("recent7")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
+        <ConversationGroup id="recent30" label="最近 30 天" items={recent30} expanded={historyGroups.recent30} onToggle={() => toggleHistoryGroup("recent30")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
+        <ConversationGroup id="older" label="更早" items={older} expanded={historyGroups.older} onToggle={() => toggleHistoryGroup("older")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
+      </div>
     </div>
     <footer>AI Commerce OS<br /><small>Founder AI Secretary</small></footer>
   </aside>;

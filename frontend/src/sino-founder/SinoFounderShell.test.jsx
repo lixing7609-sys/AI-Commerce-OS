@@ -101,7 +101,7 @@ describe("SinoFounderShell resizable dividers", () => {
     expect(screen.getByRole("button", { name: "项目⌄" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
-    expect(screen.getByRole("button", { name: "会话⌄" })).toBeTruthy();
+    expect(screen.getByText("会话").closest(".sino-sidebar__conversation-title")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
     unmount();
