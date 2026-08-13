@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bindFounderConversationProject } from "./founderAiApi";
 
-import { analyzeFounderConversation, analyzeWithSinoBrain, buildSystemBlueprint, checkModelProvider, confirmCandidateGoal, createArtifactVersion, createFounderConversation, createFounderProject, createIntelligenceReference, createMemoryRevision, decideExecutionDelta, discoverProviderModels, discussWithCouncil, discussWithSino, executeFounderExecution, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getLibraryArtifact, getLibraryMemory, getModelCenter, getProjectIntelligence, installModelProvider, reasonConfirmedGoal, resumeFounderExecution, saveApplicationModelAssignments, saveExecutionEngine, saveModelProvider, saveModelRoles, selectProviderModels, submitExecutionDelta, updateArtifactStatus, updateMemoryStatus } from "./founderAiApi";
+import { analyzeFounderConversation, analyzeWithSinoBrain, buildSystemBlueprint, checkModelProvider, confirmCandidateGoal, createArtifactVersion, createFounderConversation, createFounderProject, createIntelligenceReference, createMemoryRevision, decideExecutionDelta, deleteFounderConversation, discoverProviderModels, discussWithCouncil, discussWithSino, executeFounderExecution, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getLibraryArtifact, getLibraryMemory, getModelCenter, getProjectIntelligence, installModelProvider, reasonConfirmedGoal, resumeFounderExecution, saveApplicationModelAssignments, saveExecutionEngine, saveModelProvider, saveModelRoles, selectProviderModels, submitExecutionDelta, updateArtifactStatus, updateMemoryStatus } from "./founderAiApi";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -17,6 +17,13 @@ describe("Founder AI conversation API", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => [{ id: "conversation-1" }] });
     expect(await getFounderConversations()).toEqual([{ id: "conversation-1" }]);
     expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/conversations");
+  });
+
+  it("deletes a Founder Conversation through the real API", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ deleted: true }) });
+    await deleteFounderConversation("conversation/1");
+    expect(fetchMock.mock.calls[0][0]).toContain("/conversations/conversation%2F1");
+    expect(fetchMock.mock.calls[0][1].method).toBe("DELETE");
   });
 
   it("persists and clears a Conversation project binding", async () => {

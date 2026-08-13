@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, clearFounderObjectDiscussion, continueFounderCandidateDiscussion, continueFounderObjectDiscussion, getFounderObject, reviewFounderCandidate } from "../services/founderAiApi.js";
-import { approveFounderExecution, buildSystemBlueprint, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
+import { approveFounderExecution, buildSystemBlueprint, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { AssetMemoryCenter, AssetMemoryDetailPane } from "./AssetMemoryCenter.jsx";
@@ -83,6 +83,7 @@ export function ConversationWorkspace() {
   const [objectRefreshKey, setObjectRefreshKey] = useState(0);
   const [selectedWorkspaceObject, setSelectedWorkspaceObject] = useState(null);
   const [workspaceCamera, setWorkspaceCamera] = useState(() => storedCamera(queryFilter() || stored(WORKSPACE_FILTER_KEY) || "all"));
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const sendLockRef = useRef(false);
   const skipNextRestoreRef = useRef(false);
   const initialRestoreRef = useRef(Boolean(conversationId));
@@ -318,6 +319,22 @@ export function ConversationWorkspace() {
     } finally { setBusy(false); }
   }
 
+  async function confirmDeleteConversation() {
+    if (!deleteTarget || busy) return;
+    const id = deleteTarget.id;
+    setBusy(true); setError("");
+    try {
+      await deleteFounderConversation(id);
+      removeConversationHistory(id);
+      if (id === conversationId) {
+        setConversationId(null); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setExecutionId(null); setExecution(null); setApproved(false); setActiveProjectId(null); setProjectIntelligence(null);
+        remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(PROJECT_KEY, null); setView("home");
+      }
+      setDeleteTarget(null);
+    } catch (requestError) { setError(requestError.message); }
+    finally { setBusy(false); }
+  }
+
   function selectProjectContext(id) {
     setActiveProjectId(id); remember(PROJECT_KEY, id);
   }
@@ -477,7 +494,7 @@ export function ConversationWorkspace() {
   if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} /></section>; context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} recognitionStatus={snapshot?.object_recognition} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />; }
   if (view === "objects") { main = <InfiniteObjectWorkspace view={workspaceFilter} onViewChange={selectWorkspaceFilter} refreshKey={objectRefreshKey} selectedObject={selectedWorkspaceObject} onSelectionChange={selectWorkspaceObject} camera={workspaceCamera} onCameraChange={persistWorkspaceCamera} />; context = <ObjectInspector object={selectedWorkspaceObject} onContinue={continueObject} onApprove={approveObject} onOpenExecution={openObjectExecution} />; }
 
-  return <SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (normalized === "objects") { setWorkspaceCamera(storedCamera(workspaceFilter)); persistWorkspace("objects", selectedWorkspaceObject?.object_id || null, workspaceFilter); } else persistWorkspace(normalized, null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />;
+  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (normalized === "objects") { setWorkspaceCamera(storedCamera(workspaceFilter)); persistWorkspace("objects", selectedWorkspaceObject?.object_id || null, workspaceFilter); } else persistWorkspace(normalized, null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
 }
 
 function ContextSummary({ title, children }) {

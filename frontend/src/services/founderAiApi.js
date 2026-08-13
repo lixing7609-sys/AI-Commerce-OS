@@ -25,6 +25,10 @@ export function getFounderConversations() {
   return request("/conversations", undefined, "获取 Founder 历史会话失败");
 }
 
+export function deleteFounderConversation(conversationId) {
+  return request(`/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE" }, "删除 Conversation 失败");
+}
+
 export function bindFounderConversationProject(conversationId, projectId) {
   return request(`/conversations/${encodeURIComponent(conversationId)}/project`, {
     method: "PATCH",

@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.conversation.service import bind_conversation_project, create_conversation, get_conversation, list_conversations
+from app.core.conversation.service import bind_conversation_project, create_conversation, delete_conversation, get_conversation, list_conversations
 
 
 class ConversationCreateIn(BaseModel):
@@ -62,3 +62,9 @@ def update_conversation_project(conversation_id: str, request: ConversationProje
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.delete("/{conversation_id}", response_model=dict[str, object])
+def delete_founder_conversation(conversation_id: str):
+    try: return delete_conversation(conversation_id)
+    except LookupError as error: raise HTTPException(status_code=404, detail={"code": "conversation_not_found", "message": str(error)}) from error
