@@ -402,9 +402,12 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-sidebar .sino-new-conversation { flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 40px; margin-top: 34px; border-color: transparent; background: #171a16; }
 .sino-sidebar .sino-new-conversation span { color: var(--accent); font-size: 16px; }.sino-sidebar .sino-new-conversation b { font-size: 12px; font-weight: 500; }
 .sino-sidebar-section { margin-top: 26px; }
-.sino-sidebar__conversation-title { flex: none; margin-top: 26px; padding: 7px 10px; color: #757d73; font-size: 12px; }
+.sino-sidebar__conversation-title { flex: none; margin-top: 26px; }
 .sino-sidebar-section__toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 7px 10px; border: 0; background: transparent; color: #757d73; font-size: 12px; text-align: left; cursor: pointer; }
 .sino-sidebar-section__toggle i { color: #4f574e; font-style: normal; }
+.sino-sidebar-primary-title { box-sizing: border-box; width: 100%; padding: 7px 10px; color: #757d73; font-size: 12px; font-weight: 500; line-height: 16px; }
+.sino-sidebar-primary-title > span { display: flex; align-items: center; gap: 9px; }
+.sino-sidebar-primary-title svg { flex: none; width: 14px; height: 14px; fill: none; stroke: #5f685d; stroke-width: 1.2; }
 .sino-project-list { display: grid; gap: 2px; margin-top: 3px; }
 .sino-project-list button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 11px; border: 0; border-radius: 7px; background: transparent; color: #7c8479; font-size: 12px; text-align: left; cursor: pointer; }
 .sino-project-list button:hover, .sino-project-list button.is-active { background: #151914; color: #d7ddd4; }

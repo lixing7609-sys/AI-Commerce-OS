@@ -60,6 +60,10 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(screen.getByRole("button", { name: /新建讨论/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "项目⌄" })).toBeTruthy();
     expect(screen.getByText("会话").closest(".sino-sidebar__conversation-title")).toBeTruthy();
+    const projectTitle = screen.getByText("项目").closest(".sino-sidebar-primary-title");
+    const conversationTitle = screen.getByText("会话").closest(".sino-sidebar-primary-title");
+    expect(projectTitle.querySelector("svg")).toBeTruthy();
+    expect(conversationTitle.querySelector("svg")).toBeTruthy();
     expect((await screen.findAllByRole("button", { name: "AI Commerce OS" })).length).toBeGreaterThan(0);
     const composer = screen.getByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……").closest("form");
     const projectSelector = document.querySelector(".sino-project-selector");
