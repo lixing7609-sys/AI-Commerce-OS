@@ -1,0 +1,11 @@
+import { useState } from "react";
+
+export function ImplementationWorkspace({ objects = [], onApprove, onContinue, onArchive, busy }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = objects.find((item) => item.object_id === selectedId) || null;
+  return <section className="sino-object-workspace" aria-label="实现工作区">
+    <header><span className="sino-kicker">Implementation Workspace</span><h2>实现工作区</h2><p>当前讨论产生或正在修改的技术对象</p></header>
+    <div className="sino-object-workspace__list">{objects.length ? objects.map((item) => <button type="button" key={item.object_id} className={selectedId === item.object_id ? "is-active" : ""} onClick={() => setSelectedId(item.object_id)}><span>{item.type_label}</span><strong>{item.name}</strong><small>{item.status === "draft" ? "Draft" : item.status === "approved" ? "Approved" : item.status}</small></button>) : <p className="sino-object-workspace__empty">继续与 Sino 讨论，识别出的 Application System、Project、Agent、Skill、Workflow、Prompt、Capability、Connector 或 Task 会出现在这里。</p>}</div>
+    {selected && <article className="sino-object-detail" aria-label="Object 详情"><header><span>{selected.type_label}</span><h3>{selected.name}</h3></header><p>{selected.description || "暂无说明"}</p><dl><div><dt>状态</dt><dd>{selected.status}</dd></div><div><dt>当前版本</dt><dd>V{selected.version}</dd></div><div><dt>来源 Conversation</dt><dd>{selected.source_conversation_id}</dd></div><div><dt>Dependencies</dt><dd>{selected.dependency_object_ids?.length ? selected.dependency_object_ids.join(" · ") : "—"}</dd></div><div><dt>Related Objects</dt><dd>{selected.related_object_ids?.length ? selected.related_object_ids.join(" · ") : "—"}</dd></div><div><dt>Founder 决定</dt><dd>{selected.founder_question || "是否批准？"}</dd></div></dl>{selected.execution_refs?.length ? <p className="sino-object-detail__execution">已进入执行中心 · {selected.execution_refs.at(-1).status === "draft" ? "Waiting Development" : selected.execution_refs.at(-1).status}</p> : null}<footer><button type="button" onClick={() => onApprove(selected)} disabled={busy || selected.status === "approved"}>批准</button><button type="button" onClick={() => onContinue(selected)} disabled={busy}>继续讨论</button><button type="button" onClick={() => onArchive(selected)} disabled={busy}>归档</button></footer></article>}
+  </section>;
+}

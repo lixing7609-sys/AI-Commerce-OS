@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Float, JSON, String, Text, text
+from sqlalchemy import DateTime, Float, Integer, JSON, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base
@@ -26,6 +26,13 @@ class MemoryAssetDB(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     source_message_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    parent_memory_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    previous_revision_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    revision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    importance: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    merged_into_memory_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")

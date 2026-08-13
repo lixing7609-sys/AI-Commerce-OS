@@ -59,6 +59,8 @@ def test_asset_memory_center_restores_historical_execution_chain(monkeypatch):
     assert all(item["execution_id"] == execution_id for item in result["memories"])
     assert result["executions"][0]["artifacts"] == [artifact_id]
     assert set(result["executions"][0]["memories"]) == {"memory-decision1", "memory-learning1", "memory-result1"}
+    assert "content" not in result["artifacts"][0]
+    assert all("content" not in item and "execution_result" not in item for item in result["memories"])
 
 
 def test_asset_memory_center_keeps_unlinked_historical_assets_visible(monkeypatch):

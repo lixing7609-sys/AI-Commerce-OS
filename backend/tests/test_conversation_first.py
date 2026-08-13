@@ -26,7 +26,7 @@ def test_discussion_accumulates_without_creating_formal_goal(monkeypatch):
     factory = _database(monkeypatch)
     with factory() as db:
         db.add(ConversationDB(id="conv-1", system_id="founder_ai", title="Discussion")); db.commit()
-    service = secretary_module.SinoSecretaryService()
+    service = secretary_module.SinoSecretaryService(reply_generator=lambda _id, _text: "Sino test reply")
     first = service.append_message("conv-1", "我们先讨论产品方向")
     second = service.append_message("conv-1", "目前需要确认用户边界？")
     assert len(second["messages"]) == 4
@@ -39,7 +39,7 @@ def test_secretary_generates_structured_assets_and_goal_requires_confirmation(mo
     factory = _database(monkeypatch)
     with factory() as db:
         db.add(ConversationDB(id="conv-1", system_id="founder_ai", title="Discussion")); db.commit()
-    service = secretary_module.SinoSecretaryService()
+    service = secretary_module.SinoSecretaryService(reply_generator=lambda _id, _text: "Sino test reply")
     snapshot = service.append_message("conv-1", "决定不要改变颜色，以后实现 Timeline 优化")
     assert snapshot["digest"]["decisions"]
     assert snapshot["digest"]["knowledge_items"]
@@ -54,7 +54,7 @@ def test_explicit_execution_language_confirms_goal_without_creating_task(monkeyp
     factory = _database(monkeypatch)
     with factory() as db:
         db.add(ConversationDB(id="conv-1", system_id="founder_ai", title="Discussion")); db.commit()
-    snapshot = secretary_module.SinoSecretaryService().append_message("conv-1", "按这个执行，开始实施 Timeline 修复")
+    snapshot = secretary_module.SinoSecretaryService(reply_generator=lambda _id, _text: "Sino test reply").append_message("conv-1", "按这个执行，开始实施 Timeline 修复")
     assert snapshot["conversation"]["state"] == "goal_confirmed"
     assert snapshot["goals"][0]["status"] == "goal_confirmed"
     assert snapshot["digest"]["candidate_goals"][0]["status"] == "confirmed"
@@ -78,12 +78,14 @@ def test_execution_delta_applies_low_impact_and_pauses_high_impact(monkeypatch):
 
     low = service.submit(conversation_id="conv-1", goal_id="goal-1", task_id="task-1", execution_id="execution-1", content="标题后面加中文，不要改变颜色")
     assert low["decision"] == "auto_apply"
+    assert low["analysis"]["reasoning_skill"] == "reasoning"
     assert low["package_version"] == 2
     assert record[1].execution_deltas[0]["delta_id"] == low["delta_id"]
     assert not list(factory().query(GoalAssetDB).filter(GoalAssetDB.id != "goal-1"))
 
     high = service.submit(conversation_id="conv-1", goal_id="goal-1", task_id="task-1", execution_id="execution-1", content="不要用 Polling，改为 Event Stream")
     assert high["decision"] == "pause_and_replan"
+    assert high["analysis"]["reasoning_skill"] == "reasoning"
     assert session.status == "paused"
     assert session.events[-1]["event_name"] == "execution_replanned"
     assert len(service.list_for_execution("execution-1")) == 2
@@ -101,3 +103,20 @@ def test_unrelated_execution_supplement_becomes_candidate_goal(monkeypatch):
     assert delta["decision"] == "store_as_candidate_goal"
     with factory() as db:
         assert db.query(CandidateGoalDB).count() == 1
+
+
+def test_unscoped_snapshot_exposes_conversation_intelligence(monkeypatch):
+    _database(monkeypatch)
+    with secretary_module.SessionLocal() as db:
+        db.add(ConversationDB(id="conv-intelligence", system_id="founder_ai", title="Conversation Intelligence", project_id=None))
+        db.commit()
+    snapshot = secretary_module.SinoSecretaryService(reply_generator=lambda *_: "统一数据模型需要版本管理，并注意归因延迟。如何确定核心实体？").append_message(
+        "conv-intelligence", "广告数据必须统一 Schema，不要绑定具体平台。"
+    )
+    intelligence = snapshot["conversation_intelligence"]
+    assert snapshot["conversation"]["project_id"] is None
+    assert intelligence["summary"].startswith("当前讨论：")
+    assert intelligence["knowledge"]
+    assert intelligence["constraints"] == ["广告数据必须统一 Schema，不要绑定具体平台。"]
+    assert intelligence["pending_questions"]
+    assert intelligence["updated_at"]

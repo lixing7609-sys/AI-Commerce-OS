@@ -1,7 +1,6 @@
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
-from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft, build_execution_package, generate_task_asset_draft
 
 ApplicationStatus = Literal["active", "blueprint", "development", "deployed"]
 
@@ -14,7 +13,7 @@ class ApplicationDefinition:
 
 
 class ApplicationRegistry:
-    """Planning registry. It does not instantiate or deploy application systems."""
+    """Application-system registry. It never creates or configures AI Agents."""
 
     def __init__(self):
         self._applications = (
@@ -36,92 +35,35 @@ class ApplicationRegistry:
 class SystemBlueprint:
     system_key: str
     system_name: str
-    purpose: str
-    target_user: str
-    capabilities: list[str]
-    agents: list[str]
-    workflows: list[str]
-    connectors: list[str]
-    memory_requirements: list[str]
-    execution_requirements: list[str]
-    status: str = "blueprint"
-
-
-@dataclass(frozen=True, slots=True)
-class GeneratedCapabilitySet:
-    capabilities: list[str]
-    agents: list[str]
-    skills: list[str]
-    workflows: list[str]
-
-
-@dataclass(frozen=True, slots=True)
-class AgentRole:
-    role: str
-    responsibilities: list[str]
-    skills: list[str]
-    tools: list[str]
-
-
-@dataclass(frozen=True, slots=True)
-class AgentArchitecture:
-    system_key: str
-    roles: list[AgentRole]
+    system_goal: str
+    system_boundaries: list[str]
+    core_modules: list[str]
+    system_relationships: list[str]
+    implementation_plan: list[str]
+    status: str = "architecture_proposal"
 
 
 @dataclass(frozen=True, slots=True)
 class SystemBuildPlan:
     system_blueprint: SystemBlueprint
-    generated_capabilities: GeneratedCapabilitySet
-    agent_architecture: AgentArchitecture
-    task_asset_draft: TaskAssetDraft
-    execution_package: ExecutionPackage
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-class CapabilityGenerator:
-    def generate(self, blueprint: SystemBlueprint) -> GeneratedCapabilitySet:
-        skills = [f"{capability} Skill" for capability in blueprint.capabilities]
-        return GeneratedCapabilitySet(list(blueprint.capabilities), list(blueprint.agents), skills, list(blueprint.workflows))
-
-
-class AgentArchitectureDesigner:
-    def design(self, blueprint: SystemBlueprint, generated: GeneratedCapabilitySet) -> AgentArchitecture:
-        roles = []
-        for index, agent in enumerate(generated.agents):
-            capability = generated.capabilities[index % len(generated.capabilities)]
-            roles.append(AgentRole(agent, [f"Own {capability}", "Report decisions and execution state"], [f"{capability} Skill"], list(blueprint.connectors) + ["Memory API", "TaskAsset API"]))
-        return AgentArchitecture(blueprint.system_key, roles)
-
-
 class SinoSystemBuilder:
-    def __init__(self, *, registry: ApplicationRegistry | None = None, capability_generator: CapabilityGenerator | None = None, agent_designer: AgentArchitectureDesigner | None = None):
-        self.registry = registry or ApplicationRegistry()
-        self.capability_generator = capability_generator or CapabilityGenerator()
-        self.agent_designer = agent_designer or AgentArchitectureDesigner()
+    """Generates application architecture proposals; Agent ownership stays in AI Capability Center."""
 
-    def build(self, system_goal: str, *, conversation_id: str | None = None) -> SystemBuildPlan:
+    def __init__(self, *, registry: ApplicationRegistry | None = None, **_legacy_dependencies):
+        self.registry = registry or ApplicationRegistry()
+
+    def build(self, system_goal: str, *, conversation_id: str | None = None, project_intelligence: dict[str, Any] | None = None) -> SystemBuildPlan:
         goal = (system_goal or "").strip()
         if not goal:
             raise ValueError("system_goal must not be empty")
         application = self._resolve_application(goal)
-        if application.key == "founder_ai":
-            raise ValueError("Founder AI is already active; System Builder only plans blueprint applications")
-        blueprint = self._blueprint(application, goal)
-        generated = self.capability_generator.generate(blueprint)
-        architecture = self.agent_designer.design(blueprint, generated)
-        task = generate_task_asset_draft(
-            f"Build {application.name} from approved system blueprint",
-            conversation_id=conversation_id,
-            context={"system_id": "founder_ai", "target_application": application.key, "system_blueprint": asdict(blueprint), "agent_architecture": asdict(architecture)},
-            constraints=["Founder approval is required", "Keep target application in blueprint status until execution is approved"],
-            risk="high",
-            approval_required=True,
-        )
-        package = build_execution_package(task, verification=["Validate application boundary", "Review generated capabilities, agents, skills and workflows", "Run required tests"])
-        return SystemBuildPlan(blueprint, generated, architecture, task, package)
+        context = project_intelligence or {}
+        return SystemBuildPlan(self._blueprint(application, goal, context))
 
     def _resolve_application(self, goal: str) -> ApplicationDefinition:
         lowered = goal.lower()
@@ -131,23 +73,23 @@ class SinoSystemBuilder:
                 application = self.registry.get(key)
                 if application is not None:
                     return application
-        application = self.registry.get("operator_ai")
+        application = self.registry.get("founder_ai")
         if application is None:
-            raise LookupError("Operator AI blueprint is not registered")
+            raise LookupError("Founder AI is not registered")
         return application
 
     @staticmethod
-    def _blueprint(application: ApplicationDefinition, goal: str) -> SystemBlueprint:
+    def _blueprint(application: ApplicationDefinition, goal: str, context: dict[str, Any]) -> SystemBlueprint:
         domain = application.name.removesuffix(" AI")
+        constraints = [str(item) for item in context.get("constraints", []) if str(item).strip()]
+        boundaries = [f"仅修改 {application.name} 应用系统边界", "不在蓝图阶段创建或配置 AI Agent", "不在 Founder 确认前进入代码执行"]
+        boundaries.extend(constraints[:3])
         return SystemBlueprint(
             system_key=application.key,
             system_name=application.name,
-            purpose=goal,
-            target_user=f"AI Commerce OS {domain} team",
-            capabilities=[f"{domain} Planning", f"{domain} Decision Support", f"{domain} Execution Coordination"],
-            agents=[f"{domain} Lead Agent", f"{domain} Specialist Agent"],
-            workflows=[f"{domain} Goal Analysis", f"{domain} Approval Workflow", f"{domain} Execution Review"],
-            connectors=["Context API", "TaskAsset API"],
-            memory_requirements=["Decision Memory", "Task Memory", "Execution Learning"],
-            execution_requirements=["Founder approval", "Isolated application boundary", "Audited Codex execution"],
+            system_goal=goal,
+            system_boundaries=boundaries,
+            core_modules=[f"{domain} 核心业务模块", "上下文与数据模块", "治理与审批模块"],
+            system_relationships=["核心业务模块读取上下文与数据模块", "治理与审批模块约束所有实施动作", "Agent 需求仅作为架构依赖，交由 AI 能力中心创建"],
+            implementation_plan=["Founder 审阅并确认系统蓝图", "确认后生成 Implementation Plan 与 Task Plan", "Founder 批准后进入 Execution"],
         )

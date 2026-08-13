@@ -1,7 +1,0 @@
-const STATE_LABELS = { exploring: "探索中", clarifying: "澄清中", converging: "收敛中", consensus: "已形成共识", goal_ready: "可形成目标", goal_confirmed: "目标已确认", planning: "规划中", approved: "已授权", executing: "执行中", completed: "已完成" };
-
-export function DiscussionWorkspace({ snapshot, message, onMessage, onSend, busy, mode }) {
-  const state = snapshot?.conversation?.state || "exploring";
-  const copy = mode === "running" ? ["补充当前执行……", "发送补充"] : mode === "paused" ? ["补充信息或调整执行方案……", "提交补充"] : state === "goal_ready" ? ["继续讨论这个目标……", "继续讨论"] : ["与 Sino 讨论……", "发送"];
-  return <section className="sino-discussion" id="today"><header><div><span className="sino-kicker">Sino 讨论工作区</span><h1>Founder 与 Sino 持续讨论</h1></div><span className="sino-conversation-state" data-state={state}>{STATE_LABELS[state] || state}</span></header><div className="sino-conversation-log" aria-label="讨论记录">{snapshot?.messages?.length ? snapshot.messages.map((item) => <article key={item.message_id} data-role={item.role}><strong>{item.role === "founder" ? "Founder" : "Sino"}</strong><p>{item.content}</p></article>) : <p>从一个想法、判断或问题开始。普通消息不会自动生成任务。</p>}</div><form className="sino-composer" onSubmit={onSend}><label htmlFor="sino-discussion-input">与 Sino 讨论</label><div><textarea id="sino-discussion-input" value={message} onChange={(event) => onMessage(event.target.value)} placeholder={copy[0]} rows="3" /><button className="sino-button" disabled={busy || !message.trim()}>{busy ? "处理中…" : copy[1]}</button></div></form></section>;
-}

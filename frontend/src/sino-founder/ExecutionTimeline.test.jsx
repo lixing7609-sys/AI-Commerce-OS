@@ -24,7 +24,7 @@ describe("ExecutionTimeline V2", () => {
     render(<ExecutionTimeline status="completed" events={events} />);
 
     const phaseText = document.querySelector(".sino-timeline--v2 > ol").textContent;
-    for (const label of ["已审批", "已排队", "Worker 已启动", "Codex 运行中", "测试", "成果", "记忆", "已完成"]) expect(phaseText).toContain(label);
+    for (const label of ["已审批", "已排队", "Worker 已启动", "Codex 执行中", "测试", "成果", "记忆", "已完成"]) expect(phaseText).toContain(label);
     expect(screen.getByText("4m 12s")).toBeTruthy();
     const codexTime = document.querySelector('time[datetime="2026-08-11T12:31:10Z"]');
     expect(codexTime).toBeTruthy();

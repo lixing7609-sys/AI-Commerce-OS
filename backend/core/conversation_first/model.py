@@ -19,6 +19,7 @@ class ConversationMessageDB(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     message_type: Mapped[str] = mapped_column(String(30), nullable=False, default="discussion", server_default="discussion")
     intent: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    grounding: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
 
@@ -28,6 +29,12 @@ class SecretaryDigestDB(Base):
     conversation_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     topics: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    key_viewpoints: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    constraints: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    terminology: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    prompt_delta: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    memory_candidates: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    asset_candidates: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
 

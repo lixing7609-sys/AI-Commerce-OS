@@ -1,10 +1,11 @@
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.context.service import get_founder_context
+from app.core.project.service import get_project_intelligence
 from app.core.conversation.service import get_conversation
 from app.founder_ai.orchestrator import (
     FOUNDER_SYSTEM_KEY,
@@ -16,15 +17,31 @@ from app.founder_ai.execution_registry import approve_execution_session, create_
 from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions
 from app.founder_ai.execution_worker import enqueue_execution, execution_queue, resume_execution
 from app.founder_ai.sino_brain import SinoBrain
+from app.llm.exceptions import LLMGatewayError
 from app.founder_ai.self_management import SinoStateAnalyzer
 from app.founder_ai.autonomous_planning import SinoStrategicAnalyzer
 from app.founder_ai.asset_memory_center import build_asset_memory_center
+from app.founder_ai.intelligence_library import (
+    IntelligenceLibraryError,
+    artifact_detail,
+    create_artifact_version,
+    create_reference,
+    library_context_for_targets,
+    memory_detail,
+    merge_memories,
+    references_for_target,
+    revise_memory,
+    set_artifact_status,
+    set_memory_status,
+)
 from app.founder_ai.system_builder import ApplicationRegistry, SinoSystemBuilder
 from app.founder_ai.secretary import SinoSecretaryService
+from app.founder_ai.council import council_service
 from app.founder_ai.execution_delta import ExecutionDeltaService
 from app.core.conversation_first.model import GoalAssetDB
 from app.database.db import SessionLocal
 from app.core.task_asset.service import get_founder_task_asset
+from app.core.founder_object.service import approve_object, archive_object, attach_object_context, get_object, list_conversation_objects
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -124,14 +141,11 @@ class SystemBuildIn(BaseModel):
 
     system_goal: str = Field(min_length=1, max_length=10000)
     conversation_id: str | None = None
+    project_id: str | None = None
 
 
 class SystemBuildOut(BaseModel):
     system_blueprint: dict[str, Any]
-    generated_capabilities: dict[str, Any]
-    agent_architecture: dict[str, Any]
-    task_asset_draft: TaskAssetDraftOut
-    execution_package: ExecutionPackageOut
 
 
 class ExecutionCreateIn(BaseModel):
@@ -148,6 +162,16 @@ class DiscussionMessageIn(BaseModel):
     intent: str | None = None
 
 
+class CouncilDiscussionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str = Field(min_length=1, max_length=10000)
+    models: list[str] | None = None
+
+
+class ObjectDiscussionIn(BaseModel):
+    conversation_id: str
+
+
 class DeltaCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     conversation_id: str
@@ -159,6 +183,36 @@ class DeltaCreateIn(BaseModel):
 class DeltaDecisionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: str
+
+
+class LibraryRevisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    revision_reason: str = Field(min_length=1, max_length=1000)
+    title: str | None = Field(default=None, max_length=500)
+    summary: str | None = None
+    content: str | None = None
+
+
+class LibraryStatusIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str
+
+
+class LibraryReferenceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_type: str
+    source_id: str
+    target_type: str
+    target_id: str
+    created_by: str = "founder"
+    note: str | None = None
+
+
+class MemoryMergeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    memory_ids: list[str] = Field(min_length=2)
+    title: str = Field(min_length=1, max_length=500)
+    revision_reason: str = Field(min_length=1, max_length=1000)
 
 
 class ExecutionSessionOut(BaseModel):
@@ -207,7 +261,7 @@ delta_service = ExecutionDeltaService(secretary=secretary)
 @router.get("/conversations/{conversation_id}/workspace", response_model=dict[str, Any])
 def get_conversation_workspace(conversation_id: str):
     try:
-        snapshot = secretary.snapshot(conversation_id)
+        snapshot = council_service.snapshot(conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     active = next((item for item in reversed(list_execution_sessions()) if item.status in {"draft", "approved", "queued", "executing", "testing", "paused"}), None)
@@ -219,7 +273,39 @@ def get_conversation_workspace(conversation_id: str):
             snapshot["execution_deltas"] = delta_service.list_for_execution(active.id)
             task = get_founder_task_asset(active.task_asset_id)
             snapshot["task_asset"] = ({"id": task.id, "conversation_id": task.conversation_id, "decision_id": task.decision_id, "title": task.title, "description": task.description, "scope": task.scope, "status": task.status, "approval_status": task.approval_status, "execution_status": task.execution_status, "result": task.result} if task else {"id": active.task_asset_id, "title": package.task_asset.title, "description": package.task_asset.description, "scope": package.task_asset.scope, "status": "draft", "approval_status": "pending", "execution_status": active.status})
+    snapshot["founder_objects"] = list_conversation_objects(conversation_id)
     return snapshot
+
+
+@router.get("/conversations/{conversation_id}/objects", response_model=list[dict[str, Any]])
+def conversation_objects(conversation_id: str):
+    return list_conversation_objects(conversation_id)
+
+
+@router.get("/objects/{object_id}", response_model=dict[str, Any])
+def founder_object_detail(object_id: str):
+    item = get_object(object_id)
+    if item is None: raise HTTPException(status_code=404, detail="Founder Object not found")
+    return item
+
+
+@router.post("/objects/{object_id}/continue-discussion", response_model=dict[str, Any])
+def continue_object_discussion(object_id: str, request: ObjectDiscussionIn):
+    try: return attach_object_context(object_id, request.conversation_id)
+    except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/objects/{object_id}/approve", response_model=dict[str, Any])
+def approve_founder_object(object_id: str):
+    try: return approve_object(object_id)
+    except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error: raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/objects/{object_id}/archive", response_model=dict[str, Any])
+def archive_founder_object(object_id: str):
+    try: return archive_object(object_id)
+    except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.post("/conversations/{conversation_id}/messages", response_model=dict[str, Any])
@@ -230,6 +316,56 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except LLMGatewayError as error:
+        raise HTTPException(status_code=503, detail="Sino 回复失败，可重试") from error
+
+
+@router.post("/conversations/{conversation_id}/council", response_model=dict[str, Any])
+def discuss_with_council(conversation_id: str, request: CouncilDiscussionIn):
+    try:
+        return council_service.run(conversation_id, request.content, request.models)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except LLMGatewayError as error:
+        raise HTTPException(status_code=503, detail="多模型讨论暂时不可用，可重试") from error
+
+
+@router.post("/conversations/{conversation_id}/auto-deliberation", response_model=dict[str, Any])
+def discuss_with_auto_deliberation(conversation_id: str, request: CouncilDiscussionIn):
+    try:
+        return council_service.run_auto(conversation_id, request.content, request.models)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except LLMGatewayError as error:
+        raise HTTPException(status_code=503, detail="自动多轮讨论暂时不可用，可重试") from error
+
+
+@router.post("/conversations/{conversation_id}/council/retry", response_model=dict[str, Any])
+def retry_council(conversation_id: str):
+    try:
+        return council_service.retry(conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except LLMGatewayError as error:
+        raise HTTPException(status_code=503, detail="多模型讨论暂时不可用，可重试") from error
+
+
+@router.post("/conversations/{conversation_id}/reply/retry", response_model=dict[str, Any])
+def retry_sino_reply(conversation_id: str):
+    try:
+        return secretary.retry_reply(conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except LLMGatewayError as error:
+        raise HTTPException(status_code=503, detail="Sino 回复失败，可重试") from error
 
 
 @router.post("/conversations/{conversation_id}/candidate-goals/{candidate_goal_id}/confirm", response_model=dict[str, Any])
@@ -247,7 +383,8 @@ def reason_confirmed_goal(goal_id: str):
         raise HTTPException(status_code=404, detail="Goal not found")
     if goal["status"] != "goal_confirmed":
         raise HTTPException(status_code=409, detail="Only confirmed goals can enter reasoning")
-    response = analyze_with_sino_brain(goal["conversation_id"], SinoBrainIn(user_goal=goal["description"], conversation_context={"goal_id": goal_id, "constraints": goal["constraints"], "acceptance_criteria": goal["acceptance_criteria"]}))
+    reusable_context = library_context_for_targets([("conversation", goal["conversation_id"]), ("goal", goal_id)])
+    response = analyze_with_sino_brain(goal["conversation_id"], SinoBrainIn(user_goal=goal["description"], conversation_context={"goal_id": goal_id, "constraints": goal["constraints"], "acceptance_criteria": goal["acceptance_criteria"], "intelligence_references": reusable_context}))
     with SessionLocal() as session:
         record = session.get(GoalAssetDB, goal_id)
         record.status = "planning"
@@ -266,6 +403,60 @@ def get_asset_memory_center():
     return build_asset_memory_center()
 
 
+def _library_call(operation):
+    try:
+        return operation()
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except IntelligenceLibraryError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/library/artifacts/{artifact_id}", response_model=dict[str, Any])
+def get_library_artifact(artifact_id: str):
+    return _library_call(lambda: artifact_detail(artifact_id))
+
+
+@router.post("/library/artifacts/{artifact_id}/versions", response_model=dict[str, Any])
+def version_library_artifact(artifact_id: str, request: LibraryRevisionIn):
+    return _library_call(lambda: create_artifact_version(artifact_id, revision_reason=request.revision_reason, title=request.title, summary=request.summary))
+
+
+@router.patch("/library/artifacts/{artifact_id}/status", response_model=dict[str, Any])
+def change_library_artifact_status(artifact_id: str, request: LibraryStatusIn):
+    return _library_call(lambda: set_artifact_status(artifact_id, request.status))
+
+
+@router.get("/library/memories/{memory_id}", response_model=dict[str, Any])
+def get_library_memory(memory_id: str):
+    return _library_call(lambda: memory_detail(memory_id))
+
+
+@router.post("/library/memories/{memory_id}/revisions", response_model=dict[str, Any])
+def revise_library_memory(memory_id: str, request: LibraryRevisionIn):
+    return _library_call(lambda: revise_memory(memory_id, revision_reason=request.revision_reason, title=request.title, summary=request.summary, content=request.content))
+
+
+@router.patch("/library/memories/{memory_id}/status", response_model=dict[str, Any])
+def change_library_memory_status(memory_id: str, request: LibraryStatusIn):
+    return _library_call(lambda: set_memory_status(memory_id, request.status))
+
+
+@router.post("/library/memories/merge", response_model=dict[str, Any])
+def merge_library_memories(request: MemoryMergeIn):
+    return _library_call(lambda: merge_memories(request.memory_ids, title=request.title, revision_reason=request.revision_reason))
+
+
+@router.post("/library/references", response_model=dict[str, Any])
+def reference_library_asset(request: LibraryReferenceIn):
+    return _library_call(lambda: create_reference(**request.model_dump()))
+
+
+@router.get("/library/references/{target_type}/{target_id}", response_model=list[dict[str, Any]])
+def get_library_references(target_type: str, target_id: str):
+    return references_for_target(target_type, target_id)
+
+
 @router.post("/system-builder/blueprint", response_model=SystemBuildOut)
 def build_application_system_blueprint(request: SystemBuildIn):
     if request.conversation_id:
@@ -273,7 +464,10 @@ def build_application_system_blueprint(request: SystemBuildIn):
         if conversation is None or conversation.system_id != FOUNDER_SYSTEM_KEY:
             raise HTTPException(status_code=404, detail="Founder AI conversation not found")
     try:
-        plan = system_builder.build(request.system_goal, conversation_id=request.conversation_id)
+        project_intelligence = get_project_intelligence(request.project_id) if request.project_id else None
+        plan = system_builder.build(request.system_goal, conversation_id=request.conversation_id, project_intelligence=project_intelligence)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return SystemBuildOut(**plan.to_dict())
@@ -322,11 +516,14 @@ def analyze_with_sino_brain(conversation_id: str, request: SinoBrainIn):
     if conversation is None or conversation.system_id != FOUNDER_SYSTEM_KEY:
         raise HTTPException(status_code=404, detail="Founder AI conversation not found")
 
+    project_context = request.project_context
+    if project_context is None and conversation.project_id:
+        project_context = get_project_intelligence(conversation.project_id)
     result = brain.analyze(
         user_goal=request.user_goal,
         conversation_id=conversation_id,
         conversation_context=request.conversation_context,
-        project_context=request.project_context,
+        project_context=project_context,
     )
     brain_data = result.to_dict()
     reasoning = brain_data.get("reasoning")
@@ -385,6 +582,9 @@ def create_founder_execution(request: ExecutionCreateIn):
         verification=package.verification,
         commit_requirement=package.commit_requirement,
     )
+    reusable_context = library_context_for_targets([("goal", request.goal_id), ("task_asset", request.task_asset_id)])
+    if reusable_context:
+        execution_package = replace(execution_package, context={**execution_package.context, "intelligence_references": reusable_context})
     session = create_execution_session(request.task_asset_id, execution_package)
     return ExecutionSessionOut(
         id=session.id,

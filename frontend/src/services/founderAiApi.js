@@ -6,22 +6,67 @@ async function request(path, options, fallback) {
   return response.json();
 }
 
-export function createFounderConversation(title) {
+export function createFounderConversation(title, projectId) {
   return request("/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, project_id: projectId || null }),
   }, "创建 Founder Conversation 失败");
+}
+
+export function bindFounderConversationProject(conversationId, projectId) {
+  return request(`/conversations/${encodeURIComponent(conversationId)}/project`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId || null }),
+  }, "更新 Conversation 项目失败");
+}
+
+export function getFounderProjects() {
+  return request("/founder-ai/projects", undefined, "获取 Founder 项目失败");
+}
+
+export function createFounderProject(payload) {
+  return request("/founder-ai/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "创建 Founder 项目失败");
+}
+
+export function getProjectIntelligence(projectId) {
+  return request(`/founder-ai/projects/${encodeURIComponent(projectId)}/intelligence`, undefined, "获取项目智能失败");
 }
 
 export function getConversationWorkspace(conversationId) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/workspace`, undefined, "恢复 Sino 讨论失败");
 }
 
+export function getFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}`, undefined, "获取 Founder Object 失败"); }
+export function continueFounderObjectDiscussion(objectId, conversationId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/continue-discussion`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversation_id: conversationId }) }, "挂载 Founder Object 失败"); }
+export function approveFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/approve`, { method: "POST" }, "批准 Founder Object 失败"); }
+export function archiveFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/archive`, { method: "POST" }, "归档 Founder Object 失败"); }
+
 export function discussWithSino(conversationId, content, intent) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/messages`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, intent }),
   }, "发送讨论消息失败");
+}
+
+export function discussWithCouncil(conversationId, content, models) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/council`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, models: models || null }),
+  }, "发起多模型讨论失败");
+}
+
+export function discussWithAutoDeliberation(conversationId, content, models) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/auto-deliberation`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, models: models || null }),
+  }, "发起自动多轮讨论失败");
+}
+
+export function retryCouncil(conversationId) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/council/retry`, { method: "POST" }, "重试多模型讨论失败");
+}
+
+export function retrySinoReply(conversationId) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/reply/retry`, { method: "POST" }, "重试 Sino 回复失败");
 }
 
 export function confirmCandidateGoal(conversationId, candidateGoalId) {
@@ -44,12 +89,101 @@ export function getAssetMemoryCenter() {
   return request("/founder-ai/asset-memory-center", undefined, "获取资产与记忆历史失败");
 }
 
-export function buildSystemBlueprint(systemGoal, conversationId) {
+export function getLibraryArtifact(artifactId) {
+  return request(`/founder-ai/library/artifacts/${encodeURIComponent(artifactId)}`, undefined, "获取成果详情失败");
+}
+
+export function createArtifactVersion(artifactId, payload) {
+  return request(`/founder-ai/library/artifacts/${encodeURIComponent(artifactId)}/versions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "创建成果版本失败");
+}
+
+export function updateArtifactStatus(artifactId, status) {
+  return request(`/founder-ai/library/artifacts/${encodeURIComponent(artifactId)}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) }, "更新成果状态失败");
+}
+
+export function getLibraryMemory(memoryId) {
+  return request(`/founder-ai/library/memories/${encodeURIComponent(memoryId)}`, undefined, "获取记忆详情失败");
+}
+
+export function createMemoryRevision(memoryId, payload) {
+  return request(`/founder-ai/library/memories/${encodeURIComponent(memoryId)}/revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "创建记忆修订失败");
+}
+
+export function updateMemoryStatus(memoryId, status) {
+  return request(`/founder-ai/library/memories/${encodeURIComponent(memoryId)}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) }, "更新记忆状态失败");
+}
+
+export function mergeLibraryMemories(payload) {
+  return request("/founder-ai/library/memories/merge", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "合并记忆失败");
+}
+
+export function createIntelligenceReference(payload) {
+  return request("/founder-ai/library/references", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "引用资产失败");
+}
+
+export function buildSystemBlueprint(systemGoal, conversationId, projectId) {
   return request("/founder-ai/system-builder/blueprint", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system_goal: systemGoal, conversation_id: conversationId }),
+    body: JSON.stringify({ system_goal: systemGoal, conversation_id: conversationId, project_id: projectId || null }),
   }, "创建 AI System Blueprint 失败");
+}
+
+export function getModelCenter() {
+  return request("/founder-ai/model-center", undefined, "获取模型中心失败");
+}
+
+export function saveModelProvider(providerKey, payload) {
+  return request(`/founder-ai/model-center/providers/${encodeURIComponent(providerKey)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "保存模型配置失败");
+}
+
+export function checkModelProvider(providerKey) {
+  return request(`/founder-ai/model-center/providers/${encodeURIComponent(providerKey)}/health`, { method: "POST" }, "模型健康检查失败");
+}
+
+export function saveModelRoles(assignments) {
+  return request("/founder-ai/model-center/roles", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assignments }) }, "保存模型角色失败");
+}
+
+export function saveMultiModelAssignment(models) {
+  return request("/founder-ai/model-center/capabilities/multi-model-discussion", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ models }) }, "保存多模型讨论配置失败");
+}
+
+export function saveCapabilityAssignment(capabilityKey, providerKey, model) {
+  return request(`/founder-ai/model-center/capabilities/${encodeURIComponent(capabilityKey)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider_key: providerKey || null, model: model || null }) }, "保存能力分配失败");
+}
+
+export function saveExecutionEngine(engineId) {
+  return request("/founder-ai/model-center/execution-engine", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ engine_id: engineId }) }, "保存执行引擎失败");
+}
+
+export function installModelProvider(payload) {
+  return request("/founder-ai/model-center/providers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "添加模型 Provider 失败");
+}
+
+export function discoverProviderModels(providerKey) {
+  return request(`/founder-ai/model-center/providers/${encodeURIComponent(providerKey)}/discover`, { method: "POST" }, "发现可用模型失败");
+}
+
+export function updateModelProviderCredentials(providerKey, payload) {
+  return request(`/founder-ai/model-center/providers/${encodeURIComponent(providerKey)}/credentials`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "更新 Provider 配置失败");
+}
+
+export function selectProviderModels(providerKey, models) {
+  return request(`/founder-ai/model-center/providers/${encodeURIComponent(providerKey)}/models`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ models }) }, "保存模型选择失败");
+}
+
+export function setModelProviderEnabled(providerKey, enabled) {
+  return request(`/founder-ai/model-center/providers/${encodeURIComponent(providerKey)}/enabled`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) }, "更新模型状态失败");
+}
+
+export async function deleteModelProvider(providerKey) {
+  const response = await fetch(`${BASE_URL}/founder-ai/model-center/providers/${encodeURIComponent(providerKey)}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(`删除模型 Provider 失败（状态码 ${response.status}）`);
+}
+
+export function saveApplicationModelAssignments(applicationKey, assignments) {
+  return request(`/founder-ai/model-center/applications/${encodeURIComponent(applicationKey)}/assignments`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assignments }) }, "保存应用绑定失败");
 }
 
 export function analyzeFounderConversation(conversationId, message, context) {

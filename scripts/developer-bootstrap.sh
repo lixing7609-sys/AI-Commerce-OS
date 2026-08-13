@@ -218,7 +218,7 @@ case "${BACKEND_STATE}" in
       else
         launchd_stop "${BACKEND_LABEL}" || true
         write_service_plist "${BACKEND_PLIST}" "${BACKEND_LABEL}" "${BACKEND_DIR}" "${BACKEND_LOG}" \
-          "/bin/bash" "-lc" "exec uv run uvicorn app.main:app --reload --port ${BACKEND_PORT}"
+          "/bin/bash" "-lc" "if [ -f .env ]; then set -a; . ./.env; set +a; fi; exec uv run uvicorn app.main:app --reload --port ${BACKEND_PORT}"
         launchd_start "${BACKEND_LABEL}" "${BACKEND_PLIST}"
       fi
     fi

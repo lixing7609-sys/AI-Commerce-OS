@@ -61,6 +61,14 @@ class TaskPackageBuilder:
         evidence = []
         relevant_files = []
 
+        for reference in _items(context.get("intelligence_references")):
+            item = _mapping(reference)
+            evidence.append({
+                "source": f"{item.get('source_type', 'library')}:{item.get('source_id', '')}",
+                "fact": item.get("summary") or item.get("content") or item.get("content_ref") or item.get("title"),
+                "relevance": item.get("note") or f"Referenced by {item.get('target_type', 'context')}",
+            })
+
         for raw_item in _items(evidence_source):
             item = _mapping(raw_item)
             evidence.append(

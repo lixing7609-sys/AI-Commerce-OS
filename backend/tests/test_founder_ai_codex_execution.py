@@ -18,6 +18,13 @@ from app.founder_ai.orchestrator import build_execution_package, generate_task_a
 from app.founder_ai.task_package import TaskPackageBuilder
 
 
+@pytest.fixture(autouse=True)
+def selected_execution_engine(monkeypatch):
+    from app.founder_ai import execution_registry
+
+    monkeypatch.setattr(execution_registry, "resolve_execution_capability", lambda: {"execution_engine_id": "codex"})
+
+
 def test_unapproved_execution_returns_403(monkeypatch):
     draft = generate_task_asset_draft("开发 Agent")
     package = build_execution_package(draft)
@@ -25,6 +32,15 @@ def test_unapproved_execution_returns_403(monkeypatch):
     with pytest.raises(HTTPException) as error:
         api.execute_founder_execution(session.id)
     assert error.value.status_code == 403
+
+
+def test_execution_session_reads_selected_engine_from_registry(monkeypatch):
+    from app.founder_ai import execution_registry
+
+    monkeypatch.setattr(execution_registry, "resolve_execution_capability", lambda: {"execution_engine_id": "codex"})
+    draft = generate_task_asset_draft("开发 Agent")
+    session = create_execution_session("task-engine", build_execution_package(draft))
+    assert session.executor == "codex"
 
 
 def test_approved_execution_uses_adapter_and_captures_assets():

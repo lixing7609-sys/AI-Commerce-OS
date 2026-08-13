@@ -37,7 +37,7 @@ function indexEvents(events, timeline) {
   return indexed;
 }
 
-export function ExecutionTimeline({ status, timeline = {}, events = [], error, failureReason, pauseReason, recoverable = false, lastEvent, onResume }) {
+export function ExecutionTimeline({ status, timeline = {}, events = [], error, failureReason, pauseReason, recoverable = false, lastEvent, executionEngine = "Codex", onResume }) {
   const [now, setNow] = useState(() => Date.now());
   const indexed = useMemo(() => indexEvents(events, timeline), [events, timeline]);
   const running = ["queued", "executing", "testing"].includes(status);
@@ -63,7 +63,8 @@ export function ExecutionTimeline({ status, timeline = {}, events = [], error, f
         const isCurrent = Boolean(startedAt && !finishedAt && !nextStarted && running);
         const duration = formatDuration(startedAt, finishedAt || (isCurrent ? new Date(now).toISOString() : null));
         const className = [startedAt ? "is-active" : "", isCurrent ? "is-current" : "", finishedAt ? "is-complete" : ""].filter(Boolean).join(" ");
-        return <li key={step.key} className={className}><span>{index + 1}</span><div><strong>{step.label}</strong><time dateTime={startedAt || undefined}>{startedAt ? `${formatTime(startedAt)}${finishedAt && finishedAt !== startedAt ? ` – ${formatTime(finishedAt)}` : ""}` : "Waiting"}</time>{duration && <small>{duration}</small>}</div></li>;
+        const label = step.key === "codex" ? `${executionEngine} 执行中` : step.label;
+        return <li key={step.key} className={className}><span>{index + 1}</span><div><strong>{label}</strong><time dateTime={startedAt || undefined}>{startedAt ? `${formatTime(startedAt)}${finishedAt && finishedAt !== startedAt ? ` – ${formatTime(finishedAt)}` : ""}` : "等待"}</time>{duration && <small>{duration}</small>}</div></li>;
       })}</ol>
       {events.length > 0 && <ul className="sino-timeline-events" aria-label="执行事件日志">{events.map((event) => <li key={event.event_id}><time dateTime={event.timestamp}>{formatTime(event.timestamp)}</time><strong>{EVENT_LABELS[event.event_name] || event.event_name}</strong><span>{event.message}</span></li>)}</ul>}
       {status === "failed" && <div className="sino-execution-notice sino-execution-notice--failed" role="alert"><strong>失败</strong><p><b>原因：</b> {reason || "执行失败，但没有捕获到具体原因。"}</p><p><b>最后事件：</b> {lastObserved ? `${EVENT_LABELS[lastObserved.event_name] || lastObserved.event_name} · ${formatTime(lastObserved.timestamp)}` : "暂无"}</p></div>}

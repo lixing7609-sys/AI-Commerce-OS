@@ -1,36 +1,60 @@
-import { useCallback, useEffect, useState } from "react";
-import { approveFounderExecution, buildSystemBlueprint, confirmCandidateGoal, createFounderConversation, createFounderExecution, decideExecutionDelta, discussWithSino, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderStrategy, reasonConfirmedGoal, resumeFounderExecution, submitExecutionDelta } from "../services/founderAiApi.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, continueFounderObjectDiscussion } from "../services/founderAiApi.js";
+import { approveFounderExecution, buildSystemBlueprint, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderProjects, getFounderStrategy, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
-import { AnalysisCard } from "./AnalysisCard.jsx";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
-import { ArtifactPanel } from "./ArtifactPanel.jsx";
-import { AssetMemoryCenter } from "./AssetMemoryCenter.jsx";
-import { CapabilityMapPanel } from "./CapabilityMapPanel.jsx";
-import { CapabilityNavigation } from "./CapabilityNavigation.jsx";
-import { DiscussionWorkspace } from "./DiscussionWorkspace.jsx";
-import { EvidenceCard } from "./EvidenceCard.jsx";
+import { AssetMemoryCenter, AssetMemoryDetailPane } from "./AssetMemoryCenter.jsx";
+import { ConversationThread } from "./ConversationThread.jsx";
+import { ImplementationWorkspace } from "./ImplementationWorkspace.jsx";
+import { ComposerContextControls } from "./ComposerContextControls.jsx";
 import { ExecutionCard } from "./ExecutionCard.jsx";
+import { ExecutionContextComposer } from "./ExecutionContextComposer.jsx";
 import { ExecutionDeltaPanel } from "./ExecutionDeltaPanel.jsx";
 import { ExecutionTimeline } from "./ExecutionTimeline.jsx";
-import { MemoryPanel } from "./MemoryPanel.jsx";
-import { NextStrategicActionsPanel } from "./NextStrategicActionsPanel.jsx";
-import { RoadmapPanel } from "./RoadmapPanel.jsx";
-import { SecretarySidebar } from "./SecretarySidebar.jsx";
-import { SecretarySummary } from "./SecretarySummary.jsx";
+import { ConversationIntelligenceContext, FounderHome, ProjectIntelligenceContext, ProjectWorkspace } from "./FounderHome.jsx";
+import { ModelCenter } from "./ModelCenter.jsx";
+import { SinoFounderShell } from "./SinoFounderShell.jsx";
 import { SolutionCard } from "./SolutionCard.jsx";
-import { StrategicOverviewCard } from "./StrategicOverviewCard.jsx";
 import { SystemBuilderPanel } from "./SystemBuilderPanel.jsx";
 import { TaskPlanCard } from "./TaskPlanCard.jsx";
 
 const CONVERSATION_KEY = "sino-founder-active-conversation";
 const EXECUTION_KEY = "sino-founder-active-execution";
+const CONVERSATION_HISTORY_KEY = "sino-founder-conversation-history";
+const GOAL_CONTEXT_KEY = "sino-founder-goal-execution-context";
+const PROJECT_KEY = "sino-founder-active-project";
 const stored = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 const remember = (key, value) => { try { if (value) window.localStorage.setItem(key, value); else window.localStorage.removeItem(key); } catch { /* unavailable */ } };
+const storedHistory = () => {
+  try {
+    const history = JSON.parse(window.localStorage.getItem(CONVERSATION_HISTORY_KEY) || "[]");
+    const cleaned = history.filter((item) => item.title !== "新讨论");
+    if (cleaned.length !== history.length) window.localStorage.setItem(CONVERSATION_HISTORY_KEY, JSON.stringify(cleaned));
+    return cleaned;
+  } catch { return []; }
+};
+const storedGoalContext = () => { try { return JSON.parse(window.localStorage.getItem(GOAL_CONTEXT_KEY) || "{}"); } catch { return {}; } };
+export const normalizeFounderView = (next) => {
+  if (["reasoning"].includes(next)) return "execution";
+  if (["blueprint", "system-builder"].includes(next)) return "builder";
+  if (["capability", "models", "model-center"].includes(next)) return "capability-center";
+  return next;
+};
 
 export function ConversationWorkspace() {
   const [conversationId, setConversationId] = useState(() => stored(CONVERSATION_KEY));
+  const [view, setView] = useState(() => stored(CONVERSATION_KEY) ? "conversation" : "home");
   const [snapshot, setSnapshot] = useState(null);
-  const [message, setMessage] = useState("");
+  const [conversations, setConversations] = useState(storedHistory);
+  const [projects, setProjects] = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [projectIntelligence, setProjectIntelligence] = useState(null);
+  const [projectReloadKey, setProjectReloadKey] = useState(0);
+  const [projectLoading, setProjectLoading] = useState(false);
+  const [projectLoadError, setProjectLoadError] = useState("");
+  const [discussionMessage, setDiscussionMessage] = useState("");
+  const [executionMessage, setExecutionMessage] = useState("");
+  const [goalExecutionContext, setGoalExecutionContext] = useState(storedGoalContext);
   const [goal, setGoal] = useState(null);
   const [result, setResult] = useState(null);
   const [executionId, setExecutionId] = useState(() => stored(EXECUTION_KEY));
@@ -40,88 +64,300 @@ export function ConversationWorkspace() {
   const [strategy, setStrategy] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [sinoHealthy, setSinoHealthy] = useState(true);
+  const [assetDetail, setAssetDetail] = useState(null);
+  const [assetSection, setAssetSection] = useState("artifacts");
+  const [replyPending, setReplyPending] = useState(false);
+  const [pendingReplyMode, setPendingReplyMode] = useState("sino");
+  const [discussionMode, setDiscussionMode] = useState("sino");
+  const sendLockRef = useRef(false);
+  const skipNextRestoreRef = useRef(false);
+
+  const rememberConversation = useCallback((id, title = "新讨论") => {
+    if (!id) return;
+    setConversations((current) => {
+      const previous = current.find((item) => item.id === id);
+      const resolvedTitle = previous?.title && previous.title !== "新讨论" ? previous.title : title;
+      const next = [{ id, title: resolvedTitle.slice(0, 36), updatedAt: Date.now() }, ...current.filter((item) => item.id !== id)];
+      remember(CONVERSATION_HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const restoreWorkspace = useCallback(async (id) => {
     if (!id) return;
     const restored = await getConversationWorkspace(id);
     setSnapshot(restored);
+    setActiveProjectId(restored.conversation?.project_id || null);
+    remember(PROJECT_KEY, restored.conversation?.project_id || null);
+    rememberConversation(restored.conversation?.id || id, restored.conversation?.title || restored.messages?.[0]?.content || "新讨论");
     const restoredGoal = restored.goals?.find((item) => ["goal_confirmed", "planning"].includes(item.status)) || restored.goals?.[0];
     if (restoredGoal) setGoal(restoredGoal);
     if (restored.active_execution) {
-      setExecution(restored.active_execution); setExecutionId(restored.active_execution.id); setApproved(Boolean(restored.active_execution.execution_allowed)); remember(EXECUTION_KEY, restored.active_execution.id);
+      setExecution(restored.active_execution);
+      setExecutionId(restored.active_execution.id);
+      setApproved(Boolean(restored.active_execution.execution_allowed));
+      remember(EXECUTION_KEY, restored.active_execution.id);
     }
-  }, []);
+  }, [rememberConversation]);
 
   useEffect(() => {
     if (!conversationId) return undefined;
+    if (skipNextRestoreRef.current) { skipNextRestoreRef.current = false; return undefined; }
     let active = true;
     getConversationWorkspace(conversationId).then((restored) => {
       if (!active) return;
       setSnapshot(restored);
+      setActiveProjectId(restored.conversation?.project_id || null);
+      remember(PROJECT_KEY, restored.conversation?.project_id || null);
+      rememberConversation(restored.conversation?.id || conversationId, restored.conversation?.title || restored.messages?.[0]?.content || "新讨论");
       const restoredGoal = restored.goals?.find((item) => ["goal_confirmed", "planning"].includes(item.status)) || restored.goals?.[0];
       if (restoredGoal) setGoal(restoredGoal);
-      if (restored.active_execution) { setExecution(restored.active_execution); setExecutionId(restored.active_execution.id); setApproved(Boolean(restored.active_execution.execution_allowed)); remember(EXECUTION_KEY, restored.active_execution.id); }
-    }).catch((requestError) => { if (active) setError(requestError.message); });
+      if (restored.active_execution) {
+        setExecution(restored.active_execution); setExecutionId(restored.active_execution.id); setApproved(Boolean(restored.active_execution.execution_allowed)); remember(EXECUTION_KEY, restored.active_execution.id);
+      }
+    }).catch((requestError) => { if (active) { setError(requestError.message); setSinoHealthy(false); } });
     return () => { active = false; };
-  }, [conversationId]);
-  useEffect(() => { Promise.all([getFounderBriefing(), getFounderStrategy()]).then(([nextBriefing, nextStrategy]) => { setBriefing(nextBriefing); setStrategy(nextStrategy); }).catch(() => {}); }, []);
+  }, [conversationId, rememberConversation]);
+  useEffect(() => { Promise.all([getFounderBriefing(), getFounderStrategy()]).then(([nextBriefing, nextStrategy]) => { setBriefing(nextBriefing); setStrategy(nextStrategy); }).catch(() => setSinoHealthy(false)); }, []);
+  useEffect(() => { getFounderProjects().then(setProjects).catch(() => setSinoHealthy(false)); }, []);
+  useEffect(() => {
+    if (!activeProjectId) { setProjectIntelligence(null); setProjectLoading(false); setProjectLoadError(""); return undefined; }
+    let active = true;
+    setProjectLoading(true); setProjectLoadError("");
+    getProjectIntelligence(activeProjectId).then((value) => { if (active) { setProjectIntelligence(value); setProjectLoading(false); } }).catch((requestError) => { if (active) { setProjectIntelligence(null); setProjectLoading(false); setProjectLoadError(requestError.message || "项目加载失败"); setError(requestError.message); setSinoHealthy(false); } });
+    return () => { active = false; };
+  }, [activeProjectId, projectReloadKey]);
   useEffect(() => {
     if (!executionId || execution) return;
-    getFounderExecution(executionId).then((item) => { setExecution(item); setApproved(Boolean(item.execution_allowed)); }).catch(() => { remember(EXECUTION_KEY, null); setExecutionId(null); });
+    getFounderExecution(executionId).then((item) => { setExecution(item); setApproved(Boolean(item.execution_allowed)); }).catch(() => { remember(EXECUTION_KEY, null); setExecutionId(null); setSinoHealthy(false); });
   }, [executionId, execution]);
   useEffect(() => {
     if (!executionId || !["queued", "executing", "testing"].includes(execution?.status)) return undefined;
-    const timer = window.setInterval(() => getFounderExecution(executionId).then(setExecution).catch((requestError) => setError(requestError.message)), 1000);
+    const timer = window.setInterval(() => getFounderExecution(executionId).then(setExecution).catch((requestError) => { setError(requestError.message); setSinoHealthy(false); }), 1000);
     return () => window.clearInterval(timer);
   }, [executionId, execution?.status]);
+  useEffect(() => { const normalized = normalizeFounderView(view); if (normalized !== view) setView(normalized); }, [view]);
 
-  const mode = execution?.status === "paused" ? "paused" : ["queued", "executing", "testing"].includes(execution?.status) ? "running" : "discussion";
-
-  async function send(event) {
-    event.preventDefault();
-    const content = message.trim(); if (!content || busy) return;
-    setBusy(true); setError("");
-    try {
-      let id = conversationId;
-      if (!id) { const conversation = await createFounderConversation(content.slice(0, 120)); id = conversation.id; setConversationId(id); remember(CONVERSATION_KEY, id); }
-      if (mode !== "discussion" && execution && goal) {
-        const delta = await submitExecutionDelta(execution.id, { conversation_id: id, goal_id: goal.goal_id, task_id: execution.task_asset_id, content });
-        const nextExecution = await getFounderExecution(execution.id);
-        setExecution({ ...nextExecution, deltas: [...(nextExecution.deltas || []), ...(nextExecution.deltas?.some((item) => item.delta_id === delta.delta_id) ? [] : [delta])] });
-        await restoreWorkspace(id);
-      } else {
-        const nextSnapshot = await discussWithSino(id, content);
-        setSnapshot(nextSnapshot);
-        const explicitGoal = nextSnapshot.goals?.find((item) => item.status === "goal_confirmed");
-        if (explicitGoal) await prepareGoal(explicitGoal);
-      }
-      setMessage("");
-    } catch (requestError) { setError(requestError.message || "Sino 讨论失败"); }
-    finally { setBusy(false); }
-  }
+  const hasExecutionContext = Boolean(goal?.goal_id || execution?.task_asset_id || executionId);
 
   async function prepareGoal(formalGoal) {
     setGoal(formalGoal);
     const reasoning = await reasonConfirmedGoal(formalGoal.goal_id);
     const draft = reasoning.task_asset_draft;
     const task = await createTaskAsset({ title: draft.title, description: draft.description, scope: { ...draft.scope, goal_id: formalGoal.goal_id }, conversation_id: formalGoal.conversation_id || conversationId });
-    const nextExecution = await createFounderExecution(task.id, reasoning.execution_package, formalGoal.goal_id);
-    setResult(reasoning); setExecution(nextExecution); setExecutionId(nextExecution.id); setApproved(false); remember(EXECUTION_KEY, nextExecution.id);
+    const conversationContextKey = formalGoal.conversation_id || conversationId;
+    const pendingContext = [...(conversationContextKey ? goalExecutionContext[`conversation:${conversationContextKey}`] || [] : []), ...(goalExecutionContext[formalGoal.goal_id] || [])];
+    const executionPackage = pendingContext.length ? { ...reasoning.execution_package, founder_supplements: pendingContext } : reasoning.execution_package;
+    const nextExecution = await createFounderExecution(task.id, executionPackage, formalGoal.goal_id);
+    setResult(reasoning); setExecution(nextExecution); setExecutionId(nextExecution.id); setApproved(false); remember(EXECUTION_KEY, nextExecution.id); setView("execution");
   }
 
-  async function confirm(candidate) {
-    if (busy) return; setBusy(true); setError("");
+  async function sendDiscussion(event) {
+    event.preventDefault();
+    const content = discussionMessage.trim(); if (!content || busy || sendLockRef.current) return;
+    sendLockRef.current = true;
+    setBusy(true); setError("");
+    let id = conversationId;
+    let progressTimer;
     try {
-      const formalGoal = await confirmCandidateGoal(conversationId, candidate.goal_id);
-      await prepareGoal(formalGoal); await restoreWorkspace(conversationId);
-    } catch (requestError) { setError(requestError.message || "目标确认失败"); }
+      if (!id) { const conversation = await createFounderConversation("新讨论", activeProjectId); id = conversation.id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id); rememberConversation(id, "新讨论"); }
+      if (discussionMode === "council" || discussionMode === "auto") {
+        const messageType = discussionMode === "auto" ? "auto_deliberation" : "council";
+        setSnapshot((current) => ({ ...(current || {}), conversation: current?.conversation || { id, project_id: activeProjectId, title: "新讨论", state: "exploring" }, messages: [...(current?.messages || []), { message_id: `optimistic-${Date.now()}`, role: "founder", content, message_type: messageType }], council_runs: [...(current?.council_runs || []), { council_run_id: `pending-${Date.now()}`, question: content, discussion_mode: messageType, status: "running", participants: [], model_runs: [] }] }));
+        setDiscussionMessage(""); setView("conversation");
+        const pollProgress = async () => {
+          try { setSnapshot(await getConversationWorkspace(id)); } catch { /* final request owns errors */ }
+          if (sendLockRef.current) progressTimer = window.setTimeout(pollProgress, 700);
+        };
+        progressTimer = window.setTimeout(pollProgress, 150);
+      }
+      const nextSnapshot = discussionMode === "council" ? await discussWithCouncil(id, content) : discussionMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content);
+      setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); rememberConversation(id, nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content);
+      if (activeProjectId) {
+        try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
+        catch (projectError) { setError(`项目智能更新失败，已保留上一版本：${projectError.message}`); }
+      }
+      const explicitGoal = nextSnapshot.goals?.find((item) => item.status === "goal_confirmed");
+      if (explicitGoal) await prepareGoal(explicitGoal); else setView("conversation");
+    } catch (requestError) {
+      setError(`${requestError.message || "Sino 回复失败"}，可重试`);
+      setReplyPending(Boolean(id));
+      setPendingReplyMode(discussionMode);
+      if (id) {
+        try {
+          const persisted = await getConversationWorkspace(id);
+          setSnapshot(persisted); setDiscussionMessage(""); setView("conversation");
+          rememberConversation(id, persisted.conversation?.title || "新讨论");
+        } catch { setView("conversation"); }
+      }
+    }
+    finally { sendLockRef.current = false; if (progressTimer) window.clearTimeout(progressTimer); setBusy(false); }
+  }
+
+  async function retryReply() {
+    if (!conversationId || busy || sendLockRef.current) return;
+    sendLockRef.current = true; setBusy(true); setError("");
+    try {
+      const nextSnapshot = pendingReplyMode === "council" ? await retryCouncil(conversationId) : await retrySinoReply(conversationId);
+      setSnapshot(nextSnapshot); setReplyPending(false); rememberConversation(conversationId, nextSnapshot.conversation?.title || "新讨论");
+      if (activeProjectId) {
+        try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
+        catch (projectError) { setError(`项目智能更新失败，已保留上一版本：${projectError.message}`); }
+      }
+    } catch (requestError) { setError(`${requestError.message || "Sino 回复失败"}，可重试`); setReplyPending(true); }
+    finally { sendLockRef.current = false; setBusy(false); }
+  }
+
+  function newConversation() {
+    setConversationId(null); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setResult(null); setExecutionId(null); setExecution(null); setApproved(false); setError("");
+    setActiveProjectId(null); setProjectIntelligence(null);
+    remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(PROJECT_KEY, null); setView("home");
+  }
+
+  function selectConversation(id) {
+    if (!id || id === conversationId) { setView("conversation"); return; }
+    setConversationId(id); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setResult(null); setExecutionId(null); setExecution(null); setApproved(false);
+    setActiveProjectId(null); setProjectIntelligence(null);
+    remember(CONVERSATION_KEY, id); remember(EXECUTION_KEY, null); remember(PROJECT_KEY, null); setView("conversation");
+  }
+
+  function selectProjectContext(id) {
+    setActiveProjectId(id); remember(PROJECT_KEY, id);
+  }
+
+  async function bindCurrentConversationProject(id) {
+    if (!conversationId) { selectProjectContext(id); return; }
+    setBusy(true); setError("");
+    try {
+      await bindFounderConversationProject(conversationId, id);
+      setActiveProjectId(id); remember(PROJECT_KEY, id);
+      const restored = await getConversationWorkspace(conversationId);
+      setSnapshot(restored);
+      if (!id) setProjectIntelligence(null);
+      else setProjectReloadKey((current) => current + 1);
+    } catch (requestError) { setError(requestError.message); }
     finally { setBusy(false); }
   }
 
-  async function approve() { if (!executionId || busy) return; setBusy(true); try { const item = await approveFounderExecution(executionId); setExecution(item); setApproved(true); } catch (requestError) { setError(requestError.message); } finally { setBusy(false); } }
+  async function approveObject(item) {
+    setBusy(true); setError("");
+    try {
+      const next = await approveFounderObject(item.object_id);
+      const executionRef = next.execution_refs?.at(-1);
+      const restored = conversationId ? await getConversationWorkspace(conversationId) : null;
+      setSnapshot(restored || ((current) => ({ ...current, founder_objects: (current?.founder_objects || []).map((value) => value.object_id === next.object_id ? next : value) })));
+      if (executionRef?.execution_id) {
+        setExecutionId(executionRef.execution_id);
+        remember(EXECUTION_KEY, executionRef.execution_id);
+        setExecution(restored?.active_execution || await getFounderExecution(executionRef.execution_id));
+      }
+      setView("execution");
+    }
+    catch (requestError) { setError(requestError.message); }
+    finally { setBusy(false); }
+  }
+
+  async function continueObject(item) {
+    if (!conversationId) return;
+    setBusy(true); setError("");
+    try { await continueFounderObjectDiscussion(item.object_id, conversationId); setSnapshot((current) => ({ ...current, founder_objects: (current?.founder_objects || []).map((value) => ({ ...value, is_context_object: value.object_id === item.object_id })) })); setDiscussionMessage(`继续讨论 ${item.name}：`); setView("conversation"); }
+    catch (requestError) { setError(requestError.message); }
+    finally { setBusy(false); }
+  }
+
+  async function archiveObject(item) {
+    setBusy(true); setError("");
+    try { await archiveFounderObject(item.object_id); setSnapshot((current) => ({ ...current, founder_objects: (current?.founder_objects || []).filter((value) => value.object_id !== item.object_id) })); }
+    catch (requestError) { setError(requestError.message); }
+    finally { setBusy(false); }
+  }
+
+  function openConversationFiles() {
+    setError("文件/文档入口已预留；当前尚未接通可安全复用的上传能力。");
+  }
+
+  function openProject(id) {
+    setConversationId(null); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setResult(null); setExecutionId(null); setExecution(null); setApproved(false); setError("");
+    setActiveProjectId(id); setProjectIntelligence(null); setProjectLoading(true); setProjectLoadError(""); setProjectReloadKey((current) => current + 1);
+    remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(PROJECT_KEY, id); setView("project");
+  }
+
+  async function createProject(payload) {
+    const project = await createFounderProject(payload);
+    setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
+    selectProjectContext(project.id);
+    return project;
+  }
+
+  async function submitExecutionContext(event) {
+    event.preventDefault();
+    const content = executionMessage.trim();
+    if (!content || busy) return;
+    setBusy(true); setError("");
+    try {
+      if (!goal?.goal_id) {
+        const draftKey = conversationId ? `conversation:${conversationId}` : "reasoning:draft";
+        const nextContext = { ...goalExecutionContext, [draftKey]: [...(goalExecutionContext[draftKey] || []), { content, created_at: new Date().toISOString(), context_type: "pre_goal_reasoning" }] };
+        setGoalExecutionContext(nextContext); remember(GOAL_CONTEXT_KEY, JSON.stringify(nextContext)); setExecutionMessage(""); return;
+      }
+      if (!execution?.id) {
+        const nextContext = { ...goalExecutionContext, [goal.goal_id]: [...(goalExecutionContext[goal.goal_id] || []), { content, created_at: new Date().toISOString() }] };
+        setGoalExecutionContext(nextContext); remember(GOAL_CONTEXT_KEY, JSON.stringify(nextContext)); setExecutionMessage(""); return;
+      }
+      const delta = await submitExecutionDelta(execution.id, { conversation_id: conversationId, goal_id: goal.goal_id, task_id: execution.task_asset_id, content });
+      const nextExecution = await getFounderExecution(execution.id);
+      setExecution({ ...nextExecution, deltas: [...(nextExecution.deltas || []), ...(nextExecution.deltas?.some((item) => item.delta_id === delta.delta_id) ? [] : [delta])] });
+      setExecutionMessage(""); await restoreWorkspace(conversationId);
+    } catch (requestError) { setError(requestError.message || "执行补充提交失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function approve() { if (!executionId || busy) return; setBusy(true); try { const item = await approveFounderExecution(executionId); setExecution(item); setApproved(true); setView("execution"); } catch (requestError) { setError(requestError.message); } finally { setBusy(false); } }
   async function resume() { if (!executionId || busy) return; setBusy(true); try { setExecution(await resumeFounderExecution(executionId)); } catch (requestError) { setError(requestError.message); } finally { setBusy(false); } }
   async function decideDelta(delta, action) { setBusy(true); try { await decideExecutionDelta(execution.id, delta.delta_id, action); setExecution(await getFounderExecution(execution.id)); } catch (requestError) { setError(requestError.message); } finally { setBusy(false); } }
-  async function prepareSystem(systemGoal) { const id = conversationId || (await createFounderConversation(systemGoal.slice(0, 120))).id; if (!conversationId) { setConversationId(id); remember(CONVERSATION_KEY, id); } await discussWithSino(id, `讨论系统蓝图：${systemGoal}`); return buildSystemBlueprint(systemGoal, id); }
+  async function prepareSystem(systemGoal) { const id = conversationId || (await createFounderConversation(systemGoal.slice(0, 120), activeProjectId)).id; if (!conversationId) { setConversationId(id); remember(CONVERSATION_KEY, id); } await discussWithSino(id, `讨论系统蓝图：${systemGoal}`); const plan = await buildSystemBlueprint(systemGoal, id, activeProjectId); if (activeProjectId) setProjectIntelligence(await getProjectIntelligence(activeProjectId)); return plan; }
 
-  return <><SecretarySidebar digest={snapshot?.digest} /><main className="sino-workspace" tabIndex={0} aria-label="Founder AI 工作区内容"><header className="sino-topbar"><div><span className="sino-topbar__mark">S</span><span>创始人指挥中心</span></div><CapabilityNavigation /><div><span className="sino-online">Sino 在线</span></div></header><DiscussionWorkspace snapshot={snapshot} message={message} onMessage={setMessage} onSend={send} busy={busy} mode={mode} />{error && <p className="sino-error" role="alert">{error}</p>}<SecretarySummary digest={snapshot?.digest} onContinue={(candidate) => setMessage(candidate.description)} onConfirm={confirm} /><section className="sino-section" id="strategy"><header className="sino-section__header"><div><span className="sino-kicker">战略与方向</span><h2>战略与路线</h2></div></header><div className="sino-strategy-grid"><StrategicOverviewCard strategy={strategy} /><RoadmapPanel roadmap={strategy?.roadmap} /><CapabilityMapPanel capabilityStatus={strategy?.capability_status} /><NextStrategicActionsPanel actions={briefing?.recommendations || strategy?.recommendations} /></div></section><section className="sino-section" id="system-builder"><SystemBuilderPanel onPrepare={prepareSystem} /></section><section className="sino-section sino-reasoning" id="goal-reasoning"><header className="sino-section__header"><div><span className="sino-kicker">正式目标</span><h2>目标推理</h2></div><p>{goal ? goal.title : "确认候选目标后，Sino 才会生成推理与任务计划。"}</p></header>{result ? <section className="sino-reasoning-grid"><AnalysisCard analysis={result.analysis} /><EvidenceCard evidence={result.evidence} /><SolutionCard solution={result.solution} /><TaskPlanCard draft={result.task_asset_draft} plan={result.task_plan} /><ExecutionCard requirement={result.execution_requirement} executionPackage={result.execution_package} risk={result.risk} /></section> : <p className="sino-empty-reasoning">普通讨论不会自动生成 Task Plan。</p>}</section><section className="sino-section" id="execution"><header className="sino-section__header"><div><span className="sino-kicker">执行控制</span><h2>执行中心</h2></div><p>执行过程中仍可通过主输入框补充要求。</p></header><ExecutionTimeline status={execution?.status} timeline={execution?.timeline} events={execution?.events} failureReason={execution?.failure_reason} pauseReason={execution?.pause_reason} recoverable={execution?.recoverable} lastEvent={execution?.last_event} onResume={resume} /><ExecutionDeltaPanel deltas={execution?.deltas || snapshot?.execution_deltas} onDecision={decideDelta} /><div className="sino-detail-grid"><ApprovalPanel ready={Boolean(executionId)} approved={approved} busy={busy} status={execution?.status} onApprove={approve} /><ArtifactPanel execution={execution} /><MemoryPanel result={execution || result} /></div></section><AssetMemoryCenter refreshKey={execution?.status === "completed" ? execution.completed_at || execution.id : "history"} /></main></>;
+  function openReturnedAsset(section) { setAssetSection(section); setAssetDetail(null); setView("assets"); }
+
+  const projectName = projectIntelligence?.project_name || projects.find((item) => item.id === activeProjectId)?.name || "未关联项目";
+  const conversationIntelligence = snapshot?.conversation_intelligence || (snapshot?.digest ? {
+    summary: snapshot.digest.summary,
+    judgments: snapshot.digest.key_viewpoints || [],
+    decisions: snapshot.digest.decisions || [],
+    knowledge: snapshot.digest.knowledge_items || [],
+    constraints: snapshot.digest.constraints || [],
+    terminology: snapshot.digest.terminology || [],
+    pending_questions: snapshot.digest.pending_questions || [],
+    candidate_goals: snapshot.digest.candidate_goals || [],
+    goals: snapshot.goals || [],
+    updated_at: snapshot.digest.updated_at || snapshot.conversation?.updated_at,
+  } : null);
+  const latestDelta = execution?.deltas?.at(-1) || snapshot?.execution_deltas?.at(-1);
+  const executionComposer = hasExecutionContext ? <ExecutionContextComposer value={executionMessage} onChange={setExecutionMessage} onSubmit={submitExecutionContext} busy={busy} /> : null;
+  const executionView = <section className="sino-section sino-execution-page" id="execution"><header className="sino-execution-page__header"><span className="sino-kicker">Execution Center</span><h1>执行中心</h1></header>{!executionId ? <><section className="sino-execution-empty" aria-label="当前执行空状态"><span className="sino-kicker">当前执行</span><h2>当前没有正在执行的任务。</h2><p>已确认并进入执行的任务会显示在这里。</p></section><section className="sino-founder-actions" aria-label="待 Founder 处理"><div><span className="sino-kicker">待 Founder 处理</span><h3>当前无需处理</h3></div></section><section className="sino-recent-executions" aria-label="最近完成"><span className="sino-kicker">最近完成</span><h3>暂无执行记录</h3></section><ExecutionContextComposer value={executionMessage} onChange={setExecutionMessage} onSubmit={submitExecutionContext} busy={busy} disabled /></> : <><section className="sino-current-execution" aria-label="当前执行"><span className="sino-kicker">当前执行</span><h2>{result?.task_asset_draft?.title || snapshot?.task_asset?.title || goal?.title || "当前任务"}</h2><dl><div><dt>所属项目</dt><dd>{projectName}</dd></div><div><dt>正式目标</dt><dd>{goal?.title || snapshot?.task_asset?.title || "已确认"}</dd></div><div><dt>已确认范围</dt><dd>{result?.task_asset_draft?.description || snapshot?.task_asset?.description || result?.solution?.summary || "按已批准执行方案"}</dd></div><div><dt>当前阶段</dt><dd>{execution?.status === "draft" ? "Waiting Development" : execution?.status || "准备中"}</dd></div></dl></section>{result && <section className="sino-reasoning-grid" aria-label="已确认执行方案"><SolutionCard solution={result.solution} /><TaskPlanCard draft={result.task_asset_draft} plan={result.task_plan} /><ExecutionCard requirement={result.execution_requirement} executionPackage={result.execution_package} risk={result.risk} /></section>}<ExecutionTimeline status={execution?.status} timeline={execution?.timeline} events={execution?.events} failureReason={execution?.failure_reason} pauseReason={execution?.pause_reason} recoverable={execution?.recoverable} lastEvent={execution?.last_event} executionEngine={execution?.execution_engine_name || execution?.execution_engine || "执行引擎"} onResume={resume} /><ApprovalPanel ready approved={approved} busy={busy} status={execution?.status} latestDelta={latestDelta} onApprove={approve} /><ExecutionDeltaPanel deltas={execution?.deltas || snapshot?.execution_deltas} onDecision={decideDelta} /><ExecutionResultSummary execution={execution} onOpen={openReturnedAsset} />{executionComposer}</>}</section>;
+
+  const executionContext = <ContextSummary title="执行上下文"><small>所属项目</small><p>{executionId ? projectName : "—"}</p><small>正式目标</small><p>{executionId ? goal?.title || "已确认" : "—"}</p><small>当前阶段</small><p>{execution?.status || "暂无执行"}</p><small>关键约束</small><p>{executionId ? result?.analysis?.constraints?.join?.(" · ") || "—" : "—"}</p><small>最近补充</small><p>{latestDelta?.content || "—"}</p><small>待审批事项</small><p>{latestDelta?.status === "pending_confirmation" ? "执行补充待确认" : approved ? "无" : executionId ? "执行方案待授权" : "无"}</p></ContextSummary>;
+  let main = <FounderHome snapshot={snapshot} execution={execution} intelligence={projectIntelligence} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} onNavigate={setView} onOpenConversation={selectConversation} healthy={sinoHealthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={selectProjectContext} onCreateProject={createProject} onFiles={openConversationFiles} mode={discussionMode} onModeChange={setDiscussionMode} />;
+  let context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />;
+  if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
+  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} /></section>; context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} busy={busy} />; }
+  if (view === "builder") { main = <section className="sino-section"><SystemBuilderPanel onPrepare={prepareSystem} /></section>; context = <ContextSummary title="构建上下文"><p>选择一个构建对象查看上下文</p></ContextSummary>; }
+  if (view === "capability-center") { main = <section className="sino-section"><ModelCenter /></section>; context = <ContextSummary title="能力中心"><p>管理 Sino AI 秘书及其模型、技能与执行能力</p></ContextSummary>; }
+  if (view === "execution") { main = executionView; context = executionContext; }
+  if (view === "assets") { main = <AssetMemoryCenter initialTab={assetSection} externalDetail onDetailChange={setAssetDetail} strategy={strategy} briefing={briefing} refreshKey={execution?.status === "completed" ? execution.completed_at || execution.id : "history"} context={{ conversation_id: conversationId, goal_id: goal?.goal_id, task_asset_id: execution?.task_asset_id || snapshot?.task_asset?.id, execution_id: executionId }} />; context = assetDetail ? <AssetMemoryDetailPane {...assetDetail} /> : null; }
+
+  return <SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => next === "home" ? newConversation() : setView(normalizeFounderView(next))} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />;
+}
+
+function ContextSummary({ title, children }) {
+  return <div className="sino-context-summary"><article><span className="sino-kicker">{title}</span>{children}</article></div>;
+}
+
+function ExecutionResultSummary({ execution, onOpen }) {
+  const completed = ["completed", "failed"].includes(execution?.status);
+  const hasArtifact = Boolean(execution?.artifact || execution?.artifacts?.length || execution?.artifact_assets?.length);
+  const hasMemory = Boolean(execution?.memory || execution?.memory_summary);
+  const hasTechnical = Boolean(execution?.result || execution?.result_summary || execution?.commit || execution?.commit_sha || execution?.status === "completed");
+  return <section className="sino-execution-result" aria-label="执行结果"><header><span className="sino-kicker">执行结果</span><h3>{completed ? execution.status === "completed" ? "已完成" : "失败" : "等待执行完成"}</h3></header>{completed && <><p>{execution?.result_summary || execution?.summary || execution?.failure_reason || "执行结果已记录。"}</p><dl><div><dt>成果</dt><dd>{hasArtifact ? "✓ 已回流到资产与记忆" : "未产生"}</dd>{hasArtifact && <button type="button" onClick={() => onOpen("artifacts")}>查看成果</button>}</div><div><dt>记忆</dt><dd>{hasMemory ? "✓ 已沉淀到长期记忆" : "未产生"}</dd>{hasMemory && <button type="button" onClick={() => onOpen("memories")}>查看记忆</button>}</div><div><dt>技术实现</dt><dd>{hasTechnical ? "✓ 已记录" : "未产生"}</dd>{hasTechnical && <button type="button" onClick={() => onOpen("evidence")}>查看技术实现</button>}</div></dl></>}</section>;
 }

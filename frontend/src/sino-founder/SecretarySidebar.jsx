@@ -1,11 +1,74 @@
-export function SecretarySidebar({ digest }) {
-  const items = [
-    ["today", "今日讨论", digest?.topics?.length || 0],
-    ["decisions", "已形成决策", digest?.decisions?.length || 0],
-    ["knowledge", "新增知识", digest?.knowledge_items?.length || 0],
-    ["candidates", "候选目标", digest?.candidate_goals?.filter((item) => item.status === "candidate").length || 0],
-    ["questions", "待确认问题", digest?.pending_questions?.filter((item) => item.status === "open").length || 0],
-    ["knowledge-center", "资产与记忆", null],
-  ];
-  return <aside className="sino-sidebar"><a className="sino-brand" href="/founder/sino"><span>S</span><div>Sino<strong>Founder AI</strong></div></a><div className="sino-sidebar__label">AI 秘书整理</div><nav aria-label="AI 秘书讨论成果">{items.map(([id, label, count], index) => <a key={id} href={`#${id}`} className={index === 0 ? "is-active" : ""}><span>{String(index + 1).padStart(2, "0")}</span>{label}{count !== null && <small>{count}</small>}</a>)}</nav><div className="sino-approval-note"><i /><div><strong>讨论优先</strong><small>确认目标后才进入规划与执行</small></div></div><footer>AI Commerce OS<br /><small>Founder AI Secretary</small></footer></aside>;
+import { useState } from "react";
+
+const SIDEBAR_COLLAPSED_KEY = "sino-founder-sidebar-collapsed";
+
+function FolderIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M2.25 4.25h4l1.25 1.5h6.25v6.5H2.25z" /></svg>;
+}
+
+function ConversationIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M2.25 3.25h11.5v7.5H6l-3.75 2z" /></svg>;
+}
+
+function SidebarToggleIcon({ expanded = false }) {
+  return <svg aria-hidden="true" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5" /><path d="M5.5 2.5v11M8.5 6l2 2-2 2" className={expanded ? "is-expanded" : ""} /></svg>;
+}
+
+function restoredCollapsedState() {
+  try { return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true"; }
+  catch { return false; }
+}
+
+function ConversationGroup({ label, items, activeConversationId, onSelectConversation }) {
+  if (!items.length) return null;
+  return <div className="sino-conversation-group"><strong>{label}</strong>{items.map((item) => <button key={item.id} className={item.id === activeConversationId ? "is-active" : ""} onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span>{item.title || "新讨论"}</button>)}</div>;
+}
+
+export function SecretarySidebar({ onNavigate, conversations = [], activeConversationId, onNewConversation, onSelectConversation, projects = [], activeProjectId, onSelectProject }) {
+  const [collapsed, setCollapsed] = useState(restoredCollapsedState);
+  const [brandHovered, setBrandHovered] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(true);
+  const [conversationsOpen, setConversationsOpen] = useState(true);
+  const now = Date.now();
+  const today = conversations.filter((item) => now - item.updatedAt < 86400000);
+  const yesterday = conversations.filter((item) => now - item.updatedAt >= 86400000 && now - item.updatedAt < 172800000);
+  const recent = conversations.filter((item) => now - item.updatedAt >= 172800000 && now - item.updatedAt < 604800000);
+  const older = conversations.filter((item) => now - item.updatedAt >= 604800000);
+
+  function setSidebarCollapsed(next) {
+    setCollapsed(next);
+    try { window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next)); } catch { /* unavailable */ }
+  }
+
+  function expandSection(section) {
+    setSidebarCollapsed(false);
+    if (section === "projects") setProjectsOpen(true);
+    if (section === "conversations") setConversationsOpen(true);
+  }
+
+  return <aside className={`sino-sidebar${collapsed ? " sino-sidebar--collapsed" : ""}`}>
+    <div className="sino-sidebar-brand-row">
+      <button
+        className="sino-brand"
+        onClick={() => collapsed && brandHovered ? setSidebarCollapsed(false) : onNavigate("home")}
+        onMouseEnter={() => setBrandHovered(true)}
+        onMouseLeave={() => setBrandHovered(false)}
+        onFocus={() => collapsed && setBrandHovered(true)}
+        onBlur={() => setBrandHovered(false)}
+        title={collapsed && brandHovered ? "展开侧边栏" : "Sino Founder AI 首页"}
+      >
+        <span className={`sino-brand-mark${collapsed && brandHovered ? " sino-brand-mark--expand" : ""}`}>{collapsed && brandHovered ? <SidebarToggleIcon expanded /> : "S"}</span>
+        <div>Sino<strong>Founder AI</strong></div>
+      </button>
+      {!collapsed && <button type="button" className="sino-sidebar-toggle" onClick={() => setSidebarCollapsed(true)} title="收起侧边栏" aria-label="收起侧边栏"><SidebarToggleIcon /></button>}
+    </div>
+    <button className="sino-new-conversation" onClick={onNewConversation} title="新建讨论"><span>＋</span><b>新建讨论</b></button>
+    {collapsed && <nav className="sino-collapsed-navigation" aria-label="侧边栏快捷入口">
+      <button type="button" title="项目" aria-label="项目" onClick={() => expandSection("projects")}><FolderIcon /></button>
+      <button type="button" title="会话" aria-label="会话" onClick={() => expandSection("conversations")}><ConversationIcon /></button>
+    </nav>}
+    <section className="sino-sidebar-section"><button className="sino-sidebar-section__toggle" onClick={() => setProjectsOpen((value) => !value)} aria-expanded={projectsOpen}><span>项目</span><i>{projectsOpen ? "⌄" : "›"}</i></button>{projectsOpen && <div className="sino-project-list">{projects.map((project) => <button key={project.id} className={project.id === activeProjectId ? "is-active" : ""} onClick={() => onSelectProject(project.id)}><FolderIcon /><span>{project.name}</span></button>)}</div>}</section>
+    <section className="sino-sidebar-section sino-sidebar-section--conversations"><button className="sino-sidebar-section__toggle" onClick={() => setConversationsOpen((value) => !value)} aria-expanded={conversationsOpen}><span>会话</span><i>{conversationsOpen ? "⌄" : "›"}</i></button>{conversationsOpen && <div className="sino-conversation-navigation"><ConversationGroup label="今天" items={today} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} /><ConversationGroup label="昨天" items={yesterday} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} /><ConversationGroup label="最近 7 天" items={recent} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} /><ConversationGroup label="更早" items={older} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} /></div>}</section>
+    <footer>AI Commerce OS<br /><small>Founder AI Secretary</small></footer>
+  </aside>;
 }

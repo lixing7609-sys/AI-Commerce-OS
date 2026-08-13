@@ -1,0 +1,34 @@
+import logging
+import time
+import httpx
+
+from app.llm.exceptions import AuthenticationError, InvalidResponseError, LLMTimeoutError, NetworkError, ProviderUnavailableError, RateLimitedError
+from app.llm.models import LLMRequest, LLMResponse, LLMUsage
+from app.llm.provider import LLMProvider
+
+logger = logging.getLogger("app.llm.openai")
+
+
+class OpenAIProvider(LLMProvider):
+    def __init__(self, api_key: str, base_url: str, model: str, timeout_seconds: float):
+        self._api_key, self._base_url, self._model, self._timeout_seconds = api_key, base_url.rstrip("/"), model, timeout_seconds
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        payload = {"model": self._model, "messages": [{"role": "system", "content": request.system_prompt}, {"role": "user", "content": request.user_prompt}], "temperature": request.temperature, "max_tokens": request.max_tokens}
+        if request.response_format == "json": payload["response_format"] = {"type": "json_object"}
+        started = time.monotonic()
+        try: response = httpx.post(f"{self._base_url}/chat/completions", json=payload, headers={"Authorization": f"Bearer {self._api_key}"}, timeout=self._timeout_seconds)
+        except httpx.TimeoutException as error: raise LLMTimeoutError() from error
+        except (httpx.ConnectError, httpx.ConnectTimeout) as error: raise ProviderUnavailableError() from error
+        except httpx.HTTPError as error: raise NetworkError() from error
+        latency = (time.monotonic() - started) * 1000
+        if response.status_code in (401, 403): raise AuthenticationError()
+        if response.status_code == 429: raise RateLimitedError()
+        if response.status_code >= 500: raise ProviderUnavailableError()
+        if response.status_code != 200: raise InvalidResponseError()
+        try:
+            body = response.json(); content = body["choices"][0]["message"]["content"]; usage_raw = body.get("usage") or {}
+            if not isinstance(content, str): raise InvalidResponseError()
+        except InvalidResponseError: raise
+        except (KeyError, IndexError, TypeError, ValueError) as error: raise InvalidResponseError() from error
+        return LLMResponse(content=content, provider="openai", model=self._model, usage=LLMUsage(usage_raw.get("prompt_tokens"), usage_raw.get("completion_tokens"), usage_raw.get("total_tokens")), latency_ms=latency)

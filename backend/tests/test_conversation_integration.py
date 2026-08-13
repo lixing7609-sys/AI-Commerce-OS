@@ -27,6 +27,17 @@ def test_conversation_can_be_listed_and_read():
     assert fetched.json()["system_id"] == "founder_ai"
 
 
+def test_conversation_project_binding_persists_and_can_be_cleared():
+    with TestClient(app) as client:
+        project = client.post("/api/v1/founder-ai/projects", json={"name": "Binding Test", "description": None}).json()
+        conversation = client.post("/api/v1/conversations", json={"title": "Binding"}).json()
+        bound = client.patch(f"/api/v1/conversations/{conversation['id']}/project", json={"project_id": project["id"]})
+        restored = client.get(f"/api/v1/conversations/{conversation['id']}")
+        cleared = client.patch(f"/api/v1/conversations/{conversation['id']}/project", json={"project_id": None})
+    assert bound.status_code == 200 and restored.json()["project_id"] == project["id"]
+    assert cleared.status_code == 200 and cleared.json()["project_id"] is None
+
+
 def test_nonexistent_application_system_cannot_be_created_via_public_api():
     with TestClient(app) as client:
         response = client.post(

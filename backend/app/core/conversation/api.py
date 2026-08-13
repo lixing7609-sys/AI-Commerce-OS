@@ -3,13 +3,14 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.conversation.service import create_conversation, get_conversation, list_conversations
+from app.core.conversation.service import bind_conversation_project, create_conversation, get_conversation, list_conversations
 
 
 class ConversationCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str | None = Field(default=None, max_length=200)
+    project_id: str | None = Field(default=None, max_length=40)
 
 
 class ConversationOut(BaseModel):
@@ -17,10 +18,16 @@ class ConversationOut(BaseModel):
 
     id: str
     system_id: str
+    project_id: str | None
     title: str
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class ConversationProjectIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: str | None = Field(default=None, max_length=40)
 
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
@@ -33,7 +40,10 @@ def list_founder_conversations():
 
 @router.post("", response_model=ConversationOut, status_code=201)
 def create_founder_conversation(request: ConversationCreateIn):
-    return create_conversation(title=request.title)
+    try:
+        return create_conversation(title=request.title, project_id=request.project_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @router.get("/{conversation_id}", response_model=ConversationOut)
@@ -42,3 +52,13 @@ def get_founder_conversation(conversation_id: str):
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
+
+
+@router.patch("/{conversation_id}/project", response_model=ConversationOut)
+def update_conversation_project(conversation_id: str, request: ConversationProjectIn):
+    try:
+        return bind_conversation_project(conversation_id, request.project_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error

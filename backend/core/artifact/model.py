@@ -25,6 +25,9 @@ class ArtifactAssetDB(Base):
     location: Mapped[str | None] = mapped_column(String(500), nullable=True)
     content_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    parent_artifact_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    previous_version_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    revision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")

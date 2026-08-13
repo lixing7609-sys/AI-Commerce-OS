@@ -12,6 +12,7 @@ SAFE_LLM_ERROR_TYPES = frozenset(
         "configuration_error",
         "authentication_failed",
         "rate_limited",
+        "insufficient_quota",
         "provider_unavailable",
         "network_error",
         "timeout",
@@ -29,7 +30,8 @@ class LLMGatewayError(Exception):
 class ConfigurationError(LLMGatewayError):
     """Provider 未配置或配置不完整（缺少 Key / 模型名等）。"""
 
-    def __init__(self):
+    def __init__(self, reason: str = "configuration_invalid"):
+        self.reason = reason
         super().__init__("configuration_error")
 
 
@@ -45,6 +47,13 @@ class RateLimitedError(LLMGatewayError):
 
     def __init__(self):
         super().__init__("rate_limited")
+
+
+class InsufficientQuotaError(LLMGatewayError):
+    """Provider 已认证，但账户额度不足。"""
+
+    def __init__(self):
+        super().__init__("insufficient_quota")
 
 
 class ProviderUnavailableError(LLMGatewayError):

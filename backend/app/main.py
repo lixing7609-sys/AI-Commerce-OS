@@ -25,11 +25,13 @@ from app.api.v1.tasks import router as tasks_router
 from app.api.v1.wecom import router as wecom_router
 from app.core.application_system.api import router as application_system_router
 from app.core.conversation.api import router as conversation_router
+from app.core.project.api import router as project_router
 from app.core.context.api import router as context_router
 from app.core.decision.api import router as decision_router
 from app.core.task_asset.api import router as task_asset_router
 from app.core.artifact.api import router as artifact_router
 from app.core.memory.api import router as memory_router
+from app.core.model_center.api import router as model_center_router
 from app.founder_ai.api import router as founder_ai_router
 from app.founder_ai.execution_worker import execution_worker
 from app.services.database_readiness_service import (
@@ -39,6 +41,7 @@ from app.services.database_readiness_service import (
 from app.services.runtime_recovery_service import RuntimeRecoveryService
 from app.services.runtime_state_service import RuntimeStateService
 from app.services.task_consumer_service import task_consumer_service
+from app.core.model_center.service import _bootstrap_legacy_runtime_once
 
 logging.basicConfig(
     level=logging.INFO,
@@ -105,6 +108,8 @@ async def lifespan(app: FastAPI):
     except DatabaseReadinessError as error:
         logger.error("application startup aborted: %s", error)
         raise
+
+    _bootstrap_legacy_runtime_once()
 
     try:
         RuntimeRecoveryService.attempt_startup_recovery()
@@ -191,6 +196,8 @@ app.include_router(
     dashboard_router,
     prefix="/api/v1",
 )
+
+app.include_router(model_center_router, prefix="/api/v1")
 
 app.include_router(
     products_router,
@@ -284,6 +291,11 @@ app.include_router(
 
 app.include_router(
     conversation_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    project_router,
     prefix="/api/v1",
 )
 

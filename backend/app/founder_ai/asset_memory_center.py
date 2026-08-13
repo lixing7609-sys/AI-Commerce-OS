@@ -68,12 +68,17 @@ def build_asset_memory_center() -> dict[str, Any]:
             "artifact_type": artifact.artifact_type,
             "summary": artifact.description or content.get("summary") or artifact.title,
             "created_at": _iso(artifact.created_at),
+            "updated_at": _iso(getattr(artifact, "updated_at", None)),
+            "conversation_id": getattr(artifact, "conversation_id", None),
             "related_files": list(files) if isinstance(files, list) else [],
             "commit_hash": commit_hash,
             "verification_status": verification_status,
             "verification": list(result.get("tests") or []),
             "status": artifact.status,
-            "content": content,
+            "version": getattr(artifact, "version", 1),
+            "parent_artifact_id": getattr(artifact, "parent_artifact_id", None),
+            "previous_version_id": getattr(artifact, "previous_version_id", None),
+            "revision_reason": getattr(artifact, "revision_reason", None),
         })
 
     memories = []
@@ -90,13 +95,18 @@ def build_asset_memory_center() -> dict[str, Any]:
             "task": task.title if task else (package.goal if package else memory.title),
             "memory_type": memory.memory_type,
             "title": memory.title,
-            "decision": content.get("decision") if memory.memory_type == "decision" else None,
-            "learning": content.get("learning") if memory.memory_type == "learning" else None,
-            "execution_result": content if memory.memory_type == "execution_result" else None,
-            "content": content,
             "summary": memory.summary,
             "created_at": _iso(memory.created_at),
+            "updated_at": _iso(getattr(memory, "updated_at", None)),
             "status": memory.status,
+            "conversation_id": getattr(memory, "conversation_id", None),
+            "importance": getattr(memory, "importance", None),
+            "tags": getattr(memory, "tags", None) or [],
+            "revision_number": getattr(memory, "revision_number", 1),
+            "parent_memory_id": getattr(memory, "parent_memory_id", None),
+            "previous_revision_id": getattr(memory, "previous_revision_id", None),
+            "revision_reason": getattr(memory, "revision_reason", None),
+            "merged_into_memory_id": getattr(memory, "merged_into_memory_id", None),
         })
 
     artifacts.sort(key=lambda item: item["created_at"] or "", reverse=True)

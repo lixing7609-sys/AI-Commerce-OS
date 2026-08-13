@@ -33,7 +33,7 @@ class ExecutionDeltaService:
         append_event(session, "delta_classified", status=session.status, message=f"Delta classified as {impact} impact", metadata={"delta_type": delta_type, "impact_level": impact, "decision": decision})
         now = datetime.now(timezone.utc)
         with SessionLocal() as db:
-            delta = ExecutionDeltaDB(conversation_id=conversation_id, goal_id=goal_id, task_id=task_id, execution_id=execution_id, source_message_id=source["message_id"], content=content.strip(), delta_type=delta_type, impact_level=impact, decision=decision, analysis={"impact": impact, "recommendation": decision, "updated_task_plan": ["Review Founder delta", "Apply delta within approved boundary", "Run existing verification"]})
+            delta = ExecutionDeltaDB(conversation_id=conversation_id, goal_id=goal_id, task_id=task_id, execution_id=execution_id, source_message_id=source["message_id"], content=content.strip(), delta_type=delta_type, impact_level=impact, decision=decision, analysis={"reasoning_skill": "reasoning", "impact": impact, "recommendation": decision, "updated_task_plan": ["Review Founder delta", "Apply delta within approved boundary", "Run existing verification"]})
             db.add(delta); db.flush()
             if decision in {"auto_apply", "apply_current_execution"}:
                 next_version = package.package_version + 1

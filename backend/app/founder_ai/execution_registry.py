@@ -9,6 +9,7 @@ from uuid import uuid4
 from .execution_loop import ExecutionSession
 from .execution_events import append_event, migrate_legacy_events, migrate_restart_failure
 from .orchestrator import ExecutionPackage, TaskAssetDraft
+from app.core.model_center.service import resolve_execution_capability
 
 _sessions: dict[str, ExecutionSession] = {}
 _packages: dict[str, ExecutionPackage] = {}
@@ -78,10 +79,15 @@ def save_execution_session(session: ExecutionSession, package: ExecutionPackage 
 
 
 def create_execution_session(task_asset_id: str, package: ExecutionPackage) -> ExecutionSession:
+    execution = resolve_execution_capability()
+    engine_id = execution.get("execution_engine_id")
+    if not engine_id:
+        raise RuntimeError("execution_engine_not_available")
     session = ExecutionSession(
         id=f"execution-{uuid4().hex[:16]}",
         task_asset_id=task_asset_id,
         execution_package_id=f"package-{uuid4().hex[:16]}",
+        executor=engine_id,
     )
     save_execution_session(session, package)
     return session

@@ -1,6 +1,4 @@
-from app.founder_ai import api
-from app.founder_ai.execution_registry import get_execution_session
-from app.founder_ai.system_builder import AgentArchitectureDesigner, ApplicationRegistry, CapabilityGenerator, SinoSystemBuilder
+from app.founder_ai.system_builder import ApplicationRegistry, SinoSystemBuilder
 
 
 def test_application_registry_keeps_only_founder_active():
@@ -10,41 +8,36 @@ def test_application_registry_keeps_only_founder_active():
     assert all(item.status == "blueprint" for item in applications[1:])
 
 
-def test_system_blueprint_generation():
-    blueprint = SinoSystemBuilder().build("Create Operator AI for commerce operations").system_blueprint
+def test_system_blueprint_generates_application_architecture_structure():
+    plan = SinoSystemBuilder().build("Create Operator AI for commerce operations")
+    blueprint = plan.system_blueprint
     assert blueprint.system_key == "operator_ai"
-    assert blueprint.status == "blueprint"
-    assert blueprint.purpose == "Create Operator AI for commerce operations"
-    assert blueprint.memory_requirements
-    assert "Founder approval" in blueprint.execution_requirements
+    assert blueprint.status == "architecture_proposal"
+    assert blueprint.system_goal == "Create Operator AI for commerce operations"
+    assert blueprint.system_boundaries
+    assert blueprint.core_modules
+    assert blueprint.system_relationships
+    assert blueprint.implementation_plan
 
 
-def test_capability_generator_creates_capabilities_agents_skills_and_workflows():
-    plan = SinoSystemBuilder().build("Create Studio AI for content production")
-    generated = CapabilityGenerator().generate(plan.system_blueprint)
-    assert generated.capabilities
-    assert generated.agents
-    assert all(item.endswith("Skill") for item in generated.skills)
-    assert generated.workflows
+def test_system_blueprint_does_not_manage_agent_assets_or_execution():
+    payload = SinoSystemBuilder().build("Create Studio AI for content production").to_dict()
+    assert set(payload) == {"system_blueprint"}
+    text = str(payload)
+    for field in ("generated_capabilities", "agent_architecture", "skills", "prompts", "workflows", "models", "task_asset_draft", "execution_package"):
+        assert field not in payload
+        assert field not in payload["system_blueprint"]
+    assert "AI Agent" in text
+    assert "AI 能力中心" in text
 
 
-def test_agent_architecture_design_assigns_roles_responsibilities_skills_and_tools():
-    plan = SinoSystemBuilder().build("Create Quant AI for research")
-    architecture = AgentArchitectureDesigner().design(plan.system_blueprint, plan.generated_capabilities)
-    assert architecture.roles
-    assert architecture.roles[0].responsibilities
-    assert architecture.roles[0].skills
-    assert "TaskAsset API" in architecture.roles[0].tools
-
-
-def test_blueprint_to_task_requires_founder_approval():
+def test_blueprint_stage_does_not_create_execution_package():
     plan = SinoSystemBuilder().build("Create Industrial AI", conversation_id="conv-1")
-    assert plan.task_asset_draft.conversation_id == "conv-1"
-    assert plan.task_asset_draft.approval_required is True
-    assert plan.execution_package.approval_required is True
-    assert plan.execution_package.execution_allowed is False
-    assert plan.execution_package.context["target_application"] == "industrial_ai"
-    created = api.create_founder_execution(api.ExecutionCreateIn(task_asset_id="task-blueprint", execution_package=plan.to_dict()["execution_package"]))
-    _, stored_package = get_execution_session(created.id)
-    assert stored_package.context["target_application"] == "industrial_ai"
-    assert stored_package.execution_allowed is False
+    assert not hasattr(plan, "task_asset_draft")
+    assert not hasattr(plan, "execution_package")
+
+
+def test_founder_application_can_be_modified_without_cross_application_creation():
+    blueprint = SinoSystemBuilder().build("Modify Founder AI system structure").system_blueprint
+    assert blueprint.system_key == "founder_ai"
+    assert "仅修改 Founder AI 应用系统边界" in blueprint.system_boundaries

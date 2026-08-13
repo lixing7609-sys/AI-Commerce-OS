@@ -23,12 +23,17 @@ from app.models.token_lot_db import TokenGrantDB, TokenLotDB
 from app.models.token_pricing_snapshot_db import TokenPricingSnapshotDB
 from app.core.application_system.model import ApplicationSystemDB
 from app.core.conversation.model import ConversationDB
+from app.core.project.model import FounderProjectDB, ProjectIntelligenceDB
 from app.core.context.model import ConversationContextDB
 from app.core.decision.model import DecisionAssetDB
 from app.core.task_asset.model import TaskAssetDB
 from app.core.artifact.model import ArtifactAssetDB
 from app.core.memory.model import MemoryAssetDB
+from app.core.reference.model import IntelligenceReferenceDB
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
+from app.core.council.model import CouncilModelRunDB, CouncilRunDB
+from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
+from core.founder_object.model import ConversationObjectContextDB, FounderObjectDB, FounderObjectRevisionDB
 
 
 DATABASE_URL = (
