@@ -15,6 +15,12 @@ describe("Global Typography System V1", () => {
     expect(toolbarRule).not.toContain("-20px");
     expect(css).toMatch(/\.sino-composer\s*\{[^}]*border:\s*1px solid/);
   });
+
+  it("does not draw separators between Project discussion rows or above its Composer", () => {
+    const projectRowRule = css.match(/\.sino-project-conversation-row\s*\{([^}]*)\}/)?.[1] || "";
+    expect(projectRowRule).toContain("border: 0");
+    expect(projectRowRule).not.toContain("border-bottom");
+  });
   it("defines the shared Founder typography tokens", () => {
     for (const token of ["page-title", "section-title", "card-title", "body", "body-small", "label", "nav", "sidebar", "button", "helper", "metadata"]) {
       expect(css).toContain(`--font-${token}:`);
