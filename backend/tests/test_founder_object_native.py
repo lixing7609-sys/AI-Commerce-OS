@@ -1,21 +1,50 @@
-from app.core.conversation.service import create_conversation
-from app.core.founder_object.service import approve_object, attach_object_context, get_object, list_conversation_objects, list_founder_objects, recognize_objects
+from types import SimpleNamespace
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.database.base import Base
+import app.core.conversation.service as conversation_service
+import app.core.founder_object.service as object_service
 
 
-def test_conversation_recognizes_updates_and_approves_real_skill():
-    conversation = create_conversation(title="Object Native Test")
-    objects = recognize_objects(conversation.id, "message-one", "我们需要开发一个 Chrome Extension Skill，用来处理浏览器端的数据获取。")
+def test_conversation_recognizes_updates_and_approves_real_skill(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(conversation_service, "SessionLocal", factory)
+    monkeypatch.setattr(object_service, "SessionLocal", factory)
+    monkeypatch.setattr(object_service, "create_task_asset", lambda **kwargs: SimpleNamespace(id="task-test", **kwargs))
+    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args: SimpleNamespace(id="execution-test", status="draft"))
+
+    conversation = conversation_service.create_conversation(title="Object Native Test")
+    objects = object_service.recognize_objects(conversation.id, "message-one", "我们需要开发一个 Chrome Extension Skill，用来处理浏览器端的数据获取。")
     skill = next(item for item in objects if item["object_type"] == "skill")
     assert skill["name"] == "Chrome Extension Skill"
     assert skill["status"] == "draft"
-    attach_object_context(skill["object_id"], conversation.id)
-    updated = recognize_objects(conversation.id, "message-two", "继续开发这个 Chrome Extension Skill，并增加结构化数据获取。")
+    object_service.attach_object_context(skill["object_id"], conversation.id)
+    updated = object_service.recognize_objects(conversation.id, "message-two", "继续开发这个 Chrome Extension Skill，并增加结构化数据获取。")
     revised = next(item for item in updated if item["object_id"] == skill["object_id"])
     assert revised["version"] == 2
-    assert len(get_object(skill["object_id"])["revisions"]) == 1
-    approved = approve_object(skill["object_id"])
+    assert len(object_service.get_object(skill["object_id"])["revisions"]) == 1
+    approved = object_service.approve_object(skill["object_id"])
     assert approved["status"] == "approved"
     assert approved["execution_refs"][0]["status"] == "draft"
-    approved_again = approve_object(skill["object_id"])
+    approved_again = object_service.approve_object(skill["object_id"])
     assert approved_again["execution_refs"] == approved["execution_refs"]
-    assert any(item["object_id"] == skill["object_id"] for item in list_founder_objects())
+    assert any(item["object_id"] == skill["object_id"] for item in object_service.list_founder_objects())
+
+
+def test_same_semantic_object_is_reused_across_unbound_conversations(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(conversation_service, "SessionLocal", factory)
+    monkeypatch.setattr(object_service, "SessionLocal", factory)
+    first = conversation_service.create_conversation(title="First")
+    second = conversation_service.create_conversation(title="Second")
+    first_object = object_service.recognize_objects(first.id, "m1", "需要开发 Chrome Extension Skill")[0]
+    second_object = object_service.recognize_objects(second.id, "m2", "继续开发 Chrome Extension Skill")[0]
+    assert first_object["object_id"] == second_object["object_id"]
+    assert second_object["version"] == 2

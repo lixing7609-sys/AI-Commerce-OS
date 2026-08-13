@@ -1,9 +1,20 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from app.core.application_system.model import ApplicationSystemDB
 from app.core.conversation.model import ConversationDB
 from app.database.db import SessionLocal
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def cleanup_persisted_api_fixtures():
+    yield
+    with SessionLocal() as session:
+        session.query(ConversationDB).filter(ConversationDB.title.in_(["Founder Conversation Test", "Read Test", "Binding"])).delete(synchronize_session=False)
+        from app.core.project.model import FounderProjectDB
+        session.query(FounderProjectDB).filter(FounderProjectDB.name == "Binding Test").delete(synchronize_session=False)
+        session.commit()
 
 
 def test_new_conversation_is_bound_to_founder_ai():
@@ -36,6 +47,11 @@ def test_conversation_project_binding_persists_and_can_be_cleared():
         cleared = client.patch(f"/api/v1/conversations/{conversation['id']}/project", json={"project_id": None})
     assert bound.status_code == 200 and restored.json()["project_id"] == project["id"]
     assert cleared.status_code == 200 and cleared.json()["project_id"] is None
+    with SessionLocal() as session:
+        session.query(ConversationDB).filter_by(id=conversation["id"]).delete()
+        from app.core.project.model import FounderProjectDB
+        session.query(FounderProjectDB).filter_by(id=project["id"]).delete()
+        session.commit()
 
 
 def test_nonexistent_application_system_cannot_be_created_via_public_api():

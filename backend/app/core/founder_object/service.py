@@ -64,9 +64,10 @@ def recognize_objects(conversation_id: str, source_message_id: str, founder_text
         attached = session.get(ConversationObjectContextDB, conversation_id)
         for candidate in candidates:
             normalized = _normalize_name(candidate["name"])
-            # Unbound conversations deduplicate within their own local context;
-            # project-bound conversations share a project object namespace.
-            scope_key = conversation.project_id or conversation.id
+            # Semantic identity is stable across Conversations. A Project may
+            # define its own namespace; otherwise all Founder conversations
+            # resolve against the same Object Layer.
+            scope_key = conversation.project_id or "founder_ai"
             record = session.scalar(select(FounderObjectDB).where(FounderObjectDB.object_type == candidate["object_type"], FounderObjectDB.normalized_name == normalized, FounderObjectDB.scope_key == scope_key))
             if attached and (context_object := session.get(FounderObjectDB, attached.object_id)) and context_object.object_type == candidate["object_type"]:
                 record = context_object
@@ -90,8 +91,9 @@ def recognize_objects(conversation_id: str, source_message_id: str, founder_text
 
 def list_conversation_objects(conversation_id: str) -> list[dict]:
     with SessionLocal() as session:
-        records = list(session.scalars(select(FounderObjectDB).where(FounderObjectDB.source_conversation_id == conversation_id, FounderObjectDB.status != "archived").order_by(FounderObjectDB.updated_at.desc())))
         attached = session.get(ConversationObjectContextDB, conversation_id)
+        object_ids = [attached.object_id] if attached else []
+        records = list(session.scalars(select(FounderObjectDB).where((FounderObjectDB.source_conversation_id == conversation_id) | (FounderObjectDB.id.in_(object_ids)), FounderObjectDB.status != "archived").order_by(FounderObjectDB.updated_at.desc())))
         return [{**_display(item), "is_context_object": bool(attached and attached.object_id == item.id)} for item in records]
 
 
@@ -102,7 +104,7 @@ def list_founder_objects(include_archived: bool = False) -> list[dict]:
         if not include_archived:
             query = query.where(FounderObjectDB.status != "archived")
         records = list(session.scalars(query.order_by(FounderObjectDB.updated_at.desc())))
-        return [_display(item) for item in records]
+        return [_display(item, list(session.scalars(select(FounderObjectRevisionDB).where(FounderObjectRevisionDB.object_id == item.id).order_by(FounderObjectRevisionDB.version.asc())))) for item in records]
 
 
 def get_object(object_id: str) -> dict | None:
