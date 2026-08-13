@@ -97,11 +97,11 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(getProjectIntelligence).not.toHaveBeenCalled();
   });
 
-  it("shows an unhealthy Discussion Composer dot when a core Founder service is unavailable", async () => {
+  it("keeps Sino online when non-conversation briefing enrichment is unavailable", async () => {
     getFounderBriefing.mockRejectedValueOnce(new Error("Backend unavailable"));
     render(<SinoFounderAIApp />);
-    expect(await screen.findByLabelText("Sino 错误")).toBeTruthy();
-    expect(screen.getByText("Sino 错误")).toBeTruthy();
+    expect(await screen.findByLabelText("Sino 在线")).toBeTruthy();
+    expect(screen.getByText("Sino 在线")).toBeTruthy();
   });
 
   it("returns New Conversation to Founder Home and waits for the first message before creation", async () => {

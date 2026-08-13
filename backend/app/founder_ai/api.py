@@ -262,8 +262,16 @@ secretary = SinoSecretaryService()
 delta_service = ExecutionDeltaService(secretary=secretary)
 
 def _candidate_snapshot(snapshot: dict, conversation_id: str) -> dict:
-    snapshot["object_candidates"] = list_candidates(conversation_id)
-    snapshot["context_candidate"] = get_conversation_candidate_context(conversation_id)
+    try:
+        snapshot["object_candidates"] = list_candidates(conversation_id)
+        snapshot["context_candidate"] = get_conversation_candidate_context(conversation_id)
+        snapshot["object_recognition"] = {"status": "available", "error": None}
+    except Exception as error:
+        # Intent/Candidate enrichment is non-critical. The Conversation reply is
+        # already durable and must never become a 5xx because recognition failed.
+        snapshot["object_candidates"] = []
+        snapshot["context_candidate"] = None
+        snapshot["object_recognition"] = {"status": "unavailable", "error": type(error).__name__}
     return snapshot
 
 

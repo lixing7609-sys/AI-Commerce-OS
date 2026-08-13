@@ -163,25 +163,25 @@ export function ConversationWorkspace() {
       if (restored.active_execution) {
         setExecution(restored.active_execution); setExecutionId(restored.active_execution.id); setApproved(Boolean(restored.active_execution.execution_allowed)); remember(EXECUTION_KEY, restored.active_execution.id);
       }
-    }).catch((requestError) => { if (active) { setError(requestError.message); setSinoHealthy(false); } });
+    }).catch((requestError) => { if (active) { setError(requestError.message); remember(CONVERSATION_KEY, null); setConversationId(null); setSnapshot(null); setView("home"); } });
     return () => { active = false; };
   }, [conversationId, rememberConversation]);
-  useEffect(() => { Promise.all([getFounderBriefing(), getFounderStrategy()]).then(([nextBriefing, nextStrategy]) => { setBriefing(nextBriefing); setStrategy(nextStrategy); }).catch(() => setSinoHealthy(false)); }, []);
-  useEffect(() => { getFounderProjects().then(setProjects).catch(() => setSinoHealthy(false)); }, []);
+  useEffect(() => { Promise.all([getFounderBriefing(), getFounderStrategy()]).then(([nextBriefing, nextStrategy]) => { setBriefing(nextBriefing); setStrategy(nextStrategy); }).catch(() => {}); }, []);
+  useEffect(() => { getFounderProjects().then(setProjects).catch(() => {}); }, []);
   useEffect(() => {
     if (!activeProjectId) { setProjectIntelligence(null); setProjectLoading(false); setProjectLoadError(""); return undefined; }
     let active = true;
     setProjectLoading(true); setProjectLoadError("");
-    getProjectIntelligence(activeProjectId).then((value) => { if (active) { setProjectIntelligence(value); setProjectLoading(false); } }).catch((requestError) => { if (active) { setProjectIntelligence(null); setProjectLoading(false); setProjectLoadError(requestError.message || "项目加载失败"); setError(requestError.message); setSinoHealthy(false); } });
+    getProjectIntelligence(activeProjectId).then((value) => { if (active) { setProjectIntelligence(value); setProjectLoading(false); } }).catch((requestError) => { if (active) { setProjectIntelligence(null); setProjectLoading(false); setProjectLoadError(requestError.message || "项目加载失败"); setError(requestError.message); } });
     return () => { active = false; };
   }, [activeProjectId, projectReloadKey]);
   useEffect(() => {
     if (!executionId || execution) return;
-    getFounderExecution(executionId).then((item) => { setExecution(item); setApproved(Boolean(item.execution_allowed)); }).catch(() => { remember(EXECUTION_KEY, null); setExecutionId(null); setSinoHealthy(false); });
+    getFounderExecution(executionId).then((item) => { setExecution(item); setApproved(Boolean(item.execution_allowed)); }).catch(() => { remember(EXECUTION_KEY, null); setExecutionId(null); });
   }, [executionId, execution]);
   useEffect(() => {
     if (!executionId || !["queued", "executing", "testing"].includes(execution?.status)) return undefined;
-    const timer = window.setInterval(() => getFounderExecution(executionId).then(setExecution).catch((requestError) => { setError(requestError.message); setSinoHealthy(false); }), 1000);
+    const timer = window.setInterval(() => getFounderExecution(executionId).then(setExecution).catch((requestError) => { setError(requestError.message); }), 1000);
     return () => window.clearInterval(timer);
   }, [executionId, execution?.status]);
   useEffect(() => { const normalized = normalizeFounderView(view); if (normalized !== view) setView(normalized); }, [view]);
@@ -220,7 +220,7 @@ export function ConversationWorkspace() {
       };
       progressTimer = window.setTimeout(pollProgress, 150);
       const nextSnapshot = discussionMode === "council" ? await discussWithCouncil(id, content) : discussionMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content);
-      setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); rememberConversation(id, nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content);
+      setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); setSinoHealthy(true); rememberConversation(id, nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content);
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
         catch (projectError) { setError(`项目智能更新失败，已保留上一版本：${projectError.message}`); }
@@ -228,6 +228,7 @@ export function ConversationWorkspace() {
       const explicitGoal = nextSnapshot.goals?.find((item) => item.status === "goal_confirmed");
       if (explicitGoal) await prepareGoal(explicitGoal); else setView("conversation");
     } catch (requestError) {
+      setSinoHealthy(false);
       setError(`${requestError.message || "Sino 回复失败"}，可重试`);
       setReplyPending(Boolean(id));
       setPendingReplyMode(discussionMode);
@@ -247,12 +248,12 @@ export function ConversationWorkspace() {
     sendLockRef.current = true; setBusy(true); setError("");
     try {
       const nextSnapshot = pendingReplyMode === "council" ? await retryCouncil(conversationId) : await retrySinoReply(conversationId);
-      setSnapshot(nextSnapshot); setReplyPending(false); rememberConversation(conversationId, nextSnapshot.conversation?.title || "新讨论");
+      setSnapshot(nextSnapshot); setReplyPending(false); setSinoHealthy(true); rememberConversation(conversationId, nextSnapshot.conversation?.title || "新讨论");
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
         catch (projectError) { setError(`项目智能更新失败，已保留上一版本：${projectError.message}`); }
       }
-    } catch (requestError) { setError(`${requestError.message || "Sino 回复失败"}，可重试`); setReplyPending(true); }
+    } catch (requestError) { setSinoHealthy(false); setError(`${requestError.message || "Sino 回复失败"}，可重试`); setReplyPending(true); }
     finally { sendLockRef.current = false; setBusy(false); }
   }
 
@@ -424,9 +425,9 @@ export function ConversationWorkspace() {
 
   const executionContext = <ContextSummary title="执行上下文"><small>所属项目</small><p>{executionId ? projectName : "—"}</p><small>正式目标</small><p>{executionId ? goal?.title || "已确认" : "—"}</p><small>当前阶段</small><p>{execution?.status || "暂无执行"}</p><small>关键约束</small><p>{executionId ? result?.analysis?.constraints?.join?.(" · ") || "—" : "—"}</p><small>最近补充</small><p>{latestDelta?.content || "—"}</p><small>待审批事项</small><p>{latestDelta?.status === "pending_confirmation" ? "执行补充待确认" : approved ? "无" : executionId ? "执行方案待授权" : "无"}</p></ContextSummary>;
   let main = <FounderHome snapshot={snapshot} execution={execution} intelligence={projectIntelligence} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} onNavigate={setView} onOpenConversation={selectConversation} healthy={sinoHealthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={selectProjectContext} onCreateProject={createProject} onFiles={openConversationFiles} mode={discussionMode} onModeChange={setDiscussionMode} />;
-  let context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />;
+  let context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} recognitionStatus={snapshot?.object_recognition} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />;
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
-  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} /></section>; context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />; }
+  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} /></section>; context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} recognitionStatus={snapshot?.object_recognition} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />; }
   if (WORKSPACE_VIEWS.includes(view)) { main = <InfiniteObjectWorkspace key={view} view={view} refreshKey={objectRefreshKey} selectedObject={selectedWorkspaceObject} onSelectionChange={selectWorkspaceObject} camera={workspaceCamera} onCameraChange={persistWorkspaceCamera} />; context = <ObjectInspector object={selectedWorkspaceObject} onContinue={continueObject} onApprove={approveObject} onOpenExecution={openObjectExecution} />; }
 
   return <SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (WORKSPACE_VIEWS.includes(normalized)) { setWorkspaceCamera(storedCamera(normalized)); persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); } else persistWorkspace(normalized, null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />;

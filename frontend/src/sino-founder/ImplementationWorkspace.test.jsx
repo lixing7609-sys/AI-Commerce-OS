@@ -42,4 +42,10 @@ describe("ImplementationWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "驳回" }));
     expect(review).toHaveBeenCalledWith(candidate, "reject");
   });
+
+  it("isolates recognition unavailability from the Conversation", () => {
+    render(<ImplementationWorkspace recognitionStatus={{ status: "unavailable", error: "DatabaseError" }} />);
+    expect(screen.getByText("对象识别暂不可用")).toBeTruthy();
+    expect(screen.getByText(/Sino 对话仍可正常继续/)).toBeTruthy();
+  });
 });

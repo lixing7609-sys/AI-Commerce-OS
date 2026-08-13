@@ -16,7 +16,7 @@ function CandidateCard({ item, selected, onSelect }) {
   return <button type="button" className={selected ? "is-active" : ""} onClick={() => onSelect(`candidate:${item.candidate_id}`)}><span>{intentLabel(item.intent_type)}</span><strong>{item.proposed_name || "目标对象待确认"}</strong><small>{item.proposed_object_type ? objectTypeLabel(item.proposed_object_type) : "对象待解析"} · {statusLabel(item.review_status)}</small>{item.proposed_status ? <em>建议状态：{statusLabel(item.proposed_status)}</em> : null}</button>;
 }
 
-export function ImplementationWorkspace({ objects = [], candidates = [], contextObject = null, contextCandidate = null, onApprove, onContinue, onArchive, onCandidateReview, onCandidateContinue, busy }) {
+export function ImplementationWorkspace({ objects = [], candidates = [], contextObject = null, contextCandidate = null, recognitionStatus = null, onApprove, onContinue, onArchive, onCandidateReview, onCandidateContinue, busy }) {
   const [selectedId, setSelectedId] = useState(null);
   const recognized = objects.filter((item) => item.object_id !== contextObject?.object_id);
   const drafts = recognized.filter((item) => item.status === "draft");
@@ -29,6 +29,7 @@ export function ImplementationWorkspace({ objects = [], candidates = [], context
     {contextObject && <section className="sino-object-workspace__current"><h3>当前对象</h3><ObjectCard item={contextObject} selected={selected?.object_id === contextObject.object_id} onSelect={setSelectedId} /></section>}
     {contextCandidate && <section className="sino-object-workspace__current"><h3>正在讨论候选变更</h3><CandidateCard item={contextCandidate} selected={selectedCandidate?.candidate_id === contextCandidate.candidate_id} onSelect={setSelectedId} /></section>}
     <div className="sino-object-workspace__list">
+      {recognitionStatus?.status === "unavailable" ? <div className="sino-object-workspace__empty"><strong>对象识别暂不可用</strong><p>Sino 对话仍可正常继续，稍后会重新尝试识别。</p></div> : null}
       {candidates.filter((item) => item.review_status === "pending").length ? <section className="sino-object-workspace__group"><h3>待确认变更</h3>{candidates.filter((item) => item.review_status === "pending").map((item) => <CandidateCard key={item.candidate_id} item={item} selected={selectedCandidate?.candidate_id === item.candidate_id} onSelect={setSelectedId} />)}</section> : null}
       {group("新增对象 · 等待确认", drafts)}
       {group(contextObject ? "本轮讨论产生的变更" : "修改对象 / 已进入执行", changed)}
