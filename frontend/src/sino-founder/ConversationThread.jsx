@@ -127,7 +127,7 @@ function AutoDeliberationConversation({ run }) {
   </div>;
 }
 
-export function ConversationThread({ snapshot, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls }) {
+export function ConversationThread({ snapshot, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion }) {
   const logRef = useRef(null);
   const conversationRef = useRef(null);
   const scrollAfterSendRef = useRef(false);
@@ -153,7 +153,7 @@ export function ConversationThread({ snapshot, message, onMessage, onSend, busy,
   for (const run of Array.isArray(snapshot?.council_runs) ? snapshot.council_runs : []) if (run && (run.status !== "failed" || !latestRuns.has(run.question))) latestRuns.set(run.question, run);
   const contextObject = snapshot?.founder_objects?.find((item) => item.is_context_object);
   return <section className="sino-conversation-thread" aria-label="Conversation">
-    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><strong>正在讨论：{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div> : null}{snapshot?.messages?.length ? snapshot.messages.map((item) => {
+    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : null}{snapshot?.messages?.length ? snapshot.messages.map((item) => {
       if (item.role === "assistant" && ["council", "auto_deliberation"].includes(item.message_type)) return null;
       const run = item.role === "founder" && ["council", "auto_deliberation"].includes(item.message_type) ? latestRuns.get(item.content) : null;
       return <div key={item.message_id} className="sino-message-group"><article data-role={item.role}><strong>{item.role === "founder" ? "Founder" : "* Sino"}</strong><p>{item.content}</p>{item.role === "assistant" ? <GroundingDetails grounding={item.grounding} /> : null}</article>{run ? (item.message_type === "auto_deliberation" ? <AutoDeliberationConversation run={run} /> : <CouncilConversation run={run} />) : null}</div>;

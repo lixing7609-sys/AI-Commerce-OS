@@ -41,6 +41,8 @@ def _recognition_candidates(text: str) -> list[dict]:
             continue
         if object_type == "skill" and ("chrome" in lowered or "浏览器" in lowered or "插件" in lowered):
             name = "Chrome Extension Skill"
+        elif object_type == "capability" and ("browser session" in lowered or "浏览器 session" in lowered or "浏览器会话" in lowered):
+            name = "Browser Session"
         elif object_type == "capability" and ("browser automation" in lowered or "浏览器自动化" in lowered):
             name = "Browser Automation"
         elif object_type == "project" and ("chrome" in lowered or "插件" in lowered):
@@ -62,6 +64,7 @@ def recognize_objects(conversation_id: str, source_message_id: str, founder_text
         if conversation is None or conversation.system_id != "founder_ai":
             raise LookupError("Founder AI conversation not found")
         attached = session.get(ConversationObjectContextDB, conversation_id)
+        context_object = session.get(FounderObjectDB, attached.object_id) if attached else None
         for candidate in candidates:
             normalized = _normalize_name(candidate["name"])
             # Semantic identity is stable across Conversations. A Project may
@@ -69,12 +72,19 @@ def recognize_objects(conversation_id: str, source_message_id: str, founder_text
             # resolve against the same Object Layer.
             scope_key = conversation.project_id or "founder_ai"
             record = session.scalar(select(FounderObjectDB).where(FounderObjectDB.object_type == candidate["object_type"], FounderObjectDB.normalized_name == normalized, FounderObjectDB.scope_key == scope_key))
-            if attached and (context_object := session.get(FounderObjectDB, attached.object_id)) and context_object.object_type == candidate["object_type"]:
+            if context_object and context_object.object_type == candidate["object_type"]:
                 record = context_object
             if record is None:
                 record = FounderObjectDB(object_type=candidate["object_type"], name=candidate["name"], normalized_name=normalized, description=candidate["description"], scope_key=scope_key, source_conversation_id=conversation_id, source_message_refs=[source_message_id])
                 session.add(record); session.flush()
                 record.related_object_ids = []
+                if context_object and context_object.id != record.id:
+                    # A new object recognized while reopening an existing one
+                    # is a real graph relation, not a UI projection artifact.
+                    context_object.related_object_ids = list(dict.fromkeys([*list(context_object.related_object_ids or []), record.id]))
+                    record.related_object_ids = list(dict.fromkeys([*list(record.related_object_ids or []), context_object.id]))
+                    if record.object_type == "capability":
+                        context_object.dependency_object_ids = list(dict.fromkeys([*list(context_object.dependency_object_ids or []), record.id]))
             else:
                 refs = list(record.source_message_refs or [])
                 if source_message_id not in refs:
@@ -94,7 +104,7 @@ def list_conversation_objects(conversation_id: str) -> list[dict]:
         attached = session.get(ConversationObjectContextDB, conversation_id)
         object_ids = [attached.object_id] if attached else []
         records = list(session.scalars(select(FounderObjectDB).where((FounderObjectDB.source_conversation_id == conversation_id) | (FounderObjectDB.id.in_(object_ids)), FounderObjectDB.status != "archived").order_by(FounderObjectDB.updated_at.desc())))
-        return [{**_display(item), "is_context_object": bool(attached and attached.object_id == item.id)} for item in records]
+        return [{**_display(item, list(session.scalars(select(FounderObjectRevisionDB).where(FounderObjectRevisionDB.object_id == item.id).order_by(FounderObjectRevisionDB.version.desc())))), "is_context_object": bool(attached and attached.object_id == item.id)} for item in records]
 
 
 def list_founder_objects(include_archived: bool = False) -> list[dict]:
@@ -134,6 +144,14 @@ def attach_object_context(object_id: str, conversation_id: str) -> dict:
         else: session.add(ConversationObjectContextDB(conversation_id=conversation_id, object_id=object_id))
         session.commit()
         return _display(record)
+
+
+def detach_object_context(conversation_id: str) -> None:
+    with SessionLocal() as session:
+        context = session.get(ConversationObjectContextDB, conversation_id)
+        if context:
+            session.delete(context)
+            session.commit()
 
 
 def archive_object(object_id: str) -> dict:

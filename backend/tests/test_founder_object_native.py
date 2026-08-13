@@ -54,3 +54,22 @@ def test_same_semantic_object_is_reused_across_unbound_conversations(monkeypatch
     second_object = object_service.recognize_objects(second.id, "m2", "继续开发 Chrome Extension Skill")[0]
     assert first_object["object_id"] == second_object["object_id"]
     assert second_object["version"] == 2
+
+
+def test_context_discussion_creates_real_related_capability_and_can_detach(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(conversation_service, "SessionLocal", factory)
+    monkeypatch.setattr(object_service, "SessionLocal", factory)
+    conversation = conversation_service.create_conversation(title="Context relation")
+    skill = object_service.recognize_objects(conversation.id, "m1", "需要开发 Chrome Extension Skill")[0]
+    object_service.attach_object_context(skill["object_id"], conversation.id)
+    result = object_service.recognize_objects(conversation.id, "m2", "需要增加 Browser Session Capability 来支持浏览器会话处理")
+    capability = next(item for item in result if item["object_type"] == "capability")
+    updated_skill = object_service.get_object(skill["object_id"])
+    assert capability["name"] == "Browser Session"
+    assert capability["object_id"] in updated_skill["dependency_object_ids"]
+    assert skill["object_id"] in object_service.get_object(capability["object_id"])["related_object_ids"]
+    object_service.detach_object_context(conversation.id)
+    assert object_service.get_conversation_context_object(conversation.id) is None

@@ -6,7 +6,7 @@ import { normalizeFounderView } from "./ConversationWorkspace.jsx";
 import { createFounderConversation, createFounderExecution, createFounderProject, discussWithCouncil, discussWithSino, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderObject, getFounderObjects, getFounderProjects, getFounderStrategy, getLibraryArtifact, getModelCenter, getProjectIntelligence, reasonConfirmedGoal, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({ approveFounderExecution: vi.fn(), approveFounderObject: vi.fn(), archiveFounderObject: vi.fn(), bindFounderConversationProject: vi.fn(), buildSystemBlueprint: vi.fn(), confirmCandidateGoal: vi.fn(), continueFounderObjectDiscussion: vi.fn(), createFounderConversation: vi.fn(), createFounderExecution: vi.fn(), createFounderProject: vi.fn(), decideExecutionDelta: vi.fn(), discussWithAutoDeliberation: vi.fn(), discussWithCouncil: vi.fn(), discussWithSino: vi.fn(), getAssetMemoryCenter: vi.fn(), getConversationWorkspace: vi.fn(), getFounderBriefing: vi.fn(), getFounderExecution: vi.fn(), getFounderObject: vi.fn(), getFounderObjects: vi.fn(), getFounderProjects: vi.fn(), getFounderStrategy: vi.fn(), getLibraryArtifact: vi.fn(), getLibraryMemory: vi.fn(), getModelCenter: vi.fn(), getProjectIntelligence: vi.fn(), createArtifactVersion: vi.fn(), createIntelligenceReference: vi.fn(), createMemoryRevision: vi.fn(), mergeLibraryMemories: vi.fn(), updateArtifactStatus: vi.fn(), updateMemoryStatus: vi.fn(), reasonConfirmedGoal: vi.fn(), resumeFounderExecution: vi.fn(), retryCouncil: vi.fn(), retrySinoReply: vi.fn(), submitExecutionDelta: vi.fn() }));
+vi.mock("../services/founderAiApi.js", () => ({ approveFounderExecution: vi.fn(), approveFounderObject: vi.fn(), archiveFounderObject: vi.fn(), bindFounderConversationProject: vi.fn(), buildSystemBlueprint: vi.fn(), clearFounderObjectDiscussion: vi.fn(), confirmCandidateGoal: vi.fn(), continueFounderObjectDiscussion: vi.fn(), createFounderConversation: vi.fn(), createFounderExecution: vi.fn(), createFounderProject: vi.fn(), decideExecutionDelta: vi.fn(), discussWithAutoDeliberation: vi.fn(), discussWithCouncil: vi.fn(), discussWithSino: vi.fn(), getAssetMemoryCenter: vi.fn(), getConversationWorkspace: vi.fn(), getFounderBriefing: vi.fn(), getFounderExecution: vi.fn(), getFounderObject: vi.fn(), getFounderObjects: vi.fn(), getFounderProjects: vi.fn(), getFounderStrategy: vi.fn(), getLibraryArtifact: vi.fn(), getLibraryMemory: vi.fn(), getModelCenter: vi.fn(), getProjectIntelligence: vi.fn(), createArtifactVersion: vi.fn(), createIntelligenceReference: vi.fn(), createMemoryRevision: vi.fn(), mergeLibraryMemories: vi.fn(), updateArtifactStatus: vi.fn(), updateMemoryStatus: vi.fn(), reasonConfirmedGoal: vi.fn(), resumeFounderExecution: vi.fn(), retryCouncil: vi.fn(), retrySinoReply: vi.fn(), submitExecutionDelta: vi.fn() }));
 vi.mock("../services/taskAssetApi.js", () => ({ createTaskAsset: vi.fn() }));
 
 const emptySnapshot = { conversation: { id: "conv-1", project_id: "project-ai-commerce-os", state: "exploring" }, messages: [], digest: { summary: "", topics: [], decisions: [], knowledge_items: [], candidate_goals: [], pending_questions: [] }, goals: [] };
@@ -40,10 +40,9 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(screen.getByRole("heading", { name: "今天想讨论什么？" })).toBeTruthy();
     expect(screen.getByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……")).toBeTruthy();
     expect(screen.getByRole("button", { name: "发送" })).toBeTruthy();
-    const emptyProjectContext = screen.getByRole("region", { name: "当前项目智能" });
-    expect(within(emptyProjectContext).getByText("未选择")).toBeTruthy();
-    for (const label of ["项目摘要", "动态提示词", "正式决策", "项目知识", "项目约束", "待确认问题", "项目目标"]) expect(within(emptyProjectContext).getByText(label)).toBeTruthy();
-    expect(within(emptyProjectContext).queryByText("AI Commerce OS")).toBeNull();
+    const implementation = screen.getByRole("region", { name: "实现工作区" });
+    expect(within(implementation).getByText("当前讨论尚未形成可实现对象")).toBeTruthy();
+    for (const removed of ["项目摘要", "动态提示词", "正式决策", "项目知识", "项目约束", "待确认问题", "项目目标"]) expect(within(implementation).queryByText(removed)).toBeNull();
     expect(document.querySelector(".sino-founder-main .sino-project-intelligence")).toBeNull();
     expect(document.querySelector(".sino-home-recent")).toBeNull();
     expect(screen.queryByText("继续工作")).toBeNull();
@@ -94,7 +93,7 @@ describe("Sino Founder AI interaction responsibilities", () => {
     const input = screen.getByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……");
     fireEvent.change(input, { target: { value: "继续" } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
-    expect(within(context).getByText(/继续与 Sino 讨论/)).toBeTruthy();
+    expect(within(context).getByText(/继续讨论后，Sino 会自动识别/)).toBeTruthy();
     expect(getProjectIntelligence).not.toHaveBeenCalled();
   });
 
@@ -121,9 +120,8 @@ describe("Sino Founder AI interaction responsibilities", () => {
     fireEvent.click(document.querySelector(".sino-project-selector__trigger"));
     fireEvent.click(within(screen.getByRole("dialog", { name: "选择项目" })).getByRole("button", { name: "AI Commerce OS" }));
     await waitFor(() => expect(getProjectIntelligence).toHaveBeenCalledWith("project-ai-commerce-os"));
-    const filledContext = await screen.findByRole("region", { name: "当前项目智能" });
-    expect(within(filledContext).getByText("AI Commerce OS")).toBeTruthy();
-    expect(within(filledContext).getByText("Conversation First 已形成项目智能。")).toBeTruthy();
+    const implementation = await screen.findByRole("region", { name: "实现工作区" });
+    expect(within(implementation).getByText("当前讨论尚未形成可实现对象")).toBeTruthy();
     fireEvent.change(screen.getByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……"), { target: { value: "讨论产品战略" } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
     await waitFor(() => expect(createFounderConversation).toHaveBeenCalledWith("新讨论", "project-ai-commerce-os"));
@@ -268,9 +266,8 @@ describe("Sino Founder AI interaction responsibilities", () => {
     fireEvent.click(screen.getByTitle("新建讨论"));
     expect(screen.getByRole("heading", { name: "今天想讨论什么？" })).toBeTruthy();
     expect(document.querySelector(".sino-project-selector__trigger")?.textContent).toContain("选择项目");
-    const resetContext = screen.getByRole("region", { name: "当前项目智能" });
-    expect(within(resetContext).getByText("未选择")).toBeTruthy();
-    expect(within(resetContext).queryByText("AI Commerce OS")).toBeNull();
+    const resetContext = screen.getByRole("region", { name: "实现工作区" });
+    expect(within(resetContext).getByText("当前讨论尚未形成可实现对象")).toBeTruthy();
 
     fireEvent.click(screen.getByTitle("项目上下文讨论"));
     expect(await screen.findByText("属于 AI Commerce OS")).toBeTruthy();

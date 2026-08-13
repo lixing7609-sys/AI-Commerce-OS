@@ -41,7 +41,7 @@ from app.founder_ai.execution_delta import ExecutionDeltaService
 from app.core.conversation_first.model import GoalAssetDB
 from app.database.db import SessionLocal
 from app.core.task_asset.service import get_founder_task_asset
-from app.core.founder_object.service import approve_object, archive_object, attach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
+from app.core.founder_object.service import approve_object, archive_object, attach_object_context, detach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -300,6 +300,11 @@ def founder_object_detail(object_id: str):
 def continue_object_discussion(object_id: str, request: ObjectDiscussionIn):
     try: return attach_object_context(object_id, request.conversation_id)
     except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.delete("/conversations/{conversation_id}/context-object", status_code=204)
+def clear_conversation_object_context(conversation_id: str):
+    detach_object_context(conversation_id)
 
 
 @router.post("/objects/{object_id}/approve", response_model=dict[str, Any])

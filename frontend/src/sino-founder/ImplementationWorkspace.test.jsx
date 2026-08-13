@@ -1,18 +1,29 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ImplementationWorkspace } from "./ImplementationWorkspace.jsx";
 
 describe("ImplementationWorkspace", () => {
+  afterEach(cleanup);
   it("renders a real clickable object and its three lifecycle actions", () => {
     const item = { object_id: "object-1", object_type: "skill", type_label: "Skill", name: "Chrome Extension Skill", description: "浏览器端数据获取", status: "draft", version: 1, source_conversation_id: "conversation-1", dependency_object_ids: [], related_object_ids: [], execution_refs: [] };
     const approve = vi.fn(), discuss = vi.fn(), archive = vi.fn();
     render(<ImplementationWorkspace objects={[item]} onApprove={approve} onContinue={discuss} onArchive={archive} />);
     fireEvent.click(screen.getByRole("button", { name: /Chrome Extension Skill/ }));
-    expect(screen.getByText("V1")).toBeTruthy();
+    expect(screen.getAllByText(/V1/).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "批准" }));
     fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
-    fireEvent.click(screen.getByRole("button", { name: "归档" }));
+    fireEvent.click(screen.getByRole("button", { name: "驳回 / 归档" }));
     expect(approve).toHaveBeenCalledWith(item); expect(discuss).toHaveBeenCalledWith(item); expect(archive).toHaveBeenCalledWith(item);
+  });
+
+  it("separates a persisted context object from new draft recognition", () => {
+    const context = { object_id: "object-skill", object_type: "skill", name: "Chrome Extension Skill", status: "approved", version: 2, is_context_object: true, execution_refs: [{ status: "draft" }] };
+    const draft = { object_id: "object-cap", object_type: "capability", name: "Browser Session", status: "draft", version: 1, revisions: [] };
+    render(<ImplementationWorkspace objects={[context, draft]} contextObject={context} onApprove={vi.fn()} onContinue={vi.fn()} onArchive={vi.fn()} />);
+    expect(screen.getByText("当前对象")).toBeTruthy();
+    expect(screen.getByText("新增对象 · 等待确认")).toBeTruthy();
+    expect(screen.getByText("Capability（能力）")).toBeTruthy();
+    expect(screen.getByText("执行：待开发")).toBeTruthy();
   });
 });

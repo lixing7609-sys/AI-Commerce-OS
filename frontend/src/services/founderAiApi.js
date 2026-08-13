@@ -41,6 +41,10 @@ export function getConversationWorkspace(conversationId) {
 export function getFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}`, undefined, "获取 Founder Object 失败"); }
 export function getFounderObjects() { return request("/founder-ai/objects", undefined, "获取 Founder Object Workspace 失败"); }
 export function continueFounderObjectDiscussion(objectId, conversationId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/continue-discussion`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversation_id: conversationId }) }, "挂载 Founder Object 失败"); }
+export async function clearFounderObjectDiscussion(conversationId) {
+  const response = await fetch(`${BASE_URL}/founder-ai/conversations/${encodeURIComponent(conversationId)}/context-object`, { method: "DELETE" });
+  if (!response.ok) throw new Error(`退出对象讨论失败（状态码 ${response.status}）`);
+}
 export function approveFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/approve`, { method: "POST" }, "批准 Founder Object 失败"); }
 export function archiveFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/archive`, { method: "POST" }, "归档 Founder Object 失败"); }
 

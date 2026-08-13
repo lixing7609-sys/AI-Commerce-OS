@@ -10,6 +10,7 @@ Status: Frozen · Capability 1 — Founder AI V2 · Object Native Foundation
 4. The only complete lifecycle is: Conversation → Object Recognition → Draft Object → Founder Review → Approved → Execution → Artifact → Memory / Evolution → Reopen Discussion.
 5. Every object is reopenable. Reopened discussion attaches the current object and version as Conversation context and creates a revision; it never overwrites history.
 6. Founder Object does not duplicate proven domain data. It links to Conversation, Task Asset, Execution Session, Artifact, Memory, Decision and Knowledge through stable references.
+7. Infinite Workspace Object Graphs may grow only from persisted Founder Objects and persisted relations produced by real Conversation recognition. UI demonstrations, projections and empty-state decoration must never create mock nodes, mock lifecycle states or mock relations.
 
 ## Capability 1 compatibility boundary
 
