@@ -6,7 +6,7 @@ import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { AssetMemoryCenter, AssetMemoryDetailPane } from "./AssetMemoryCenter.jsx";
 import { ConversationThread } from "./ConversationThread.jsx";
 import { ImplementationWorkspace } from "./ImplementationWorkspace.jsx";
-import { InfiniteObjectWorkspace } from "./InfiniteObjectWorkspace.jsx";
+import { InfiniteObjectWorkspace, ObjectInspector } from "./InfiniteObjectWorkspace.jsx";
 import { ComposerContextControls } from "./ComposerContextControls.jsx";
 import { ExecutionCard } from "./ExecutionCard.jsx";
 import { ExecutionContextComposer } from "./ExecutionContextComposer.jsx";
@@ -73,6 +73,7 @@ export function ConversationWorkspace() {
   const [pendingReplyMode, setPendingReplyMode] = useState("sino");
   const [discussionMode, setDiscussionMode] = useState("sino");
   const [objectRefreshKey, setObjectRefreshKey] = useState(0);
+  const [selectedWorkspaceObject, setSelectedWorkspaceObject] = useState(null);
   const sendLockRef = useRef(false);
   const skipNextRestoreRef = useRef(false);
 
@@ -359,7 +360,7 @@ export function ConversationWorkspace() {
   let context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />;
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
   if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} /></section>; context = <ImplementationWorkspace objects={snapshot?.founder_objects || []} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} busy={busy} />; }
-  if (["builder", "capability-center", "execution", "assets"].includes(view)) { main = <InfiniteObjectWorkspace view={view} refreshKey={objectRefreshKey} onContinue={continueObject} onApprove={approveObject} onOpenExecution={openObjectExecution} />; context = <ContextSummary title="Object Workspace"><p>四个 View 读取同一个 Founder Object Layer；拖拽平移，滚轮缩放，点击节点查看详情。</p></ContextSummary>; }
+  if (["builder", "capability-center", "execution", "assets"].includes(view)) { main = <InfiniteObjectWorkspace view={view} refreshKey={objectRefreshKey} selectedObject={selectedWorkspaceObject} onSelectionChange={setSelectedWorkspaceObject} />; context = <ObjectInspector object={selectedWorkspaceObject} onContinue={continueObject} onApprove={approveObject} onOpenExecution={openObjectExecution} onShowRevisions={setSelectedWorkspaceObject} />; }
 
   return <SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { remember(WORKSPACE_VIEW_KEY, null); newConversation(); } else { const normalized = normalizeFounderView(next); remember(WORKSPACE_VIEW_KEY, normalized); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />;
 }

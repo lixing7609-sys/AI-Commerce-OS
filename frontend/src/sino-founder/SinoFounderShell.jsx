@@ -72,8 +72,8 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
     <header className="sino-founder-topbar">
       <CapabilityNavigation active={active} onNavigate={onNavigate} />
     </header>
-    <main ref={mainRef} className={`sino-founder-main${["conversation", "project"].includes(active) ? " sino-founder-main--fixed-workspace" : ""}`} tabIndex={0} aria-label="Founder AI 工作区内容">{main}</main>
+    <main ref={mainRef} className={`sino-founder-main${["conversation", "project", "builder", "capability-center", "execution", "assets"].includes(active) ? " sino-founder-main--fixed-workspace" : ""}${["builder", "capability-center", "execution", "assets"].includes(active) ? " sino-founder-main--object-workspace" : ""}`} tabIndex={0} aria-label="Founder AI 工作区内容">{main}</main>
     <div className={`sino-shell-divider sino-shell-divider--right${dragging === "context" ? " is-active" : ""}`} role="separator" aria-label="调整右侧上下文宽度" aria-orientation="vertical" aria-valuemin={MIN_CONTEXT} aria-valuemax={MAX_CONTEXT} aria-valuenow={contextWidth} onMouseDown={(event) => startResize("context", event)} onDoubleClick={() => reset("context")} />
-    <aside className="sino-founder-context" aria-label="当前上下文">{context}</aside>
+    <aside className={`sino-founder-context${["builder", "capability-center", "execution", "assets"].includes(active) ? " sino-founder-context--object-inspector" : ""}`} aria-label="当前上下文">{context}</aside>
   </div>;
 }
