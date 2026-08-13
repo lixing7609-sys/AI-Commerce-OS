@@ -535,10 +535,10 @@ describe("Sino Founder AI interaction responsibilities", () => {
 
   it("uses one Object Workspace with projection filters and one stable Object Inspector", async () => {
     getFounderObjects.mockResolvedValue([{ object_id: "object-chrome", object_type: "skill", type_label: "Skill", name: "Chrome Extension Skill", status: "approved", version: 2, execution_refs: [{ execution_id: "exec-1", status: "draft" }] }]);
+    window.history.replaceState({}, "", "/?workspace=objects");
     render(<SinoFounderAIApp />);
     const topNavigation = screen.getByRole("navigation", { name: "Founder AI 能力入口" });
-    expect(within(topNavigation).getAllByRole("button").map((button) => button.textContent)).toEqual(["Sino Founder AI", "Object Workspace"]);
-    fireEvent.click(within(topNavigation).getByRole("button", { name: "Object Workspace" }));
+    expect(within(topNavigation).getAllByRole("button").map((button) => button.textContent)).toEqual(["Sino Founder AI"]);
     expect(await screen.findByRole("region", { name: "Object Workspace Infinite Workspace" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "对象详情" })).toBeTruthy();
     for (const label of ["全部", "系统关系", "能力", "执行", "演化"]) {
@@ -549,6 +549,8 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(screen.queryByText("项目上下文")).toBeNull();
     expect(screen.queryByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……")).toBeNull();
     expect(document.querySelector(".sino-founder-main--object-workspace")).toBeTruthy();
+    fireEvent.click(within(topNavigation).getByRole("button", { name: "Sino Founder AI" }));
+    expect(await screen.findByRole("heading", { name: "今天想讨论什么？" })).toBeTruthy();
   });
 
   it("restores workspace view and selected real object from URL after refresh", async () => {
