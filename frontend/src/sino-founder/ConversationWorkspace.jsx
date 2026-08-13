@@ -208,12 +208,12 @@ export function ConversationWorkspace() {
         const messageType = discussionMode === "auto" ? "auto_deliberation" : "council";
         setSnapshot((current) => ({ ...(current || {}), conversation: current?.conversation || { id, project_id: activeProjectId, title: "新讨论", state: "exploring" }, messages: [...(current?.messages || []), { message_id: `optimistic-${Date.now()}`, role: "founder", content, message_type: messageType }], council_runs: [...(current?.council_runs || []), { council_run_id: `pending-${Date.now()}`, question: content, discussion_mode: messageType, status: "running", participants: [], model_runs: [] }] }));
         setDiscussionMessage(""); setView("conversation");
-        const pollProgress = async () => {
-          try { setSnapshot(await getConversationWorkspace(id)); } catch { /* final request owns errors */ }
-          if (sendLockRef.current) progressTimer = window.setTimeout(pollProgress, 700);
-        };
-        progressTimer = window.setTimeout(pollProgress, 150);
       }
+      const pollProgress = async () => {
+        try { setSnapshot(await getConversationWorkspace(id)); } catch { /* final request owns errors */ }
+        if (sendLockRef.current) progressTimer = window.setTimeout(pollProgress, 700);
+      };
+      progressTimer = window.setTimeout(pollProgress, 150);
       const nextSnapshot = discussionMode === "council" ? await discussWithCouncil(id, content) : discussionMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content);
       setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); rememberConversation(id, nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content);
       if (activeProjectId) {

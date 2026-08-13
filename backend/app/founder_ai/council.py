@@ -105,6 +105,11 @@ class MultiModelCouncilService:
                 session.add(ConversationMessageDB(conversation_id=conversation_id, role="founder", content=text, message_type="council"))
             conversation.updated_at = datetime.now(timezone.utc)
             session.commit()
+        try:
+            from app.core.founder_object.service import recognize_objects
+            recognize_objects(conversation_id, f"council-pending:{conversation_id}:{text[:48]}", text)
+        except Exception:
+            pass
         self._finalize_running(conversation_id, "superseded_by_retry" if not persist_founder_message else "superseded_by_new_run")
         context = self._context_package(conversation_id, text)
         targets = self._assign_perspectives(self._resolve_targets(selected_models))

@@ -40,6 +40,13 @@ class SinoSecretaryService:
             conversation.updated_at = datetime.now(timezone.utc)
             session.commit()
             message_id = message.id
+        # Persist recognition before provider latency so the homepage can poll
+        # and show a real Draft while Sino is still composing the reply.
+        try:
+            from app.core.founder_object.service import recognize_objects
+            recognize_objects(conversation_id, message_id, text)
+        except Exception:
+            pass
         # The Founder message is committed before the provider is invoked. Provider
         # failure therefore leaves a durable, retryable Conversation rather than
         # rolling back the first message or creating a replacement Conversation.
