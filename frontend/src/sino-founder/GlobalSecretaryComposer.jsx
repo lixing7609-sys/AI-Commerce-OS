@@ -1,8 +1,10 @@
 import { useLayoutEffect, useRef } from "react";
+import { sinoStatus } from "./founderStatus.js";
 
 export function GlobalSecretaryComposer({ value, onChange, onSubmit, busy, large = false, healthy, toolbar = null, toolbarIncludesStatus = false, placeholder = "和 Sino 讨论任何想法、问题、战略或设计……", mode = "sino", onModeChange }) {
   const textareaRef = useRef(null);
-  const status = typeof healthy === "boolean" ? <span className="sino-composer-status"><span className={`sino-workspace-status${healthy ? " is-healthy" : " is-unhealthy"}`} title={healthy ? "Sino 正常" : "Sino 服务异常"} aria-label={healthy ? "Sino 正常" : "Sino 服务异常"} /><span>Sino 在线</span></span> : "与 Sino 讨论";
+  const statusValue = sinoStatus(healthy, busy);
+  const status = typeof healthy === "boolean" ? <span className="sino-composer-status"><span className={`sino-workspace-status ${statusValue.className}`} title={`Sino ${statusValue.label}`} aria-label={`Sino ${statusValue.label}`} /><span>Sino {statusValue.label}</span></span> : "与 Sino 讨论";
   const inputId = large ? "sino-home-input" : "sino-discussion-input";
   const modeControl = onModeChange ? <div className="sino-council-mode" aria-label="讨论模式"><button type="button" className={mode === "sino" ? "is-active" : ""} onClick={() => onModeChange("sino")}>Sino</button><button type="button" className={mode === "council" ? "is-active" : ""} onClick={() => onModeChange("council")}>多模型讨论</button><button type="button" className={mode === "auto" ? "is-active" : ""} onClick={() => onModeChange("auto")}>自动多轮</button></div> : null;
   function handleKeyDown(event) {

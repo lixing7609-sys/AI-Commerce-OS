@@ -47,8 +47,8 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(document.querySelector(".sino-home-recent")).toBeNull();
     expect(screen.queryByText("继续工作")).toBeNull();
     for (const removed of ["Sino 状态", "讨论优先 · AI 秘书持续整理", "最近活动", "暂无讨论活动"]) expect(screen.queryByText(removed)).toBeNull();
-    const healthyDot = screen.getByLabelText("Sino 正常");
-    expect(healthyDot.classList.contains("is-healthy")).toBe(true);
+    const healthyDot = screen.getByLabelText("Sino 在线");
+    expect(healthyDot.classList.contains("is-online")).toBe(true);
     expect(healthyDot.parentElement.classList.contains("sino-composer-status")).toBe(true);
     expect(healthyDot.parentElement.textContent).toBe("Sino 在线");
     expect(healthyDot.nextElementSibling.textContent).toBe("Sino 在线");
@@ -100,8 +100,8 @@ describe("Sino Founder AI interaction responsibilities", () => {
   it("shows an unhealthy Discussion Composer dot when a core Founder service is unavailable", async () => {
     getFounderBriefing.mockRejectedValueOnce(new Error("Backend unavailable"));
     render(<SinoFounderAIApp />);
-    expect(await screen.findByLabelText("Sino 服务异常")).toBeTruthy();
-    expect(screen.getByText("Sino 在线")).toBeTruthy();
+    expect(await screen.findByLabelText("Sino 错误")).toBeTruthy();
+    expect(screen.getByText("Sino 错误")).toBeTruthy();
   });
 
   it("returns New Conversation to Founder Home and waits for the first message before creation", async () => {

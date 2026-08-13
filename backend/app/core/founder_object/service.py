@@ -1,5 +1,6 @@
 """Founder Object compatibility layer over existing Conversation and Execution assets."""
 from datetime import datetime, timezone
+import logging
 import re
 
 from sqlalchemy import select
@@ -20,6 +21,7 @@ TYPE_MARKERS = [
     ("application_system", ("application system", "应用系统")), ("project", ("project", "项目")), ("task", ("task", "任务")),
 ]
 CREATION_MARKERS = ("开发", "创建", "构建", "实现", "新增", "需要", "做一个", "build", "create", "develop")
+logger = logging.getLogger(__name__)
 
 
 def _normalize_name(name: str) -> str:
@@ -56,7 +58,9 @@ def _recognition_candidates(text: str) -> list[dict]:
 
 def recognize_objects(conversation_id: str, source_message_id: str, founder_text: str, sino_reply: str = "") -> list[dict]:
     candidates = _recognition_candidates(founder_text)
+    logger.info("Object Recognition input=%r output=%s", founder_text[:500], candidates)
     if not candidates:
+        logger.info("Object Recognition recognized_object=None type=None reason=no_explicit_creation_and_object_type_signal")
         return list_conversation_objects(conversation_id)
     now = datetime.now(timezone.utc)
     with SessionLocal() as session:
@@ -66,6 +70,7 @@ def recognize_objects(conversation_id: str, source_message_id: str, founder_text
         attached = session.get(ConversationObjectContextDB, conversation_id)
         context_object = session.get(FounderObjectDB, attached.object_id) if attached else None
         for candidate in candidates:
+            logger.info("Object Recognition recognized_object=%s type=%s reason=explicit_creation_and_object_type_signal", candidate["name"], candidate["object_type"])
             normalized = _normalize_name(candidate["name"])
             # Semantic identity is stable across Conversations. A Project may
             # define its own namespace; otherwise all Founder conversations

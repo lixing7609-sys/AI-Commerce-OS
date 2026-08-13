@@ -84,6 +84,11 @@ export function ConversationWorkspace() {
   const sendLockRef = useRef(false);
   const skipNextRestoreRef = useRef(false);
 
+  useEffect(() => {
+    const objects = snapshot?.founder_objects || [];
+    console.debug("Implementation Workspace Snapshot", { objectsCount: objects.length, draftCount: objects.filter((item) => item.status === "draft").length, changedCount: objects.filter((item) => item.status !== "draft" || item.revisions?.length).length, currentContextObject: snapshot?.active_context_object_id || null });
+  }, [snapshot]);
+
   const persistWorkspace = useCallback((nextView, objectId = null) => {
     remember(WORKSPACE_VIEW_KEY, nextView);
     remember(WORKSPACE_OBJECT_KEY, objectId);
