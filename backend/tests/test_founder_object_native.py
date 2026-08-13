@@ -40,6 +40,8 @@ def test_conversation_recognizes_updates_and_approves_real_skill(monkeypatch):
     approved_again = object_service.approve_object(skill["object_id"])
     assert approved_again["execution_refs"] == approved["execution_refs"]
     assert any(item["object_id"] == skill["object_id"] for item in object_service.list_founder_objects())
+    restored = object_service.attach_object_context(skill["object_id"], "conv-deleted-test-fixture")
+    assert restored["context_conversation_id"] == conversation.id
 
 
 def test_same_semantic_object_is_reused_across_unbound_conversations(monkeypatch):

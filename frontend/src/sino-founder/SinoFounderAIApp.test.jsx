@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SinoFounderAIApp from "./SinoFounderAIApp.jsx";
 import { normalizeFounderView } from "./ConversationWorkspace.jsx";
-import { createFounderConversation, createFounderExecution, createFounderProject, discussWithCouncil, discussWithSino, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderObject, getFounderObjects, getFounderProjects, getFounderStrategy, getLibraryArtifact, getModelCenter, getProjectIntelligence, reasonConfirmedGoal, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
+import { continueFounderObjectDiscussion, createFounderConversation, createFounderExecution, createFounderProject, discussWithCouncil, discussWithSino, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderExecution, getFounderObject, getFounderObjects, getFounderProjects, getFounderStrategy, getLibraryArtifact, getModelCenter, getProjectIntelligence, reasonConfirmedGoal, retryCouncil, retrySinoReply, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 
 vi.mock("../services/founderAiApi.js", () => ({ approveFounderExecution: vi.fn(), approveFounderObject: vi.fn(), archiveFounderObject: vi.fn(), bindFounderConversationProject: vi.fn(), buildSystemBlueprint: vi.fn(), clearFounderObjectDiscussion: vi.fn(), confirmCandidateGoal: vi.fn(), continueFounderObjectDiscussion: vi.fn(), createFounderConversation: vi.fn(), createFounderExecution: vi.fn(), createFounderProject: vi.fn(), decideExecutionDelta: vi.fn(), discussWithAutoDeliberation: vi.fn(), discussWithCouncil: vi.fn(), discussWithSino: vi.fn(), getAssetMemoryCenter: vi.fn(), getConversationWorkspace: vi.fn(), getFounderBriefing: vi.fn(), getFounderExecution: vi.fn(), getFounderObject: vi.fn(), getFounderObjects: vi.fn(), getFounderProjects: vi.fn(), getFounderStrategy: vi.fn(), getLibraryArtifact: vi.fn(), getLibraryMemory: vi.fn(), getModelCenter: vi.fn(), getProjectIntelligence: vi.fn(), createArtifactVersion: vi.fn(), createIntelligenceReference: vi.fn(), createMemoryRevision: vi.fn(), mergeLibraryMemories: vi.fn(), updateArtifactStatus: vi.fn(), updateMemoryStatus: vi.fn(), reasonConfirmedGoal: vi.fn(), resumeFounderExecution: vi.fn(), retryCouncil: vi.fn(), retrySinoReply: vi.fn(), submitExecutionDelta: vi.fn() }));
@@ -447,6 +447,22 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(await screen.findByRole("region", { name: "执行流程 Infinite Workspace" })).toBeTruthy();
     expect(await screen.findByRole("heading", { name: "Chrome Extension Skill" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "对象详情" }).textContent).toContain("object-chrome");
+  });
+
+  it("continues from the backend-resolved source conversation and restores context after refresh", async () => {
+    const object = { object_id: "object-chrome", object_type: "skill", name: "Chrome Extension Skill", status: "approved", version: 2, source_conversation_id: "conv-stale", execution_refs: [] };
+    const restored = { ...emptySnapshot, conversation: { id: "conv-real", project_id: null, title: "Chrome Skill" }, context_object: object, active_context_object_id: object.object_id, founder_objects: [{ ...object, is_context_object: true }] };
+    window.history.replaceState({}, "", "/?workspace=builder&object=object-chrome");
+    getFounderObjects.mockResolvedValue([object]); getFounderObject.mockResolvedValue(object);
+    continueFounderObjectDiscussion.mockResolvedValue({ ...object, context_conversation_id: "conv-real" });
+    getConversationWorkspace.mockResolvedValue(restored);
+    render(<SinoFounderAIApp />);
+    fireEvent.click(await screen.findByRole("button", { name: /Chrome Extension Skill/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "继续讨论" }));
+    await waitFor(() => expect(getConversationWorkspace).toHaveBeenCalledWith("conv-real"));
+    expect(await screen.findByText("正在讨论")).toBeTruthy();
+    expect(screen.getAllByText("Chrome Extension Skill").length).toBeGreaterThan(0);
+    expect(window.localStorage.getItem("sino-founder-active-conversation")).toBe("conv-real");
   });
 
   it.skip("legacy page flow: renders selected Asset detail in the Global Context Panel", async () => {

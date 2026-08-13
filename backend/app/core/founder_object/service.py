@@ -135,15 +135,21 @@ def get_conversation_context_object(conversation_id: str) -> dict | None:
         return _display(record, revisions)
 
 
-def attach_object_context(object_id: str, conversation_id: str) -> dict:
+def attach_object_context(object_id: str, conversation_id: str | None = None) -> dict:
     with SessionLocal() as session:
-        record, conversation = session.get(FounderObjectDB, object_id), session.get(ConversationDB, conversation_id)
-        if not record or not conversation or conversation.system_id != "founder_ai": raise LookupError("Founder Object or Conversation not found")
-        context = session.get(ConversationObjectContextDB, conversation_id)
+        record = session.get(FounderObjectDB, object_id)
+        if not record:
+            raise LookupError("Founder Object not found")
+        requested = session.get(ConversationDB, conversation_id) if conversation_id else None
+        source = session.get(ConversationDB, record.source_conversation_id) if record.source_conversation_id else None
+        conversation = requested if requested and requested.system_id == "founder_ai" else source
+        if not conversation or conversation.system_id != "founder_ai":
+            raise LookupError("Founder Object has no restorable source Conversation")
+        context = session.get(ConversationObjectContextDB, conversation.id)
         if context: context.object_id = object_id; context.attached_at = datetime.now(timezone.utc)
-        else: session.add(ConversationObjectContextDB(conversation_id=conversation_id, object_id=object_id))
+        else: session.add(ConversationObjectContextDB(conversation_id=conversation.id, object_id=object_id))
         session.commit()
-        return _display(record)
+        return {**_display(record), "context_conversation_id": conversation.id}
 
 
 def detach_object_context(conversation_id: str) -> None:

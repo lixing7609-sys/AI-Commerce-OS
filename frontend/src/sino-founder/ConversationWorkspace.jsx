@@ -303,11 +303,12 @@ export function ConversationWorkspace() {
   }
 
   async function continueObject(item) {
-    const targetConversationId = item.source_conversation_id || conversationId;
-    if (!targetConversationId) return;
+    const requestedConversationId = item.source_conversation_id || conversationId;
     setBusy(true); setError("");
     try {
-      await continueFounderObjectDiscussion(item.object_id, targetConversationId);
+      const binding = await continueFounderObjectDiscussion(item.object_id, requestedConversationId);
+      const targetConversationId = binding.context_conversation_id;
+      if (!targetConversationId) throw new Error("Object 没有可恢复的来源 Conversation");
       setConversationId(targetConversationId); remember(CONVERSATION_KEY, targetConversationId);
       setSnapshot(await getConversationWorkspace(targetConversationId));
       setDiscussionMessage(`继续讨论 ${item.name}：`); setView("conversation"); persistWorkspace("conversation", null);
