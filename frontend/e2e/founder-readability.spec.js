@@ -25,9 +25,26 @@ async function readable(locator, minimum = 4.5) {
 }
 
 async function threeColumnWorkspace(page) {
-  await expect(page.locator(".sino-founder-main .sino-primary-list")).toBeVisible();
+  const primary = page.locator(".sino-founder-main .sino-primary-list");
+  await expect(primary).toBeVisible();
   await expect(page.locator(".sino-founder-main .sino-asset-detail")).toHaveCount(0);
   await expect(page.locator(".sino-founder-context .sino-workspace-inspector")).toBeVisible();
+  const primaryWidth = await primary.evaluate((element) => element.getBoundingClientRect().width);
+  const centerWidth = await page.locator(".sino-founder-main > section").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return element.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  });
+  expect(primaryWidth / centerWidth).toBeGreaterThan(0.98);
+}
+
+async function fullWidthRow(page, selector) {
+  const row = page.locator(selector).first();
+  if (!await row.count()) return;
+  const rowWidth = await row.evaluate((element) => element.getBoundingClientRect().width);
+  const listWidth = await page.locator(".sino-founder-main .sino-primary-list").evaluate((element) => element.getBoundingClientRect().width);
+  expect(rowWidth / listWidth).toBeGreaterThan(0.9);
+  await expect(row.locator(".sino-workspace-row__identity")).toBeVisible();
+  await expect(row.locator(".sino-workspace-row__metrics")).toBeVisible();
 }
 
 test("five Founder primary pages use readable semantic visual hierarchy", async ({ page }) => {
@@ -51,6 +68,7 @@ test("five Founder primary pages use readable semantic visual hierarchy", async 
   await readable(page.locator(".sino-asset-list > button strong").first());
   await readable(page.locator(".sino-asset-list > button p").first());
   await threeColumnWorkspace(page);
+  await fullWidthRow(page, ".sino-founder-main .sino-workspace-row");
   await page.locator(".sino-founder-main .sino-asset-list > button").first().click();
   await expect(page.locator(".sino-founder-context .sino-asset-detail")).toBeVisible();
 
@@ -58,16 +76,19 @@ test("five Founder primary pages use readable semantic visual hierarchy", async 
   await expect(page.locator('[aria-label="系统构建器"]')).toBeVisible();
   await readable(page.locator(".sino-system-structure__list header strong").first());
   await threeColumnWorkspace(page);
+  await fullWidthRow(page, ".sino-founder-main .sino-system-structure__list .sino-workspace-row");
 
   await page.getByRole("button", { name: "执行中心", exact: true }).click();
   await expect(page.getByRole("heading", { name: "执行中心", exact: true })).toBeVisible();
   await readable(page.getByRole("heading", { name: "执行中心", exact: true }));
   await threeColumnWorkspace(page);
+  await fullWidthRow(page, ".sino-founder-main .sino-workspace-row");
 
   await page.getByRole("button", { name: "资产与记忆", exact: true }).click();
   await expect(page.getByRole("heading", { name: "资产与记忆", exact: true })).toBeVisible();
   await readable(page.locator(".sino-asset-list > button strong").first());
   await threeColumnWorkspace(page);
+  await fullWidthRow(page, ".sino-founder-main .sino-workspace-row");
 
   const disabled = page.locator("button:disabled").first();
   if (await disabled.count()) expect(await disabled.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
