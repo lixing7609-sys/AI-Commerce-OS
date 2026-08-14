@@ -24,6 +24,12 @@ async function readable(locator, minimum = 4.5) {
   expect(contrast(rgb)).toBeGreaterThanOrEqual(minimum);
 }
 
+async function threeColumnWorkspace(page) {
+  await expect(page.locator(".sino-founder-main .sino-primary-list")).toBeVisible();
+  await expect(page.locator(".sino-founder-main .sino-asset-detail")).toHaveCount(0);
+  await expect(page.locator(".sino-founder-context .sino-workspace-inspector")).toBeVisible();
+}
+
 test("five Founder primary pages use readable semantic visual hierarchy", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".sino-founder-shell")).toBeVisible();
@@ -44,18 +50,24 @@ test("five Founder primary pages use readable semantic visual hierarchy", async 
   await readable(page.getByRole("heading", { name: "AI 能力中心", exact: true }));
   await readable(page.locator(".sino-asset-list > button strong").first());
   await readable(page.locator(".sino-asset-list > button p").first());
+  await threeColumnWorkspace(page);
+  await page.locator(".sino-founder-main .sino-asset-list > button").first().click();
+  await expect(page.locator(".sino-founder-context .sino-asset-detail")).toBeVisible();
 
   await page.getByRole("button", { name: "系统构建器", exact: true }).click();
   await expect(page.locator('[aria-label="系统构建器"]')).toBeVisible();
   await readable(page.locator(".sino-system-structure__list header strong").first());
+  await threeColumnWorkspace(page);
 
   await page.getByRole("button", { name: "执行中心", exact: true }).click();
   await expect(page.getByRole("heading", { name: "执行中心", exact: true })).toBeVisible();
   await readable(page.getByRole("heading", { name: "执行中心", exact: true }));
+  await threeColumnWorkspace(page);
 
   await page.getByRole("button", { name: "资产与记忆", exact: true }).click();
   await expect(page.getByRole("heading", { name: "资产与记忆", exact: true })).toBeVisible();
   await readable(page.locator(".sino-asset-list > button strong").first());
+  await threeColumnWorkspace(page);
 
   const disabled = page.locator("button:disabled").first();
   if (await disabled.count()) expect(await disabled.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");

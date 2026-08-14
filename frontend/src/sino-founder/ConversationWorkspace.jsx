@@ -3,10 +3,10 @@ import { approveFounderObject, archiveFounderObject, bindFounderConversationProj
 import { advanceSinoBrainStage, approveFounderExecution, confirmSinoBrainGoal, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, forceSinoBrainGoalReview, getConversationWorkspace, getFounderConversations, getFounderExecution, getFounderProjects, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reviewSinoBrainPackage, startLifecycleExecution, startSinoBrainStrategy, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
-import { AssetLifecycleCenter, LifecycleExecutionCenter } from "./AssetLifecycleCenter.jsx";
+import { AssetContext, AssetLifecycleCenter, ExecutionContext, LifecycleExecutionCenter } from "./AssetLifecycleCenter.jsx";
 import { ConversationThread } from "./ConversationThread.jsx";
 import { ImplementationWorkspace } from "./ImplementationWorkspace.jsx";
-import { CapabilityCenter, CapabilityObjectWorkspace } from "./CapabilityWorkspace.jsx";
+import { CapabilityCenter, CapabilityContext, CapabilityObjectWorkspace } from "./CapabilityWorkspace.jsx";
 import { ComposerContextControls } from "./ComposerContextControls.jsx";
 import { ExecutionCard } from "./ExecutionCard.jsx";
 import { ExecutionContextComposer } from "./ExecutionContextComposer.jsx";
@@ -15,7 +15,7 @@ import { ExecutionTimeline } from "./ExecutionTimeline.jsx";
 import { FounderHome, ProjectIntelligenceContext, ProjectWorkspace } from "./FounderHome.jsx";
 import { SinoFounderShell } from "./SinoFounderShell.jsx";
 import { SolutionCard } from "./SolutionCard.jsx";
-import { SystemBuilderPanel } from "./SystemBuilderPanel.jsx";
+import { SystemBuilderPanel, SystemContext } from "./SystemBuilderPanel.jsx";
 import { TaskPlanCard } from "./TaskPlanCard.jsx";
 import { SinoBrainContext } from "./SinoBrainContext.jsx";
 import { founderConversationTitle } from "./founderConversationTitle.js";
@@ -75,6 +75,10 @@ export function ConversationWorkspace() {
   const [pendingReplyMode, setPendingReplyMode] = useState("sino");
   const [discussionMode, setDiscussionMode] = useState("sino");
   const [selectedWorkspaceObject, setSelectedWorkspaceObject] = useState(null);
+  const [selectedCapabilityAsset, setSelectedCapabilityAsset] = useState(null);
+  const [selectedSystemAsset, setSelectedSystemAsset] = useState(null);
+  const [selectedLifecycleAsset, setSelectedLifecycleAsset] = useState(null);
+  const [selectedLifecycleExecution, setSelectedLifecycleExecution] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [creationContext, setCreationContext] = useState(null);
   const sendLockRef = useRef(false);
@@ -564,13 +568,13 @@ export function ConversationWorkspace() {
   let context = capabilityContext;
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
   if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onContinueDiscussion={continueBrainDiscussion} onViewAssets={() => setView("assets")} onNewGoal={newConversation} /></section>; context = capabilityContext; }
-  if (view === "capability-center") { main = <CapabilityCenter onContinue={continueAsset} onNavigateBuilder={(item) => { setSelectedWorkspaceObject(item); setView("builder"); }} onNavigateExecution={executeAsset} onNavigateAsset={openAssetRecord} />; context = null; }
+  if (view === "capability-center") { main = <CapabilityCenter selected={selectedCapabilityAsset} onSelect={setSelectedCapabilityAsset} />; context = <CapabilityContext selected={selectedCapabilityAsset} onContinue={continueAsset} onNavigateBuilder={(item) => { setSelectedSystemAsset(item); setView("builder"); }} onNavigateExecution={executeAsset} onNavigateAsset={openAssetRecord} />; }
   if (view === "object") { main = <CapabilityObjectWorkspace object={selectedWorkspaceObject} onContinue={continueObject} onOpenExecution={openObjectExecution} />; context = capabilityContext; }
-  if (view === "execution") { main = executionId ? executionView : <LifecycleExecutionCenter onOpenExecution={openLifecycleExecution} />; context = executionId ? executionContext : null; }
-  if (view === "assets") { main = <AssetLifecycleCenter conversationId={conversationId} projectId={activeProjectId} initialAsset={selectedWorkspaceObject?.asset_id ? selectedWorkspaceObject : null} onOpenExecution={openLifecycleExecution} onStartNewGoal={newConversation} onContinue={continueAsset} />; context = null; }
-  if (view === "builder") { main = <SystemBuilderPanel projectId={activeProjectId} onOpenAsset={openAssetRecord} />; context = null; }
+  if (view === "execution") { main = executionId ? executionView : <LifecycleExecutionCenter selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} />; context = executionId ? executionContext : <ExecutionContext selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} onOpenExecution={openLifecycleExecution} />; }
+  if (view === "assets") { main = <AssetLifecycleCenter selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} initialAsset={selectedWorkspaceObject?.asset_id ? selectedWorkspaceObject : null} onStartNewGoal={newConversation} />; context = <AssetContext selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} conversationId={conversationId} projectId={activeProjectId} onOpenExecution={openLifecycleExecution} onContinue={continueAsset} />; }
+  if (view === "builder") { main = <SystemBuilderPanel projectId={activeProjectId} selected={selectedSystemAsset} onSelect={setSelectedSystemAsset} />; context = <SystemContext selected={selectedSystemAsset} onOpenAsset={openAssetRecord} />; }
 
-  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
+  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
 }
 
 function ContextSummary({ title, children }) {

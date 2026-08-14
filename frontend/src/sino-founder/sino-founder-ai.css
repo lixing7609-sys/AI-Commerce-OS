@@ -1105,3 +1105,12 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-inspector-empty h2 { color: var(--text-primary); }
 .sino-business-empty p,
 .sino-inspector-empty p { color: var(--text-secondary); }
+
+/* Shared three-column workspace: Shell owns Sidebar | Primary | Inspector. */
+.sino-primary-list { min-width: 0; min-height: 0; width: 100%; flex: 1; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.sino-primary-list::-webkit-scrollbar { display: none; }
+.sino-workspace-inspector { box-sizing: border-box; width: 100%; min-width: 0; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; color: var(--text-primary); }
+.sino-workspace-inspector::-webkit-scrollbar { display: none; }
+.sino-workspace-inspector > .sino-asset-detail { width: 100%; min-height: 100%; padding: 0 0 28px; border: 0; overflow: visible; }
+.sino-founder-context:has(.sino-workspace-inspector) { padding-top: 28px; }
+.sino-system-structure__list section > button.is-active { background: var(--surface-selected); color: var(--text-primary); }
