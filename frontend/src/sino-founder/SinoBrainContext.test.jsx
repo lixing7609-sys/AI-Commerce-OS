@@ -7,11 +7,19 @@ describe("SinoBrainContext", () => {
   afterEach(cleanup);
   it("renders a reviewable Goal Brief and confirmation gate", () => {
     const confirm = vi.fn();
-    render(<SinoBrainContext brain={{ stage: "goal_review", goal_readiness: "reviewable", goal_brief: { goal: "我要做AI短剧", problem: "验证生产链" } }} onConfirmGoal={confirm} />);
+    render(<SinoBrainContext brain={{ stage: "goal_review", goal_readiness: "reviewable", goal_brief: { goal: "我要做AI短剧", summary: "建立生产能力" } }} onConfirmGoal={confirm} />);
     expect(screen.getByText("Goal Brief")).toBeTruthy();
     expect(screen.getByText("我要做AI短剧")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "确认目标" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认目标并开始讨论" }));
     expect(confirm).toHaveBeenCalled();
+  });
+
+  it("renders Goal Understanding and lets Founder stop clarification", () => {
+    const force = vi.fn();
+    render(<SinoBrainContext brain={{ stage: "goal_discovery", goal_readiness: "discovering", discovery: { working_understanding: { interpreted_goal: "AI 短剧生产能力", known_context: ["Founder 先验证"], non_blocking_unknowns: ["技术路线"] } }, goal_brief: { summary: "建立 AI 短剧生产能力", goal: "AI 短剧生产能力" } }} onForceReview={force} />);
+    expect(screen.getAllByText("Goal Understanding · 目标理解")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "目标已经够清楚，开始讨论" }));
+    expect(force).toHaveBeenCalled();
   });
 
   it("shows one package with traceable objects and explicit approval", () => {

@@ -427,6 +427,17 @@ def confirm_brain_goal(conversation_id: str):
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+@router.post("/conversations/{conversation_id}/brain/goal/force-review", response_model=dict[str, Any])
+def force_brain_goal_review(conversation_id: str):
+    try:
+        brain_runtime.force_goal_review(conversation_id)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
 @router.post("/conversations/{conversation_id}/brain/strategy", response_model=dict[str, Any])
 def start_brain_strategy(conversation_id: str, request: CouncilDiscussionIn):
     try:

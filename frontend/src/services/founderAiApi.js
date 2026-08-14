@@ -87,6 +87,10 @@ export function confirmSinoBrainGoal(conversationId) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/goal/confirm`, { method: "POST" }, "确认 Goal Brief 失败");
 }
 
+export function forceSinoBrainGoalReview(conversationId) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/goal/force-review`, { method: "POST" }, "进入目标确认失败");
+}
+
 export function startSinoBrainStrategy(conversationId, models) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/strategy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "基于已确认 Goal Brief 开始策略会议", models: models || null }) }, "启动 Strategy Meeting 失败");
 }

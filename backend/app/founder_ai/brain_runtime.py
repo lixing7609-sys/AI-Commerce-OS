@@ -6,6 +6,7 @@ execute code or mutate formal Founder Objects.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import re
 from typing import Any
 from uuid import uuid4
@@ -14,7 +15,11 @@ from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
+from app.core.decision.model import DecisionAssetDB
+from app.core.memory.model import MemoryAssetDB
 from app.database.db import SessionLocal
+from app.llm.gateway import llm_gateway
+from app.llm.models import LLMRequest
 
 
 STAGES = (
@@ -34,17 +39,18 @@ def _id(prefix: str) -> str:
 class SinoBrainRuntime:
     """Conversation-scoped Brain state machine with explicit Founder gates."""
 
+    MAX_CLARIFICATION_ROUNDS = 3
+
+    def __init__(self, *, understanding_runner=None):
+        self._understanding_runner = understanding_runner or self._provider_understanding
+
     def snapshot(self, conversation_id: str) -> dict[str, Any] | None:
         with SessionLocal() as session:
             record = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
             return self._serialize(record) if record else None
 
     def process_message(self, conversation_id: str, content: str) -> dict[str, Any]:
-        """Advance discovery and return a staged Sino reply.
-
-        Discovery is intentionally incremental: one high-impact question per turn.
-        Existing provider conversation remains available after goal confirmation.
-        """
+        """Use Sino's configured model to understand a goal; rules only validate."""
         with SessionLocal() as session:
             conversation = session.get(ConversationDB, conversation_id)
             if conversation is None or conversation.system_id != "founder_ai":
@@ -57,31 +63,67 @@ class SinoBrainRuntime:
                 return {"handled": False, "brain": self._serialize(state)}
 
             discovery = dict(state.discovery or {})
-            answers = list(discovery.get("answers") or [])
-            answers.append(content.strip())
-            discovery["answers"] = answers
+            turns = list(discovery.get("founder_inputs") or discovery.get("answers") or [])
+            turns.append(content.strip())
+            discovery["founder_inputs"] = turns
             discovery.setdefault("original_goal", content.strip())
-            state.discovery = discovery
-            state.updated_at = datetime.now(timezone.utc)
+            context = self._build_understanding_context(session, conversation, state, content.strip(), turns)
+            try:
+                raw = self._understanding_runner(context)
+                understanding = self._validate_understanding(raw, clarification_rounds=max(0, len(turns) - 1))
+            except Exception as error:
+                discovery.update({"understanding_status": "unavailable", "understanding_error": type(error).__name__})
+                state.discovery = discovery
+                state.updated_at = datetime.now(timezone.utc)
+                session.commit()
+                return {
+                    "handled": True,
+                    "reply": "目标理解暂时不可用，我没有用固定问卷代替模型判断。你刚才的内容已保留，请稍后重试。",
+                    "message_type": "goal_understanding_error",
+                    "brain": self._serialize(state),
+                }
 
-            question = self._next_question(answers)
-            if question:
+            discovery.update({
+                "working_understanding": understanding,
+                "clarification_rounds": max(0, len(turns) - 1),
+                "understanding_status": "ready",
+                "provider": understanding.pop("_provider", None),
+                "model": understanding.pop("_model", None),
+                "context_sources": context["context_sources"],
+            })
+            state.updated_at = datetime.now(timezone.utc)
+            state.goal_brief = understanding.get("goal_brief_draft") or state.goal_brief
+            if understanding["readiness"] == "discovering":
                 state.stage = "goal_discovery"
                 state.goal_readiness = "discovering"
-                discovery["current_question"] = question
+                discovery["current_question"] = understanding["next_question"]
                 state.discovery = discovery
-                reply = question
-                message_type = "goal_discovery"
+                reply = self._understanding_reply(understanding, include_question=True)
+                message_type = "goal_understanding"
             else:
                 state.stage = "goal_review"
                 state.goal_readiness = "reviewable"
                 discovery.pop("current_question", None)
                 state.discovery = discovery
-                state.goal_brief = self._build_brief(answers)
-                reply = "我已经把目标整理成 Goal Brief。请先确认目标，或继续补充；目标确认前不会启动策略会议。"
+                reply = self._understanding_reply(understanding, include_question=False)
                 message_type = "goal_brief"
             session.commit()
             return {"handled": True, "reply": reply, "message_type": message_type, "brain": self._serialize(state)}
+
+    def force_goal_review(self, conversation_id: str) -> dict[str, Any]:
+        """Founder override: proceed with explicit unknowns instead of a questionnaire."""
+        with SessionLocal() as session:
+            state = self._get(session, conversation_id)
+            working = dict((state.discovery or {}).get("working_understanding") or {})
+            brief = working.get("goal_brief_draft") or state.goal_brief
+            if not brief or not brief.get("goal"):
+                raise ValueError("尚未形成可确认的目标理解")
+            state.goal_brief = brief
+            state.stage = "goal_review"
+            state.goal_readiness = "reviewable"
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return self._serialize(state)
 
     def confirm_goal(self, conversation_id: str) -> dict[str, Any]:
         with SessionLocal() as session:
@@ -179,33 +221,128 @@ class SinoBrainRuntime:
             return self._serialize(state)
 
     @staticmethod
-    def _next_question(answers: list[str]) -> str | None:
-        short_drama = "短剧" in answers[0]
-        questions = ((
-            "你要做的是哪一种 AI 短剧：真人 AI 短剧、数字人短剧、AI 动画、AI 漫剧、小说推文类，还是其他形式？",
-            "这是内容业务，还是要开发一套短剧生产软件？最终主要由 Founder 自用、Studio 使用，还是对外商业化？",
-            "第一阶段最重要的结果是什么：降低成本、提高日产量、提高爆款率、提高自动化程度，还是验证商业模式？",
-            "请给出最关键的约束和验收标准，例如目标平台、真人/全 AI、预算、团队、时间、版权合规、日产量或单条成本。",
-        ) if short_drama else (
-            f"你希望「{answers[0]}」最终形成什么：业务结果、可复用 AI 能力、软件产品，还是一次验证实验？",
-            "最终由谁使用，谁会因为这个结果获得价值？",
-            "第一阶段最重要且可衡量的结果是什么？",
-            "请补充最关键的范围、时间、成本、团队、技术或合规约束，以及验收标准。",
-        ))
-        return questions[len(answers) - 1] if len(answers) <= len(questions) else None
+    def _build_understanding_context(session, conversation, state, current_input, turns):
+        messages = list(session.scalars(select(ConversationMessageDB).where(
+            ConversationMessageDB.conversation_id == conversation.id
+        ).order_by(ConversationMessageDB.created_at.desc()).limit(16)))
+        knowledge = list(session.scalars(select(MemoryAssetDB).where(
+            MemoryAssetDB.conversation_id == conversation.id,
+            MemoryAssetDB.status == "active",
+        ).order_by(MemoryAssetDB.updated_at.desc()).limit(8)))
+        decisions = list(session.scalars(select(DecisionAssetDB).where(
+            DecisionAssetDB.conversation_id == conversation.id,
+            DecisionAssetDB.confirmed.is_(True),
+        ).order_by(DecisionAssetDB.updated_at.desc()).limit(8)))
+        project_context = {}
+        if conversation.project_id:
+            try:
+                from app.core.project.service import assemble_project_context
+                project_context = assemble_project_context(conversation.project_id)
+            except Exception:
+                project_context = {"project_id": conversation.project_id, "unavailable": True}
+        return {
+            "current_founder_input": current_input,
+            "recent_conversation": [{"role": item.role, "content": item.content} for item in reversed(messages)],
+            "founder_inputs_in_goal_understanding": turns[-8:],
+            "project_context": project_context,
+            "persisted_brain_context": {
+                "goal_readiness": state.goal_readiness,
+                "goal_brief_draft": dict(state.goal_brief or {}),
+                "working_understanding": dict((state.discovery or {}).get("working_understanding") or {}),
+            },
+            "confirmed_conversation_decisions": [{"title": item.title, "decision": item.decision} for item in decisions],
+            "conversation_knowledge": [{"title": item.title, "content": item.summary or item.content} for item in knowledge],
+            "context_sources": {
+                "current_conversation": True,
+                "project_context": bool(project_context and not project_context.get("unavailable")),
+                "persisted_brain_context": bool(state.goal_brief or state.discovery),
+                "conversation_knowledge": bool(knowledge),
+                "long_term_memory": False,
+            },
+            "clarification_rounds": max(0, len(turns) - 1),
+        }
 
     @staticmethod
-    def _build_brief(answers: list[str]) -> dict[str, Any]:
-        original = answers[0]
-        return {
-            "goal": original, "problem": f"明确并验证「{original}」的可执行产品与生产方案",
-            "target_user": answers[2] if len(answers) > 2 else "待确认",
-            "product_business_type": answers[1] if len(answers) > 1 else "待确认",
-            "expected_outcome": answers[3] if len(answers) > 3 else "形成可验证的第一阶段闭环",
-            "scope": answers[1:3], "constraints": [answers[4]] if len(answers) > 4 else [],
-            "success_criteria": [answers[4]] if len(answers) > 4 else [],
-            "unknowns": [], "assumptions": ["先验证最小可复制链路，再扩大范围"],
-        }
+    def _provider_understanding(context):
+        from app.core.model_center.service import resolve_runtime_config
+        runtime = resolve_runtime_config(role="sino_conversation")
+        if runtime is None:
+            raise RuntimeError("sino_conversation_model_unavailable")
+        system_prompt = """你是 Sino Founder AI 的 Goal Understanding 引擎。你的职责不是完成问卷或收齐字段，而是理解 Founder 真正想实现的目标。
+优先继承已有会话、项目、已确认决策和知识；推断必须明确标为 assumption，不能把不存在的长期记忆当事实。
+只把会导致 Strategy Meeting 讨论错方向的未知项列为 critical_unknowns。模型选择、技术路线、成本目标、流程拆分、生产链具体覆盖环节、自动化率指标等应由策略会议解决，列入 non_blocking_unknowns；API、代码、文件结构等执行细节也绝不阻塞。不要追问剧本、分镜、视频生成、剪辑等生产步骤。
+每轮先总结“我目前理解的是”，再决定是否追问。最多提出一个主要问题，确有必要时最多两个。已能进行高质量策略讨论时必须停止追问并返回 readiness=reviewable。
+Founder 是确认者和纠错者，不是数据录入员。不要重复询问上下文已有信息。
+只返回 JSON，字段严格为：interpreted_goal(string), founder_intent(string), known_context(string[]), inferred_context(string[]), assumptions(string[]), critical_unknowns(string[]), non_blocking_unknowns(string[]), readiness(discovering|reviewable), confidence(0..1), next_action(clarify|review_goal), next_question(string|string[]|null), goal_brief_draft(object)。
+goal_brief_draft 至少包括 summary, goal, problem, target_user, product_business_type, expected_outcome, scope[], constraints[], success_criteria[], unknowns[], assumptions[]。"""
+        response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, LLMRequest(
+            system_prompt=system_prompt,
+            user_prompt=json.dumps(context, ensure_ascii=False),
+            temperature=0.2,
+            max_tokens=1800,
+            response_format="json",
+            metadata={"runtime_role": "sino_conversation", "brain_stage": "goal_understanding"},
+        ))
+        raw = response.content.strip().removeprefix("```json").removesuffix("```").strip()
+        payload = json.loads(raw)
+        payload["_provider"], payload["_model"] = response.provider, response.model
+        return payload
+
+    @classmethod
+    def _validate_understanding(cls, payload, *, clarification_rounds):
+        if not isinstance(payload, dict):
+            raise ValueError("invalid_goal_understanding")
+        result = dict(payload)
+        list_fields = ("known_context", "inferred_context", "assumptions", "critical_unknowns", "non_blocking_unknowns")
+        for key in list_fields:
+            result[key] = [str(item).strip() for item in (result.get(key) or []) if str(item).strip()]
+        questions = result.get("next_question")
+        questions = questions if isinstance(questions, list) else ([questions] if questions else [])
+        questions = [str(item).strip() for item in questions if str(item).strip()][:2]
+        confidence = max(0.0, min(1.0, float(result.get("confidence") or 0)))
+        readiness = result.get("readiness")
+        critical = result["critical_unknowns"]
+        # Guardrail only: strategy/execution gaps never block; avoid endless loops.
+        strategy_question = any(any(term in question.lower() for term in (
+            "模型", "技术路线", "成本", "workflow", "工作流", "api", "代码", "文件结构",
+            "生产链覆盖", "哪些环节", "剧本", "分镜", "视频生成", "剪辑", "自动化率",
+        )) for question in questions)
+        if strategy_question and result.get("interpreted_goal"):
+            result["non_blocking_unknowns"] = list(dict.fromkeys([*result["non_blocking_unknowns"], *critical]))
+            result["critical_unknowns"] = []
+            readiness, questions = "reviewable", []
+        elif not critical and confidence >= .62:
+            readiness = "reviewable"
+        elif clarification_rounds >= cls.MAX_CLARIFICATION_ROUNDS and result.get("interpreted_goal"):
+            result["non_blocking_unknowns"] = list(dict.fromkeys([*result["non_blocking_unknowns"], *critical]))
+            result["critical_unknowns"] = []
+            readiness, questions = "reviewable", []
+        elif readiness not in {"discovering", "reviewable"}:
+            readiness = "discovering" if critical else "reviewable"
+        if readiness == "discovering" and not questions:
+            raise ValueError("blocking_unknown_requires_question")
+        brief = result.get("goal_brief_draft")
+        if not isinstance(brief, dict) or not (brief.get("goal") or result.get("interpreted_goal")):
+            raise ValueError("goal_brief_draft_required")
+        brief.setdefault("goal", result.get("interpreted_goal", ""))
+        brief.setdefault("summary", result.get("interpreted_goal", ""))
+        # The review brief exposes current strategy unknowns, not stale fields
+        # copied from an earlier draft or execution details.
+        brief["unknowns"] = list(dict.fromkeys(result["non_blocking_unknowns"]))
+        result.update({"confidence": confidence, "readiness": readiness, "next_question": questions, "goal_brief_draft": brief})
+        return result
+
+    @staticmethod
+    def _understanding_reply(understanding, *, include_question):
+        lines = ["我目前理解的是："]
+        points = [understanding.get("interpreted_goal"), *(understanding.get("known_context") or []), *(understanding.get("inferred_context") or [])]
+        lines.extend(f"- {point}" for point in [item for item in points if item][:5])
+        if include_question:
+            lines.append("\n真正会影响讨论方向的关键点是：")
+            lines.extend(understanding.get("next_question") or [])
+        else:
+            lines.append("\n目标已经足够清楚，可以确认后开始 Strategy Meeting。技术路线、成本和流程拆分会留给策略会议解决。")
+        return "\n".join(lines)
 
     @staticmethod
     def _discussion_objects(brief, proposals, decision):
