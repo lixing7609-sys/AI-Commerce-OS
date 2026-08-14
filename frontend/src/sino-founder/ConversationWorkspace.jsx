@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, clearFounderObjectDiscussion, continueFounderCandidateDiscussion, continueFounderObjectDiscussion, getFounderObject, reviewFounderCandidate } from "../services/founderAiApi.js";
-import { advanceSinoBrainStage, approveFounderExecution, confirmSinoBrainGoal, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, forceSinoBrainGoalReview, getConversationWorkspace, getFounderConversations, getFounderExecution, getFounderProjects, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reviewSinoBrainPackage, startLifecycleExecution, startSinoBrainStrategy, submitExecutionDelta } from "../services/founderAiApi.js";
+import { advanceSinoBrainStage, approveCapabilityReady, approveFounderExecution, completeCapabilityDevelopment, confirmSinoBrainGoal, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, forceSinoBrainGoalReview, getConversationWorkspace, getFounderConversations, getFounderExecution, getFounderProjects, getLifecycleAsset, getLifecycleReuseSuggestions, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reuseLifecycleAsset, reviewSinoBrainPackage, runCapabilityTest, startCapabilityDevelopment, startLifecycleExecution, startSinoBrainStrategy, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { AssetContext, AssetLifecycleCenter, ExecutionContext, LifecycleExecutionCenter } from "./AssetLifecycleCenter.jsx";
@@ -79,6 +79,8 @@ export function ConversationWorkspace() {
   const [selectedSystemAsset, setSelectedSystemAsset] = useState(null);
   const [selectedLifecycleAsset, setSelectedLifecycleAsset] = useState(null);
   const [selectedLifecycleExecution, setSelectedLifecycleExecution] = useState(null);
+  const [activeCapabilityAsset, setActiveCapabilityAsset] = useState(null);
+  const [reuseSuggestions, setReuseSuggestions] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [creationContext, setCreationContext] = useState(null);
   const sendLockRef = useRef(false);
@@ -89,6 +91,16 @@ export function ConversationWorkspace() {
     const objects = snapshot?.founder_objects || [];
     console.debug("Implementation Workspace Snapshot", { objectsCount: objects.length, draftCount: objects.filter((item) => item.status === "draft").length, changedCount: objects.filter((item) => item.status !== "draft" || item.revisions?.length).length, currentContextObject: snapshot?.active_context_object_id || null });
   }, [snapshot]);
+
+  useEffect(() => {
+    let active = true;
+    if (!conversationId || !(snapshot?.messages?.length)) {
+      Promise.resolve().then(() => { if (active) setReuseSuggestions([]); });
+      return () => { active = false; };
+    }
+    getLifecycleReuseSuggestions(conversationId).then((data) => { if (active) setReuseSuggestions(data.assets || []); }).catch(() => { if (active) setReuseSuggestions([]); });
+    return () => { active = false; };
+  }, [conversationId, snapshot?.messages?.length]);
 
   const persistWorkspace = useCallback((nextView, objectId = null) => {
     remember(WORKSPACE_VIEW_KEY, nextView);
@@ -545,6 +557,33 @@ export function ConversationWorkspace() {
     setView("execution");
   }
 
+  const capabilityAction = activeCapabilityAsset ? activeCapabilityAsset.status === "developing" ? { action_id: "complete_development", asset_id: activeCapabilityAsset.asset_id, title: activeCapabilityAsset.name, description: "开发任务已经建立。完成实现后进入真实测试。", primary_label: "完成开发并进入测试", secondary_label: "查看能力仓库" } : activeCapabilityAsset.status === "testing" && activeCapabilityAsset.test_run_refs?.at?.(-1)?.status !== "passed" ? { action_id: "run_capability_test", asset_id: activeCapabilityAsset.asset_id, title: `${activeCapabilityAsset.name} · 测试中`, description: "运行商品资料到抖音带货分镜的结构化输出测试。", primary_label: "运行真实测试", secondary_label: "继续讨论" } : activeCapabilityAsset.status === "testing" ? { action_id: "approve_ready", asset_id: activeCapabilityAsset.asset_id, title: `${activeCapabilityAsset.name} · 测试通过`, description: "开发完成且真实测试通过。Founder 批准后才可被正式引用。", primary_label: "批准为可引用能力", secondary_label: "继续测试" } : activeCapabilityAsset.status === "ready" ? { action_id: "ready_complete", asset_id: activeCapabilityAsset.asset_id, title: `${activeCapabilityAsset.name} · Ready V${activeCapabilityAsset.version}`, description: "该能力已可被新的电商目标检索和引用。", primary_label: "查看能力仓库" } : null : null;
+
+  async function handleCapabilityAction(action) {
+    if (action.action_id === "ready_complete") { setSelectedCapabilityAsset(activeCapabilityAsset); setView("capability-center"); return; }
+    setBusy(true); setError("");
+    try {
+      let asset;
+      if (action.action_id === "candidates_saved") asset = await startCapabilityDevelopment(action.asset_id);
+      if (action.action_id === "complete_development") asset = await completeCapabilityDevelopment(action.asset_id);
+      if (action.action_id === "run_capability_test") { await runCapabilityTest(action.asset_id); asset = await getLifecycleAsset(action.asset_id); }
+      if (action.action_id === "approve_ready") asset = await approveCapabilityReady(action.asset_id);
+      if (asset) { setActiveCapabilityAsset(asset); setSelectedCapabilityAsset(asset); }
+    } catch (requestError) { setError(requestError.message); }
+    finally { setBusy(false); }
+  }
+
+  async function handleReuseAsset(asset) {
+    if (!conversationId) return;
+    setBusy(true); setError("");
+    try {
+      await reuseLifecycleAsset(asset.asset_id, "conversation", conversationId, "Sino 在当前目标中发现并由 Founder 确认引用");
+      setReuseSuggestions((items) => items.filter((item) => item.asset_id !== asset.asset_id));
+      setSelectedCapabilityAsset(await getLifecycleAsset(asset.asset_id));
+    } catch (requestError) { setError(requestError.message); }
+    finally { setBusy(false); }
+  }
+
   const projectName = projectIntelligence?.project_name || projects.find((item) => item.id === activeProjectId)?.name || "未关联项目";
   const conversationIntelligence = snapshot?.conversation_intelligence || (snapshot?.digest ? {
     summary: snapshot.digest.summary,
@@ -563,12 +602,12 @@ export function ConversationWorkspace() {
   const executionView = <section className="sino-section sino-execution-page" id="execution"><header className="sino-execution-page__header"><span className="sino-kicker">Execution Center</span><h1>执行中心</h1></header>{!executionId ? <><section className="sino-execution-empty" aria-label="当前执行空状态"><span className="sino-kicker">当前执行</span><h2>当前没有正在执行的任务。</h2><p>已确认并进入执行的任务会显示在这里。</p></section><section className="sino-founder-actions" aria-label="待 Founder 处理"><div><span className="sino-kicker">待 Founder 处理</span><h3>当前无需处理</h3></div></section><section className="sino-recent-executions" aria-label="最近完成"><span className="sino-kicker">最近完成</span><h3>暂无执行记录</h3></section><ExecutionContextComposer value={executionMessage} onChange={setExecutionMessage} onSubmit={submitExecutionContext} busy={busy} disabled /></> : <><section className="sino-current-execution" aria-label="当前执行"><span className="sino-kicker">当前执行</span><h2>{result?.task_asset_draft?.title || snapshot?.task_asset?.title || goal?.title || "当前任务"}</h2><dl><div><dt>所属项目</dt><dd>{projectName}</dd></div><div><dt>正式目标</dt><dd>{goal?.title || snapshot?.task_asset?.title || "已确认"}</dd></div><div><dt>已确认范围</dt><dd>{result?.task_asset_draft?.description || snapshot?.task_asset?.description || result?.solution?.summary || "按已批准执行方案"}</dd></div><div><dt>当前阶段</dt><dd>{execution?.status === "draft" ? "Waiting Development" : execution?.status || "准备中"}</dd></div></dl></section>{result && <section className="sino-reasoning-grid" aria-label="已确认执行方案"><SolutionCard solution={result.solution} /><TaskPlanCard draft={result.task_asset_draft} plan={result.task_plan} /><ExecutionCard requirement={result.execution_requirement} executionPackage={result.execution_package} risk={result.risk} /></section>}<ExecutionTimeline status={execution?.status} timeline={execution?.timeline} events={execution?.events} failureReason={execution?.failure_reason} pauseReason={execution?.pause_reason} recoverable={execution?.recoverable} lastEvent={execution?.last_event} executionEngine={execution?.execution_engine_name || execution?.execution_engine || "执行引擎"} onResume={resume} /><ApprovalPanel ready approved={approved} busy={busy} status={execution?.status} latestDelta={latestDelta} onApprove={approve} /><ExecutionDeltaPanel deltas={execution?.deltas || snapshot?.execution_deltas} onDecision={decideDelta} /><ExecutionResultSummary execution={execution} onOpen={openReturnedAsset} />{executionComposer}</>}</section>;
 
   const executionContext = <ContextSummary title="执行上下文"><small>所属项目</small><p>{executionId ? projectName : "—"}</p><small>正式目标</small><p>{executionId ? goal?.title || "已确认" : "—"}</p><small>当前阶段</small><p>{execution?.status || "暂无执行"}</p><small>关键约束</small><p>{executionId ? result?.analysis?.constraints?.join?.(" · ") || "—" : "—"}</p><small>最近补充</small><p>{latestDelta?.content || "—"}</p><small>待审批事项</small><p>{latestDelta?.status === "pending_confirmation" ? "执行补充待确认" : approved ? "无" : executionId ? "执行方案待授权" : "无"}</p></ContextSummary>;
-  const capabilityContext = snapshot?.sino_brain ? <SinoBrainContext brain={snapshot.sino_brain} busy={busy} onConfirmGoal={confirmBrainGoal} onForceReview={forceBrainGoalReview} onStartStrategy={startBrainStrategy} onAdvanceStage={advanceBrainStage} onContinueDiscussion={continueBrainDiscussion} onReviewPackage={reviewBrainPackage} onViewAssets={() => setView("assets")} onNewGoal={newConversation} /> : <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} intelligence={conversationIntelligence} creationContext={creationContext} recognitionStatus={snapshot?.object_recognition} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onOpenObject={openCapabilityObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />;
+  const capabilityContext = snapshot?.sino_brain ? <SinoBrainContext brain={snapshot.sino_brain} busy={busy} capabilityAction={capabilityAction} onCapabilityAction={handleCapabilityAction} onConfirmGoal={confirmBrainGoal} onForceReview={forceBrainGoalReview} onStartStrategy={startBrainStrategy} onAdvanceStage={advanceBrainStage} onContinueDiscussion={continueBrainDiscussion} onReviewPackage={reviewBrainPackage} onViewAssets={() => setView("capability-center")} onNewGoal={newConversation} /> : <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} intelligence={conversationIntelligence} creationContext={creationContext} recognitionStatus={snapshot?.object_recognition} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onOpenObject={openCapabilityObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />;
   let main = <FounderHome snapshot={snapshot} execution={execution} intelligence={projectIntelligence} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} onNavigate={setView} onOpenConversation={selectConversation} onQuickCreate={quickCreate} healthy={sinoHealthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={selectProjectContext} onCreateProject={createProject} onFiles={openConversationFiles} mode={discussionMode} onModeChange={setDiscussionMode} />;
   let context = capabilityContext;
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
-  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onContinueDiscussion={continueBrainDiscussion} onViewAssets={() => setView("assets")} onNewGoal={newConversation} /></section>; context = capabilityContext; }
-  if (view === "capability-center") { main = <CapabilityCenter selected={selectedCapabilityAsset} onSelect={setSelectedCapabilityAsset} />; context = <CapabilityContext selected={selectedCapabilityAsset} onContinue={continueAsset} onNavigateBuilder={(item) => { setSelectedSystemAsset(item); setView("builder"); }} onNavigateExecution={executeAsset} onNavigateAsset={openAssetRecord} />; }
+  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} capabilityAction={capabilityAction} onCapabilityAction={handleCapabilityAction} reuseSuggestions={reuseSuggestions} onReuse={handleReuseAsset} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onContinueDiscussion={continueBrainDiscussion} onViewAssets={() => setView("capability-center")} onNewGoal={newConversation} /></section>; context = capabilityContext; }
+  if (view === "capability-center") { main = <CapabilityCenter selected={selectedCapabilityAsset} onSelect={setSelectedCapabilityAsset} />; context = <CapabilityContext selected={selectedCapabilityAsset} onContinue={continueAsset} onChanged={setSelectedCapabilityAsset} />; }
   if (view === "object") { main = <CapabilityObjectWorkspace object={selectedWorkspaceObject} onContinue={continueObject} onOpenExecution={openObjectExecution} />; context = capabilityContext; }
   if (view === "execution") { main = executionId ? executionView : <LifecycleExecutionCenter selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} />; context = executionId ? executionContext : <ExecutionContext selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} onOpenExecution={openLifecycleExecution} />; }
   if (view === "assets") { main = <AssetLifecycleCenter selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} initialAsset={selectedWorkspaceObject?.asset_id ? selectedWorkspaceObject : null} onStartNewGoal={newConversation} />; context = <AssetContext selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} conversationId={conversationId} projectId={activeProjectId} onOpenExecution={openLifecycleExecution} onContinue={continueAsset} />; }

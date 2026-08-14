@@ -27,7 +27,7 @@ describe("SinoBrainContext", () => {
     render(<SinoBrainContext brain={{ stage: "package_ready", goal_readiness: "confirmed", goal_brief: { goal: "AI 短剧" }, decision: { final_recommendation: "建立 Project 和最小 Workflow", confidence: .91 }, discussion_package: { package_id: "package-1", title: "AI 短剧生产系统", status: "pending_review", counts: { decision: 1, project: 1, workflow: 1 }, objects: [{ discussion_object_id: "item-1", object_type: "project", name: "AI 短剧", action: "create", purpose: "承载生产系统", source: "Decision", confidence: .91 }] } }} onReviewPackage={review} />);
     expect(screen.getAllByText("Discussion Package")).toHaveLength(1);
     expect(screen.getByText(/待 Founder 审批/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "批准成果包" }));
+    fireEvent.click(screen.getByRole("button", { name: "批准候选能力" }));
     expect(review).toHaveBeenCalledWith("approve");
   });
 

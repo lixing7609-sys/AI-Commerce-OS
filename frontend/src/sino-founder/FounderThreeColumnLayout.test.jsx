@@ -6,7 +6,7 @@ import { SystemBuilderPanel, SystemContext } from "./SystemBuilderPanel.jsx";
 import { AssetContext, AssetLifecycleCenter, ExecutionContext, LifecycleExecutionCenter } from "./AssetLifecycleCenter.jsx";
 import { getLifecycleAssets, getLifecycleExecutions } from "../services/founderAiApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({ createExecutionLearning: vi.fn(), getLifecycleAsset: vi.fn(), getLifecycleAssets: vi.fn(), getLifecycleExecutions: vi.fn(), getLifecycleLearnings: vi.fn(), reuseLifecycleAsset: vi.fn(), startLifecycleExecution: vi.fn() }));
+vi.mock("../services/founderAiApi.js", () => ({ approveCapabilityReady: vi.fn(), completeCapabilityDevelopment: vi.fn(), createExecutionLearning: vi.fn(), getCapabilityDomains: vi.fn().mockResolvedValue({ domains: [] }), getCapabilityRepositoryAssets: vi.fn().mockResolvedValue({ assets: [] }), getLifecycleAsset: vi.fn(), getLifecycleAssets: vi.fn(), getLifecycleExecutions: vi.fn(), getLifecycleLearnings: vi.fn(), reuseLifecycleAsset: vi.fn(), runCapabilityTest: vi.fn(), startCapabilityDevelopment: vi.fn(), startLifecycleExecution: vi.fn() }));
 
 beforeEach(() => { getLifecycleAssets.mockResolvedValue({ assets: [] }); getLifecycleExecutions.mockResolvedValue({ executions: [] }); });
 afterEach(cleanup);
@@ -20,7 +20,7 @@ describe("Founder shared three-column page layout", () => {
   ])("keeps %s outside the Primary Workspace", async (title, primary, inspector) => {
     const { container } = render(<><div data-primary>{primary}</div><aside data-context>{inspector}</aside></>);
     expect(container.querySelector("[data-primary] .sino-asset-detail")).toBeNull();
-    expect(container.querySelector("[data-primary] .sino-primary-list")).toBeTruthy();
+    expect(container.querySelector("[data-primary] .sino-primary-list, [data-primary] .sino-domain-grid")).toBeTruthy();
     expect(screen.getByRole("heading", { name: title })).toBeTruthy();
     expect(container.querySelector("[data-context] .sino-workspace-inspector")).toBeTruthy();
   });

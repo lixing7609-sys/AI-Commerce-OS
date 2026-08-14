@@ -270,4 +270,16 @@ describe("ConversationThread layout", () => {
     expect(screen.getByRole("button", { name: /自动多轮/ }).disabled).toBe(true);
     expect(screen.getByText(/自动多轮只用于 Strategy Workspace/)).toBeTruthy();
   });
+
+  it("offers real reuse only for Ready assets and development for Candidate assets", () => {
+    const onReuse = vi.fn();
+    const onDevelop = vi.fn();
+    const ready = { asset_id: "skill-ready", name: "商品分镜生成 Skill", status: "ready", version: 1, can_reuse: true, reuse_reason: "当前电商目标需要商品分镜" };
+    const candidate = { asset_id: "skill-candidate", name: "商品标题优化 Skill", status: "candidate", version: 1, can_reuse: false, reuse_reason: "尚未开发完成" };
+    render(<ConversationThread snapshot={snapshot("reuse", [{ message_id: "m1", role: "founder", content: "做抖音带货短视频" }])} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} reuseSuggestions={[ready, candidate]} onReuse={onReuse} onCapabilityAction={onDevelop} />);
+    fireEvent.click(screen.getByRole("button", { name: "引用" }));
+    fireEvent.click(screen.getByRole("button", { name: "开发" }));
+    expect(onReuse).toHaveBeenCalledWith(ready);
+    expect(onDevelop).toHaveBeenCalledWith(expect.objectContaining({ action_id: "candidates_saved", asset_id: "skill-candidate" }));
+  });
 });

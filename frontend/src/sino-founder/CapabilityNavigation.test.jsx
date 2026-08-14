@@ -6,13 +6,13 @@ import { CapabilityNavigation } from "./CapabilityNavigation.jsx";
 afterEach(cleanup);
 
 describe("Founder functional navigation", () => {
-  it("contains only the four functional destinations with no Founder placeholder", () => {
+  it("contains only Capability Repository with no legacy top-level pages", () => {
     const navigate = vi.fn();
     render(<CapabilityNavigation active="builder" onNavigate={navigate} />);
     const items = screen.getAllByRole("button");
-    expect(items.map((item) => item.textContent)).toEqual(["AI 能力中心", "系统构建器", "执行中心", "资产与记忆"]);
+    expect(items.map((item) => item.textContent)).toEqual(["能力仓库"]);
     expect(screen.queryByRole("button", { name: "Founder", exact: true })).toBeNull();
-    expect(screen.getByRole("button", { name: "系统构建器" }).classList.contains("is-active")).toBe(true);
+    expect(screen.queryByRole("button", { name: "系统构建器" })).toBeNull();
     fireEvent.click(items[0]);
     expect(navigate).toHaveBeenCalledWith("capability-center");
   });

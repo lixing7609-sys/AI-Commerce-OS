@@ -24,16 +24,16 @@ function PackageOverview({ pkg }) {
   </section>;
 }
 
-export function SinoBrainContext({ brain, busy, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal }) {
+export function SinoBrainContext({ brain, busy, capabilityAction, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal }) {
   if (!brain) return null;
   const brief = brain.goal_brief || {};
   const decision = brain.decision || {};
   const understanding = brain.discovery?.working_understanding || {};
   const risk = decision.key_risks?.[0] || "暂无关键风险";
   const question = decision.remaining_unknowns?.[0] || brief.unknowns?.[0] || "暂无待确认问题";
-  const action = brain.current_action || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "确认后开始 Strategy Meeting。", primary_label: "开始讨论", secondary_label: "修改目标" } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "批准后，本轮 Decision 与资产结构正式生效。", primary_label: "批准成果包", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
+  const action = capabilityAction || brain.current_action || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "确认后开始 Strategy Meeting。", primary_label: "开始讨论", secondary_label: "修改目标" } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "确认后把讨论成果沉淀为候选能力。", primary_label: "批准候选能力", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
   return <section className="sino-brain-context sino-brain-dashboard" aria-label="Brain Dashboard">
-    <FounderActionCard compact action={action} busy={busy} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} />
+    <FounderActionCard compact action={action} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} />
     <header><h2>Brain Dashboard</h2><span>{STAGE_LABELS[brain.stage] || brain.stage}</span></header>
     <dl className="sino-brain-dashboard__grid">
       <div><dt>Current Stage</dt><dd>{STAGE_LABELS[brain.stage] || brain.stage}</dd></div>

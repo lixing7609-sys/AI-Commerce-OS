@@ -310,3 +310,31 @@ export function reuseLifecycleAsset(assetId, targetType, targetId, note) {
 export function getLifecycleReuseSuggestions(conversationId) {
   return request(`/founder-ai/asset-lifecycle/conversations/${encodeURIComponent(conversationId)}/reuse-suggestions`, undefined, "获取可复用资产失败");
 }
+
+export function getCapabilityDomains() {
+  return request("/founder-ai/capability-repository/domains", undefined, "获取能力领域失败");
+}
+
+export function getCapabilityRepositoryAssets(domainId, assetType, status) {
+  const query = new URLSearchParams();
+  if (domainId) query.set("domain_id", domainId);
+  if (assetType) query.set("asset_type", assetType);
+  if (status) query.set("status", status);
+  return request(`/founder-ai/capability-repository/assets${query.size ? `?${query}` : ""}`, undefined, "获取能力仓库失败");
+}
+
+export function startCapabilityDevelopment(assetId) {
+  return request(`/founder-ai/capability-repository/assets/${encodeURIComponent(assetId)}/development`, { method: "POST" }, "启动能力开发失败");
+}
+
+export function completeCapabilityDevelopment(assetId) {
+  return request(`/founder-ai/capability-repository/assets/${encodeURIComponent(assetId)}/development/complete`, { method: "POST" }, "完成能力开发失败");
+}
+
+export function runCapabilityTest(assetId, testInput) {
+  return request(`/founder-ai/capability-repository/assets/${encodeURIComponent(assetId)}/tests`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ test_input: testInput || null }) }, "运行能力测试失败");
+}
+
+export function approveCapabilityReady(assetId) {
+  return request(`/founder-ai/capability-repository/assets/${encodeURIComponent(assetId)}/ready-approval`, { method: "POST" }, "批准可引用能力失败");
+}

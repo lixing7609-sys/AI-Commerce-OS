@@ -3,26 +3,26 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CapabilityCenter, CapabilityContext } from "./CapabilityWorkspace.jsx";
-import { getLifecycleAsset, getLifecycleAssets } from "../services/founderAiApi.js";
+import { getCapabilityDomains, getCapabilityRepositoryAssets, getLifecycleAsset } from "../services/founderAiApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({ getLifecycleAsset: vi.fn(), getLifecycleAssets: vi.fn() }));
-const skill = { asset_id: "asset-skill", asset_type: "skill", name: "Character Consistency", purpose: "保持角色跨镜头一致性", status: "committed", version: 2, used_by_refs: ["Studio AI"], dependency_refs: [] };
-function Harness({ openAsset }) { const [selected, setSelected] = useState(null); return <><CapabilityCenter selected={selected} onSelect={setSelected} /><CapabilityContext selected={selected} onNavigateAsset={openAsset} /></>; }
+vi.mock("../services/founderAiApi.js", () => ({ approveCapabilityReady: vi.fn(), completeCapabilityDevelopment: vi.fn(), getCapabilityDomains: vi.fn(), getCapabilityRepositoryAssets: vi.fn(), getLifecycleAsset: vi.fn(), runCapabilityTest: vi.fn(), startCapabilityDevelopment: vi.fn() }));
+const skill = { asset_id: "asset-skill", asset_type: "skill", domain_id: "commerce", name: "商品分镜生成 Skill", purpose: "生成结构化商品分镜", status: "candidate", version: 1, used_by_refs: [], dependency_refs: [], test_run_refs: [] };
+function Harness() { const [selected, setSelected] = useState(null); return <><CapabilityCenter selected={selected} onSelect={setSelected} /><CapabilityContext selected={selected} onChanged={setSelected} /></>; }
 
 describe("AI Capability Center IA", () => {
-  beforeEach(() => { getLifecycleAssets.mockResolvedValue({ assets: [skill, { asset_id: "decision-1", asset_type: "decision", name: "不应显示" }] }); getLifecycleAsset.mockResolvedValue(skill); });
+  beforeEach(() => { getCapabilityDomains.mockResolvedValue({ domains: [{ domain_id: "commerce", name: "电商", counts: { candidate: 1, developing: 0, testing: 0, ready: 0 } }] }); getCapabilityRepositoryAssets.mockResolvedValue({ assets: [skill] }); getLifecycleAsset.mockResolvedValue(skill); });
   afterEach(cleanup);
   it("reads the formal Asset Catalog and excludes non-capability assets", async () => {
     render(<Harness />);
-    fireEvent.click(await screen.findByRole("button", { name: /Character Consistency/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /电商/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /商品分镜生成 Skill/ }));
     await waitFor(() => expect(getLifecycleAsset).toHaveBeenCalledWith("asset-skill"));
-    expect(screen.queryByText("不应显示")).toBeNull();
-    expect(screen.getByText("Studio AI")).toBeTruthy();
+    expect(screen.getAllByText("候选").length).toBeGreaterThan(0);
   });
-  it("keeps one asset identity across cross-page actions", async () => {
-    const openAsset = vi.fn(); render(<Harness openAsset={openAsset} />);
-    fireEvent.click(await screen.findByRole("button", { name: /Character Consistency/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "查看资产记录" }));
-    expect(openAsset).toHaveBeenCalledWith(expect.objectContaining({ asset_id: "asset-skill" }));
+  it("keeps one asset identity and exposes Candidate development", async () => {
+    render(<Harness />);
+    fireEvent.click(await screen.findByRole("button", { name: /电商/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /商品分镜生成 Skill/ }));
+    expect(screen.getByRole("button", { name: "开发" })).toBeTruthy();
   });
 });

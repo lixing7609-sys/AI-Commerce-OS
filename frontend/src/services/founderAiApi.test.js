@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bindFounderConversationProject } from "./founderAiApi";
 
-import { analyzeFounderConversation, analyzeWithSinoBrain, buildSystemBlueprint, checkModelProvider, confirmCandidateGoal, createArtifactVersion, createFounderConversation, createFounderProject, createIntelligenceReference, createMemoryRevision, decideExecutionDelta, deleteFounderConversation, discoverProviderModels, discussWithCouncil, discussWithSino, executeFounderExecution, getAssetMemoryCenter, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getLibraryArtifact, getLibraryMemory, getModelCenter, getProjectIntelligence, installModelProvider, reasonConfirmedGoal, resumeFounderExecution, saveApplicationModelAssignments, saveExecutionEngine, saveModelProvider, saveModelRoles, selectProviderModels, submitExecutionDelta, updateArtifactStatus, updateMemoryStatus } from "./founderAiApi";
+import { analyzeFounderConversation, analyzeWithSinoBrain, approveCapabilityReady, buildSystemBlueprint, checkModelProvider, completeCapabilityDevelopment, confirmCandidateGoal, createArtifactVersion, createFounderConversation, createFounderProject, createIntelligenceReference, createMemoryRevision, decideExecutionDelta, deleteFounderConversation, discoverProviderModels, discussWithCouncil, discussWithSino, executeFounderExecution, getAssetMemoryCenter, getCapabilityDomains, getCapabilityRepositoryAssets, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getLibraryArtifact, getLibraryMemory, getLifecycleReuseSuggestions, getModelCenter, getProjectIntelligence, installModelProvider, reasonConfirmedGoal, reuseLifecycleAsset, resumeFounderExecution, runCapabilityTest, saveApplicationModelAssignments, saveExecutionEngine, saveModelProvider, saveModelRoles, selectProviderModels, startCapabilityDevelopment, submitExecutionDelta, updateArtifactStatus, updateMemoryStatus } from "./founderAiApi";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -56,6 +56,26 @@ describe("Founder AI conversation API", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ content: "继续讨论", intent: "discussion" });
     await getConversationWorkspace("conv/1");
     expect(fetchMock.mock.calls[1][0]).toContain("/founder-ai/conversations/conv%2F1/workspace");
+  });
+
+  it("uses the persisted Capability Repository lifecycle and reuse contracts", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({}) });
+    await getCapabilityDomains();
+    await getCapabilityRepositoryAssets("commerce", "skill", "candidate");
+    await startCapabilityDevelopment("asset/1");
+    await completeCapabilityDevelopment("asset/1");
+    await runCapabilityTest("asset/1", { product_name: "咖啡机" });
+    await approveCapabilityReady("asset/1");
+    await getLifecycleReuseSuggestions("conv/1");
+    await reuseLifecycleAsset("asset/1", "conversation", "conv/1", "复用");
+    expect(fetchMock.mock.calls[0][0]).toContain("/capability-repository/domains");
+    expect(fetchMock.mock.calls[1][0]).toContain("domain_id=commerce&asset_type=skill&status=candidate");
+    expect(fetchMock.mock.calls[2][0]).toContain("/capability-repository/assets/asset%2F1/development");
+    expect(fetchMock.mock.calls[3][0]).toContain("/development/complete");
+    expect(JSON.parse(fetchMock.mock.calls[4][1].body).test_input.product_name).toBe("咖啡机");
+    expect(fetchMock.mock.calls[5][0]).toContain("/ready-approval");
+    expect(fetchMock.mock.calls[6][0]).toContain("/conversations/conv%2F1/reuse-suggestions");
+    expect(JSON.parse(fetchMock.mock.calls[7][1].body)).toEqual({ target_type: "conversation", target_id: "conv/1", note: "复用" });
   });
 
   it("starts Council mode without adding Codex to selected models", async () => {

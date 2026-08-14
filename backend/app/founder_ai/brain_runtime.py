@@ -244,7 +244,7 @@ class SinoBrainRuntime:
             "package_id": _id("package"), "title": brief.get("goal") or "本轮讨论成果",
             "status": "pending_review", "decision": decision, "objects": objects,
             "counts": self._counts(objects), "source_council_run_id": run.get("council_run_id"),
-            "source_conversation_id": conversation_id,
+            "source_conversation_id": conversation_id, "domain_id": self._infer_domain(brief),
         }
         with SessionLocal() as session:
             state = self._get(session, conversation_id)
@@ -295,8 +295,8 @@ class SinoBrainRuntime:
             if not package:
                 raise ValueError("Discussion Package 不存在")
             if action == "approve":
-                # Asset Commit is idempotent: an already committed package returns
-                # its durable receipt without creating duplicate assets.
+                # First Founder approval persists capability directions as Candidate.
+                # It never promotes a discussion result directly to Ready.
                 if (package.get("asset_commit") or {}).get("status") != "committed":
                     now = datetime.now(timezone.utc)
                     package["status"] = "approved"
@@ -317,7 +317,7 @@ class SinoBrainRuntime:
 
     @staticmethod
     def _commit_package_assets(session, state, package: dict[str, Any]) -> dict[str, Any]:
-        """Commit one approved package into existing Founder asset stores."""
+        """Persist one approved package as durable Candidate assets."""
         now = datetime.now(timezone.utc)
         conversation = session.get(ConversationDB, state.conversation_id)
         source_refs = list(state.source_message_refs or [])
@@ -330,38 +330,35 @@ class SinoBrainRuntime:
             name = str(item.get("name") or package.get("title") or "未命名资产").strip()
             purpose = str(item.get("purpose") or item.get("reason") or "").strip()
             asset_id = None
-            destination = "AI 能力中心"
+            destination = "能力仓库"
 
             if object_type == "decision":
-                destination = "资产与记忆"
                 record = DecisionAssetDB(
                     system_id="founder_ai", conversation_id=state.conversation_id,
                     title=name, decision=purpose or str((package.get("decision") or {}).get("final_recommendation") or name),
                     reason=str(item.get("reason") or ""), impact="Discussion Package Asset Commit",
-                    source_message_ids=source_refs, confirmed=True, status="committed",
+                    source_message_ids=source_refs, confirmed=False, status="candidate",
                 )
                 session.add(record); session.flush(); asset_id = record.id
             elif object_type == "project":
-                destination = "Project Center"
                 record = session.scalar(select(FounderProjectDB).where(
                     FounderProjectDB.system_id == "founder_ai", FounderProjectDB.name == name,
                 ))
                 if record is None:
-                    record = FounderProjectDB(system_id="founder_ai", name=name, description=purpose, status="committed")
+                    record = FounderProjectDB(system_id="founder_ai", name=name, description=purpose, status="candidate")
                     session.add(record); session.flush()
                 else:
-                    record.status = "committed"
+                    record.status = "candidate"
                     record.description = purpose or record.description
                     record.updated_at = now
                 asset_id = record.id
             elif object_type == "knowledge":
-                destination = "资产与记忆"
                 record = MemoryAssetDB(
                     system_id="founder_ai", conversation_id=state.conversation_id,
                     memory_type="knowledge", title=name,
                     content=json.dumps({"purpose": purpose, "reason": item.get("reason"), "source": item.get("source")}, ensure_ascii=False),
                     summary=purpose, confidence=float(item.get("confidence") or 0),
-                    source_message_ids=source_refs, status="committed",
+                    source_message_ids=source_refs, status="candidate",
                     tags=["discussion_package", package.get("package_id")],
                 )
                 session.add(record); session.flush(); asset_id = record.id
@@ -375,29 +372,29 @@ class SinoBrainRuntime:
                 if record is None:
                     record = FounderObjectDB(
                         object_type=object_type, name=name, normalized_name=normalized,
-                        description=purpose, status="committed", scope_key="founder_ai",
+                        description=purpose, status="candidate", scope_key="founder_ai",
                         source_conversation_id=state.conversation_id,
                         source_message_refs=source_refs,
                     )
                     session.add(record); session.flush()
                     session.add(FounderObjectRevisionDB(
                         object_id=record.id, version=1, name=name, description=purpose,
-                        status="committed", source_conversation_id=state.conversation_id,
+                        status="candidate", source_conversation_id=state.conversation_id,
                         source_message_refs=source_refs,
-                        snapshot={"source_package_id": package.get("package_id"), "commit_status": "committed"},
+                        snapshot={"source_package_id": package.get("package_id"), "commit_status": "candidate"},
                     ))
                 else:
-                    if record.status != "committed":
+                    if record.status not in {"candidate", "developing", "testing", "ready"}:
                         record.version += 1
                         record.description = purpose or record.description
                         session.add(FounderObjectRevisionDB(
                             object_id=record.id, version=record.version, name=record.name,
-                            description=record.description, status="committed",
+                            description=record.description, status="candidate",
                             source_conversation_id=state.conversation_id,
                             source_message_refs=source_refs,
-                            snapshot={"source_package_id": package.get("package_id"), "commit_status": "committed"},
+                            snapshot={"source_package_id": package.get("package_id"), "commit_status": "candidate"},
                         ))
-                    record.status = "committed"
+                    record.status = "candidate"
                     record.updated_at = now
                 asset_id = record.id
 
@@ -407,15 +404,16 @@ class SinoBrainRuntime:
                 native_type="decision" if object_type == "decision" else "project" if object_type == "project" else "memory" if object_type == "knowledge" else "founder_object",
                 native_id=asset_id, name=name, purpose=purpose,
                 content={"reason": item.get("reason"), "source": item.get("source"), "risk": item.get("risk") or [], "confidence": item.get("confidence")},
-                status="committed", version=getattr(record, "version", 1),
+                status="candidate", version=getattr(record, "version", 1),
                 source_conversation_id=state.conversation_id, source_package_id=package.get("package_id"),
                 project_id=state.project_id or (conversation.project_id if conversation else None),
+                domain_id=package.get("domain_id") or "general",
                 dependency_refs=list(item.get("dependencies") or []),
             )
             item.update({
-                "asset_id": asset_id, "commit_status": "committed",
+                "asset_id": asset_id, "commit_status": "candidate",
                 "destination": destination, "committed_at": now.isoformat(),
-                "lifecycle": ["draft", "approved", "committed"],
+                "lifecycle": ["draft", "approved", "candidate"],
             })
             committed.append(item)
 
@@ -423,11 +421,12 @@ class SinoBrainRuntime:
         package["status"] = "archived"
         package["committed_at"] = now.isoformat()
         package["asset_commit"] = {
-            "commit_id": _id("asset-commit"), "status": "committed",
+            "commit_id": _id("candidate-commit"), "status": "committed", "result_status": "candidate",
             "conversation_id": state.conversation_id,
             "package_id": package.get("package_id"), "items": committed,
             "asset_ids": list(asset_ids_by_name.values()), "committed_at": now.isoformat(),
         }
+        package["candidate_commit"] = package["asset_commit"]
         package.setdefault("lifecycle", []).extend([
             {"status": "asset_commit", "at": now.isoformat()},
             {"status": "committed", "at": now.isoformat()},
@@ -438,7 +437,7 @@ class SinoBrainRuntime:
             conversation.updated_at = now
         session.add(ConversationMessageDB(
             conversation_id=state.conversation_id, role="assistant", message_type="asset_commit",
-            content=f"Asset Commit 已完成：{len(committed)} 项资产已进入 AI Commerce OS。",
+            content=f"候选能力提交已完成：{len(committed)} 项讨论成果已进入能力仓库，尚不可被生产系统引用。",
             grounding={"package_id": package.get("package_id"), "asset_commit_id": package["asset_commit"]["commit_id"]},
         ))
         return package
@@ -573,14 +572,32 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         combined = " ".join([decision["final_recommendation"], *[str(item.get("proposal") or "") for item in proposals]])
         objects = [{"discussion_object_id": _id("discussion-object"), "object_type": "decision", "name": f"{goal}主推荐方案", "action": "create", "purpose": decision["final_recommendation"], "source": "Conflict Validation", "reason": "形成唯一主推荐方案", "dependencies": [], "confidence": decision["confidence"], "risk": decision["key_risks"]}]
         labels = {"project": ("Project", "项目"), "workflow": ("Workflow", "工作流"), "skill": ("Skill", "技能"), "prompt": ("Prompt", "提示词"), "capability": ("Capability", "能力"), "agent": ("Agent", "智能体"), "connector": ("Connector", "连接器")}
+        commerce = SinoBrainRuntime._infer_domain(brief) == "commerce"
         for object_type, terms in labels.items():
-            if not any(term.lower() in combined.lower() for term in terms):
+            if not any(term.lower() in combined.lower() for term in terms) and not (commerce and object_type == "skill"):
                 continue
             label = terms[0]
-            objects.append({"discussion_object_id": _id("discussion-object"), "object_type": object_type, "name": f"{goal} {label}", "action": "create", "purpose": brief.get("problem"), "source": "Strategy Meeting + Decision", "reason": decision["final_recommendation"], "dependencies": [], "confidence": decision["confidence"], "risk": decision["key_risks"]})
+            name = "商品分镜生成 Skill" if commerce and object_type == "skill" else f"{goal} {label}"
+            purpose = "根据商品信息、目标平台、卖点和内容目标生成可用于图片或短视频生产的结构化分镜方案。" if commerce and object_type == "skill" else brief.get("problem")
+            objects.append({"discussion_object_id": _id("discussion-object"), "object_type": object_type, "name": name, "action": "create", "purpose": purpose, "source": "Strategy Meeting + Decision", "reason": decision["final_recommendation"], "dependencies": [], "confidence": decision["confidence"], "risk": decision["key_risks"]})
         if proposals:
             objects.append({"discussion_object_id": _id("discussion-object"), "object_type": "knowledge", "name": f"{goal}讨论依据", "action": "create", "purpose": "保存模型提案、冲突与验证证据", "source": "Strategy Proposals", "reason": "保证决策可追溯", "dependencies": [], "confidence": decision["confidence"], "risk": []})
         return objects
+
+    @staticmethod
+    def _infer_domain(brief):
+        text = " ".join(str(value) for value in [brief.get("goal"), brief.get("problem"), brief.get("summary"), brief.get("expected_outcome")])
+        if any(term in text for term in ("电商", "商品", "带货", "转化", "广告素材")):
+            return "commerce"
+        if any(term in text for term in ("短视频", "短剧", "视频")):
+            return "short-video"
+        if any(term in text for term in ("量化", "策略交易")):
+            return "quant"
+        if any(term in text for term in ("工业", "产品设计")):
+            return "industrial"
+        if "品牌" in text:
+            return "brand"
+        return "general"
 
     @staticmethod
     def _classify_disagreement(text: str) -> str:
@@ -640,11 +657,15 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         if stage == "decision_ready":
             return {"action_id": "generate_package", "title": "Decision Finished", "description": "唯一推荐方案已经形成。", "primary_label": "生成 Discussion Package", "secondary_label": "重新讨论"}
         if stage == "package_ready":
-            return {"action_id": "approve_package", "title": "等待 Founder 批准成果包", "description": "批准后，本轮 Decision 与资产结构正式生效。", "primary_label": "批准成果包", "secondary_label": "继续讨论", "danger_label": "退回修改"}
+            return {"action_id": "approve_package", "title": "等待 Founder 批准候选能力", "description": "批准后，本轮能力方向会以 Candidate 状态进入能力仓库，不会直接成为 Ready。", "primary_label": "批准候选能力", "secondary_label": "继续讨论", "danger_label": "退回修改"}
         if stage == "package_approved":
             return {"action_id": "asset_commit", "title": "正在提交资产", "description": "正在把成果包写入正式资产仓库。", "primary_label": "提交中"}
         if stage in {"asset_commit", "conversation_completed"}:
-            return {"action_id": "assets_committed", "title": "资产提交完成", "description": "成果包中的正式资产已进入 AI Commerce OS。", "primary_label": "查看资产", "secondary_label": "开始新目标"}
+            candidates = [item for item in ((brain.get("discussion_package") or {}).get("objects") or []) if item.get("commit_status") == "candidate"]
+            if candidates:
+                developable = next((item for item in candidates if item.get("object_type") in {"skill", "workflow", "agent", "prompt", "capability", "connector"}), candidates[0])
+                return {"action_id": "candidates_saved", "title": "候选能力已沉淀", "description": f"{len(candidates)} 个候选能力已进入能力仓库；尚不可被生产系统引用。", "primary_label": f"开发 {developable.get('name')}", "secondary_label": "暂不开发", "asset_id": developable.get("asset_id")}
+            return {"action_id": "assets_committed", "title": "资产提交完成", "description": "成果包中的资产已进入 AI Commerce OS。", "primary_label": "查看资产", "secondary_label": "开始新目标"}
         return {"action_id": "continue_goal", "title": "继续理解目标", "description": "回答 Sino 当前最关键的问题。", "primary_label": "继续"}
 
     @staticmethod

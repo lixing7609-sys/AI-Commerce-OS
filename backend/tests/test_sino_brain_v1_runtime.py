@@ -144,13 +144,13 @@ def test_goal_brief_package_lifecycle(monkeypatch):
     assert committed["discussion_package"]["status"] == "archived"
     assert committed["discussion_package"]["asset_commit"]["status"] == "committed"
     assert len(committed["discussion_package"]["asset_commit"]["items"]) == 4
-    assert committed["current_action"]["action_id"] == "assets_committed"
+    assert committed["current_action"]["action_id"] == "candidates_saved"
     with module.SessionLocal() as session:
         assert session.get(ConversationDB, conversation_id).conversation_state == "completed"
-        assert session.query(DecisionAssetDB).filter_by(conversation_id=conversation_id, status="committed").count() == 1
-        assert session.query(FounderProjectDB).filter_by(status="committed").count() == 1
-        assert session.query(FounderObjectDB).filter_by(status="committed").count() == 1
-        assert session.query(MemoryAssetDB).filter_by(conversation_id=conversation_id, status="committed").count() == 1
+        assert session.query(DecisionAssetDB).filter_by(conversation_id=conversation_id, status="candidate").count() == 1
+        assert session.query(FounderProjectDB).filter_by(status="candidate").count() == 1
+        assert session.query(FounderObjectDB).filter_by(status="candidate").count() == 1
+        assert session.query(MemoryAssetDB).filter_by(conversation_id=conversation_id, status="candidate").count() == 1
     repeated = runtime.review_package(conversation_id, "approve")
     assert repeated["discussion_package"]["asset_commit"]["commit_id"] == committed["discussion_package"]["asset_commit"]["commit_id"]
 
