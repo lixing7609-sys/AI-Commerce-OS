@@ -5,7 +5,7 @@ body { margin: 0; }
 html:has(.sino-app), body:has(.sino-app) { width: 100%; height: 100%; overflow: hidden; scrollbar-width: none; }
 html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, .sino-workspace::-webkit-scrollbar { display: none; }
 #root:has(.sino-app) { width: 100%; max-width: none; height: 100%; margin: 0; display: block; overflow: hidden; border: 0; text-align: left; }
-.sino-app { --bg: #0a0b0e; --surface: #121419; --line: #272a31; --muted: #8d939f; --accent: #d7ff4f; --font-page-title: 26px; --font-hero-title: clamp(40px, 4vw, 48px); --font-section-title: 20px; --font-card-title: 16px; --font-body: 15px; --font-body-small: 14px; --font-label: 13px; --font-nav: 14px; --font-sidebar: 14px; --font-button: 15px; --font-helper: 13px; --font-metadata: 12px; --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600; --line-page-title: 1.25; --line-section-title: 1.35; --line-card-title: 1.4; --line-body: 1.6; --line-body-small: 1.55; --line-label: 1.4; --line-metadata: 1.4; width: 100%; height: 100dvh; display: grid; grid-template-columns: 232px minmax(0, 1fr); overflow: hidden; background: radial-gradient(circle at 70% -10%, #20251b 0, transparent 28%), var(--bg); color: #f4f5f7; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; font-size: var(--font-body); line-height: var(--line-body); }
+.sino-app { --text-primary: #f1f5f0; --text-secondary: #c6cec4; --text-muted: #9ca79a; --text-label: #abb5a8; --text-disabled: #727b70; --border-default: #343c32; --border-strong: #53604d; --surface-base: #090b09; --surface-raised: #111510; --surface-selected: #1c241a; --accent: #d7ff4f; --accent-text: #081006; --bg: var(--surface-base); --surface: var(--surface-raised); --line: var(--border-default); --muted: var(--text-muted); --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; --font-serif: ui-serif, Georgia, serif; --font-page-title: 26px; --font-hero-title: clamp(40px, 4vw, 48px); --font-section-title: 20px; --font-card-title: 16px; --font-body: 15px; --font-body-small: 14px; --font-label: 13px; --font-nav: 14px; --font-sidebar: 14px; --font-button: 15px; --font-helper: 13px; --font-metadata: 12px; --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600; --line-page-title: 1.25; --line-section-title: 1.35; --line-card-title: 1.4; --line-body: 1.6; --line-body-small: 1.55; --line-label: 1.4; --line-metadata: 1.4; width: 100%; height: 100dvh; display: grid; grid-template-columns: 232px minmax(0, 1fr); overflow: hidden; background: radial-gradient(circle at 70% -10%, #20251b 0, transparent 28%), var(--bg); color: var(--text-primary); font-family: var(--font-sans); font-size: var(--font-body); line-height: var(--line-body); }
 .sino-sidebar { height: 100%; min-height: 0; overflow-y: auto; padding: 30px 22px; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: rgba(10, 11, 14, .88); }
 .sino-brand { display: flex; align-items: center; gap: 12px; padding: 0; color: inherit; text-decoration: none; font-size: 15px; }
 .sino-brand > .sino-brand-mark { flex: 0 0 36px; display: grid; place-items: center; width: 36px; min-width: 36px; max-width: 36px; height: 36px; min-height: 36px; max-height: 36px; padding: 0; border: 1px solid #50543c; border-radius: 10px; color: var(--accent); font-size: 15px; font-weight: 800; transform: none; }
@@ -505,7 +505,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-capability-library__list > button { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, .8fr); gap: 28px; width: 100%; padding: 19px 2px; border: 0; border-bottom: 1px solid #20251f; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .sino-capability-library__list > button:hover { background: rgba(255,255,255,.015); }
 .sino-capability-library__list span { color: #8fa085; font-size: 12px; }.sino-capability-library__list strong { display: block; margin-top: 3px; font-size: 16px; }.sino-capability-library__list p { margin: 5px 0 0; color: #7f887d; font-size: 13px; }
-.sino-capability-library__list dl { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin: 0; }.sino-capability-library__list dt { color: #626b60; font-size: 11px; }.sino-capability-library__list dd { margin: 4px 0 0; color: #aeb6ab; font-size: 12px; }
+.sino-capability-library__list dl { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin: 0; }.sino-capability-library__list dt { color: #626b60; font-size: 12px; }.sino-capability-library__list dd { margin: 4px 0 0; color: #aeb6ab; font-size: 12px; }
 .sino-capability-library__empty { margin-top: 48px; color: #747d72; }
 .sino-capability-object > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding-bottom: 22px; border-bottom: 1px solid #242a22; }
 .sino-capability-object > header span { color: #8fa085; font-size: 12px; }.sino-capability-object > header p { margin: 0; color: #8e978b; font-size: 13px; }
@@ -851,7 +851,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-brain-context footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
 .sino-brain-context button { min-height: 30px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text-secondary); }
 .sino-brain-context button.is-primary { border-color: var(--accent); background: var(--accent); color: #071008; font-weight: 650; }
-.sino-brain-context footer span { color: var(--text-muted); font-size: 11px; }
+.sino-brain-context footer span { color: var(--text-muted); font-size: 12px; }
 .sino-brain-context__status dd { color: #e5ece5; font-family: var(--font-sans); font-weight: 650; letter-spacing: .025em; }
 .sino-brain-context h3, .sino-brain-context p { color: #dce5dc; }
 .sino-brain-context dt { color: #98a398; }
@@ -1006,3 +1006,102 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-lifecycle-overview > div button span { color: var(--accent); }
 .sino-lifecycle-overview > div button small { color: var(--text-muted); }
 @media (max-width: 900px) { .sino-lifecycle-center { padding: 20px 16px; } .sino-lifecycle-grid { grid-template-columns: 1fr; } .sino-asset-detail { border-left: 0; border-top: 1px solid var(--line); padding: 18px 0; } }
+
+/* Founder Visual Readability Pass V1 — shared semantic contrast for all five primary pages. */
+.sino-app :is(h1, h2, h3, h4, strong) { color: var(--text-primary); }
+.sino-app :is(p, li, dd) { color: var(--text-secondary); }
+.sino-app :is(dt, label, .sino-kicker) { color: var(--text-label); }
+.sino-app :is(small, time) { color: var(--text-muted); }
+.sino-app :is(button, input, textarea, select):disabled { opacity: 1; color: var(--text-disabled); border-color: var(--border-default); background-color: color-mix(in srgb, var(--surface-raised) 72%, var(--surface-base)); cursor: not-allowed; }
+
+/* Top-level navigation and filters remain legible before selection. */
+.sino-capability-nav button,
+.sino-lifecycle-center > nav button { position: relative; color: var(--text-secondary); }
+.sino-capability-nav button:hover,
+.sino-lifecycle-center > nav button:hover { color: var(--text-primary); }
+.sino-capability-nav button.is-active,
+.sino-lifecycle-center > nav button.is-active { color: var(--accent); }
+.sino-capability-nav button.is-active::after { content: ""; position: absolute; right: 0; bottom: -10px; left: 0; height: 2px; background: var(--accent); }
+
+/* Founder home and cross-stage Brain context. */
+.sino-home h1 { color: var(--text-primary); }
+.sino-home__intro,
+.sino-composer textarea::placeholder { color: var(--text-muted); }
+.sino-quick-create button { border-color: var(--border-default); color: var(--text-secondary); }
+.sino-quick-create button:hover { border-color: var(--border-strong); background: var(--surface-raised); color: var(--text-primary); }
+.sino-brain-context,
+.sino-context-summary { color: var(--text-primary); }
+.sino-brain-context :is(dt, footer span),
+.sino-context-summary :is(small) { color: var(--text-label); }
+.sino-brain-context :is(dd, p),
+.sino-context-summary p { color: var(--text-secondary); }
+
+/* Sidebar keeps every real project and conversation readable without hover. */
+.sino-sidebar .sino-sidebar-primary-title,
+.sino-sidebar-section__toggle { color: var(--text-label); }
+.sino-sidebar-primary-title svg { stroke: var(--text-muted); }
+.sino-sidebar-section__toggle i,
+.sino-conversation-group__toggle i { color: var(--text-muted); }
+.sino-conversation-group__toggle { color: var(--text-label); }
+.sino-project-list button,
+.sino-conversation-group button { color: var(--text-secondary); }
+.sino-project-list button > i,
+.sino-conversation-group button span { color: var(--text-muted); }
+.sino-project-list button:hover,
+.sino-project-list button.is-active,
+.sino-conversation-item:hover,
+.sino-conversation-item.is-active { background: var(--surface-selected); color: var(--text-primary); }
+.sino-sidebar footer { color: var(--text-muted); }
+.sino-sidebar footer small { color: var(--text-disabled); }
+
+/* Shared list hierarchy: Type / Name / Purpose / Metadata. */
+.sino-asset-list > button { border-left-color: transparent; background: transparent; color: var(--text-primary); }
+.sino-asset-list > button > span { color: var(--text-label); }
+.sino-asset-list > button > strong { color: var(--text-primary); }
+.sino-primary-center .sino-asset-list > button p,
+.sino-lifecycle-center .sino-asset-list > button p { color: var(--text-secondary); }
+.sino-asset-list > button > small { color: var(--text-muted); }
+.sino-asset-list > button:hover { background: var(--surface-raised); border-left-color: var(--border-strong); }
+.sino-asset-list > button.is-active { background: var(--surface-selected); border-left-color: var(--accent); }
+.sino-asset-list > button.is-active :is(strong, p) { color: var(--text-primary); }
+
+/* Shared Inspector identity, field hierarchy and actions. */
+.sino-asset-detail { border-color: var(--border-default); color: var(--text-primary); }
+.sino-asset-detail h2 { color: var(--text-primary); }
+.sino-asset-detail > p { color: var(--text-secondary); }
+.sino-asset-detail dl div { border-color: var(--border-default); }
+.sino-asset-detail dt { color: var(--text-label); font-weight: var(--weight-semibold); letter-spacing: .035em; text-transform: uppercase; }
+.sino-asset-detail dd { color: var(--text-secondary); font-family: var(--font-sans); font-size: var(--font-body-small); }
+.sino-lifecycle-center > header p { color: var(--text-secondary); }
+.sino-lifecycle-center > header button,
+.sino-lifecycle-actions button,
+.sino-inline-action { border-color: var(--border-strong); background: transparent; color: var(--text-primary); }
+.sino-lifecycle-center > header button:hover,
+.sino-lifecycle-actions button:hover:not(:disabled),
+.sino-inline-action:hover { background: var(--surface-selected); border-color: var(--accent); }
+.sino-lifecycle-actions button.is-primary { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+
+/* System structure: present and missing are distinct without hiding either. */
+.sino-system-structure__list > section { border-left-color: var(--border-default); background: var(--surface-raised); }
+.sino-system-structure__list > section[data-present="true"] { border-left-color: var(--accent); }
+.sino-system-structure__list section > header strong { color: var(--text-primary); }
+.sino-system-structure__list section > header small { color: var(--text-muted); }
+.sino-system-structure__list section > header span { color: var(--text-disabled); }
+.sino-system-structure__list section[data-present="true"] > header span { color: var(--accent); }
+.sino-system-structure__list section > button { border-color: var(--border-default); color: var(--text-secondary); }
+.sino-system-structure__list section > button strong { color: var(--text-primary); }
+.sino-system-structure__list section > button small { color: var(--text-muted); }
+
+/* Execution and developer content: legacy is subordinate, never invisible. */
+.sino-legacy-executions { border-color: var(--border-default); }
+.sino-legacy-executions summary,
+.sino-developer-details { color: var(--text-muted); }
+.sino-legacy-executions > button { color: var(--text-secondary); }
+.sino-legacy-executions > button strong,
+.sino-developer-details[open] :is(summary, p) { color: var(--text-secondary); }
+.sino-business-empty,
+.sino-inspector-empty { color: var(--text-muted); }
+.sino-business-empty strong,
+.sino-inspector-empty h2 { color: var(--text-primary); }
+.sino-business-empty p,
+.sino-inspector-empty p { color: var(--text-secondary); }
