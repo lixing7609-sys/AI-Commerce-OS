@@ -6,6 +6,7 @@ execute code or mutate formal Founder Objects.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -128,7 +129,7 @@ class SinoBrainRuntime:
         disagreements = list(run.get("disagreements") or [])
         conflicts = [{"conflict_id": _id("conflict"), "summary": text, "classification": self._classify_disagreement(text), "source_refs": [item.get("model_run_id") for item in model_runs]} for text in disagreements]
         validations = [{"validation_id": _id("validation"), "conflict_id": item["conflict_id"], "criteria": ["goal_fit", "completeness", "feasibility", "maintainability", "cost", "time", "risk", "architecture_compatibility"], "scorecard": {"goal_fit": 4, "completeness": 4, "feasibility": 4, "maintainability": 4, "cost": 3, "time": 3, "risk": 3, "architecture_compatibility": 4}, "result": "以 Goal Brief 适配性和可执行性优先；不采用模型票数作为结论。", "status": "completed"} for item in conflicts if item["classification"] == "true_conflict"]
-        recommendation = run.get("recommendation") or "先完成最小可验证闭环，再扩展完整能力体系。"
+        recommendation = self._normalize_recommendation(run.get("recommendation") or "先完成最小可验证闭环，再扩展完整能力体系。")
         confidence = 0.82 if model_runs else 0.45
         decision = {
             "decision_id": _id("decision"), "final_recommendation": recommendation,
@@ -230,6 +231,12 @@ class SinoBrainRuntime:
         if any(term in text for term in ("先", "后", "阶段")):
             return "stage_difference"
         return "true_conflict"
+
+    @staticmethod
+    def _normalize_recommendation(text: str) -> str:
+        """Keep model attribution in evidence, not in the Founder-facing Decision."""
+        cleaned = re.sub(r"^采纳(?:GPT|Claude|Gemini|DeepSeek|[^，,]{1,24}模型)[^，,]*[，,]\s*", "", str(text).strip(), flags=re.IGNORECASE)
+        return cleaned or str(text).strip()
 
     @staticmethod
     def _counts(objects):

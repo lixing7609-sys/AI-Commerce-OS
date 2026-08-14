@@ -45,3 +45,7 @@ def test_goal_brief_confirmation_and_package_are_persistent(monkeypatch):
     assert final["discussion_package"]["status"] == "pending_review"
     assert {item["object_type"] for item in final["discussion_package"]["objects"]} >= {"decision", "project", "workflow", "knowledge"}
     assert runtime.review_package(conversation_id, "approve")["stage"] == "package_approved"
+
+
+def test_decision_removes_model_attribution_from_primary_recommendation():
+    assert module.SinoBrainRuntime._normalize_recommendation("采纳GPT的反方建议，缩小第一阶段范围") == "缩小第一阶段范围"
