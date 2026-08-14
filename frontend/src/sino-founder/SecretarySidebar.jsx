@@ -29,7 +29,7 @@ function restoredHistoryGroups() {
 function ConversationGroup({ id, label, items, expanded, onToggle, activeConversationId, onSelectConversation, onDeleteConversation }) {
   return <section className="sino-conversation-group">
     <button type="button" className="sino-conversation-group__toggle" aria-expanded={expanded} aria-controls={`history-${id}`} onClick={onToggle}><strong>{label}</strong><i>{expanded ? "⌄" : "›"}</i></button>
-    {expanded && <div id={`history-${id}`} className="sino-conversation-group__items">{items.map((item) => <div key={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b></button><button type="button" className="sino-conversation-item__menu" aria-label="会话操作" title="删除会话" onClick={() => onDeleteConversation(item)}>···</button></div>)}</div>}
+    {expanded && <div id={`history-${id}`} className="sino-conversation-group__items">{items.map((item) => <div key={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b>{item.state === "completed" ? <small>完成</small> : null}</button><button type="button" className="sino-conversation-item__menu" aria-label="会话操作" title="删除会话" onClick={() => onDeleteConversation(item)}>···</button></div>)}</div>}
   </section>;
 }
 

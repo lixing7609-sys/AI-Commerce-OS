@@ -4,7 +4,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
 from app.core.conversation.model import ConversationDB
+from app.core.decision.model import DecisionAssetDB
+from app.core.memory.model import MemoryAssetDB
+from app.core.project.model import FounderProjectDB
 from core.conversation_first.model import ConversationMessageDB
+from core.founder_object.model import FounderObjectDB
 from app.founder_ai import brain_runtime as module
 
 
@@ -135,7 +139,20 @@ def test_goal_brief_package_lifecycle(monkeypatch):
     assert runtime.advance_stage(conversation_id, "validation")["stage"] == "conflict_validation"
     assert runtime.advance_stage(conversation_id, "decision")["stage"] == "decision_ready"
     assert runtime.advance_stage(conversation_id, "package")["stage"] == "package_ready"
-    assert runtime.review_package(conversation_id, "approve")["stage"] == "package_approved"
+    committed = runtime.review_package(conversation_id, "approve")
+    assert committed["stage"] == "conversation_completed"
+    assert committed["discussion_package"]["status"] == "archived"
+    assert committed["discussion_package"]["asset_commit"]["status"] == "committed"
+    assert len(committed["discussion_package"]["asset_commit"]["items"]) == 4
+    assert committed["current_action"]["action_id"] == "assets_committed"
+    with module.SessionLocal() as session:
+        assert session.get(ConversationDB, conversation_id).conversation_state == "completed"
+        assert session.query(DecisionAssetDB).filter_by(conversation_id=conversation_id, status="committed").count() == 1
+        assert session.query(FounderProjectDB).filter_by(status="committed").count() == 1
+        assert session.query(FounderObjectDB).filter_by(status="committed").count() == 1
+        assert session.query(MemoryAssetDB).filter_by(conversation_id=conversation_id, status="committed").count() == 1
+    repeated = runtime.review_package(conversation_id, "approve")
+    assert repeated["discussion_package"]["asset_commit"]["commit_id"] == committed["discussion_package"]["asset_commit"]["commit_id"]
 
 
 def test_stage_workspace_projection_persists_lifecycle_and_message_isolation(monkeypatch):
@@ -149,7 +166,7 @@ def test_stage_workspace_projection_persists_lifecycle_and_message_isolation(mon
         session.commit()
     review = runtime.snapshot(conversation_id)
     assert review["active_workspace_stage"] == "goal"
-    assert [item["status"] for item in review["stage_workspaces"]] == ["active", "locked", "locked", "locked", "locked"]
+    assert [item["status"] for item in review["stage_workspaces"]] == ["active", "locked", "locked", "locked", "locked", "locked"]
     assert review["stage_workspaces"][0]["message_refs"] == ["message-goal"]
     assert review["stage_workspaces"][1]["message_refs"] == ["message-strategy"]
 
@@ -157,7 +174,7 @@ def test_stage_workspace_projection_persists_lifecycle_and_message_isolation(mon
     runtime.prepare_strategy_prompt(conversation_id)
     strategy = runtime.snapshot(conversation_id)
     assert strategy["active_workspace_stage"] == "strategy"
-    assert [item["status"] for item in strategy["stage_workspaces"]] == ["completed", "active", "locked", "locked", "locked"]
+    assert [item["status"] for item in strategy["stage_workspaces"]] == ["completed", "active", "locked", "locked", "locked", "locked"]
 
 
 def test_finalized_council_exposes_completed_stages_and_active_package(monkeypatch):
@@ -171,7 +188,7 @@ def test_finalized_council_exposes_completed_stages_and_active_package(monkeypat
     runtime.advance_stage(conversation_id, "package")
     package = runtime.snapshot(conversation_id)
     assert package["active_workspace_stage"] == "package"
-    assert [item["status"] for item in package["stage_workspaces"]] == ["completed", "completed", "completed", "completed", "active"]
+    assert [item["status"] for item in package["stage_workspaces"]] == ["completed", "completed", "completed", "completed", "active", "locked"]
 
 
 def test_decision_removes_model_attribution_from_primary_recommendation():

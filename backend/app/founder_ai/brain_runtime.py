@@ -17,19 +17,22 @@ from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
 from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
+from app.core.project.model import FounderProjectDB
 from app.database.db import SessionLocal
 from app.llm.gateway import llm_gateway
 from app.llm.models import LLMRequest
+from core.founder_object.model import FounderObjectDB, FounderObjectRevisionDB
 
 
 STAGES = (
     "goal_discovery", "goal_review", "goal_confirmed", "strategy_meeting",
     "conflict_validation", "decision_ready", "package_ready", "package_approved",
+    "asset_commit", "conversation_completed",
 )
-WORKSPACE_STAGES = ("goal", "strategy", "validation", "decision", "package")
+WORKSPACE_STAGES = ("goal", "strategy", "validation", "decision", "package", "asset_commit")
 STAGE_LABELS = {
     "goal": "Goal Understanding", "strategy": "Strategy Meeting", "validation": "Validation",
-    "decision": "Decision", "package": "Discussion Package",
+    "decision": "Decision", "package": "Discussion Package", "asset_commit": "Asset Commit",
 }
 
 
@@ -290,13 +293,144 @@ class SinoBrainRuntime:
             package = dict(state.discussion_package or {})
             if not package:
                 raise ValueError("Discussion Package 不存在")
-            package["status"] = "approved" if action == "approve" else "returned" if action == "return" else "pending_review"
-            package["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+            if action == "approve":
+                # Asset Commit is idempotent: an already committed package returns
+                # its durable receipt without creating duplicate assets.
+                if (package.get("asset_commit") or {}).get("status") != "committed":
+                    now = datetime.now(timezone.utc)
+                    package["status"] = "approved"
+                    package["reviewed_at"] = now.isoformat()
+                    package.setdefault("lifecycle", []).append({"status": "approved", "at": now.isoformat()})
+                    state.stage = "package_approved"
+                    package = self._commit_package_assets(session, state, package)
+                state.stage = "conversation_completed"
+            else:
+                package["status"] = "returned" if action == "return" else "pending_review"
+                package["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+                package.setdefault("lifecycle", []).append({"status": package["status"], "at": package["reviewed_at"]})
+                state.stage = "strategy_meeting"
             state.discussion_package = package
-            state.stage = "package_approved" if action == "approve" else "strategy_meeting"
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
             return self._serialize(state)
+
+    @staticmethod
+    def _commit_package_assets(session, state, package: dict[str, Any]) -> dict[str, Any]:
+        """Commit one approved package into existing Founder asset stores."""
+        now = datetime.now(timezone.utc)
+        conversation = session.get(ConversationDB, state.conversation_id)
+        source_refs = list(state.source_message_refs or [])
+        committed = []
+        asset_ids_by_name = {}
+
+        for item in list(package.get("objects") or []):
+            item = dict(item)
+            object_type = str(item.get("object_type") or "knowledge").lower()
+            name = str(item.get("name") or package.get("title") or "未命名资产").strip()
+            purpose = str(item.get("purpose") or item.get("reason") or "").strip()
+            asset_id = None
+            destination = "AI 能力中心"
+
+            if object_type == "decision":
+                destination = "资产与记忆"
+                record = DecisionAssetDB(
+                    system_id="founder_ai", conversation_id=state.conversation_id,
+                    title=name, decision=purpose or str((package.get("decision") or {}).get("final_recommendation") or name),
+                    reason=str(item.get("reason") or ""), impact="Discussion Package Asset Commit",
+                    source_message_ids=source_refs, confirmed=True, status="committed",
+                )
+                session.add(record); session.flush(); asset_id = record.id
+            elif object_type == "project":
+                destination = "Project Center"
+                record = session.scalar(select(FounderProjectDB).where(
+                    FounderProjectDB.system_id == "founder_ai", FounderProjectDB.name == name,
+                ))
+                if record is None:
+                    record = FounderProjectDB(system_id="founder_ai", name=name, description=purpose, status="committed")
+                    session.add(record); session.flush()
+                else:
+                    record.status = "committed"
+                    record.description = purpose or record.description
+                    record.updated_at = now
+                asset_id = record.id
+            elif object_type == "knowledge":
+                destination = "资产与记忆"
+                record = MemoryAssetDB(
+                    system_id="founder_ai", conversation_id=state.conversation_id,
+                    memory_type="knowledge", title=name,
+                    content=json.dumps({"purpose": purpose, "reason": item.get("reason"), "source": item.get("source")}, ensure_ascii=False),
+                    summary=purpose, confidence=float(item.get("confidence") or 0),
+                    source_message_ids=source_refs, status="committed",
+                    tags=["discussion_package", package.get("package_id")],
+                )
+                session.add(record); session.flush(); asset_id = record.id
+            else:
+                normalized = re.sub(r"[\s\-_·]+", "", name).lower()
+                record = session.scalar(select(FounderObjectDB).where(
+                    FounderObjectDB.object_type == object_type,
+                    FounderObjectDB.normalized_name == normalized,
+                    FounderObjectDB.scope_key == "founder_ai",
+                ))
+                if record is None:
+                    record = FounderObjectDB(
+                        object_type=object_type, name=name, normalized_name=normalized,
+                        description=purpose, status="committed", scope_key="founder_ai",
+                        source_conversation_id=state.conversation_id,
+                        source_message_refs=source_refs,
+                    )
+                    session.add(record); session.flush()
+                    session.add(FounderObjectRevisionDB(
+                        object_id=record.id, version=1, name=name, description=purpose,
+                        status="committed", source_conversation_id=state.conversation_id,
+                        source_message_refs=source_refs,
+                        snapshot={"source_package_id": package.get("package_id"), "commit_status": "committed"},
+                    ))
+                else:
+                    if record.status != "committed":
+                        record.version += 1
+                        record.description = purpose or record.description
+                        session.add(FounderObjectRevisionDB(
+                            object_id=record.id, version=record.version, name=record.name,
+                            description=record.description, status="committed",
+                            source_conversation_id=state.conversation_id,
+                            source_message_refs=source_refs,
+                            snapshot={"source_package_id": package.get("package_id"), "commit_status": "committed"},
+                        ))
+                    record.status = "committed"
+                    record.updated_at = now
+                asset_id = record.id
+
+            asset_ids_by_name[name] = asset_id
+            item.update({
+                "asset_id": asset_id, "commit_status": "committed",
+                "destination": destination, "committed_at": now.isoformat(),
+                "lifecycle": ["draft", "approved", "committed"],
+            })
+            committed.append(item)
+
+        package["objects"] = committed
+        package["status"] = "archived"
+        package["committed_at"] = now.isoformat()
+        package["asset_commit"] = {
+            "commit_id": _id("asset-commit"), "status": "committed",
+            "conversation_id": state.conversation_id,
+            "package_id": package.get("package_id"), "items": committed,
+            "asset_ids": list(asset_ids_by_name.values()), "committed_at": now.isoformat(),
+        }
+        package.setdefault("lifecycle", []).extend([
+            {"status": "asset_commit", "at": now.isoformat()},
+            {"status": "committed", "at": now.isoformat()},
+            {"status": "archived", "at": now.isoformat()},
+        ])
+        if conversation is not None:
+            conversation.conversation_state = "completed"
+            conversation.updated_at = now
+        session.add(ConversationMessageDB(
+            conversation_id=state.conversation_id, role="assistant", message_type="asset_commit",
+            content=f"Asset Commit 已完成：{len(committed)} 项资产已进入 AI Commerce OS。",
+            grounding={"package_id": package.get("package_id"), "asset_commit_id": package["asset_commit"]["commit_id"]},
+        ))
+        return package
 
     @staticmethod
     def _build_understanding_context(session, conversation, state, current_input, turns):
@@ -477,7 +611,7 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             "source_message_refs": list(record.source_message_refs or []), "created_at": _iso(record.created_at), "updated_at": _iso(record.updated_at),
         }
         payload["stage_workspaces"] = SinoBrainRuntime._stage_workspaces(payload)
-        payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] == "active"), "package")
+        payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] == "active"), "asset_commit" if record.stage == "conversation_completed" else "package")
         payload["current_action"] = SinoBrainRuntime._current_action(payload)
         return payload
 
@@ -497,7 +631,9 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         if stage == "package_ready":
             return {"action_id": "approve_package", "title": "等待 Founder 批准成果包", "description": "批准后，本轮 Decision 与资产结构正式生效。", "primary_label": "批准成果包", "secondary_label": "继续讨论", "danger_label": "退回修改"}
         if stage == "package_approved":
-            return {"action_id": "package_approved", "title": "成果包已批准", "description": "本轮 Founder 审批已完成。", "primary_label": "已完成"}
+            return {"action_id": "asset_commit", "title": "正在提交资产", "description": "正在把成果包写入正式资产仓库。", "primary_label": "提交中"}
+        if stage in {"asset_commit", "conversation_completed"}:
+            return {"action_id": "assets_committed", "title": "资产提交完成", "description": "成果包中的正式资产已进入 AI Commerce OS。", "primary_label": "查看资产", "secondary_label": "开始新目标"}
         return {"action_id": "continue_goal", "title": "继续理解目标", "description": "回答 Sino 当前最关键的问题。", "primary_label": "继续"}
 
     @staticmethod
@@ -507,7 +643,8 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             "goal" if internal in {"goal_discovery", "goal_review"} else
             "strategy" if internal in {"goal_confirmed", "strategy_meeting"} else
             "validation" if internal == "conflict_validation" else
-            "decision" if internal == "decision_ready" else "package"
+            "decision" if internal == "decision_ready" else
+            "asset_commit" if internal in {"asset_commit", "conversation_completed"} else "package"
         )
         current_index = WORKSPACE_STAGES.index(current)
         summaries = {
@@ -516,11 +653,14 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             "validation": f"已记录 {len(brain.get('conflicts') or [])} 个冲突与 {len(brain.get('validations') or [])} 个验证结果",
             "decision": (brain.get("decision") or {}).get("final_recommendation") or "等待形成唯一推荐方案",
             "package": (brain.get("discussion_package") or {}).get("title") or "等待形成 Discussion Package",
+            "asset_commit": f"已提交 {len(((brain.get('discussion_package') or {}).get('asset_commit') or {}).get('items') or [])} 项资产",
         }
         result = []
         for index, key in enumerate(WORKSPACE_STAGES):
             status = "completed" if index < current_index else "active" if index == current_index else "locked"
             if internal == "package_approved" and key == "package":
+                status = "completed"
+            if internal == "conversation_completed" and key == "asset_commit":
                 status = "completed"
             result.append({
                 "stage_id": f"{brain.get('brain_id')}:{key}", "stage_key": key, "label": STAGE_LABELS[key],
@@ -544,6 +684,8 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             return "decision"
         if message_type == "discussion_package":
             return "package"
+        if message_type == "asset_commit":
+            return "asset_commit"
         return fallback if fallback in WORKSPACE_STAGES else "goal"
 
 

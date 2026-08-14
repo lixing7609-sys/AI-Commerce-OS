@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { GlobalSecretaryComposer } from "./GlobalSecretaryComposer.jsx";
 import { FounderActionCard } from "./FounderActionCard.jsx";
+import { AssetCommitWorkspace } from "./AssetCommitWorkspace.jsx";
 import { founderConversationTitle } from "./founderConversationTitle.js";
 import { objectTypeLabel, statusLabel } from "./founderTerminology.js";
 
@@ -145,7 +146,7 @@ function GoalBriefConfirmationCard({ brain, busy, onConfirm, onRevise }) {
 
 const FALLBACK_STAGES = [
   ["goal", "Goal Understanding"], ["strategy", "Strategy Meeting"], ["validation", "Validation"],
-  ["decision", "Decision"], ["package", "Discussion Package"],
+  ["decision", "Decision"], ["package", "Discussion Package"], ["asset_commit", "Asset Commit"],
 ].map(([stage_key, label], index) => ({ stage_id: stage_key, stage_key, label, status: index ? "locked" : "active", summary: "", message_refs: [] }));
 
 function StageNavigator({ stages, activeStage, onSelect }) {
@@ -159,12 +160,12 @@ function StageSummary({ stage, brain, currentStage, onSelect }) {
   if (!stage) return null;
   if (stage.stage_key === "validation" && brain?.validations?.length) return <section className="sino-stage-structured"><h2>Validation</h2>{brain.validations.map((item) => <article key={item.validation_id}><strong>{item.result}</strong><p>{item.criteria?.join(" · ")}</p></article>)}</section>;
   if (stage.stage_key === "decision" && brain?.decision?.final_recommendation) return <section className="sino-stage-structured"><h2>Decision</h2><article><strong>{brain.decision.final_recommendation}</strong><p>Confidence {Math.round((brain.decision.confidence || 0) * 100)}%</p></article></section>;
-  if (stage.stage_key === "package" && brain?.discussion_package?.package_id) return <section className="sino-stage-structured"><h2>Discussion Package</h2><article><strong>{brain.discussion_package.title}</strong><p>{brain.discussion_package.status === "approved" ? "已批准" : "等待 Founder 审批"}</p></article></section>;
+  if (stage.stage_key === "package" && brain?.discussion_package?.package_id) return <section className="sino-stage-structured"><h2>Discussion Package</h2><article><strong>{brain.discussion_package.title}</strong><p>{brain.discussion_package.status === "archived" ? "已提交并归档" : brain.discussion_package.status === "approved" ? "已批准" : "等待 Founder 审批"}</p></article></section>;
   if (stage.status === "completed") return <section className="sino-stage-completion"><span>{stage.label} Completed</span><p>{stage.summary}</p>{stage.stage_key !== currentStage ? <button type="button" onClick={() => onSelect(currentStage)}>{stage.stage_key === "goal" && currentStage === "strategy" ? "进入 Strategy" : "返回当前阶段"}</button> : null}</section>;
   return null;
 }
 
-export function ConversationThread({ snapshot, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onContinueDiscussion }) {
+export function ConversationThread({ snapshot, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onContinueDiscussion, onViewAssets, onNewGoal }) {
   const logRef = useRef(null);
   const conversationRef = useRef(null);
   const scrollAfterSendRef = useRef(false);
@@ -204,7 +205,7 @@ export function ConversationThread({ snapshot, message, onMessage, onSend, busy,
   return <section className="sino-conversation-thread" aria-label="Conversation">
     <header className="sino-conversation-header"><div><h1>{founderConversationTitle(snapshot?.conversation?.title, snapshot?.sino_brain?.goal_brief?.goal)}</h1><p>{selectedStage?.label || activeStage}</p></div><dl><div><dt>Status</dt><dd>{snapshot?.sino_brain?.current_action?.title || "讨论中"}</dd></div><div><dt>Confidence</dt><dd>{snapshot?.sino_brain?.decision?.confidence ? `${Math.round(snapshot.sino_brain.decision.confidence * 100)}%` : "—"}</dd></div></dl></header>
     <StageNavigator stages={stages} activeStage={activeStage} onSelect={selectStage} />
-    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" data-stage-workspace={selectedStage?.label || activeStage} tabIndex={0}><div className="sino-conversation-reading-column">{activeStage === currentStage ? <FounderActionCard action={snapshot?.sino_brain?.current_action} busy={busy} onConfirmGoal={onConfirmGoal} onReviseGoal={onReviseGoal} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} /> : null}{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}{activeStage === "goal" && !snapshot?.sino_brain?.current_action ? <GoalBriefConfirmationCard brain={snapshot?.sino_brain} busy={busy} onConfirm={onConfirmGoal} onRevise={onReviseGoal} /> : null}<StageSummary stage={selectedStage} brain={snapshot?.sino_brain} currentStage={currentStage} onSelect={selectStage} />{visibleMessages.length ? visibleMessages.map((item) => {
+    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" data-stage-workspace={selectedStage?.label || activeStage} tabIndex={0}><div className="sino-conversation-reading-column">{activeStage === currentStage ? <FounderActionCard action={snapshot?.sino_brain?.current_action} busy={busy} onConfirmGoal={onConfirmGoal} onReviseGoal={onReviseGoal} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} /> : null}{activeStage === "asset_commit" ? <AssetCommitWorkspace commit={snapshot?.sino_brain?.discussion_package?.asset_commit} onViewAssets={onViewAssets} onReturnDiscussion={() => selectStage("package")} onNewGoal={onNewGoal} /> : null}{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}{activeStage === "goal" && !snapshot?.sino_brain?.current_action ? <GoalBriefConfirmationCard brain={snapshot?.sino_brain} busy={busy} onConfirm={onConfirmGoal} onRevise={onReviseGoal} /> : null}<StageSummary stage={selectedStage} brain={snapshot?.sino_brain} currentStage={currentStage} onSelect={selectStage} />{visibleMessages.length ? visibleMessages.map((item) => {
       if (item.role === "assistant" && ["council", "auto_deliberation"].includes(item.message_type)) return null;
       if (item.role === "assistant" && ["goal_brief", "decision", "discussion_package"].includes(item.message_type)) return null;
       const run = (!hasStageProjection || activeStage === "strategy") && item.role === "founder" && ["council", "auto_deliberation"].includes(item.message_type) ? latestRuns.get(item.content) : null;

@@ -85,3 +85,14 @@ def test_stage_action_api_advances_and_returns_fresh_workspace(monkeypatch):
     result = api.advance_brain_stage("conversation-1", api.BrainReviewIn(action="validation"))
     assert calls == [("conversation-1", "validation")]
     assert result["conversation"]["id"] == "conversation-1"
+
+
+def test_package_approval_api_runs_asset_commit_and_returns_completed_workspace(monkeypatch):
+    calls = []
+    monkeypatch.setattr(api.brain_runtime, "review_package", lambda cid, action: calls.append((cid, action)))
+    monkeypatch.setattr(api.council_service, "snapshot", lambda cid: {"conversation": {"id": cid, "state": "completed"}})
+    monkeypatch.setattr(api, "_candidate_snapshot", lambda snapshot, _cid: {**snapshot, "sino_brain": {"stage": "conversation_completed", "current_action": {"action_id": "assets_committed"}}})
+    result = api.review_brain_package("conversation-1", api.BrainReviewIn(action="approve"))
+    assert calls == [("conversation-1", "approve")]
+    assert result["conversation"]["state"] == "completed"
+    assert result["sino_brain"]["current_action"]["action_id"] == "assets_committed"

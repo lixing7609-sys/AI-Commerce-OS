@@ -5,6 +5,7 @@ const STAGE_LABELS = {
   goal_confirmed: "目标已确认", strategy_meeting: "Strategy Meeting · 策略会议",
   conflict_validation: "Validation · 验证", decision_ready: "Decision · 决策",
   package_ready: "Discussion Package · 成果包", package_approved: "成果包已批准",
+  asset_commit: "Asset Commit · 资产提交", conversation_completed: "Completed · 已完成",
 };
 const TYPE_LABELS = { project: "Project（项目）", workflow: "Workflow（工作流）", skill: "Skill（技能）", prompt: "Prompt（提示词）", knowledge: "Knowledge（知识）", capability: "Capability（能力）", agent: "Agent（智能体）", connector: "Connector（连接器）", decision: "Decision（决策）", open_question: "Open Question（待确认问题）" };
 const READINESS_LABELS = { unclear: "目标待理解", discovering: "目标理解中", reviewable: "等待确认", confirmed: "目标已确认" };
@@ -13,17 +14,17 @@ const ACTION_LABELS = { create: "Create（新建）", update: "Update（更新�
 function PackageOverview({ pkg }) {
   if (!pkg?.package_id) return null;
   return <section className="sino-package-overview" aria-label="成果包资产总览">
-    <header><div><span>Discussion Package</span><h3>{pkg.title}</h3></div><strong>{pkg.status === "approved" ? "已批准" : pkg.status === "returned" ? "已退回" : "待 Founder 审批"}</strong></header>
+    <header><div><span>Discussion Package</span><h3>{pkg.title}</h3></div><strong>{pkg.status === "archived" ? "已提交并归档" : pkg.status === "approved" ? "已批准" : pkg.status === "returned" ? "已退回" : "待 Founder 审批"}</strong></header>
     <div className="sino-package-overview__counts">{Object.entries(pkg.counts || {}).map(([type, count]) => <span key={type}>{TYPE_LABELS[type] || type} ×{count}</span>)}</div>
-    <div className="sino-package-assets">{pkg.objects?.map((item) => <article key={item.discussion_object_id}>
-      <header><span>{TYPE_LABELS[item.object_type] || item.object_type}</span><b>{ACTION_LABELS[item.action] || item.action}</b></header>
-      <strong>{item.name}</strong><p>{item.purpose}</p>
-      <dl><div><dt>Confidence</dt><dd>{Math.round((item.confidence || 0) * 100)}%</dd></div><div><dt>Creator</dt><dd>Sino Brain</dd></div><div><dt>Dependency</dt><dd>{item.dependencies?.length ? item.dependencies.join(" · ") : "暂无"}</dd></div></dl>
-    </article>)}</div>
+    <div className="sino-package-assets">{pkg.objects?.map((item) => <details key={item.discussion_object_id}>
+      <summary><span>{TYPE_LABELS[item.object_type] || item.object_type}</span><strong>{item.name}</strong><b>{item.commit_status === "committed" ? "✓ Committed" : ACTION_LABELS[item.action] || item.action}</b></summary>
+      <p>{item.purpose}</p>
+      <dl><div><dt>Confidence</dt><dd>{Math.round((item.confidence || 0) * 100)}%</dd></div><div><dt>Creator</dt><dd>Sino Brain</dd></div><div><dt>Dependency</dt><dd>{item.dependencies?.length ? item.dependencies.join(" · ") : "暂无"}</dd></div>{item.asset_id ? <div><dt>Asset ID</dt><dd>{item.asset_id}</dd></div> : null}</dl>
+    </details>)}</div>
   </section>;
 }
 
-export function SinoBrainContext({ brain, busy, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage }) {
+export function SinoBrainContext({ brain, busy, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal }) {
   if (!brain) return null;
   const brief = brain.goal_brief || {};
   const decision = brain.decision || {};
@@ -32,7 +33,7 @@ export function SinoBrainContext({ brain, busy, onConfirmGoal, onForceReview, on
   const question = decision.remaining_unknowns?.[0] || brief.unknowns?.[0] || "暂无待确认问题";
   const action = brain.current_action || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "确认后开始 Strategy Meeting。", primary_label: "开始讨论", secondary_label: "修改目标" } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "批准后，本轮 Decision 与资产结构正式生效。", primary_label: "批准成果包", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
   return <section className="sino-brain-context sino-brain-dashboard" aria-label="Brain Dashboard">
-    <FounderActionCard compact action={action} busy={busy} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} />
+    <FounderActionCard compact action={action} busy={busy} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} />
     <header><h2>Brain Dashboard</h2><span>{STAGE_LABELS[brain.stage] || brain.stage}</span></header>
     <dl className="sino-brain-dashboard__grid">
       <div><dt>Current Stage</dt><dd>{STAGE_LABELS[brain.stage] || brain.stage}</dd></div>
@@ -47,6 +48,7 @@ export function SinoBrainContext({ brain, busy, onConfirmGoal, onForceReview, on
     {brain.stage === "goal_discovery" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onForceReview}>目标已经够清楚，开始讨论</button> : null}
     {brain.stage === "goal_confirmed" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onStartStrategy}>开始策略会议</button> : null}
     <PackageOverview pkg={brain.discussion_package} />
-    {brain.strategy_proposals?.length ? <details className="sino-brain-evidence"><summary>Developer Timeline · 查看讨论依据</summary>{brain.strategy_proposals.map((item) => <article key={item.model_run_id || `${item.provider}-${item.model}`}><strong>{item.model} · {item.provider}</strong><p>{item.proposal?.core_judgment || item.proposal?.recommendation || "已记录结构化提案"}</p></article>)}</details> : null}
+    {brain.discussion_package?.asset_commit ? <section className="sino-asset-commit-dashboard" aria-label="Asset Commit Status"><h3>Asset Commit Status</h3>{brain.discussion_package.asset_commit.items?.map((item) => <div key={item.asset_id}><span>{TYPE_LABELS[item.object_type] || item.object_type}</span><strong>{item.name}</strong><b>Committed</b></div>)}</section> : null}
+    {brain.strategy_proposals?.length || brain.discussion_package?.lifecycle?.length ? <details className="sino-brain-evidence"><summary>Developer Timeline · 查看讨论依据</summary>{brain.strategy_proposals?.map((item) => <article key={item.model_run_id || `${item.provider}-${item.model}`}><strong>{item.model} · {item.provider}</strong><p>{item.proposal?.core_judgment || item.proposal?.recommendation || "已记录结构化提案"}</p></article>)}{brain.discussion_package?.lifecycle?.map((item, index) => <article key={`${item.status}-${index}`}><strong>{item.status}</strong><p>{item.at}</p></article>)}</details> : null}
   </section>;
 }

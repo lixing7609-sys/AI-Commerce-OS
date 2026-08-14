@@ -19,7 +19,7 @@ STRATEGIC_ASSET_TYPES = {"strategy", "strategic_asset", "strategic_positioning",
 
 def list_projects() -> list[FounderProjectDB]:
     with SessionLocal() as session:
-        return list(session.scalars(select(FounderProjectDB).where(FounderProjectDB.system_id == FOUNDER_SYSTEM_KEY, FounderProjectDB.status == "active").order_by(FounderProjectDB.updated_at.desc())))
+        return list(session.scalars(select(FounderProjectDB).where(FounderProjectDB.system_id == FOUNDER_SYSTEM_KEY, FounderProjectDB.status.in_(["active", "committed"])).order_by(FounderProjectDB.updated_at.desc())))
 
 
 def create_project(*, name: str, description: str | None = None) -> FounderProjectDB:
@@ -31,7 +31,7 @@ def create_project(*, name: str, description: str | None = None) -> FounderProje
 
 def get_project(project_id: str) -> FounderProjectDB | None:
     with SessionLocal() as session:
-        return session.scalar(select(FounderProjectDB).where(FounderProjectDB.id == project_id, FounderProjectDB.system_id == FOUNDER_SYSTEM_KEY, FounderProjectDB.status == "active"))
+        return session.scalar(select(FounderProjectDB).where(FounderProjectDB.id == project_id, FounderProjectDB.system_id == FOUNDER_SYSTEM_KEY, FounderProjectDB.status.in_(["active", "committed"])))
 
 
 def _iso(value):
@@ -97,7 +97,7 @@ def get_project_intelligence(project_id: str) -> dict:
                 execution_refs.append({"execution_id": execution.id, "status": execution.status, "task_asset_id": execution.task_asset_id, "goal": package.goal, "execution_allowed": execution.execution_allowed, "updated_at": _iso(execution.completed_at or execution.started_at or execution.created_at)})
         project_summary = intelligence.project_summary if intelligence and intelligence.project_summary else (digests[0].summary if digests else project.description or "")
         prompt_delta = digests[0].prompt_delta if digests else {}
-        knowledge = [item for item in memories if item.memory_type == "knowledge" and item.status == "active"]
+        knowledge = [item for item in memories if item.memory_type == "knowledge" and item.status in {"active", "committed"}]
         active_goals = [item for item in goals if item.status not in {"completed", "archived", "cancelled"}]
         return {
             "project_id": project.id, "project_name": project.name, "project_summary": project_summary,
