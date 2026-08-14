@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const NAV = ["Founder", "AI 能力中心", "系统构建器", "执行中心", "资产与记忆"];
+const NAV = ["AI 能力中心", "系统构建器", "执行中心", "资产与记忆"];
 
 function luminance([red, green, blue]) {
   const values = [red, green, blue].map((value) => {
@@ -31,6 +31,7 @@ test("five Founder primary pages use readable semantic visual hierarchy", async 
   await readable(page.locator(".sino-project-list button").first());
 
   for (const label of NAV) await readable(page.getByRole("button", { name: label, exact: true }));
+  await expect(page.getByRole("button", { name: "Founder", exact: true })).toHaveCount(0);
 
   const tokens = await page.locator(".sino-app").evaluate((element) => {
     const style = getComputedStyle(element);
@@ -58,4 +59,7 @@ test("five Founder primary pages use readable semantic visual hierarchy", async 
 
   const disabled = page.locator("button:disabled").first();
   if (await disabled.count()) expect(await disabled.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
+
+  await page.getByTitle("Sino Founder AI 首页").click();
+  await expect(page.locator(".sino-home h1")).toBeVisible();
 });
