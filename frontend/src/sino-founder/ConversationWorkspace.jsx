@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, clearFounderObjectDiscussion, continueFounderCandidateDiscussion, continueFounderObjectDiscussion, getFounderObject, reviewFounderCandidate } from "../services/founderAiApi.js";
-import { advanceSinoBrainStage, approveCapabilityReady, approveFounderExecution, completeCapabilityDevelopment, confirmSinoBrainGoal, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, forceSinoBrainGoalReview, getConversationWorkspace, getFounderConversations, getFounderExecution, getFounderProjects, getLifecycleAsset, getLifecycleReuseSuggestions, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reuseLifecycleAsset, reviewSinoBrainPackage, runCapabilityTest, startCapabilityDevelopment, startLifecycleExecution, startSinoBrainStrategy, submitExecutionDelta } from "../services/founderAiApi.js";
+import { advanceSinoBrainStage, approveFounderExecution, confirmSinoBrainGoal, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, forceSinoBrainGoalReview, getConversationWorkspace, getFounderConversations, getFounderExecution, getFounderProjects, getLifecycleAsset, getLifecycleReuseSuggestions, getProjectIntelligence, performConversationCapabilityAction, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reviewSinoBrainPackage, startLifecycleExecution, startSinoBrainStrategy, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { AssetContext, AssetLifecycleCenter, ExecutionContext, LifecycleExecutionCenter } from "./AssetLifecycleCenter.jsx";
@@ -372,7 +372,8 @@ export function ConversationWorkspace() {
   }
 
   async function selectConversation(id) {
-    if (!id || id === conversationId) { setView("conversation"); return; }
+    if (!id) return;
+    if (id === conversationId && snapshot?.conversation?.id === id) { setView("conversation"); return; }
     setBusy(true); setError("");
     try {
       const restored = await getConversationWorkspace(id);
@@ -557,18 +558,22 @@ export function ConversationWorkspace() {
     setView("execution");
   }
 
-  const capabilityAction = activeCapabilityAsset ? activeCapabilityAsset.status === "developing" ? { action_id: "complete_development", asset_id: activeCapabilityAsset.asset_id, title: activeCapabilityAsset.name, description: "开发任务已经建立。完成实现后进入真实测试。", primary_label: "完成开发并进入测试", secondary_label: "查看能力仓库" } : activeCapabilityAsset.status === "testing" && activeCapabilityAsset.test_run_refs?.at?.(-1)?.status !== "passed" ? { action_id: "run_capability_test", asset_id: activeCapabilityAsset.asset_id, title: `${activeCapabilityAsset.name} · 测试中`, description: "运行商品资料到抖音带货分镜的结构化输出测试。", primary_label: "运行真实测试", secondary_label: "继续讨论" } : activeCapabilityAsset.status === "testing" ? { action_id: "approve_ready", asset_id: activeCapabilityAsset.asset_id, title: `${activeCapabilityAsset.name} · 测试通过`, description: "开发完成且真实测试通过。Founder 批准后才可被正式引用。", primary_label: "批准为可引用能力", secondary_label: "继续测试" } : activeCapabilityAsset.status === "ready" ? { action_id: "ready_complete", asset_id: activeCapabilityAsset.asset_id, title: `${activeCapabilityAsset.name} · Ready V${activeCapabilityAsset.version}`, description: "该能力已可被新的电商目标检索和引用。", primary_label: "查看能力仓库" } : null : null;
+  const capabilityAction = snapshot?.sino_brain?.current_action?.target_asset_id
+    ? snapshot.sino_brain.current_action
+    : null;
 
   async function handleCapabilityAction(action) {
     if (action.action_id === "ready_complete") { setSelectedCapabilityAsset(activeCapabilityAsset); setView("capability-center"); return; }
     setBusy(true); setError("");
     try {
-      let asset;
-      if (action.action_id === "candidates_saved") asset = await startCapabilityDevelopment(action.asset_id);
-      if (action.action_id === "complete_development") asset = await completeCapabilityDevelopment(action.asset_id);
-      if (action.action_id === "run_capability_test") { await runCapabilityTest(action.asset_id); asset = await getLifecycleAsset(action.asset_id); }
-      if (action.action_id === "approve_ready") asset = await approveCapabilityReady(action.asset_id);
+      const targetAssetId = action.target_asset_id || action.asset_id;
+      const actionId = action.action_id === "candidates_saved" ? "develop" : action.action_id;
+      const result = await performConversationCapabilityAction(conversationId || snapshot?.conversation?.id, { action: actionId, target_asset_id: targetAssetId });
+      const asset = result?.asset || result;
       if (asset) { setActiveCapabilityAsset(asset); setSelectedCapabilityAsset(asset); }
+      if (conversationId || snapshot?.conversation?.id) {
+        setSnapshot(await getConversationWorkspace(conversationId || snapshot.conversation.id));
+      }
     } catch (requestError) { setError(requestError.message); }
     finally { setBusy(false); }
   }
@@ -577,9 +582,16 @@ export function ConversationWorkspace() {
     if (!conversationId) return;
     setBusy(true); setError("");
     try {
-      await reuseLifecycleAsset(asset.asset_id, "conversation", conversationId, "Sino 在当前目标中发现并由 Founder 确认引用");
+      await performConversationCapabilityAction(conversationId, {
+        action: "reuse",
+        target_asset_id: asset.asset_id,
+        target_type: "conversation",
+        target_id: conversationId,
+        note: "Sino 在当前目标中发现并由 Founder 确认引用",
+      });
       setReuseSuggestions((items) => items.filter((item) => item.asset_id !== asset.asset_id));
       setSelectedCapabilityAsset(await getLifecycleAsset(asset.asset_id));
+      setSnapshot(await getConversationWorkspace(conversationId));
     } catch (requestError) { setError(requestError.message); }
     finally { setBusy(false); }
   }
@@ -607,7 +619,7 @@ export function ConversationWorkspace() {
   let context = capabilityContext;
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
   if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} capabilityAction={capabilityAction} onCapabilityAction={handleCapabilityAction} reuseSuggestions={reuseSuggestions} onReuse={handleReuseAsset} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onContinueDiscussion={continueBrainDiscussion} onViewAssets={() => setView("capability-center")} onNewGoal={newConversation} /></section>; context = capabilityContext; }
-  if (view === "capability-center") { main = <CapabilityCenter selected={selectedCapabilityAsset} onSelect={setSelectedCapabilityAsset} />; context = <CapabilityContext selected={selectedCapabilityAsset} onContinue={continueAsset} onChanged={setSelectedCapabilityAsset} />; }
+  if (view === "capability-center") { main = <CapabilityCenter selected={selectedCapabilityAsset} onSelect={setSelectedCapabilityAsset} />; context = <CapabilityContext selected={selectedCapabilityAsset} onContinue={continueAsset} onChanged={setSelectedCapabilityAsset} conversationId={conversationId} />; }
   if (view === "object") { main = <CapabilityObjectWorkspace object={selectedWorkspaceObject} onContinue={continueObject} onOpenExecution={openObjectExecution} />; context = capabilityContext; }
   if (view === "execution") { main = executionId ? executionView : <LifecycleExecutionCenter selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} />; context = executionId ? executionContext : <ExecutionContext selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} onOpenExecution={openLifecycleExecution} />; }
   if (view === "assets") { main = <AssetLifecycleCenter selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} initialAsset={selectedWorkspaceObject?.asset_id ? selectedWorkspaceObject : null} onStartNewGoal={newConversation} />; context = <AssetContext selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} conversationId={conversationId} projectId={activeProjectId} onOpenExecution={openLifecycleExecution} onContinue={continueAsset} />; }

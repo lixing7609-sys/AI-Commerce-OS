@@ -8,14 +8,14 @@ export function FounderActionCard({ action, busy, onConfirmGoal, onReviseGoal, o
     if (id === "generate_package") return onAdvanceStage?.("package");
     if (id === "approve_package") return onReviewPackage?.("approve");
     if (id === "assets_committed") return onViewAssets?.();
-    if (["candidates_saved", "complete_development", "run_capability_test", "approve_ready"].includes(id)) return onCapabilityAction?.(action);
+    if (["candidates_saved", "develop", "complete_development", "run_capability_test", "run_test", "approve_ready"].includes(id)) return onCapabilityAction?.(action);
     return onContinueDiscussion?.();
   };
   const secondary = () => {
     if (id === "confirm_goal") return onReviseGoal?.();
     if (id === "approve_package") return onReviewPackage?.("discuss");
     if (id === "generate_package") return onAdvanceStage?.("strategy");
-    if (id === "candidates_saved") return onViewAssets?.();
+    if (["candidates_saved", "develop"].includes(id)) return onViewAssets?.();
     if (id === "assets_committed") return onNewGoal?.();
     return onContinueDiscussion?.();
   };

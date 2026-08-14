@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bindFounderConversationProject } from "./founderAiApi";
 
-import { analyzeFounderConversation, analyzeWithSinoBrain, approveCapabilityReady, buildSystemBlueprint, checkModelProvider, completeCapabilityDevelopment, confirmCandidateGoal, createArtifactVersion, createFounderConversation, createFounderProject, createIntelligenceReference, createMemoryRevision, decideExecutionDelta, deleteFounderConversation, discoverProviderModels, discussWithCouncil, discussWithSino, executeFounderExecution, getAssetMemoryCenter, getCapabilityDomains, getCapabilityRepositoryAssets, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getLibraryArtifact, getLibraryMemory, getLifecycleReuseSuggestions, getModelCenter, getProjectIntelligence, installModelProvider, reasonConfirmedGoal, reuseLifecycleAsset, resumeFounderExecution, runCapabilityTest, saveApplicationModelAssignments, saveExecutionEngine, saveModelProvider, saveModelRoles, selectProviderModels, startCapabilityDevelopment, submitExecutionDelta, updateArtifactStatus, updateMemoryStatus } from "./founderAiApi";
+import { analyzeFounderConversation, analyzeWithSinoBrain, approveCapabilityReady, buildSystemBlueprint, checkModelProvider, completeCapabilityDevelopment, confirmCandidateGoal, createArtifactVersion, createFounderConversation, createFounderProject, createIntelligenceReference, createMemoryRevision, decideExecutionDelta, deleteFounderConversation, discoverProviderModels, discussWithCouncil, discussWithSino, executeFounderExecution, getAssetMemoryCenter, getCapabilityDomains, getCapabilityRepositoryAssets, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getLibraryArtifact, getLibraryMemory, getLifecycleReuseSuggestions, getModelCenter, getProjectIntelligence, installModelProvider, performConversationCapabilityAction, reasonConfirmedGoal, reuseLifecycleAsset, resumeFounderExecution, runCapabilityTest, saveApplicationModelAssignments, saveExecutionEngine, saveModelProvider, saveModelRoles, selectProviderModels, startCapabilityDevelopment, submitExecutionDelta, updateArtifactStatus, updateMemoryStatus } from "./founderAiApi";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -66,6 +66,7 @@ describe("Founder AI conversation API", () => {
     await completeCapabilityDevelopment("asset/1");
     await runCapabilityTest("asset/1", { product_name: "咖啡机" });
     await approveCapabilityReady("asset/1");
+    await performConversationCapabilityAction("conv/1", { action: "develop", target_asset_id: "asset/1" });
     await getLifecycleReuseSuggestions("conv/1");
     await reuseLifecycleAsset("asset/1", "conversation", "conv/1", "复用");
     expect(fetchMock.mock.calls[0][0]).toContain("/capability-repository/domains");
@@ -74,8 +75,20 @@ describe("Founder AI conversation API", () => {
     expect(fetchMock.mock.calls[3][0]).toContain("/development/complete");
     expect(JSON.parse(fetchMock.mock.calls[4][1].body).test_input.product_name).toBe("咖啡机");
     expect(fetchMock.mock.calls[5][0]).toContain("/ready-approval");
-    expect(fetchMock.mock.calls[6][0]).toContain("/conversations/conv%2F1/reuse-suggestions");
-    expect(JSON.parse(fetchMock.mock.calls[7][1].body)).toEqual({ target_type: "conversation", target_id: "conv/1", note: "复用" });
+    expect(fetchMock.mock.calls[6][0]).toContain("/conversations/conv%2F1/capability-action");
+    expect(JSON.parse(fetchMock.mock.calls[6][1].body).target_asset_id).toBe("asset/1");
+    expect(fetchMock.mock.calls[7][0]).toContain("/conversations/conv%2F1/reuse-suggestions");
+    expect(JSON.parse(fetchMock.mock.calls[8][1].body)).toEqual({ target_type: "conversation", target_id: "conv/1", note: "复用" });
+  });
+
+  it("surfaces an actionable lifecycle conflict instead of a generic 409", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status: 409, json: async () => ({ detail: { code: "capability_lifecycle_conflict", message: "当前能力尚未进入 Testing", current_status: "candidate", available_actions: ["develop"] } }) });
+    await expect(performConversationCapabilityAction("conv-1", { action: "run_test", target_asset_id: "skill-1" })).rejects.toMatchObject({
+      message: "执行能力生命周期动作失败：当前能力尚未进入 Testing",
+      status: 409,
+      code: "capability_lifecycle_conflict",
+      lifecycle: expect.objectContaining({ current_status: "candidate", available_actions: ["develop"] }),
+    });
   });
 
   it("starts Council mode without adding Codex to selected models", async () => {

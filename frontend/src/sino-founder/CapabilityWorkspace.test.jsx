@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CapabilityCenter, CapabilityContext } from "./CapabilityWorkspace.jsx";
 import { getCapabilityDomains, getCapabilityRepositoryAssets, getLifecycleAsset } from "../services/founderAiApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({ approveCapabilityReady: vi.fn(), completeCapabilityDevelopment: vi.fn(), getCapabilityDomains: vi.fn(), getCapabilityRepositoryAssets: vi.fn(), getLifecycleAsset: vi.fn(), runCapabilityTest: vi.fn(), startCapabilityDevelopment: vi.fn() }));
-const skill = { asset_id: "asset-skill", asset_type: "skill", domain_id: "commerce", name: "商品分镜生成 Skill", purpose: "生成结构化商品分镜", status: "candidate", version: 1, used_by_refs: [], dependency_refs: [], test_run_refs: [] };
+vi.mock("../services/founderAiApi.js", () => ({ getCapabilityDomains: vi.fn(), getCapabilityRepositoryAssets: vi.fn(), getLifecycleAsset: vi.fn(), performConversationCapabilityAction: vi.fn() }));
+const skill = { asset_id: "asset-skill", asset_type: "skill", domain_id: "commerce", name: "商品分镜生成 Skill", purpose: "生成结构化商品分镜", status: "candidate", version: 1, used_by_refs: [], dependency_refs: [], test_run_refs: [], available_actions: ["develop", "archive", "continue_discussion"] };
 function Harness() { const [selected, setSelected] = useState(null); return <><CapabilityCenter selected={selected} onSelect={setSelected} /><CapabilityContext selected={selected} onChanged={setSelected} /></>; }
 
 describe("AI Capability Center IA", () => {

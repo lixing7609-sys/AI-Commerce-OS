@@ -6,7 +6,7 @@ import { SystemBuilderPanel, SystemContext } from "./SystemBuilderPanel.jsx";
 import { AssetContext, AssetLifecycleCenter, ExecutionContext, LifecycleExecutionCenter } from "./AssetLifecycleCenter.jsx";
 import { getLifecycleAssets, getLifecycleExecutions } from "../services/founderAiApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({ approveCapabilityReady: vi.fn(), completeCapabilityDevelopment: vi.fn(), createExecutionLearning: vi.fn(), getCapabilityDomains: vi.fn().mockResolvedValue({ domains: [] }), getCapabilityRepositoryAssets: vi.fn().mockResolvedValue({ assets: [] }), getLifecycleAsset: vi.fn(), getLifecycleAssets: vi.fn(), getLifecycleExecutions: vi.fn(), getLifecycleLearnings: vi.fn(), reuseLifecycleAsset: vi.fn(), runCapabilityTest: vi.fn(), startCapabilityDevelopment: vi.fn(), startLifecycleExecution: vi.fn() }));
+vi.mock("../services/founderAiApi.js", () => ({ createExecutionLearning: vi.fn(), getCapabilityDomains: vi.fn().mockResolvedValue({ domains: [] }), getCapabilityRepositoryAssets: vi.fn().mockResolvedValue({ assets: [] }), getLifecycleAsset: vi.fn(), getLifecycleAssets: vi.fn(), getLifecycleExecutions: vi.fn(), getLifecycleLearnings: vi.fn(), performConversationCapabilityAction: vi.fn(), reuseLifecycleAsset: vi.fn(), startLifecycleExecution: vi.fn() }));
 
 beforeEach(() => { getLifecycleAssets.mockResolvedValue({ assets: [] }); getLifecycleExecutions.mockResolvedValue({ executions: [] }); });
 afterEach(cleanup);

@@ -15,7 +15,8 @@ from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
-from app.core.asset_lifecycle.service import upsert_catalog_record
+from app.core.asset_lifecycle.model import AssetCatalogDB
+from app.core.asset_lifecycle.service import LifecycleConflict, capability_available_actions, perform_capability_action, suggest_reuse, upsert_catalog_record
 from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
 from app.core.project.model import FounderProjectDB
@@ -50,8 +51,9 @@ class SinoBrainRuntime:
 
     MAX_CLARIFICATION_ROUNDS = 3
 
-    def __init__(self, *, understanding_runner=None):
+    def __init__(self, *, understanding_runner=None, lifecycle_intent_runner=None):
         self._understanding_runner = understanding_runner or self._provider_understanding
+        self._lifecycle_intent_runner = lifecycle_intent_runner or self._provider_lifecycle_intent
 
     def snapshot(self, conversation_id: str) -> dict[str, Any] | None:
         with SessionLocal() as session:
@@ -80,6 +82,13 @@ class SinoBrainRuntime:
             if state is None:
                 state = SinoBrainSessionDB(conversation_id=conversation_id, project_id=conversation.project_id)
                 session.add(state); session.flush()
+            reuse_turn = self._process_reuse_message(session, conversation, state, content)
+            if reuse_turn:
+                return reuse_turn
+            if state.stage in {"asset_commit", "conversation_completed"} and (state.discussion_package or {}).get("objects"):
+                lifecycle_turn = self._process_lifecycle_message(session, conversation, state, content)
+                if lifecycle_turn:
+                    return lifecycle_turn
             if state.stage not in {"goal_discovery", "goal_review"}:
                 return {"handled": False, "brain": self._serialize(state)}
             if state.stage == "goal_review" and self.review_intent(content) == "confirm_goal":
@@ -146,6 +155,149 @@ class SinoBrainRuntime:
                     conversation.title = business_title[:80]
             session.commit()
             return {"handled": True, "reply": reply, "message_type": message_type, "brain": self._serialize(state)}
+
+    def _process_lifecycle_message(self, session, conversation, state, content):
+        package = dict(state.discussion_package or {})
+        asset_ids = [item.get("asset_id") for item in package.get("objects") or [] if item.get("asset_id")]
+        records = list(session.scalars(select(AssetCatalogDB).where(AssetCatalogDB.id.in_(asset_ids))))
+        if not records:
+            return None
+        context = {
+            "founder_message": content,
+            "selected_asset_id": package.get("selected_asset_id"),
+            "assets": [{
+                "asset_id": item.id, "type": item.asset_type, "name": item.name,
+                "status": item.status, "available_actions": capability_available_actions(item),
+            } for item in records],
+        }
+        try:
+            intent = self._lifecycle_intent_runner(context)
+        except Exception:
+            lifecycle_terms = ("开发", "测试", "批准", "可引用", "引用", "暂不", "保留", "归档", "重测")
+            if any(term in content for term in lifecycle_terms):
+                return {"handled": True, "reply": "能力生命周期指令理解暂不可用。当前状态没有改变；你可以稍后重试或使用同一 Action Card。", "message_type": "capability_lifecycle_error", "brain": self._serialize(state)}
+            return None
+        action = str(intent.get("action") or "continue_discussion")
+        if float(intent.get("confidence") or 0) < .65:
+            return {"handled": True, "reply": "我还不能可靠判断你要操作哪项能力。请说出能力名称和动作，例如“先开发商品分镜 Skill”。", "message_type": "capability_lifecycle", "brain": self._serialize(state)}
+        if action == "continue_discussion":
+            return None
+        target = self._resolve_lifecycle_target(records, package.get("selected_asset_id"), intent, content)
+        if target is None:
+            return {"handled": True, "reply": "我理解了你的生命周期指令，但当前目标对象不够明确。请直接说出能力名称，例如“先开发商品分镜 Skill”。", "message_type": "capability_lifecycle", "brain": self._serialize(state)}
+        package["selected_asset_id"] = target.id
+        package["selected_asset_type"] = target.asset_type
+        package["selected_asset_name"] = target.name
+        state.discussion_package = package
+        conversation.conversation_state = "active"
+        state.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        if action in {"defer", "skip_reuse"}:
+            reply = f"已保留 {target.name} 当前状态（{target.status}），不会自动推进。"
+        else:
+            service_action = "retest" if action == "run_test" and "retest" in capability_available_actions(target) else action
+            try:
+                result = perform_capability_action(
+                    target.id, service_action,
+                    target_type="conversation" if action == "reuse" else None,
+                    target_id=conversation.id if action == "reuse" else None,
+                    note="Founder 通过 Sino 自然语言确认",
+                )
+            except LifecycleConflict as error:
+                return {"handled": True, "reply": f"暂时不能执行这个动作：{error.detail['message']}。当前可执行：{'、'.join(error.detail['available_actions']) or '继续讨论'}。", "message_type": "capability_lifecycle", "action": action, "target_asset_id": target.id, "brain": self.snapshot(conversation.id)}
+            asset = result.get("asset") if isinstance(result, dict) and result.get("asset") else result
+            status = asset.get("status") if isinstance(asset, dict) else target.status
+            reply = self._lifecycle_reply(action, target.name, status, result)
+        return {"handled": True, "reply": reply, "message_type": "capability_lifecycle", "action": action, "target_asset_id": target.id, "brain": self.snapshot(conversation.id)}
+
+    def _process_reuse_message(self, session, conversation, state, content):
+        """Resolve a Ready capability reference in any Brain stage.
+
+        The lexical check is only a guardrail that avoids an extra provider call
+        for ordinary discussion. The provider remains the intent driver.
+        """
+        if not any(term in content for term in ("引用", "不引用", "不用这个")):
+            return None
+        suggestions = [item for item in suggest_reuse(conversation.id) if item.get("can_reuse")]
+        if not suggestions:
+            return None
+        context = {
+            "founder_message": content,
+            "selected_asset_id": suggestions[0]["asset_id"] if len(suggestions) == 1 else None,
+            "assets": [{
+                "asset_id": item["asset_id"], "type": item["asset_type"], "name": item["name"],
+                "status": item["status"], "available_actions": item.get("available_actions") or ["reuse"],
+            } for item in suggestions],
+        }
+        try:
+            intent = self._lifecycle_intent_runner(context)
+        except Exception:
+            return {"handled": True, "reply": "能力引用指令理解暂不可用，当前没有建立 Reference。", "message_type": "capability_lifecycle_error", "brain": self._serialize(state)}
+        action = str(intent.get("action") or "continue_discussion")
+        if action == "skip_reuse":
+            return {"handled": True, "reply": "这次不引用已有能力，当前目标继续独立讨论。", "message_type": "capability_lifecycle", "brain": self._serialize(state)}
+        if action != "reuse" or float(intent.get("confidence") or 0) < .65:
+            return None
+        records = list(session.scalars(select(AssetCatalogDB).where(AssetCatalogDB.id.in_([item["asset_id"] for item in suggestions]))))
+        target = self._resolve_lifecycle_target(records, context["selected_asset_id"], intent, content)
+        if target is None:
+            return {"handled": True, "reply": "检测到多个 Ready 能力，请说出要引用的能力名称。", "message_type": "capability_lifecycle", "brain": self._serialize(state)}
+        result = perform_capability_action(
+            target.id, "reuse", target_type="conversation", target_id=conversation.id,
+            note="Founder 通过 Sino 自然语言确认引用",
+        )
+        conversation.conversation_state = "active"
+        session.commit()
+        return {"handled": True, "reply": self._lifecycle_reply("reuse", target.name, "ready", result), "message_type": "capability_lifecycle", "action": "reuse", "target_asset_id": target.id, "brain": self._serialize(state)}
+
+    @staticmethod
+    def _resolve_lifecycle_target(records, selected_asset_id, intent, content):
+        explicit_id = intent.get("target_asset_id")
+        if explicit_id:
+            found = next((item for item in records if item.id == explicit_id), None)
+            if found:
+                return found
+        target_name = str(intent.get("target_name") or "").strip().lower()
+        if target_name:
+            found = next((item for item in records if target_name in item.name.lower() or item.name.lower() in target_name), None)
+            if found:
+                return found
+        named = [item for item in records if item.name and item.name in content]
+        if len(named) == 1:
+            return named[0]
+        target_type = str(intent.get("target_type") or "").lower()
+        typed = [item for item in records if item.asset_type == target_type]
+        if len(typed) == 1:
+            return typed[0]
+        return next((item for item in records if item.id == selected_asset_id), None)
+
+    @staticmethod
+    def _lifecycle_reply(action, name, status, result):
+        if action == "develop":
+            asset = result.get("asset") if isinstance(result, dict) and result.get("asset") else result
+            run = (asset.get("development_run_refs") or [])[-1]
+            return f"已按你的指令只开发 {name}。Development Task：{run.get('task_asset_id')}；其他候选保持 Candidate。"
+        if action in {"run_test", "retest"}:
+            run = result.get("test_run") or {}
+            return f"{name} 已完成真实测试：{run.get('status')}。Test Run：{run.get('test_run_id')}。测试通过不等于 Ready，仍等待你的批准。"
+        if action == "approve_ready":
+            return f"已由 Founder 批准：{name} 现在是 Ready V1，可被新的目标正式引用。"
+        if action == "reuse":
+            return f"已引用 {name}，Reference 已写入当前 Conversation。"
+        return f"{name} 当前状态：{status}。"
+
+    @staticmethod
+    def _provider_lifecycle_intent(context):
+        from app.core.model_center.service import resolve_runtime_config
+        runtime = resolve_runtime_config(role="sino_conversation")
+        if runtime is None:
+            raise RuntimeError("sino_conversation_model_unavailable")
+        prompt = """你是 Sino Founder AI 的能力生命周期意图解析器。结合 selected asset、每个 asset 的 status 和 available_actions 理解 Founder 指令。按钮与自然语言必须映射到同一 action。不要凭相似名称猜错对象。只返回 JSON：action(develop|defer|complete_development|run_test|approve_ready|reuse|skip_reuse|archive|continue_discussion), target_asset_id(string|null), target_type(string|null), target_name(string|null), confidence(0..1), reason(string)。如果 Founder 只是继续业务讨论，返回 continue_discussion。"""
+        response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, LLMRequest(
+            system_prompt=prompt, user_prompt=json.dumps(context, ensure_ascii=False), temperature=0,
+            max_tokens=500, response_format="json", metadata={"runtime_role": "sino_conversation", "brain_stage": "capability_lifecycle"},
+        ))
+        return json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
 
     def force_goal_review(self, conversation_id: str) -> dict[str, Any]:
         """Founder override: proceed with explicit unknowns instead of a questionnaire."""
@@ -384,7 +536,9 @@ class SinoBrainRuntime:
                         snapshot={"source_package_id": package.get("package_id"), "commit_status": "candidate"},
                     ))
                 else:
-                    if record.status not in {"candidate", "developing", "testing", "ready"}:
+                    existing_catalog = session.get(AssetCatalogDB, record.id)
+                    existing_status = existing_catalog.status if existing_catalog else record.status
+                    if existing_status not in {"candidate", "developing", "testing", "ready"}:
                         record.version += 1
                         record.description = purpose or record.description
                         session.add(FounderObjectRevisionDB(
@@ -394,30 +548,36 @@ class SinoBrainRuntime:
                             source_message_refs=source_refs,
                             snapshot={"source_package_id": package.get("package_id"), "commit_status": "candidate"},
                         ))
-                    record.status = "candidate"
+                    record.status = existing_status if existing_status in {"developing", "testing", "ready"} else "candidate"
                     record.updated_at = now
                 asset_id = record.id
 
             asset_ids_by_name[name] = asset_id
-            upsert_catalog_record(
-                session, asset_id=asset_id, asset_type=object_type,
-                native_type="decision" if object_type == "decision" else "project" if object_type == "project" else "memory" if object_type == "knowledge" else "founder_object",
-                native_id=asset_id, name=name, purpose=purpose,
-                content={"reason": item.get("reason"), "source": item.get("source"), "risk": item.get("risk") or [], "confidence": item.get("confidence")},
-                status="candidate", version=getattr(record, "version", 1),
-                source_conversation_id=state.conversation_id, source_package_id=package.get("package_id"),
-                project_id=state.project_id or (conversation.project_id if conversation else None),
-                domain_id=package.get("domain_id") or "general",
-                dependency_refs=list(item.get("dependencies") or []),
-            )
+            existing_catalog = session.get(AssetCatalogDB, asset_id)
+            lifecycle_status = existing_catalog.status if existing_catalog and existing_catalog.status in {"developing", "testing", "ready"} else "candidate"
+            if not existing_catalog or lifecycle_status == "candidate":
+                upsert_catalog_record(
+                    session, asset_id=asset_id, asset_type=object_type,
+                    native_type="decision" if object_type == "decision" else "project" if object_type == "project" else "memory" if object_type == "knowledge" else "founder_object",
+                    native_id=asset_id, name=name, purpose=purpose,
+                    content={"reason": item.get("reason"), "source": item.get("source"), "risk": item.get("risk") or [], "confidence": item.get("confidence")},
+                    status="candidate", version=getattr(record, "version", 1),
+                    source_conversation_id=state.conversation_id, source_package_id=package.get("package_id"),
+                    project_id=state.project_id or (conversation.project_id if conversation else None),
+                    domain_id=package.get("domain_id") or "general",
+                    dependency_refs=list(item.get("dependencies") or []),
+                )
             item.update({
-                "asset_id": asset_id, "commit_status": "candidate",
+                "asset_id": asset_id, "commit_status": "candidate" if lifecycle_status == "candidate" else "reference_existing", "lifecycle_status": lifecycle_status,
                 "destination": destination, "committed_at": now.isoformat(),
-                "lifecycle": ["draft", "approved", "candidate"],
+                "lifecycle": ["draft", "approved", lifecycle_status],
             })
             committed.append(item)
 
         package["objects"] = committed
+        selected = next((item for item in committed if item.get("object_type") == "skill" and item.get("lifecycle_status") == "candidate"), None)
+        if selected:
+            package.update({"selected_asset_id": selected["asset_id"], "selected_asset_type": selected["object_type"], "selected_asset_name": selected["name"]})
         package["status"] = "archived"
         package["committed_at"] = now.isoformat()
         package["asset_commit"] = {
@@ -433,7 +593,7 @@ class SinoBrainRuntime:
             {"status": "archived", "at": now.isoformat()},
         ])
         if conversation is not None:
-            conversation.conversation_state = "completed"
+            conversation.conversation_state = "active"
             conversation.updated_at = now
         session.add(ConversationMessageDB(
             conversation_id=state.conversation_id, role="assistant", message_type="asset_commit",
@@ -638,6 +798,15 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             "decision": dict(record.decision or {}), "discussion_package": dict(record.discussion_package or {}),
             "source_message_refs": list(record.source_message_refs or []), "created_at": _iso(record.created_at), "updated_at": _iso(record.updated_at),
         }
+        package = payload["discussion_package"]
+        ids = [item.get("asset_id") for item in package.get("objects") or [] if item.get("asset_id")]
+        if ids:
+            try:
+                with SessionLocal() as asset_session:
+                    assets = {item.id: item for item in asset_session.scalars(select(AssetCatalogDB).where(AssetCatalogDB.id.in_(ids)))}
+                package["objects"] = [{**item, "lifecycle_status": assets[item["asset_id"]].status, "available_actions": capability_available_actions(assets[item["asset_id"]])} if item.get("asset_id") in assets else item for item in package.get("objects") or []]
+            except Exception:
+                pass
         payload["stage_workspaces"] = SinoBrainRuntime._stage_workspaces(payload)
         payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] == "active"), "asset_commit" if record.stage == "conversation_completed" else "package")
         payload["current_action"] = SinoBrainRuntime._current_action(payload)
@@ -661,10 +830,27 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         if stage == "package_approved":
             return {"action_id": "asset_commit", "title": "正在提交资产", "description": "正在把成果包写入正式资产仓库。", "primary_label": "提交中"}
         if stage in {"asset_commit", "conversation_completed"}:
-            candidates = [item for item in ((brain.get("discussion_package") or {}).get("objects") or []) if item.get("commit_status") == "candidate"]
+            package = brain.get("discussion_package") or {}
+            objects = package.get("objects") or []
+            candidates = [item for item in objects if item.get("lifecycle_status", item.get("commit_status")) == "candidate"]
+            selected = next((item for item in objects if item.get("asset_id") == package.get("selected_asset_id")), None)
+            target = selected or next((item for item in candidates if item.get("object_type") == "skill"), None) or next((item for item in candidates if item.get("object_type") in {"workflow", "agent", "prompt", "capability", "connector"}), None)
+            if target:
+                status = target.get("lifecycle_status", target.get("commit_status"))
+                actions = target.get("available_actions") or []
+                base = {"target_asset_id": target.get("asset_id"), "target_asset_type": target.get("object_type"), "target_asset_name": target.get("name"), "asset_id": target.get("asset_id"), "available_actions": actions}
+                if status == "candidate":
+                    return {**base, "action_id": "develop", "title": "候选能力已入仓", "description": f"{target.get('name')} 当前是 Candidate；其他候选不会自动推进。", "primary_label": f"开发 {target.get('name')}", "secondary_label": "暂不开发"}
+                if status == "developing":
+                    return {**base, "action_id": "complete_development", "title": f"{target.get('name')} · 开发中", "description": "Development Task 已建立；开发完成事件发生后才进入 Testing。", "primary_label": "完成开发并进入测试", "secondary_label": "继续讨论"}
+                if status == "testing" and "approve_ready" in actions:
+                    return {**base, "action_id": "approve_ready", "title": f"{target.get('name')} · 测试通过", "description": "测试证据已持久化，等待 Founder 的第二次批准。", "primary_label": "批准为可引用能力", "secondary_label": "再测试一次"}
+                if status == "testing":
+                    return {**base, "action_id": "run_test", "title": f"{target.get('name')} · 测试中", "description": "只会测试当前绑定的 Skill asset_id。", "primary_label": "运行真实测试", "secondary_label": "继续讨论"}
+                if status == "ready":
+                    return {**base, "action_id": "ready_complete", "title": f"{target.get('name')} · Ready", "description": "该能力已经可以被新的目标检索和引用。", "primary_label": "查看能力仓库"}
             if candidates:
-                developable = next((item for item in candidates if item.get("object_type") in {"skill", "workflow", "agent", "prompt", "capability", "connector"}), candidates[0])
-                return {"action_id": "candidates_saved", "title": "候选能力已沉淀", "description": f"{len(candidates)} 个候选能力已进入能力仓库；尚不可被生产系统引用。", "primary_label": f"开发 {developable.get('name')}", "secondary_label": "暂不开发", "asset_id": developable.get("asset_id")}
+                return {"action_id": "candidates_saved", "title": "候选能力已沉淀", "description": f"{len(candidates)} 个候选能力已进入能力仓库；尚不可被生产系统引用。", "primary_label": "选择候选能力", "secondary_label": "暂不开发"}
             return {"action_id": "assets_committed", "title": "资产提交完成", "description": "成果包中的资产已进入 AI Commerce OS。", "primary_label": "查看资产", "secondary_label": "开始新目标"}
         return {"action_id": "continue_goal", "title": "继续理解目标", "description": "回答 Sino 当前最关键的问题。", "primary_label": "继续"}
 

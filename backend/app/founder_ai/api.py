@@ -45,6 +45,7 @@ from app.core.founder_object.service import approve_object, archive_object, atta
 from app.core.founder_intent.service import attach_candidate_context, get_conversation_candidate_context, list_candidates, review_candidate
 from app.founder_ai.brain_runtime import brain_runtime
 from app.core.asset_lifecycle.service import (
+    LifecycleConflict,
     approve_ready,
     complete_development,
     create_asset_execution,
@@ -54,6 +55,7 @@ from app.core.asset_lifecycle.service import (
     list_assets,
     list_executions as list_asset_executions,
     list_learnings,
+    perform_capability_action,
     reuse_asset,
     run_capability_test,
     start_development,
@@ -70,6 +72,19 @@ class FounderAnalyzeIn(BaseModel):
 
 class CapabilityTestIn(BaseModel):
     test_input: dict[str, Any] | None = None
+
+
+class CapabilityActionIn(BaseModel):
+    action: str
+    target_asset_id: str
+    test_input: dict[str, Any] | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    note: str | None = None
+
+
+def _lifecycle_conflict(error: ValueError) -> HTTPException:
+    return HTTPException(status_code=409, detail=error.detail if isinstance(error, LifecycleConflict) else {"code": "capability_lifecycle_conflict", "message": str(error)})
 
 
 class GoalClassificationOut(BaseModel):
@@ -1005,7 +1020,7 @@ def develop_capability_asset(asset_id: str):
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+        raise _lifecycle_conflict(error) from error
 
 
 @router.post("/capability-repository/assets/{asset_id}/development/complete")
@@ -1015,7 +1030,7 @@ def complete_capability_asset_development(asset_id: str):
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+        raise _lifecycle_conflict(error) from error
 
 
 @router.post("/capability-repository/assets/{asset_id}/tests")
@@ -1025,7 +1040,7 @@ def test_capability_asset(asset_id: str, request: CapabilityTestIn):
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+        raise _lifecycle_conflict(error) from error
 
 
 @router.post("/capability-repository/assets/{asset_id}/ready-approval")
@@ -1035,7 +1050,22 @@ def approve_capability_asset_ready(asset_id: str):
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+        raise _lifecycle_conflict(error) from error
+
+
+@router.post("/conversations/{conversation_id}/capability-action")
+def conversation_capability_action(conversation_id: str, request: CapabilityActionIn):
+    if request.target_type == "conversation" and request.target_id and request.target_id != conversation_id:
+        raise HTTPException(status_code=409, detail={"code": "capability_target_mismatch", "message": "Action target Conversation 不匹配"})
+    try:
+        return perform_capability_action(
+            request.target_asset_id, request.action, test_input=request.test_input,
+            target_type=request.target_type, target_id=request.target_id, note=request.note,
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "capability_not_found", "message": str(error)}) from error
+    except ValueError as error:
+        raise _lifecycle_conflict(error) from error
 
 
 @router.get("/asset-lifecycle/assets/{asset_id}")

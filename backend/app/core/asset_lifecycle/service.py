@@ -26,6 +26,29 @@ DEFAULT_DOMAINS = [
 ]
 
 
+class LifecycleConflict(ValueError):
+    def __init__(self, message: str, record: AssetCatalogDB):
+        super().__init__(message)
+        self.detail = {
+            "code": "capability_lifecycle_conflict", "message": message,
+            "asset_id": record.id, "asset_type": record.asset_type, "asset_name": record.name,
+            "current_status": record.status, "available_actions": capability_available_actions(record),
+        }
+
+
+def capability_available_actions(record: AssetCatalogDB) -> list[str]:
+    if record.status == "candidate":
+        return (["develop"] if record.asset_type == "skill" else []) + ["archive", "continue_discussion"]
+    if record.status == "developing":
+        return ["view_development", "complete_development", "cancel"]
+    if record.status == "testing":
+        latest = (record.test_run_refs or [])[-1] if record.test_run_refs else None
+        return ["approve_ready", "retest", "return_to_development"] if latest and latest.get("status") == "passed" else ["run_test", "return_to_development"]
+    if record.status == "ready":
+        return ["reuse", "upgrade", "deprecate"]
+    return []
+
+
 def _iso(value):
     return value.isoformat() if value else None
 
@@ -49,6 +72,7 @@ def _display(record: AssetCatalogDB, learnings: list[AssetLearningDB] | None = N
         "developed_at": _iso(record.developed_at), "ready_approved_at": _iso(record.ready_approved_at),
         "created_at": _iso(record.created_at), "updated_at": _iso(record.updated_at),
         "learning_history": [_learning_display(item) for item in (learnings or [])],
+        "available_actions": capability_available_actions(record),
     }
 
 
@@ -121,7 +145,9 @@ def start_development(asset_id: str) -> dict[str, Any]:
         if record.status == "developing" and record.development_run_refs:
             return _display(record)
         if record.status != "candidate":
-            raise ValueError("Only Candidate assets can start development")
+            raise LifecycleConflict("当前能力不是 Candidate，不能开始开发", record)
+        if record.asset_type != "skill":
+            raise LifecycleConflict("当前 Golden Path 只开放 Skill 开发；该候选会继续保留", record)
         now = datetime.now(timezone.utc)
         task = create_task_asset(
             title=f"开发 {record.name}", description=record.purpose,
@@ -141,7 +167,7 @@ def complete_development(asset_id: str) -> dict[str, Any]:
         if not record:
             raise LookupError("Capability Asset not found")
         if record.status != "developing":
-            raise ValueError("Asset is not Developing")
+            raise LifecycleConflict("开发尚未处于 Developing，不能标记完成", record)
         now = datetime.now(timezone.utc)
         content = dict(record.content or {})
         if record.asset_type == "skill":
@@ -178,16 +204,16 @@ def run_capability_test(asset_id: str, test_input: dict[str, Any] | None = None)
         if not record:
             raise LookupError("Capability Asset not found")
         if record.status != "testing":
-            raise ValueError("Asset is not Testing")
+            raise LifecycleConflict("当前能力尚未完成开发并进入 Testing，不能运行测试", record)
         runtime = dict(record.content or {}).get("runtime_spec") or {}
         if runtime.get("implementation") != "commerce_storyboard_v1":
-            raise ValueError("No executable test adapter for this capability")
+            raise LifecycleConflict(f"{record.name}（{record.asset_type}）没有商品分镜 Skill 测试适配器，请先选择正确的 Skill", record)
         fixture = test_input or {"product_name": "便携咖啡机", "selling_points": ["快速萃取", "便携"], "platform": "抖音", "content_goal": "带货短视频"}
         actual = _execute_storyboard_skill(fixture)
         required = {"title", "platform", "shots"}
         passed = required.issubset(actual) and len(actual["shots"]) >= 4 and all({"sequence", "visual", "voiceover", "selling_point", "duration_seconds"}.issubset(item) for item in actual["shots"])
         now = datetime.now(timezone.utc)
-        run = {"test_run_id": f"test-{uuid4().hex[:20]}", "status": "passed" if passed else "failed", "test_case": "电商商品分镜结构化输出", "input": fixture, "expected": {"required_fields": sorted(required), "minimum_shots": 4}, "actual": actual, "started_at": now.isoformat(), "completed_at": now.isoformat()}
+        run = {"test_run_id": f"test-{uuid4().hex[:20]}", "asset_id": record.id, "status": "passed" if passed else "failed", "test_case": "电商商品分镜结构化输出", "input": fixture, "expected": {"required_fields": sorted(required), "minimum_shots": 4}, "actual": actual, "evidence": ["runtime_spec=commerce_storyboard_v1", f"shots={len(actual.get('shots') or [])}", f"required_fields={','.join(sorted(required))}"], "failure_reason": None if passed else "结构化分镜输出未满足约束", "started_at": now.isoformat(), "completed_at": now.isoformat()}
         record.test_run_refs = [*list(record.test_run_refs or []), run]; record.updated_at = now
         session.commit()
         return run
@@ -201,11 +227,42 @@ def approve_ready(asset_id: str, *, approved_by: str = "founder") -> dict[str, A
         if record.status == "ready":
             return _display(record)
         if record.status != "testing" or not record.test_run_refs or record.test_run_refs[-1].get("status") != "passed":
-            raise ValueError("Ready approval requires the latest Test Run to pass")
+            raise LifecycleConflict("只有最新 Test Run 通过后，Founder 才能批准 Ready", record)
         now = datetime.now(timezone.utc)
         record.status = "ready"; record.ready_approval = {"approved_by": approved_by, "approved_at": now.isoformat(), "test_run_id": record.test_run_refs[-1]["test_run_id"]}
         record.ready_approved_at = now; record.updated_at = now; session.commit(); session.refresh(record)
         return _display(record)
+
+
+def perform_capability_action(asset_id: str, action: str, *, test_input: dict[str, Any] | None = None,
+                              target_type: str | None = None, target_id: str | None = None,
+                              note: str | None = None) -> dict[str, Any]:
+    """One lifecycle command path shared by Founder language and Action Cards."""
+    if action == "develop":
+        return start_development(asset_id)
+    if action == "complete_development":
+        return complete_development(asset_id)
+    if action in {"run_test", "retest"}:
+        run = run_capability_test(asset_id, test_input)
+        return {"asset": get_asset(asset_id), "test_run": run}
+    if action == "approve_ready":
+        return approve_ready(asset_id)
+    if action == "reuse":
+        if not target_type or not target_id:
+            raise ValueError("Reuse target is required")
+        reference = reuse_asset(asset_id, target_type=target_type, target_id=target_id, note=note)
+        return {"asset": get_asset(asset_id), "reference": reference}
+    if action in {"defer", "skip_reuse", "continue_discussion"}:
+        return get_asset(asset_id)
+    if action in {"archive", "deprecate"}:
+        with SessionLocal() as session:
+            record = session.get(AssetCatalogDB, asset_id)
+            if not record:
+                raise LookupError("Capability Asset not found")
+            record.status = "deprecated"; record.updated_at = datetime.now(timezone.utc)
+            session.commit(); session.refresh(record)
+            return _display(record)
+    raise ValueError(f"Unsupported capability action: {action}")
 
 
 def get_asset(asset_id: str) -> dict[str, Any]:

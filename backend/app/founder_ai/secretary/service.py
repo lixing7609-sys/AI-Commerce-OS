@@ -131,6 +131,7 @@ class SinoSecretaryService:
         digest.updated_at = datetime.now(timezone.utc)
 
         text = message.content
+        is_capability_lifecycle = message.message_type in {"capability_lifecycle", "capability_lifecycle_error"}
         constraints = list(digest.constraints or [])
         if any(term in text for term in ("不要", "必须", "禁止", "只能", "保持", "不得")) and text not in constraints:
             constraints.append(text)
@@ -171,7 +172,7 @@ class SinoSecretaryService:
                 session.add(MemoryAssetDB(system_id="founder_ai", conversation_id=conversation.id, memory_type="knowledge", title=knowledge_text[:80], content=json.dumps({"knowledge": knowledge_text}, ensure_ascii=False), confidence=0.8, source_message_ids=[message.id, assistant.id] if assistant else [message.id]))
         candidate = None
         goal_markers = ("实现", "开发", "创建", "修复", "重构", "build", "implement", "正式目标", "目标确定为", "目标是", "按这个执行", "做成任务", "开始实施")
-        if any(term in text.lower() for term in goal_markers):
+        if not is_capability_lifecycle and any(term in text.lower() for term in goal_markers):
             candidate = session.scalar(select(CandidateGoalDB).where(CandidateGoalDB.conversation_id == conversation.id, CandidateGoalDB.title == text[:200], CandidateGoalDB.status == "candidate"))
             if candidate is None:
                 candidate = CandidateGoalDB(conversation_id=conversation.id, title=text[:200], description=text, source_message_ids=[message.id], confidence=0.8 if any(term in text for term in ("按这个执行", "做成任务", "开始实施")) else 0.65)
@@ -199,7 +200,9 @@ class SinoSecretaryService:
                 exists = session.scalar(select(PendingQuestionDB).where(PendingQuestionDB.conversation_id == conversation.id, PendingQuestionDB.content == question, PendingQuestionDB.status == "open"))
                 if exists is None:
                     session.add(PendingQuestionDB(conversation_id=conversation.id, content=question, reason="Sino 综合后仍待 Founder 确认", source_message_ids=[message.id, assistant.id]))
-        if conversation.conversation_state != "goal_confirmed":
+        if is_capability_lifecycle:
+            conversation.conversation_state = "active"
+        elif conversation.conversation_state != "goal_confirmed":
             conversation.conversation_state = advance_discussion(conversation.conversation_state, len(founder_messages), candidate is not None)
         position = self._project_position(conversation.conversation_state, bool(candidate), text)
         return {"summary": digest.summary, "viewpoints": [position], "constraints": list(digest.constraints or []), "terminology": list(digest.terminology or []), "prompt_delta": dict(digest.prompt_delta or {})}

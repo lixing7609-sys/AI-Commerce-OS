@@ -20,11 +20,11 @@ def _factory(monkeypatch):
     return factory
 
 
-def _asset(factory, conversation_id=None, status="committed", domain_id="general"):
+def _asset(factory, conversation_id=None, status="committed", domain_id="general", asset_id="asset-skill", asset_type="skill", name="AI 短剧 Skill"):
     with factory() as session:
         item = lifecycle.upsert_catalog_record(
-            session, asset_id="asset-skill", asset_type="skill", native_type="founder_object", native_id="asset-skill",
-            name="AI 短剧 Skill", purpose="生成可复用短剧能力", content={"logic": "真实资产内容"}, status=status, version=1,
+            session, asset_id=asset_id, asset_type=asset_type, native_type="founder_object", native_id=asset_id,
+            name=name, purpose="生成可复用短剧能力", content={"logic": "真实资产内容"}, status=status, version=1,
             source_conversation_id=conversation_id, source_package_id="package-short-drama", project_id=None,
             domain_id=domain_id,
         )
@@ -102,7 +102,23 @@ def test_skill_golden_path_requires_real_test_and_founder_ready_approval(monkeyp
         lifecycle.approve_ready("asset-skill")
     test = lifecycle.run_capability_test("asset-skill")
     assert test["status"] == "passed"
+    assert lifecycle.get_asset("asset-skill")["status"] == "testing"
     assert test["actual"]["shots"][0]["sequence"] == 1
     ready = lifecycle.approve_ready("asset-skill")
     assert ready["status"] == "ready"
     assert ready["ready_approval"]["test_run_id"] == test["test_run_id"]
+
+
+def test_selecting_one_candidate_does_not_advance_other_package_assets(monkeypatch):
+    factory = _factory(monkeypatch)
+    _asset(factory, status="candidate", domain_id="commerce")
+    _asset(factory, status="candidate", domain_id="commerce", asset_id="asset-workflow", asset_type="workflow", name="商品内容 Workflow")
+    monkeypatch.setattr(lifecycle, "create_task_asset", lambda **_: SimpleNamespace(id="task-skill-only"))
+    lifecycle.perform_capability_action("asset-skill", "develop")
+    assert lifecycle.get_asset("asset-skill")["status"] == "developing"
+    assert lifecycle.get_asset("asset-workflow")["status"] == "candidate"
+    with pytest.raises(lifecycle.LifecycleConflict) as conflict:
+        lifecycle.run_capability_test("asset-workflow")
+    assert conflict.value.detail["current_status"] == "candidate"
+    assert "run_test" not in conflict.value.detail["available_actions"]
+    assert "develop" not in conflict.value.detail["available_actions"]

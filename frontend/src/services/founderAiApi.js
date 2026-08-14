@@ -5,9 +5,12 @@ async function request(path, options, fallback) {
   if (!response.ok) {
     let detail = null;
     try { detail = await response.json(); } catch { /* non-JSON error */ }
-    const error = new Error(`${fallback}（状态码 ${response.status}）`);
+    const payload = detail?.detail && typeof detail.detail === "object" ? detail.detail : detail;
+    const actionable = payload?.message || (typeof detail?.detail === "string" ? detail.detail : null);
+    const error = new Error(actionable ? `${fallback}：${actionable}` : `${fallback}（状态码 ${response.status}）`);
     error.status = response.status;
-    error.code = detail?.detail?.code || detail?.code || null;
+    error.code = payload?.code || null;
+    error.lifecycle = payload || null;
     throw error;
   }
   return response.json();
@@ -337,4 +340,10 @@ export function runCapabilityTest(assetId, testInput) {
 
 export function approveCapabilityReady(assetId) {
   return request(`/founder-ai/capability-repository/assets/${encodeURIComponent(assetId)}/ready-approval`, { method: "POST" }, "批准可引用能力失败");
+}
+
+export function performConversationCapabilityAction(conversationId, action) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/capability-action`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action),
+  }, "执行能力生命周期动作失败");
 }

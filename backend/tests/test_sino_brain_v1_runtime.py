@@ -4,6 +4,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
 from app.core.conversation.model import ConversationDB
+from app.core.asset_lifecycle.model import AssetCatalogDB
 from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
 from app.core.project.model import FounderProjectDB
@@ -144,15 +145,66 @@ def test_goal_brief_package_lifecycle(monkeypatch):
     assert committed["discussion_package"]["status"] == "archived"
     assert committed["discussion_package"]["asset_commit"]["status"] == "committed"
     assert len(committed["discussion_package"]["asset_commit"]["items"]) == 4
-    assert committed["current_action"]["action_id"] == "candidates_saved"
+    assert committed["current_action"]["action_id"] == "develop"
+    assert committed["current_action"]["target_asset_id"]
     with module.SessionLocal() as session:
-        assert session.get(ConversationDB, conversation_id).conversation_state == "completed"
+        assert session.get(ConversationDB, conversation_id).conversation_state == "active"
         assert session.query(DecisionAssetDB).filter_by(conversation_id=conversation_id, status="candidate").count() == 1
         assert session.query(FounderProjectDB).filter_by(status="candidate").count() == 1
         assert session.query(FounderObjectDB).filter_by(status="candidate").count() == 1
         assert session.query(MemoryAssetDB).filter_by(conversation_id=conversation_id, status="candidate").count() == 1
     repeated = runtime.review_package(conversation_id, "approve")
     assert repeated["discussion_package"]["asset_commit"]["commit_id"] == committed["discussion_package"]["asset_commit"]["commit_id"]
+
+
+def test_natural_language_uses_exact_selected_skill_and_shared_action(monkeypatch):
+    captured = {}
+    runtime, conversation_id = _runtime(
+        monkeypatch,
+        runner=lambda _: _result(),
+    )
+    runtime._lifecycle_intent_runner = lambda _: {
+        "action": "develop", "target_asset_id": "asset-skill", "target_type": "skill",
+        "target_name": "商品分镜生成 Skill", "confidence": .98,
+    }
+    with module.SessionLocal() as session:
+        session.add_all([
+            AssetCatalogDB(id="asset-skill", asset_type="skill", native_type="founder_object", native_id="asset-skill", name="商品分镜生成 Skill", purpose="生成分镜", status="candidate", domain_id="commerce", source_conversation_id=conversation_id),
+            AssetCatalogDB(id="asset-workflow", asset_type="workflow", native_type="founder_object", native_id="asset-workflow", name="商品内容 Workflow", purpose="编排", status="candidate", domain_id="commerce", source_conversation_id=conversation_id),
+        ])
+        state = session.query(module.SinoBrainSessionDB).filter_by(conversation_id=conversation_id).one_or_none()
+        if state is None:
+            state = module.SinoBrainSessionDB(conversation_id=conversation_id)
+            session.add(state)
+        state.stage = "conversation_completed"
+        state.discussion_package = {"objects": [{"asset_id": "asset-skill"}, {"asset_id": "asset-workflow"}]}
+        session.commit()
+
+    def perform(asset_id, action, **kwargs):
+        captured.update(asset_id=asset_id, action=action, kwargs=kwargs)
+        return {"asset": {"asset_id": asset_id, "status": "developing", "development_run_refs": [{"task_asset_id": "task-skill"}]}}
+
+    monkeypatch.setattr(module, "perform_capability_action", perform)
+    result = runtime.process_message(conversation_id, "其他候选先保留，只开发商品分镜 Skill。")
+    assert result["handled"] is True
+    assert captured == {"asset_id": "asset-skill", "action": "develop", "kwargs": {"target_type": None, "target_id": None, "note": "Founder 通过 Sino 自然语言确认"}}
+    with module.SessionLocal() as session:
+        assert session.get(ConversationDB, conversation_id).conversation_state == "active"
+        assert session.get(AssetCatalogDB, "asset-workflow").status == "candidate"
+
+
+def test_natural_language_reuse_works_during_goal_understanding(monkeypatch):
+    runtime, conversation_id = _runtime(monkeypatch)
+    runtime._lifecycle_intent_runner = lambda _: {"action": "reuse", "target_asset_id": "asset-ready", "confidence": .99}
+    with module.SessionLocal() as session:
+        session.add(AssetCatalogDB(id="asset-ready", asset_type="skill", native_type="founder_object", native_id="asset-ready", name="商品分镜生成 Skill", purpose="生成分镜", status="ready", domain_id="commerce", source_conversation_id=conversation_id))
+        session.commit()
+    monkeypatch.setattr(module, "suggest_reuse", lambda _: [{"asset_id": "asset-ready", "asset_type": "skill", "name": "商品分镜生成 Skill", "status": "ready", "available_actions": ["reuse"], "can_reuse": True}])
+    monkeypatch.setattr(module, "perform_capability_action", lambda asset_id, action, **kwargs: {"asset": {"asset_id": asset_id, "status": "ready"}, "reference": {"reference_id": "reference-1"}})
+    result = runtime.process_message(conversation_id, "引用它。")
+    assert result["action"] == "reuse"
+    assert result["target_asset_id"] == "asset-ready"
+    assert "Reference" in result["reply"]
 
 
 def test_stage_workspace_projection_persists_lifecycle_and_message_isolation(monkeypatch):

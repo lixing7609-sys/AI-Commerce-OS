@@ -5,7 +5,7 @@ const STAGE_LABELS = {
   goal_confirmed: "目标已确认", strategy_meeting: "Strategy Meeting · 策略会议",
   conflict_validation: "Validation · 验证", decision_ready: "Decision · 决策",
   package_ready: "Discussion Package · 成果包", package_approved: "成果包已批准",
-  asset_commit: "Asset Commit · 资产提交", conversation_completed: "Completed · 已完成",
+  asset_commit: "Candidate Commit · 候选提交", conversation_completed: "Brain Discussion Completed · Conversation Active",
 };
 const TYPE_LABELS = { project: "Project（项目）", workflow: "Workflow（工作流）", skill: "Skill（技能）", prompt: "Prompt（提示词）", knowledge: "Knowledge（知识）", capability: "Capability（能力）", agent: "Agent（智能体）", connector: "Connector（连接器）", decision: "Decision（决策）", open_question: "Open Question（待确认问题）" };
 const READINESS_LABELS = { unclear: "目标待理解", discovering: "目标理解中", reviewable: "等待确认", confirmed: "目标已确认" };
@@ -48,7 +48,7 @@ export function SinoBrainContext({ brain, busy, capabilityAction, onCapabilityAc
     {brain.stage === "goal_discovery" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onForceReview}>目标已经够清楚，开始讨论</button> : null}
     {brain.stage === "goal_confirmed" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onStartStrategy}>开始策略会议</button> : null}
     <PackageOverview pkg={brain.discussion_package} />
-    {brain.discussion_package?.asset_commit ? <section className="sino-asset-commit-dashboard" aria-label="Asset Commit Status"><h3>Asset Commit Status</h3>{brain.discussion_package.asset_commit.items?.map((item) => <div key={item.asset_id}><span>{TYPE_LABELS[item.object_type] || item.object_type}</span><strong>{item.name}</strong><b>Committed</b></div>)}</section> : null}
+    {brain.discussion_package?.asset_commit ? <section className="sino-asset-commit-dashboard" aria-label="Candidate Commit Status"><h3>Candidate Commit Status</h3>{brain.discussion_package.asset_commit.items?.map((item) => <div key={item.asset_id}><span>{TYPE_LABELS[item.object_type] || item.object_type}</span><strong>{item.name}</strong><b>{item.lifecycle_status === "ready" ? "Ready" : "Candidate"}</b></div>)}</section> : null}
     {brain.strategy_proposals?.length || brain.discussion_package?.lifecycle?.length ? <details className="sino-brain-evidence"><summary>Developer Timeline · 查看讨论依据</summary>{brain.strategy_proposals?.map((item) => <article key={item.model_run_id || `${item.provider}-${item.model}`}><strong>{item.model} · {item.provider}</strong><p>{item.proposal?.core_judgment || item.proposal?.recommendation || "已记录结构化提案"}</p></article>)}{brain.discussion_package?.lifecycle?.map((item, index) => <article key={`${item.status}-${index}`}><strong>{item.status}</strong><p>{item.at}</p></article>)}</details> : null}
   </section>;
 }

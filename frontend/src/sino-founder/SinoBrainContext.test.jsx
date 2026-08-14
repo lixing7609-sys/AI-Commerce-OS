@@ -48,8 +48,8 @@ describe("SinoBrainContext", () => {
     const viewAssets = vi.fn(); const newGoal = vi.fn();
     const item = { discussion_object_id: "item-1", asset_id: "object-1", object_type: "workflow", name: "短剧生产 Workflow", action: "create", purpose: "稳定生产", confidence: .9, commit_status: "committed", destination: "AI 能力中心" };
     render(<SinoBrainContext brain={{ stage: "conversation_completed", goal_readiness: "confirmed", current_action: { action_id: "assets_committed", title: "资产提交完成", description: "已进入系统", primary_label: "查看资产", secondary_label: "开始新目标" }, discussion_package: { package_id: "package-1", title: "AI 短剧", status: "archived", counts: { workflow: 1 }, objects: [item], asset_commit: { commit_id: "commit-1", status: "committed", items: [item] } } }} onViewAssets={viewAssets} onNewGoal={newGoal} />);
-    expect(screen.getByText("Asset Commit Status")).toBeTruthy();
-    expect(screen.getAllByText("Committed").length).toBeGreaterThan(0);
+    expect(screen.getByText("Candidate Commit Status")).toBeTruthy();
+    expect(screen.getByText("Candidate")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "查看资产" }));
     fireEvent.click(screen.getByRole("button", { name: "开始新目标" }));
     expect(viewAssets).toHaveBeenCalled(); expect(newGoal).toHaveBeenCalled();
