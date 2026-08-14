@@ -1,5 +1,7 @@
 # Founder AI V2 Architecture Constitution
 
+The lifecycle ownership and persistence contract is frozen in [AI Commerce OS Asset Lifecycle V1](./ai-commerce-os-asset-lifecycle-v1.md) and governs all Founder Object publication, execution, learning, and reuse.
+
 Status: Frozen · Capability 1 — Founder AI V2 · Object Native Foundation
 
 ## Constitutional rules

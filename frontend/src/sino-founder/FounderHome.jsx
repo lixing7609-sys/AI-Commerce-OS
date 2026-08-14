@@ -35,6 +35,7 @@ export function FounderHome({ intelligence, message, onMessage, onSend, busy, on
         toolbarIncludesStatus
       />
       <nav className="sino-quick-create" aria-label="快速创建能力">{QUICK_CREATION.map(([type, label]) => <button type="button" key={type} onClick={() => onQuickCreate(type)}>{label}</button>)}</nav>
+      <button type="button" className="sino-lifecycle-entry" onClick={() => onNavigate("lifecycle")}>查看 Founder Asset Lifecycle</button>
       {resumeItems.length > 0 && <section className="sino-home-resume" aria-label="继续工作"><header><h2>继续工作</h2></header>{resumeItems.map((item) => <article key={item.execution_id}><div><strong>{item.goal}</strong><small>{executionStatusLabel(item.status)}</small></div><button type="button" onClick={() => onNavigate(item.status === "draft" ? "builder" : "execution")}>继续处理</button></article>)}</section>}
     </div>
   </section>;

@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
+from app.core.asset_lifecycle.service import upsert_catalog_record
 from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
 from app.core.project.model import FounderProjectDB
@@ -401,6 +402,16 @@ class SinoBrainRuntime:
                 asset_id = record.id
 
             asset_ids_by_name[name] = asset_id
+            upsert_catalog_record(
+                session, asset_id=asset_id, asset_type=object_type,
+                native_type="decision" if object_type == "decision" else "project" if object_type == "project" else "memory" if object_type == "knowledge" else "founder_object",
+                native_id=asset_id, name=name, purpose=purpose,
+                content={"reason": item.get("reason"), "source": item.get("source"), "risk": item.get("risk") or [], "confidence": item.get("confidence")},
+                status="committed", version=getattr(record, "version", 1),
+                source_conversation_id=state.conversation_id, source_package_id=package.get("package_id"),
+                project_id=state.project_id or (conversation.project_id if conversation else None),
+                dependency_refs=list(item.get("dependencies") or []),
+            )
             item.update({
                 "asset_id": asset_id, "commit_status": "committed",
                 "destination": destination, "committed_at": now.isoformat(),

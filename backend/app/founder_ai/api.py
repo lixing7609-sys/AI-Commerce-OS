@@ -44,6 +44,16 @@ from app.core.task_asset.service import get_founder_task_asset
 from app.core.founder_object.service import approve_object, archive_object, attach_object_context, detach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
 from app.core.founder_intent.service import attach_candidate_context, get_conversation_candidate_context, list_candidates, review_candidate
 from app.founder_ai.brain_runtime import brain_runtime
+from app.core.asset_lifecycle.service import (
+    create_asset_execution,
+    create_learning,
+    get_asset,
+    list_assets,
+    list_executions as list_asset_executions,
+    list_learnings,
+    reuse_asset,
+    suggest_reuse,
+)
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -221,6 +231,13 @@ class MemoryMergeIn(BaseModel):
     memory_ids: list[str] = Field(min_length=2)
     title: str = Field(min_length=1, max_length=500)
     revision_reason: str = Field(min_length=1, max_length=1000)
+
+
+class AssetReuseIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_type: str
+    target_id: str
+    note: str | None = None
 
 
 class ExecutionSessionOut(BaseModel):
@@ -955,3 +972,64 @@ def analyze_founder_conversation(conversation_id: str, request: FounderAnalyzeIn
         task_asset_draft=asdict(draft),
         execution_package=asdict(package),
     )
+
+
+@router.get("/asset-lifecycle/assets")
+def get_lifecycle_assets(asset_type: str | None = None, include_legacy: bool = False):
+    return {"assets": list_assets(asset_type, include_legacy=include_legacy)}
+
+
+@router.get("/asset-lifecycle/assets/{asset_id}")
+def get_lifecycle_asset(asset_id: str):
+    try:
+        return get_asset(asset_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/asset-lifecycle/assets/{asset_id}/execution")
+def start_lifecycle_asset_execution(asset_id: str):
+    try:
+        return create_asset_execution(asset_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.get("/asset-lifecycle/executions")
+def get_lifecycle_executions():
+    return {"executions": list_asset_executions()}
+
+
+@router.post("/asset-lifecycle/executions/{execution_id}/learning")
+def learn_from_lifecycle_execution(execution_id: str):
+    try:
+        return create_learning(execution_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.get("/asset-lifecycle/learnings")
+def get_lifecycle_learnings():
+    return {"learnings": list_learnings()}
+
+
+@router.post("/asset-lifecycle/assets/{asset_id}/reuse")
+def reuse_lifecycle_asset(asset_id: str, request: AssetReuseIn):
+    try:
+        return reuse_asset(asset_id, target_type=request.target_type, target_id=request.target_id, note=request.note)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.get("/asset-lifecycle/conversations/{conversation_id}/reuse-suggestions")
+def get_lifecycle_reuse_suggestions(conversation_id: str):
+    try:
+        return {"assets": suggest_reuse(conversation_id)}
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error

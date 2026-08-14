@@ -275,3 +275,38 @@ export function getFounderExecution(executionId) {
 export function resumeFounderExecution(executionId) {
   return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/resume`, { method: "POST" }, "恢复执行失败");
 }
+
+export function getLifecycleAssets(assetType, includeLegacy = false) {
+  const query = new URLSearchParams();
+  if (assetType) query.set("asset_type", assetType);
+  if (includeLegacy) query.set("include_legacy", "true");
+  return request(`/founder-ai/asset-lifecycle/assets${query.size ? `?${query}` : ""}`, undefined, "获取正式资产失败");
+}
+
+export function getLifecycleAsset(assetId) {
+  return request(`/founder-ai/asset-lifecycle/assets/${encodeURIComponent(assetId)}`, undefined, "获取资产详情失败");
+}
+
+export function startLifecycleExecution(assetId) {
+  return request(`/founder-ai/asset-lifecycle/assets/${encodeURIComponent(assetId)}/execution`, { method: "POST" }, "创建资产执行失败");
+}
+
+export function getLifecycleExecutions() {
+  return request("/founder-ai/asset-lifecycle/executions", undefined, "获取执行中心失败");
+}
+
+export function createExecutionLearning(executionId) {
+  return request(`/founder-ai/asset-lifecycle/executions/${encodeURIComponent(executionId)}/learning`, { method: "POST" }, "提炼执行学习失败");
+}
+
+export function getLifecycleLearnings() {
+  return request("/founder-ai/asset-lifecycle/learnings", undefined, "获取 Learning 失败");
+}
+
+export function reuseLifecycleAsset(assetId, targetType, targetId, note) {
+  return request(`/founder-ai/asset-lifecycle/assets/${encodeURIComponent(assetId)}/reuse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_type: targetType, target_id: targetId, note: note || null }) }, "引用资产失败");
+}
+
+export function getLifecycleReuseSuggestions(conversationId) {
+  return request(`/founder-ai/asset-lifecycle/conversations/${encodeURIComponent(conversationId)}/reuse-suggestions`, undefined, "获取可复用资产失败");
+}

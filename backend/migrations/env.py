@@ -38,6 +38,12 @@ from app.core.decision.model import DecisionAssetDB
 from app.core.task_asset.model import TaskAssetDB
 from app.core.artifact.model import ArtifactAssetDB
 from app.core.memory.model import MemoryAssetDB
+from app.core.asset_lifecycle.model import AssetCatalogDB, AssetLearningDB
+from app.core.reference.model import IntelligenceReferenceDB
+from app.core.council.model import CouncilModelRunDB, CouncilRunDB
+from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
+from core.founder_object.model import ConversationObjectContextDB, FounderObjectDB, FounderObjectRevisionDB
+from core.founder_intent.model import ConversationCandidateContextDB, FounderIntentRunDB, FounderObjectCandidateDB
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
 
 config = context.config

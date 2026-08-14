@@ -4,7 +4,7 @@ const TYPE_LABELS = {
   skill: "Skill（技能）", agent: "Agent（智能体）", connector: "Connector（连接器）",
 };
 
-export function AssetCommitWorkspace({ commit, onViewAssets, onReturnDiscussion, onNewGoal }) {
+export function AssetCommitWorkspace({ commit, onViewAssets, onEnterExecution, onNewGoal }) {
   if (!commit?.commit_id) return null;
   const items = commit.items || [];
   return <section className="sino-asset-commit" aria-label="Asset Commit">
@@ -14,6 +14,6 @@ export function AssetCommitWorkspace({ commit, onViewAssets, onReturnDiscussion,
       <dl><div><dt>Asset ID</dt><dd>{item.asset_id}</dd></div><div><dt>最终仓库</dt><dd>{item.destination}</dd></div><div><dt>用途</dt><dd>{item.purpose || "暂无"}</dd></div><div><dt>依赖</dt><dd>{item.dependencies?.length ? item.dependencies.join(" · ") : "暂无"}</dd></div></dl>
     </details>)}</div>
     <p className="sino-asset-commit__complete">全部提交成功。Conversation 已完成。</p>
-    <footer><button type="button" className="is-primary" onClick={onViewAssets}>查看资产</button><button type="button" onClick={onReturnDiscussion}>返回讨论</button><button type="button" onClick={onNewGoal}>开始新的目标</button></footer>
+    <footer><button type="button" className="is-primary" onClick={onViewAssets}>查看资产</button><button type="button" onClick={() => onEnterExecution ? onEnterExecution(items) : onViewAssets?.()}>进入执行</button><button type="button" onClick={onNewGoal}>开始新的目标</button></footer>
   </section>;
 }

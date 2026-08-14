@@ -13,6 +13,7 @@ export const STATUS_LABELS = {
   planning: "规划中", coding: "开发中", executing: "执行中", testing: "测试中",
   deploy: "部署中", completed: "已完成", failed: "失败", paused: "已暂停",
   persisted: "已保存",
+  committed: "已入库", deprecated: "已弃用", reusable: "可复用",
   deferred: "延期", pending: "待审批", superseded: "已被替代",
 };
 
