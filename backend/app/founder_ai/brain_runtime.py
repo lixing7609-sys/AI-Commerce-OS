@@ -236,6 +236,7 @@ class SinoBrainRuntime:
     def _normalize_recommendation(text: str) -> str:
         """Keep model attribution in evidence, not in the Founder-facing Decision."""
         cleaned = re.sub(r"^采纳(?:GPT|Claude|Gemini|DeepSeek|[^，,]{1,24}模型)[^，,]*[，,]\s*", "", str(text).strip(), flags=re.IGNORECASE)
+        cleaned = re.sub(r"(?:GPT|Claude|Gemini|DeepSeek)(?:\s*模型)?的?", "", cleaned, flags=re.IGNORECASE)
         return cleaned or str(text).strip()
 
     @staticmethod

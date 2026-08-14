@@ -49,3 +49,4 @@ def test_goal_brief_confirmation_and_package_are_persistent(monkeypatch):
 
 def test_decision_removes_model_attribution_from_primary_recommendation():
     assert module.SinoBrainRuntime._normalize_recommendation("采纳GPT的反方建议，缩小第一阶段范围") == "缩小第一阶段范围"
+    assert "Gemini" not in module.SinoBrainRuntime._normalize_recommendation("先验证，同时参考Gemini的技术路径")
