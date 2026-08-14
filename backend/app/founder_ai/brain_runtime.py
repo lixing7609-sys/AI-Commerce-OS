@@ -137,6 +137,9 @@ class SinoBrainRuntime:
                 state.discovery = discovery
                 reply = self._understanding_reply(understanding, include_question=False)
                 message_type = "goal_brief"
+                business_title = str((state.goal_brief or {}).get("goal") or "").strip().rstrip("。！？?!")
+                if business_title:
+                    conversation.title = business_title[:80]
             session.commit()
             return {"handled": True, "reply": reply, "message_type": message_type, "brain": self._serialize(state)}
 
@@ -246,25 +249,51 @@ class SinoBrainRuntime:
             state.validations = validations
             state.decision = decision
             state.discussion_package = package
-            state.stage = "package_ready" if confidence >= .7 else "conflict_validation"
+            # All structural results are durable now, but Founder controls when
+            # each completed stage becomes the active workspace.
+            state.stage = "strategy_meeting" if confidence >= .7 else "conflict_validation"
             state.updated_at = datetime.now(timezone.utc)
             session.add(ConversationMessageDB(conversation_id=conversation_id, role="assistant", message_type="decision", content=recommendation, grounding={"source_refs": decision["source_refs"]}))
             session.add(ConversationMessageDB(conversation_id=conversation_id, role="assistant", message_type="discussion_package", content=f"Discussion Package 已形成：{package['title']}。等待 Founder 审批。"))
             session.commit()
             return self._serialize(state)
 
+    def advance_stage(self, conversation_id: str, target: str) -> dict[str, Any]:
+        transitions = {
+            ("strategy_meeting", "validation"): "conflict_validation",
+            ("conflict_validation", "decision"): "decision_ready",
+            ("conflict_validation", "strategy"): "strategy_meeting",
+            ("decision_ready", "package"): "package_ready",
+            ("decision_ready", "strategy"): "strategy_meeting",
+        }
+        with SessionLocal() as session:
+            state = self._get(session, conversation_id)
+            next_stage = transitions.get((state.stage, target))
+            if not next_stage:
+                raise ValueError("当前阶段不能执行该操作")
+            if target == "validation" and not state.strategy_proposals:
+                raise ValueError("Strategy Meeting 尚未形成可验证方案")
+            if target == "decision" and not state.decision:
+                raise ValueError("尚未形成可用 Decision")
+            if target == "package" and not state.discussion_package:
+                raise ValueError("尚未形成 Discussion Package")
+            state.stage = next_stage
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return self._serialize(state)
+
     def review_package(self, conversation_id: str, action: str) -> dict[str, Any]:
-        if action not in {"approve", "return"}:
+        if action not in {"approve", "return", "discuss"}:
             raise ValueError("Unsupported package review action")
         with SessionLocal() as session:
             state = self._get(session, conversation_id)
             package = dict(state.discussion_package or {})
             if not package:
                 raise ValueError("Discussion Package 不存在")
-            package["status"] = "approved" if action == "approve" else "returned"
+            package["status"] = "approved" if action == "approve" else "returned" if action == "return" else "pending_review"
             package["reviewed_at"] = datetime.now(timezone.utc).isoformat()
             state.discussion_package = package
-            state.stage = "package_approved" if action == "approve" else "goal_confirmed"
+            state.stage = "package_approved" if action == "approve" else "strategy_meeting"
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
             return self._serialize(state)
@@ -449,7 +478,27 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         }
         payload["stage_workspaces"] = SinoBrainRuntime._stage_workspaces(payload)
         payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] == "active"), "package")
+        payload["current_action"] = SinoBrainRuntime._current_action(payload)
         return payload
+
+    @staticmethod
+    def _current_action(brain):
+        stage = brain.get("stage") or "goal_discovery"
+        if stage == "goal_review":
+            return {"action_id": "confirm_goal", "title": "目标已经明确", "description": "确认后开始 Strategy Meeting。", "primary_label": "开始讨论", "secondary_label": "修改目标"}
+        if stage == "strategy_meeting" and brain.get("strategy_proposals"):
+            return {"action_id": "start_validation", "title": "Strategy Finished", "description": f"已形成 {len(brain.get('strategy_proposals') or [])} 个策略提案，下一步验证冲突、风险与可行性。", "primary_label": "开始 Validation", "secondary_label": "继续讨论"}
+        if stage == "strategy_meeting":
+            return {"action_id": "continue_strategy", "title": "Strategy Meeting", "description": "围绕已确认 Goal Brief 完成策略讨论。", "primary_label": "继续讨论"}
+        if stage == "conflict_validation":
+            return {"action_id": "generate_decision", "title": "Validation Finished", "description": f"已完成 {len(brain.get('validations') or [])} 项验证。", "primary_label": "生成 Decision", "secondary_label": "继续验证"}
+        if stage == "decision_ready":
+            return {"action_id": "generate_package", "title": "Decision Finished", "description": "唯一推荐方案已经形成。", "primary_label": "生成 Discussion Package", "secondary_label": "重新讨论"}
+        if stage == "package_ready":
+            return {"action_id": "approve_package", "title": "等待 Founder 批准成果包", "description": "批准后，本轮 Decision 与资产结构正式生效。", "primary_label": "批准成果包", "secondary_label": "继续讨论", "danger_label": "退回修改"}
+        if stage == "package_approved":
+            return {"action_id": "package_approved", "title": "成果包已批准", "description": "本轮 Founder 审批已完成。", "primary_label": "已完成"}
+        return {"action_id": "continue_goal", "title": "继续理解目标", "description": "回答 Sino 当前最关键的问题。", "primary_label": "继续"}
 
     @staticmethod
     def _stage_workspaces(brain):

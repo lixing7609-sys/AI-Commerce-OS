@@ -476,6 +476,17 @@ def review_brain_package(conversation_id: str, request: BrainReviewIn):
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+@router.post("/conversations/{conversation_id}/brain/stage/advance", response_model=dict[str, Any])
+def advance_brain_stage(conversation_id: str, request: BrainReviewIn):
+    try:
+        brain_runtime.advance_stage(conversation_id, request.action)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
 @router.post("/conversations/{conversation_id}/council/retry", response_model=dict[str, Any])
 def retry_council(conversation_id: str):
     try:

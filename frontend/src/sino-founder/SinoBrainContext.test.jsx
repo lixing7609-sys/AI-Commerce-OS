@@ -8,9 +8,9 @@ describe("SinoBrainContext", () => {
   it("renders a reviewable Goal Brief and confirmation gate", () => {
     const confirm = vi.fn();
     render(<SinoBrainContext brain={{ stage: "goal_review", goal_readiness: "reviewable", goal_brief: { goal: "我要做AI短剧", summary: "建立生产能力" } }} onConfirmGoal={confirm} />);
-    expect(screen.getByText("Goal Brief")).toBeTruthy();
+    expect(screen.getByText("目标已经明确")).toBeTruthy();
     expect(screen.getByText("我要做AI短剧")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "确认目标并开始讨论" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始讨论" }));
     expect(confirm).toHaveBeenCalled();
   });
 
@@ -29,5 +29,18 @@ describe("SinoBrainContext", () => {
     expect(screen.getByText(/待 Founder 审批/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "批准成果包" }));
     expect(review).toHaveBeenCalledWith("approve");
+  });
+
+  it("exposes one real next action for Strategy, Validation and Decision", () => {
+    const advance = vi.fn();
+    const { rerender } = render(<SinoBrainContext brain={{ stage: "strategy_meeting", goal_readiness: "confirmed", current_action: { action_id: "start_validation", title: "Strategy Finished", description: "已形成方案", primary_label: "开始 Validation", secondary_label: "继续讨论" } }} onAdvanceStage={advance} />);
+    fireEvent.click(screen.getByRole("button", { name: "开始 Validation" }));
+    expect(advance).toHaveBeenLastCalledWith("validation");
+    rerender(<SinoBrainContext brain={{ stage: "conflict_validation", goal_readiness: "confirmed", current_action: { action_id: "generate_decision", title: "Validation Finished", description: "验证完成", primary_label: "生成 Decision", secondary_label: "继续验证" } }} onAdvanceStage={advance} />);
+    fireEvent.click(screen.getByRole("button", { name: "生成 Decision" }));
+    expect(advance).toHaveBeenLastCalledWith("decision");
+    rerender(<SinoBrainContext brain={{ stage: "decision_ready", goal_readiness: "confirmed", current_action: { action_id: "generate_package", title: "Decision Finished", description: "决策完成", primary_label: "生成 Discussion Package", secondary_label: "重新讨论" } }} onAdvanceStage={advance} />);
+    fireEvent.click(screen.getByRole("button", { name: "生成 Discussion Package" }));
+    expect(advance).toHaveBeenLastCalledWith("package");
   });
 });

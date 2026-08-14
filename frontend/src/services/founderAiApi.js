@@ -99,6 +99,10 @@ export function reviewSinoBrainPackage(conversationId, action) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/package/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "审核 Discussion Package 失败");
 }
 
+export function advanceSinoBrainStage(conversationId, action) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/stage/advance`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "推进 Sino Brain 阶段失败");
+}
+
 export function retryCouncil(conversationId) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/council/retry`, { method: "POST" }, "重试多模型讨论失败");
 }

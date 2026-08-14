@@ -75,3 +75,13 @@ def test_auto_deliberation_confirmation_starts_real_strategy_path(monkeypatch):
     result = api.discuss_with_auto_deliberation("conversation-1", api.CouncilDiscussionIn(content="正确"))
     assert result["conversation"]["id"] == "conversation-1"
     assert [item[0] for item in calls] == ["confirm", "prepare", "auto", "finalize"]
+
+
+def test_stage_action_api_advances_and_returns_fresh_workspace(monkeypatch):
+    calls = []
+    monkeypatch.setattr(api.brain_runtime, "advance_stage", lambda cid, target: calls.append((cid, target)))
+    monkeypatch.setattr(api.council_service, "snapshot", lambda cid: {"conversation": {"id": cid}})
+    monkeypatch.setattr(api, "_candidate_snapshot", lambda snapshot, _cid: snapshot)
+    result = api.advance_brain_stage("conversation-1", api.BrainReviewIn(action="validation"))
+    assert calls == [("conversation-1", "validation")]
+    assert result["conversation"]["id"] == "conversation-1"

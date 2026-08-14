@@ -38,6 +38,8 @@ def test_strategy_unknown_does_not_block_goal_brief(monkeypatch):
     assert result["message_type"] == "goal_brief"
     assert result["brain"]["goal_readiness"] == "reviewable"
     assert "成本目标" in result["brain"]["goal_brief"]["unknowns"]
+    with module.SessionLocal() as session:
+        assert session.get(ConversationDB, conversation_id).title == "AI 短剧生产能力"
 
 
 def test_model_cannot_turn_production_steps_into_blocking_question(monkeypatch):
@@ -128,7 +130,11 @@ def test_goal_brief_package_lifecycle(monkeypatch):
     runtime.prepare_strategy_prompt(conversation_id)
     council = {"council_runs": [{"council_run_id": "council-1", "recommendation": "建立短剧 Project，并先验证最小 Workflow", "consensus": ["先验证最小链路"], "disagreements": ["是否现在创建巨大 Agent"], "risks": ["成本不可控"], "unknowns": ["平台 API"], "model_runs": [{"model_run_id": "run-1", "provider": "deepseek", "model": "deepseek-chat", "status": "completed", "proposal": {"core_judgment": "先验证"}}]}]}
     final = runtime.finalize_council(conversation_id, council)
-    assert final["stage"] == "package_ready"
+    assert final["stage"] == "strategy_meeting"
+    assert final["current_action"]["action_id"] == "start_validation"
+    assert runtime.advance_stage(conversation_id, "validation")["stage"] == "conflict_validation"
+    assert runtime.advance_stage(conversation_id, "decision")["stage"] == "decision_ready"
+    assert runtime.advance_stage(conversation_id, "package")["stage"] == "package_ready"
     assert runtime.review_package(conversation_id, "approve")["stage"] == "package_approved"
 
 
@@ -160,6 +166,9 @@ def test_finalized_council_exposes_completed_stages_and_active_package(monkeypat
     runtime.confirm_goal(conversation_id)
     council = {"council_runs": [{"council_run_id": "council-1", "recommendation": "先验证最小生产链", "consensus": ["先验证"], "disagreements": [], "risks": [], "unknowns": [], "model_runs": [{"model_run_id": "run-1", "provider": "test", "model": "test-model", "status": "completed", "proposal": {"core_judgment": "先验证"}}]}]}
     runtime.finalize_council(conversation_id, council)
+    runtime.advance_stage(conversation_id, "validation")
+    runtime.advance_stage(conversation_id, "decision")
+    runtime.advance_stage(conversation_id, "package")
     package = runtime.snapshot(conversation_id)
     assert package["active_workspace_stage"] == "package"
     assert [item["status"] for item in package["stage_workspaces"]] == ["completed", "completed", "completed", "completed", "active"]

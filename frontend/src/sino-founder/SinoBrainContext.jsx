@@ -1,26 +1,52 @@
+import { FounderActionCard } from "./FounderActionCard.jsx";
+
 const STAGE_LABELS = {
   goal_discovery: "Goal Understanding · 目标理解", goal_review: "Goal Brief · 目标确认",
   goal_confirmed: "目标已确认", strategy_meeting: "Strategy Meeting · 策略会议",
-  conflict_validation: "Conflict Validation · 冲突验证", decision_ready: "Decision · 决策",
+  conflict_validation: "Validation · 验证", decision_ready: "Decision · 决策",
   package_ready: "Discussion Package · 成果包", package_approved: "成果包已批准",
 };
 const TYPE_LABELS = { project: "Project（项目）", workflow: "Workflow（工作流）", skill: "Skill（技能）", prompt: "Prompt（提示词）", knowledge: "Knowledge（知识）", capability: "Capability（能力）", agent: "Agent（智能体）", connector: "Connector（连接器）", decision: "Decision（决策）", open_question: "Open Question（待确认问题）" };
-const READINESS_LABELS = { unclear: "UNCLEAR", discovering: "DISCOVERING", reviewable: "REVIEWABLE", confirmed: "CONFIRMED" };
+const READINESS_LABELS = { unclear: "目标待理解", discovering: "目标理解中", reviewable: "等待确认", confirmed: "目标已确认" };
+const ACTION_LABELS = { create: "Create（新建）", update: "Update（更新）", replace: "Replace（替换）", archive: "Archive（归档）" };
 
-export function SinoBrainContext({ brain, busy, onConfirmGoal, onForceReview, onStartStrategy, onReviewPackage }) {
+function PackageOverview({ pkg }) {
+  if (!pkg?.package_id) return null;
+  return <section className="sino-package-overview" aria-label="成果包资产总览">
+    <header><div><span>Discussion Package</span><h3>{pkg.title}</h3></div><strong>{pkg.status === "approved" ? "已批准" : pkg.status === "returned" ? "已退回" : "待 Founder 审批"}</strong></header>
+    <div className="sino-package-overview__counts">{Object.entries(pkg.counts || {}).map(([type, count]) => <span key={type}>{TYPE_LABELS[type] || type} ×{count}</span>)}</div>
+    <div className="sino-package-assets">{pkg.objects?.map((item) => <article key={item.discussion_object_id}>
+      <header><span>{TYPE_LABELS[item.object_type] || item.object_type}</span><b>{ACTION_LABELS[item.action] || item.action}</b></header>
+      <strong>{item.name}</strong><p>{item.purpose}</p>
+      <dl><div><dt>Confidence</dt><dd>{Math.round((item.confidence || 0) * 100)}%</dd></div><div><dt>Creator</dt><dd>Sino Brain</dd></div><div><dt>Dependency</dt><dd>{item.dependencies?.length ? item.dependencies.join(" · ") : "暂无"}</dd></div></dl>
+    </article>)}</div>
+  </section>;
+}
+
+export function SinoBrainContext({ brain, busy, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage }) {
   if (!brain) return null;
   const brief = brain.goal_brief || {};
   const decision = brain.decision || {};
-  const pkg = brain.discussion_package || {};
   const understanding = brain.discovery?.working_understanding || {};
-  return <section className="sino-brain-context" aria-label="Brain Context">
-    <header><h2>Brain Context</h2><span>{STAGE_LABELS[brain.stage] || brain.stage}</span></header>
-    <dl className="sino-brain-context__status"><div><dt>Goal Status</dt><dd>{READINESS_LABELS[brain.goal_readiness] || brain.goal_readiness}</dd></div><div><dt>Current Stage</dt><dd>{brain.stage === "goal_review" ? "Goal Brief · 等待 Founder 确认" : STAGE_LABELS[brain.stage] || brain.stage}</dd></div></dl>
-    <article className="sino-brain-next-action"><h3>Next Action</h3><p>{brain.stage === "goal_review" ? "确认 Goal Brief 后开始 Strategy Meeting" : ["goal_confirmed", "strategy_meeting"].includes(brain.stage) ? "多模型正在围绕已确认 Goal Brief 讨论" : "继续与 Sino 澄清真正阻塞策略讨论的目标信息"}</p>{brain.stage === "goal_review" ? <button type="button" className="is-primary" disabled={busy} onClick={onConfirmGoal}>确认目标并开始讨论</button> : null}</article>
-    {Object.keys(understanding).length ? <article className="sino-goal-understanding"><h3>目标理解</h3><p>{brief.summary || understanding.interpreted_goal}</p><dl><div><dt>已理解</dt><dd>{[...(understanding.known_context || []), ...(understanding.inferred_context || [])].join(" · ") || "正在理解"}</dd></div><div><dt>仍待讨论</dt><dd>{understanding.non_blocking_unknowns?.join(" · ") || "暂无"}</dd></div></dl>{brain.stage === "goal_discovery" ? <footer><button type="button" disabled={busy} onClick={onForceReview}>目标已经够清楚，开始讨论</button></footer> : null}</article> : null}
-    {Object.keys(brief).length ? <article className="sino-goal-brief"><h3>Goal Brief</h3><p>{brief.summary || brief.goal}</p><dl>{[["Goal", brief.goal], ["Expected Outcome", brief.expected_outcome], ["Scope", brief.scope], ["Constraints", brief.constraints], ["Success Criteria", brief.success_criteria], ["仍待讨论", brief.unknowns], ["Assumptions", brief.assumptions]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{Array.isArray(value) ? value.join(" · ") || "暂无" : value || "暂无"}</dd></div>)}</dl>{brain.stage === "goal_review" ? <footer><span>修正理解可直接在对话中输入</span></footer> : null}{brain.stage === "goal_confirmed" ? <footer><button type="button" className="is-primary" disabled={busy} onClick={onStartStrategy}>开始策略会议</button></footer> : null}</article> : null}
-    {Object.keys(decision).length ? <article className="sino-brain-decision"><h3>Decision</h3><strong>{decision.final_recommendation}</strong><dl><div><dt>Why</dt><dd>{decision.why?.join(" · ") || "暂无"}</dd></div><div><dt>Why Not Alternatives</dt><dd>{decision.why_not_alternatives?.join(" · ") || "暂无明确替代方案"}</dd></div><div><dt>Confidence</dt><dd>{Math.round((decision.confidence || 0) * 100)}%</dd></div><div><dt>Key Risks</dt><dd>{decision.key_risks?.join(" · ") || "暂无"}</dd></div><div><dt>Remaining Unknowns</dt><dd>{decision.remaining_unknowns?.join(" · ") || "暂无"}</dd></div><div><dt>Next Step</dt><dd>{decision.next_step}</dd></div></dl></article> : null}
-    {brain.strategy_proposals?.length ? <details className="sino-brain-evidence"><summary>查看讨论依据</summary>{brain.strategy_proposals.map((item) => <article key={item.model_run_id || `${item.provider}-${item.model}`}><strong>{item.model} · {item.provider}</strong><p>{item.proposal?.core_judgment || item.proposal?.recommendation || "已记录结构化提案"}</p></article>)}</details> : null}
-    {pkg.package_id ? <article className="sino-discussion-package"><span>Discussion Package</span><h3>{pkg.title}</h3><p>状态：{pkg.status === "pending_review" ? "待 Founder 审批" : pkg.status === "approved" ? "已批准" : "已退回"}</p><ul>{Object.entries(pkg.counts || {}).map(([type, count]) => <li key={type}>{TYPE_LABELS[type] || type} ×{count}</li>)}</ul><details><summary>查看成果包</summary>{pkg.objects?.map((item) => <section key={item.discussion_object_id}><strong>{TYPE_LABELS[item.object_type] || item.object_type} · {item.name}</strong><p>{item.action} · {item.purpose}</p><small>Confidence {Math.round((item.confidence || 0) * 100)}% · {item.source}</small></section>)}</details>{pkg.status === "pending_review" ? <footer><button type="button" className="is-primary" disabled={busy} onClick={() => onReviewPackage("approve")}>批准成果包</button><button type="button" disabled={busy} onClick={() => onReviewPackage("return")}>退回</button><span>继续讨论可直接在对话中输入</span></footer> : null}</article> : null}
+  const risk = decision.key_risks?.[0] || "暂无关键风险";
+  const question = decision.remaining_unknowns?.[0] || brief.unknowns?.[0] || "暂无待确认问题";
+  const action = brain.current_action || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "确认后开始 Strategy Meeting。", primary_label: "开始讨论", secondary_label: "修改目标" } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "批准后，本轮 Decision 与资产结构正式生效。", primary_label: "批准成果包", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
+  return <section className="sino-brain-context sino-brain-dashboard" aria-label="Brain Dashboard">
+    <FounderActionCard compact action={action} busy={busy} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} />
+    <header><h2>Brain Dashboard</h2><span>{STAGE_LABELS[brain.stage] || brain.stage}</span></header>
+    <dl className="sino-brain-dashboard__grid">
+      <div><dt>Current Stage</dt><dd>{STAGE_LABELS[brain.stage] || brain.stage}</dd></div>
+      <div><dt>Goal</dt><dd>{brief.goal || understanding.interpreted_goal || "正在理解"}</dd></div>
+      <div><dt>Goal Status</dt><dd>{READINESS_LABELS[brain.goal_readiness] || brain.goal_readiness}</dd></div>
+      <div><dt>Decision</dt><dd>{decision.final_recommendation || "尚未形成"}</dd></div>
+      <div><dt>Confidence</dt><dd>{decision.confidence ? `${Math.round(decision.confidence * 100)}%` : "—"}</dd></div>
+      <div><dt>Current Risk</dt><dd>{risk}</dd></div>
+      <div><dt>Remaining Question</dt><dd>{question}</dd></div>
+      <div><dt>Next Step</dt><dd>{action?.description || "继续当前讨论"}</dd></div>
+    </dl>
+    {brain.stage === "goal_discovery" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onForceReview}>目标已经够清楚，开始讨论</button> : null}
+    {brain.stage === "goal_confirmed" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onStartStrategy}>开始策略会议</button> : null}
+    <PackageOverview pkg={brain.discussion_package} />
+    {brain.strategy_proposals?.length ? <details className="sino-brain-evidence"><summary>Developer Timeline · 查看讨论依据</summary>{brain.strategy_proposals.map((item) => <article key={item.model_run_id || `${item.provider}-${item.model}`}><strong>{item.model} · {item.provider}</strong><p>{item.proposal?.core_judgment || item.proposal?.recommendation || "已记录结构化提案"}</p></article>)}</details> : null}
   </section>;
 }

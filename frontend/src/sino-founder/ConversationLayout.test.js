@@ -28,7 +28,7 @@ describe("Conversation Composer layout", () => {
   it("places the dock in its own workspace row above a ten-pixel safe area", () => {
     const thread = [...css.matchAll(/\.sino-conversation-thread\s*\{([^}]*)\}/g)].map((match) => match[1]).find((rule) => rule.includes("grid-template-rows:")) || "";
     const rule = css.match(/\.sino-conversation-composer-dock\s*\{([^}]*)\}/)?.[1] || "";
-    expect(thread).toContain("grid-template-rows: auto minmax(0, 1fr) auto 10px");
+    expect(thread).toContain("grid-template-rows: auto auto minmax(0, 1fr) auto 10px");
     expect(rule).not.toMatch(/(?:margin-bottom|bottom:|position:)/);
     expect(css).toContain(".sino-conversation-workspace-safe-area { min-height: 10px");
   });

@@ -1,3 +1,4 @@
+import re
 from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
@@ -6,7 +7,7 @@ from app.core.artifact.model import ArtifactAssetDB
 from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
 from app.core.task_asset.model import TaskAssetDB
-from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
+from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB, SinoBrainSessionDB
 from app.core.council.model import CouncilModelRunDB, CouncilRunDB
 from app.core.project.service import get_project
 from app.database.db import SessionLocal
@@ -44,13 +45,20 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
 
 def list_conversations() -> list[ConversationDB]:
     with SessionLocal() as session:
-        return list(
+        records = list(
             session.scalars(
                 select(ConversationDB)
                 .where(ConversationDB.system_id == FOUNDER_SYSTEM_KEY)
                 .order_by(ConversationDB.updated_at.desc())
             )
         )
+        internal_title = re.compile(r"^(goal\s*(revision|confirmation|understanding|brief)?|intent|validation|decision|discussion\s*package|package)(\b|\s|[-_:])", re.I)
+        for record in records:
+            if internal_title.search(record.title or ""):
+                brain = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == record.id))
+                business_title = str((brain.goal_brief or {}).get("goal") or "").strip().rstrip("。！？?!") if brain else ""
+                record.title = business_title[:80] or "未命名讨论"
+        return records
 
 
 def get_conversation(conversation_id: str) -> ConversationDB | None:
