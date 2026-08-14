@@ -354,7 +354,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-conversation-thread { --conversation-content-max-width: 900px; --conversation-content-gutter: 20px; display: grid; flex: 1 1 0; grid-template-rows: minmax(0, 1fr) auto 10px; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; box-sizing: border-box; }
 .sino-conversation-thread .sino-conversation-log { align-content: start; max-height: none; min-width: 0; min-height: 0; margin: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .sino-conversation-thread .sino-conversation-log::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.sino-conversation-composer-dock { z-index: 2; width: 100%; background: transparent; box-sizing: border-box; }
+.sino-conversation-composer-dock { z-index: 2; width: 100%; background: #090b09; box-sizing: border-box; }
 .sino-conversation-workspace-safe-area { min-height: 10px; pointer-events: none; }
 .sino-conversation-thread .sino-global-composer { width: calc(100% - (2 * var(--conversation-content-gutter))); max-width: calc(var(--conversation-content-max-width) - (2 * var(--conversation-content-gutter))); margin-inline: auto; }
 .sino-conversation-composer-dock .sino-global-composer { min-height: 118px; padding: 10px 14px; border-radius: 14px; box-shadow: 0 12px 38px rgba(0,0,0,.22); box-sizing: border-box; }
@@ -472,13 +472,50 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-project-workspace__state { margin: 0; color: #7e877b; font-size: 12px; }
 .sino-project-conversations { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: none; }
 .sino-project-conversations::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.sino-project-conversation-row { display: grid; width: 100%; gap: 7px; padding: 18px 4px; border: 0; background: transparent; color: #c4cbc0; text-align: left; cursor: pointer; }
+.sino-project-conversation-row { display: grid; width: 100%; gap: 7px; padding: 18px 4px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: #c4cbc0; text-align: left; cursor: pointer; }
 .sino-project-conversation-row:hover { background: rgba(255,255,255,.02); }
 .sino-project-conversation-row p, .sino-project-conversation-row time, .sino-project-conversations__empty { margin: 0; color: #7e877b; font-size: 12px; line-height: 1.55; }
 .sino-project-conversation-row time { font-size: 12px; }
 .sino-project-conversations__empty { padding: 28px 4px; }
 .sino-project-workspace > .sino-conversation-composer-dock { margin-top: 18px; }
 .sino-project-workspace .sino-global-composer { width: 100%; margin: 0; }
+.sino-home__intro { margin: -18px 0 26px; color: #7f887d; font-size: 14px; }
+.sino-quick-create { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 18px auto 0; }
+.sino-quick-create button { padding: 7px 11px; border: 1px solid #30362e; border-radius: 8px; background: transparent; color: #929b90; font-size: 13px; cursor: pointer; }
+.sino-quick-create button:hover { border-color: #536049; color: #d5dcd2; background: #111510; }
+.sino-capability-context__summary { display: grid; gap: 5px; margin-top: 18px; padding: 0 0 16px; border-bottom: 1px solid #242a22; }
+.sino-capability-context__summary h3 { margin: 0; color: #768074; font-size: 12px; font-weight: 500; }
+.sino-capability-context__summary strong { color: #a9bb9f; font-size: 12px; }
+.sino-capability-context__summary p { margin: 0; color: #e0e5dd; font-size: 15px; }
+.sino-capability-context__structure { display: grid; gap: 0; margin-top: 18px; }
+.sino-capability-context__structure div { padding: 11px 0; border-top: 1px solid #20251f; }
+.sino-capability-context__structure span { color: #727b70; font-size: 12px; }
+.sino-capability-context__structure p { margin: 4px 0 0; color: #abb3a8; font-size: 13px; line-height: 1.55; }
+
+.sino-capability-library, .sino-capability-object { height: 100%; min-height: 0; overflow-y: auto; padding: 34px clamp(24px, 4vw, 58px); scrollbar-width: none; }
+.sino-capability-library::-webkit-scrollbar, .sino-capability-object::-webkit-scrollbar { display: none; }
+.sino-capability-library > header h1, .sino-capability-object > header h1 { margin: 5px 0 6px; font-size: 25px; }
+.sino-capability-library > header p { margin: 0; color: #7f887d; font-size: 14px; }
+.sino-capability-library > nav { display: flex; gap: 18px; margin: 28px 0 12px; border-bottom: 1px solid #242a22; }
+.sino-capability-library > nav button { padding: 0 0 9px; border: 0; border-bottom: 1px solid transparent; background: transparent; color: #7c8579; cursor: pointer; }
+.sino-capability-library > nav button.is-active { border-color: var(--accent); color: #dbe5d4; }
+.sino-capability-library__list { display: grid; }
+.sino-capability-library__list > button { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, .8fr); gap: 28px; width: 100%; padding: 19px 2px; border: 0; border-bottom: 1px solid #20251f; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.sino-capability-library__list > button:hover { background: rgba(255,255,255,.015); }
+.sino-capability-library__list span { color: #8fa085; font-size: 12px; }.sino-capability-library__list strong { display: block; margin-top: 3px; font-size: 16px; }.sino-capability-library__list p { margin: 5px 0 0; color: #7f887d; font-size: 13px; }
+.sino-capability-library__list dl { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin: 0; }.sino-capability-library__list dt { color: #626b60; font-size: 11px; }.sino-capability-library__list dd { margin: 4px 0 0; color: #aeb6ab; font-size: 12px; }
+.sino-capability-library__empty { margin-top: 48px; color: #747d72; }
+.sino-capability-object > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding-bottom: 22px; border-bottom: 1px solid #242a22; }
+.sino-capability-object > header span { color: #8fa085; font-size: 12px; }.sino-capability-object > header p { margin: 0; color: #8e978b; font-size: 13px; }
+.sino-capability-object__actions { display: flex; gap: 8px; }.sino-capability-object__actions button, .sino-capability-object__meta button { padding: 8px 12px; border: 1px solid #3a4437; border-radius: 7px; background: transparent; color: #bcc4b9; cursor: pointer; }.sino-capability-object__actions button.is-primary { border-color: var(--accent); color: var(--accent); }.sino-capability-object__actions button:disabled { opacity: .35; cursor: default; }
+.sino-capability-object__meta { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; padding: 13px 0; color: #697267; font-size: 12px; }
+.sino-capability-object__meta button { margin-left: auto; padding: 5px 8px; font-size: 12px; }
+.sino-capability-object__body { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 34px; min-height: 520px; padding-top: 24px; }
+.sino-capability-object__body > nav { display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
+.sino-capability-object__body > nav button { padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: #768074; text-align: left; cursor: pointer; }.sino-capability-object__body > nav button.is-active { background: #171b16; color: #e1e7de; }
+.sino-capability-object__body > article { max-width: 760px; }.sino-capability-object__body > article > span { color: #788574; font-size: 12px; }.sino-capability-object__body h2 { margin: 8px 0 18px; font-size: 19px; }.sino-capability-object__body p { color: #abb3a8; font-size: 15px; line-height: 1.75; }
+.sino-capability-object__body dl { display: grid; gap: 0; margin-top: 28px; }.sino-capability-object__body dl div { display: grid; grid-template-columns: 150px 1fr; padding: 10px 0; border-top: 1px solid #20251f; }.sino-capability-object__body dt { color: #70796e; font-size: 12px; }.sino-capability-object__body dd { margin: 0; color: #b8c0b5; font-size: 13px; }
+@media (max-width: 900px) { .sino-capability-library, .sino-capability-object { height: auto; padding: 24px 18px; }.sino-capability-library__list > button { grid-template-columns: 1fr; }.sino-capability-library__list dl { grid-template-columns: repeat(2, 1fr); }.sino-capability-object > header { flex-direction: column; }.sino-capability-object__body { grid-template-columns: 1fr; }.sino-capability-object__body > nav { flex-direction: row; overflow-x: auto; }.sino-quick-create { justify-content: flex-start; } }
 .sino-project-context-lock { display: inline-flex; align-items: center; gap: 7px; color: #aeb6aa; font-size: 12px; }
 .sino-home { display: block; min-height: calc(100dvh - 66px); }
 .sino-home__center { max-width: 850px; }

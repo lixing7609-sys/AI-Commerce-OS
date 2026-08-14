@@ -8,7 +8,8 @@ describe("Global Typography System V1", () => {
   it("keeps the shared Composer dock seamless and the toolbar inside its outer border", () => {
     const dockRule = css.match(/\.sino-conversation-composer-dock\s*\{([^}]*)\}/)?.[1] || "";
     const toolbarRule = css.match(/\.sino-composer\.sino-global-composer--toolbar \.sino-composer__toolbar\s*\{([^}]*)\}/)?.[1] || "";
-    expect(dockRule).toContain("background: transparent");
+    expect(dockRule).toContain("background: #090b09");
+    expect(dockRule).not.toContain("border-top");
     expect(toolbarRule).toContain("margin: 18px 0 0");
     expect(toolbarRule).toContain("padding: 0");
     expect(toolbarRule).not.toContain("-26px");
@@ -16,11 +17,6 @@ describe("Global Typography System V1", () => {
     expect(css).toMatch(/\.sino-composer\s*\{[^}]*border:\s*1px solid/);
   });
 
-  it("does not draw separators between Project discussion rows or above its Composer", () => {
-    const projectRowRule = css.match(/\.sino-project-conversation-row\s*\{([^}]*)\}/)?.[1] || "";
-    expect(projectRowRule).toContain("border: 0");
-    expect(projectRowRule).not.toContain("border-bottom");
-  });
   it("defines the shared Founder typography tokens", () => {
     for (const token of ["page-title", "section-title", "card-title", "body", "body-small", "label", "nav", "sidebar", "button", "helper", "metadata"]) {
       expect(css).toContain(`--font-${token}:`);

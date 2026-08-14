@@ -10,17 +10,18 @@ const executionStatusLabel = (status) => ({
   paused: "执行已暂停",
   failed: "执行失败",
 }[status] || status);
-import { ProjectContextSelector } from "./ProjectContextSelector.jsx";
 import { ComposerContextControls } from "./ComposerContextControls.jsx";
 
 const formatTime = (value) => value ? new Intl.DateTimeFormat(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "";
 
-export function FounderHome({ intelligence, message, onMessage, onSend, busy, onNavigate, onOpenConversation, healthy, projects, activeProjectId, onSelectProject, onCreateProject, onFiles, mode, onModeChange }) {
+const QUICK_CREATION = [["agent", "创建 Agent"], ["skill", "创建 Skill"], ["workflow", "创建 Workflow"], ["prompt", "创建 Prompt"], ["capability", "创建 Capability"], ["project", "创建 Project"]];
+
+export function FounderHome({ intelligence, message, onMessage, onSend, busy, onNavigate, onQuickCreate, healthy, projects, activeProjectId, onSelectProject, onCreateProject, onFiles, mode, onModeChange }) {
   const resumeItems = (intelligence?.execution_refs || []).filter((item) => ["draft", "approved", "queued", "executing", "testing", "paused", "failed"].includes(item.status)).slice(0, 3);
   return <section className="sino-home" aria-labelledby="sino-home-title">
     <div className="sino-home__center">
-      <span className="sino-kicker">Sino Founder AI</span>
-      <h1 id="sino-home-title">今天想讨论什么？</h1>
+      <h1 id="sino-home-title">创造什么 AI 能力？</h1>
+      <p className="sino-home__intro">与 Sino 讨论需求，创建 Agent、Skill、Workflow、Prompt 或 Capability。</p>
       <GlobalSecretaryComposer
         value={message}
         onChange={onMessage}
@@ -33,6 +34,7 @@ export function FounderHome({ intelligence, message, onMessage, onSend, busy, on
         toolbar={<ComposerContextControls healthy={healthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={onSelectProject} onCreateProject={onCreateProject} onFiles={onFiles} />}
         toolbarIncludesStatus
       />
+      <nav className="sino-quick-create" aria-label="快速创建能力">{QUICK_CREATION.map(([type, label]) => <button type="button" key={type} onClick={() => onQuickCreate(type)}>{label}</button>)}</nav>
       {resumeItems.length > 0 && <section className="sino-home-resume" aria-label="继续工作"><header><h2>继续工作</h2></header>{resumeItems.map((item) => <article key={item.execution_id}><div><strong>{item.goal}</strong><small>{executionStatusLabel(item.status)}</small></div><button type="button" onClick={() => onNavigate(item.status === "draft" ? "builder" : "execution")}>继续处理</button></article>)}</section>}
     </div>
   </section>;

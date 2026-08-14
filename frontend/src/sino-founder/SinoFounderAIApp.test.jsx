@@ -273,9 +273,6 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(screen.queryByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……")).toBeNull();
     expect(within(projectWorkspace).getByRole("region", { name: "AI Commerce OS 项目会话" })).toBeTruthy();
     expect(within(projectWorkspace).getByRole("button", { name: /Project Intelligence 讨论/ })).toBeTruthy();
-    const projectRows = within(projectWorkspace).getAllByRole("button", { name: /Project Intelligence 讨论/ });
-    const projectConversationList = projectRows[0].closest(".sino-project-conversations");
-    expect(projectConversationList?.nextElementSibling?.classList.contains("sino-conversation-composer-dock")).toBe(true);
     expect(within(projectWorkspace).getByPlaceholderText("继续和 Sino 讨论 AI Commerce OS……")).toBeTruthy();
     expect(within(projectWorkspace).getByPlaceholderText("继续和 Sino 讨论 AI Commerce OS……").closest(".sino-conversation-composer-dock")).toBeTruthy();
     expect(screen.getByLabelText("Founder AI 工作区内容").classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
