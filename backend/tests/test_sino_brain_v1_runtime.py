@@ -4,6 +4,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
 from app.core.conversation.model import ConversationDB
+from core.conversation_first.model import ConversationMessageDB
 from app.founder_ai import brain_runtime as module
 
 
@@ -129,6 +130,39 @@ def test_goal_brief_package_lifecycle(monkeypatch):
     final = runtime.finalize_council(conversation_id, council)
     assert final["stage"] == "package_ready"
     assert runtime.review_package(conversation_id, "approve")["stage"] == "package_approved"
+
+
+def test_stage_workspace_projection_persists_lifecycle_and_message_isolation(monkeypatch):
+    runtime, conversation_id = _runtime(monkeypatch)
+    runtime.process_message(conversation_id, "我要做AI短剧")
+    with module.SessionLocal() as session:
+        session.add_all([
+            ConversationMessageDB(id="message-goal", conversation_id=conversation_id, role="founder", content="我要做AI短剧", grounding={"brain_stage": "goal"}),
+            ConversationMessageDB(id="message-strategy", conversation_id=conversation_id, role="assistant", content="开始策略讨论", message_type="strategy_meeting", grounding={"brain_stage": "strategy"}),
+        ])
+        session.commit()
+    review = runtime.snapshot(conversation_id)
+    assert review["active_workspace_stage"] == "goal"
+    assert [item["status"] for item in review["stage_workspaces"]] == ["active", "locked", "locked", "locked", "locked"]
+    assert review["stage_workspaces"][0]["message_refs"] == ["message-goal"]
+    assert review["stage_workspaces"][1]["message_refs"] == ["message-strategy"]
+
+    runtime.confirm_goal(conversation_id)
+    runtime.prepare_strategy_prompt(conversation_id)
+    strategy = runtime.snapshot(conversation_id)
+    assert strategy["active_workspace_stage"] == "strategy"
+    assert [item["status"] for item in strategy["stage_workspaces"]] == ["completed", "active", "locked", "locked", "locked"]
+
+
+def test_finalized_council_exposes_completed_stages_and_active_package(monkeypatch):
+    runtime, conversation_id = _runtime(monkeypatch)
+    runtime.process_message(conversation_id, "我要做AI短剧")
+    runtime.confirm_goal(conversation_id)
+    council = {"council_runs": [{"council_run_id": "council-1", "recommendation": "先验证最小生产链", "consensus": ["先验证"], "disagreements": [], "risks": [], "unknowns": [], "model_runs": [{"model_run_id": "run-1", "provider": "test", "model": "test-model", "status": "completed", "proposal": {"core_judgment": "先验证"}}]}]}
+    runtime.finalize_council(conversation_id, council)
+    package = runtime.snapshot(conversation_id)
+    assert package["active_workspace_stage"] == "package"
+    assert [item["status"] for item in package["stage_workspaces"]] == ["completed", "completed", "completed", "completed", "active"]
 
 
 def test_decision_removes_model_attribution_from_primary_recommendation():

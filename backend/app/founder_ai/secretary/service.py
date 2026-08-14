@@ -26,7 +26,7 @@ class SinoSecretaryService:
     def __init__(self, *, reply_generator=None):
         self._reply_generator = reply_generator or self._provider_reply
 
-    def append_message(self, conversation_id: str, content: str, *, intent: str | None = None, message_type: str = "discussion", reply_override: str | None = None, skip_object_recognition: bool = False) -> dict:
+    def append_message(self, conversation_id: str, content: str, *, intent: str | None = None, message_type: str = "discussion", reply_override: str | None = None, skip_object_recognition: bool = False, brain_stage: str | None = None) -> dict:
         text = (content or "").strip()
         if not text:
             raise ValueError("message must not be empty")
@@ -34,7 +34,8 @@ class SinoSecretaryService:
             conversation = session.scalar(select(ConversationDB).where(ConversationDB.id == conversation_id, ConversationDB.system_id == "founder_ai"))
             if conversation is None:
                 raise LookupError("Founder AI conversation not found")
-            message = ConversationMessageDB(conversation_id=conversation_id, role="founder", content=text, intent=intent, message_type=message_type)
+            stage_grounding = {"brain_stage": brain_stage} if brain_stage else {}
+            message = ConversationMessageDB(conversation_id=conversation_id, role="founder", content=text, intent=intent, message_type=message_type, grounding=stage_grounding)
             session.add(message); session.flush()
             project_id = conversation.project_id
             conversation.updated_at = datetime.now(timezone.utc)
@@ -54,7 +55,7 @@ class SinoSecretaryService:
         reply, grounding = self._normalize_reply(reply_override if reply_override is not None else self._reply_generator(conversation_id, text))
         with SessionLocal() as session:
             conversation = session.get(ConversationDB, conversation_id)
-            session.add(ConversationMessageDB(conversation_id=conversation_id, role="assistant", content=reply, message_type=message_type, grounding=grounding))
+            session.add(ConversationMessageDB(conversation_id=conversation_id, role="assistant", content=reply, message_type=message_type, grounding={**grounding, **stage_grounding}))
             conversation.updated_at = datetime.now(timezone.utc)
             session.commit()
         # The discussion is durable before enrichment starts. A failed distillation

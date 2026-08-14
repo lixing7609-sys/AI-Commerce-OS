@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { GlobalSecretaryComposer } from "./GlobalSecretaryComposer.jsx";
 import { objectTypeLabel, statusLabel } from "./founderTerminology.js";
 
@@ -141,12 +141,38 @@ function GoalBriefConfirmationCard({ brain, busy, onConfirm, onRevise }) {
   </article>;
 }
 
+const FALLBACK_STAGES = [
+  ["goal", "Goal Understanding"], ["strategy", "Strategy Meeting"], ["validation", "Validation"],
+  ["decision", "Decision"], ["package", "Discussion Package"],
+].map(([stage_key, label], index) => ({ stage_id: stage_key, stage_key, label, status: index ? "locked" : "active", summary: "", message_refs: [] }));
+
+function StageNavigator({ stages, activeStage, onSelect }) {
+  return <nav className="sino-stage-navigator" aria-label="Sino Brain stages">{stages.map((stage, index) => <div key={stage.stage_id || stage.stage_key}>
+    <button type="button" className={`${stage.status === "active" ? "is-current" : ""} ${activeStage === stage.stage_key ? "is-selected" : ""}`} disabled={stage.status === "locked"} onClick={() => onSelect(stage.stage_key)}><span>{stage.status === "completed" ? "✓" : index + 1}</span>{stage.label.replace(" Understanding", "").replace(" Meeting", "").replace("Discussion ", "")}</button>
+    {index < stages.length - 1 ? <i aria-hidden="true">→</i> : null}
+  </div>)}</nav>;
+}
+
+function StageSummary({ stage, brain, currentStage, onSelect }) {
+  if (!stage) return null;
+  if (stage.stage_key === "validation" && brain?.validations?.length) return <section className="sino-stage-structured"><h2>Validation</h2>{brain.validations.map((item) => <article key={item.validation_id}><strong>{item.result}</strong><p>{item.criteria?.join(" · ")}</p></article>)}</section>;
+  if (stage.stage_key === "decision" && brain?.decision?.final_recommendation) return <section className="sino-stage-structured"><h2>Decision</h2><article><strong>{brain.decision.final_recommendation}</strong><p>Confidence {Math.round((brain.decision.confidence || 0) * 100)}%</p></article></section>;
+  if (stage.stage_key === "package" && brain?.discussion_package?.package_id) return <section className="sino-stage-structured"><h2>Discussion Package</h2><article><strong>{brain.discussion_package.title}</strong><p>{brain.discussion_package.status === "approved" ? "已批准" : "等待 Founder 审批"}</p></article></section>;
+  if (stage.status === "completed") return <section className="sino-stage-completion"><span>{stage.label} Completed</span><p>{stage.summary}</p>{stage.stage_key !== currentStage ? <button type="button" onClick={() => onSelect(currentStage)}>{stage.stage_key === "goal" && currentStage === "strategy" ? "进入 Strategy" : "返回当前阶段"}</button> : null}</section>;
+  return null;
+}
+
 export function ConversationThread({ snapshot, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal }) {
   const logRef = useRef(null);
   const conversationRef = useRef(null);
   const scrollAfterSendRef = useRef(false);
   const conversationId = snapshot?.conversation?.id;
   const messageCount = snapshot?.messages?.length || 0;
+  const stages = snapshot?.sino_brain?.stage_workspaces || FALLBACK_STAGES;
+  const currentStage = snapshot?.sino_brain?.active_workspace_stage || "goal";
+  const [selection, setSelection] = useState({ conversationId, currentStage, stage: currentStage });
+  const activeStage = selection.conversationId === conversationId && selection.currentStage === currentStage ? selection.stage : currentStage;
+  const selectStage = (stage) => setSelection({ conversationId, currentStage, stage });
 
   useLayoutEffect(() => {
     const restored = conversationId && conversationRef.current !== conversationId;
@@ -156,6 +182,8 @@ export function ConversationThread({ snapshot, message, onMessage, onSend, busy,
     }
     conversationRef.current = conversationId;
   }, [conversationId, messageCount]);
+
+  useLayoutEffect(() => { if (logRef.current) logRef.current.scrollTop = 0; }, [activeStage]);
 
   function submit(event) {
     const log = logRef.current;
@@ -167,16 +195,20 @@ export function ConversationThread({ snapshot, message, onMessage, onSend, busy,
   for (const run of Array.isArray(snapshot?.council_runs) ? snapshot.council_runs : []) if (run && (run.status !== "failed" || !latestRuns.has(run.question))) latestRuns.set(run.question, run);
   const contextObject = snapshot?.founder_objects?.find((item) => item.is_context_object);
   const contextCandidate = snapshot?.context_candidate;
+  const selectedStage = stages.find((item) => item.stage_key === activeStage) || stages[0];
+  const selectedRefs = new Set(selectedStage?.message_refs || []);
+  const hasStageProjection = Boolean(snapshot?.sino_brain?.stage_workspaces?.length);
+  const visibleMessages = hasStageProjection ? (snapshot?.messages || []).filter((item) => selectedRefs.has(item.message_id)) : (snapshot?.messages || []);
   return <section className="sino-conversation-thread" aria-label="Conversation">
-    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}<GoalBriefConfirmationCard brain={snapshot?.sino_brain} busy={busy} onConfirm={onConfirmGoal} onRevise={onReviseGoal} />{snapshot?.messages?.length ? snapshot.messages.map((item) => {
+    <StageNavigator stages={stages} activeStage={activeStage} onSelect={selectStage} />
+    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" data-stage-workspace={selectedStage?.label || activeStage} tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}{activeStage === "goal" ? <GoalBriefConfirmationCard brain={snapshot?.sino_brain} busy={busy} onConfirm={onConfirmGoal} onRevise={onReviseGoal} /> : null}<StageSummary stage={selectedStage} brain={snapshot?.sino_brain} currentStage={currentStage} onSelect={selectStage} />{visibleMessages.length ? visibleMessages.map((item) => {
       if (item.role === "assistant" && ["council", "auto_deliberation"].includes(item.message_type)) return null;
       if (item.role === "assistant" && item.message_type === "goal_brief") return null;
-      const run = item.role === "founder" && ["council", "auto_deliberation"].includes(item.message_type) ? latestRuns.get(item.content) : null;
+      const run = (!hasStageProjection || activeStage === "strategy") && item.role === "founder" && ["council", "auto_deliberation"].includes(item.message_type) ? latestRuns.get(item.content) : null;
       const sinoStage = { goal_discovery: "Goal Understanding", goal_understanding: "Goal Understanding", goal_understanding_error: "Goal Understanding", goal_confirmed: "Goal Brief", strategy_meeting: "Strategy Meeting", decision: "Decision", discussion_package: "Discussion Package" }[item.message_type];
       return <div key={item.message_id} className="sino-message-group"><article data-role={item.role}><strong>{item.role === "founder" ? "Founder" : `* Sino${sinoStage ? ` · ${sinoStage}` : ""}`}</strong><p>{item.content}</p>{item.role === "assistant" ? <GroundingDetails grounding={item.grounding} /> : null}</article>{run ? (item.message_type === "auto_deliberation" ? <AutoDeliberationConversation run={run} /> : <CouncilConversation run={run} />) : null}</div>;
-    }) : null}</div></div>
-    {mode === "auto" && !["goal_confirmed", "strategy_meeting", "conflict_validation", "decision_ready", "package_ready", "package_approved"].includes(snapshot?.sino_brain?.stage) ? <p className="sino-auto-mode-gate">请先确认 Goal Brief；确认后将自动启动多轮 Strategy Meeting。</p> : null}
-    <div className="sino-conversation-composer-dock"><GlobalSecretaryComposer value={message} onChange={onMessage} onSubmit={submit} busy={busy} healthy={healthy} mode={mode} onModeChange={onModeChange} toolbar={contextControls} toolbarIncludesStatus /></div>
+    }) : null}{(!hasStageProjection || activeStage === "strategy") && !visibleMessages.some((item) => ["council", "auto_deliberation"].includes(item.message_type)) ? (snapshot?.council_runs || []).map((run) => run.discussion_mode === "auto_deliberation" ? <AutoDeliberationConversation key={run.council_run_id} run={run} /> : <CouncilConversation key={run.council_run_id} run={run} />) : null}</div></div>
+    <div className="sino-conversation-composer-dock">{mode === "auto" && currentStage !== "strategy" ? <p className="sino-auto-mode-gate">自动多轮只用于 Strategy Workspace。请先完成并确认 Goal Brief。</p> : null}<GlobalSecretaryComposer value={message} onChange={onMessage} onSubmit={submit} busy={busy} healthy={healthy} mode={mode} onModeChange={onModeChange} disabledModes={currentStage === "strategy" ? [] : ["auto"]} toolbar={contextControls} toolbarIncludesStatus /></div>
     <div className="sino-conversation-workspace-safe-area" aria-hidden="true" />
   </section>;
 }

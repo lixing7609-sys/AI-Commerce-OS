@@ -234,4 +234,40 @@ describe("ConversationThread layout", () => {
     expect(confirm).toHaveBeenCalled();
     expect(revise).toHaveBeenCalled();
   });
+
+  it("isolates messages by stage and restores the current Strategy workspace", () => {
+    const value = { ...snapshot("stages", [
+      { message_id: "goal-1", role: "founder", content: "Goal 历史" },
+      { message_id: "strategy-1", role: "assistant", content: "Strategy 当前内容", message_type: "strategy_meeting" },
+    ]), sino_brain: { stage: "strategy_meeting", active_workspace_stage: "strategy", stage_workspaces: [
+      { stage_id: "goal", stage_key: "goal", label: "Goal Understanding", status: "completed", summary: "目标已确认", message_refs: ["goal-1"] },
+      { stage_id: "strategy", stage_key: "strategy", label: "Strategy Meeting", status: "active", summary: "策略讨论中", message_refs: ["strategy-1"] },
+      { stage_id: "validation", stage_key: "validation", label: "Validation", status: "locked", summary: "", message_refs: [] },
+      { stage_id: "decision", stage_key: "decision", label: "Decision", status: "locked", summary: "", message_refs: [] },
+      { stage_id: "package", stage_key: "package", label: "Discussion Package", status: "locked", summary: "", message_refs: [] },
+    ] } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} mode="auto" onModeChange={vi.fn()} />);
+    expect(screen.getByText("Strategy 当前内容")).toBeTruthy();
+    expect(screen.queryByText("Goal 历史")).toBeNull();
+    expect(screen.getByLabelText("讨论记录").dataset.stageWorkspace).toBe("Strategy Meeting");
+    expect(screen.getByRole("button", { name: /自动多轮/ }).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /Goal/ }));
+    expect(screen.getByText("Goal 历史")).toBeTruthy();
+    expect(screen.queryByText("Strategy 当前内容")).toBeNull();
+    expect(screen.getByText("Goal Understanding Completed")).toBeTruthy();
+  });
+
+  it("locks future stages and disables auto deliberation outside Strategy", () => {
+    const value = { ...snapshot("goal-stage", [{ message_id: "goal-1", role: "founder", content: "目标" }]), sino_brain: { active_workspace_stage: "goal", stage_workspaces: [
+      { stage_id: "goal", stage_key: "goal", label: "Goal Understanding", status: "active", message_refs: ["goal-1"] },
+      { stage_id: "strategy", stage_key: "strategy", label: "Strategy Meeting", status: "locked", message_refs: [] },
+      { stage_id: "validation", stage_key: "validation", label: "Validation", status: "locked", message_refs: [] },
+      { stage_id: "decision", stage_key: "decision", label: "Decision", status: "locked", message_refs: [] },
+      { stage_id: "package", stage_key: "package", label: "Discussion Package", status: "locked", message_refs: [] },
+    ] } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} mode="auto" onModeChange={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /Strategy/ }).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: /自动多轮/ }).disabled).toBe(true);
+    expect(screen.getByText(/自动多轮只用于 Strategy Workspace/)).toBeTruthy();
+  });
 });

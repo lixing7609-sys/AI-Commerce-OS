@@ -363,7 +363,7 @@ def archive_founder_object(object_id: str):
 def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
     try:
         brain_turn = brain_runtime.process_message(conversation_id, request.content)
-        snapshot = secretary.append_message(conversation_id, request.content, intent=request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")))
+        snapshot = secretary.append_message(conversation_id, request.content, intent=request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"))
         brain_runtime.sync_message_refs(conversation_id)
         return _candidate_snapshot(snapshot, conversation_id)
     except LookupError as error:
@@ -386,7 +386,7 @@ def discuss_with_council(conversation_id: str, request: CouncilDiscussionIn):
             return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
         if not brain_state or brain_state["stage"] not in {"goal_confirmed", "strategy_meeting"}:
             brain_turn = brain_runtime.process_message(conversation_id, request.content)
-            snapshot = secretary.append_message(conversation_id, request.content, message_type=brain_turn.get("message_type", "goal_discovery"), reply_override=brain_turn.get("reply"), skip_object_recognition=True)
+            snapshot = secretary.append_message(conversation_id, request.content, message_type=brain_turn.get("message_type", "goal_discovery"), reply_override=brain_turn.get("reply"), skip_object_recognition=True, brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"))
             brain_runtime.sync_message_refs(conversation_id)
             return _candidate_snapshot(snapshot, conversation_id)
         prompt = brain_runtime.prepare_strategy_prompt(conversation_id)
@@ -413,7 +413,7 @@ def discuss_with_auto_deliberation(conversation_id: str, request: CouncilDiscuss
             return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
         if not brain_state or brain_state["stage"] not in {"goal_confirmed", "strategy_meeting"}:
             brain_turn = brain_runtime.process_message(conversation_id, request.content)
-            snapshot = secretary.append_message(conversation_id, request.content, message_type=brain_turn.get("message_type", "goal_discovery"), reply_override=brain_turn.get("reply"), skip_object_recognition=True)
+            snapshot = secretary.append_message(conversation_id, request.content, message_type=brain_turn.get("message_type", "goal_discovery"), reply_override=brain_turn.get("reply"), skip_object_recognition=True, brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"))
             brain_runtime.sync_message_refs(conversation_id)
             return _candidate_snapshot(snapshot, conversation_id)
         prompt = brain_runtime.prepare_strategy_prompt(conversation_id)

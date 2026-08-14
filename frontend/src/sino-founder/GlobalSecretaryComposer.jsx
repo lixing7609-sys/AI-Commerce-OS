@@ -1,12 +1,12 @@
 import { useLayoutEffect, useRef } from "react";
 import { sinoStatus } from "./founderStatus.js";
 
-export function GlobalSecretaryComposer({ value, onChange, onSubmit, busy, large = false, healthy, toolbar = null, toolbarIncludesStatus = false, placeholder = "和 Sino 讨论任何想法、问题、战略或设计……", mode = "sino", onModeChange }) {
+export function GlobalSecretaryComposer({ value, onChange, onSubmit, busy, large = false, healthy, toolbar = null, toolbarIncludesStatus = false, placeholder = "和 Sino 讨论任何想法、问题、战略或设计……", mode = "sino", onModeChange, disabledModes = [] }) {
   const textareaRef = useRef(null);
   const statusValue = sinoStatus(healthy, busy);
   const status = typeof healthy === "boolean" ? <span className="sino-composer-status"><span className={`sino-workspace-status ${statusValue.className}`} title={`Sino ${statusValue.label}`} aria-label={`Sino ${statusValue.label}`} /><span>Sino {statusValue.label}</span></span> : "与 Sino 讨论";
   const inputId = large ? "sino-home-input" : "sino-discussion-input";
-  const modeControl = onModeChange ? <div className="sino-council-mode" aria-label="讨论模式"><button type="button" className={mode === "sino" ? "is-active" : ""} onClick={() => onModeChange("sino")}>Sino</button><button type="button" className={mode === "council" ? "is-active" : ""} onClick={() => onModeChange("council")}>多模型讨论</button><button type="button" className={mode === "auto" ? "is-active" : ""} onClick={() => onModeChange("auto")}>自动多轮</button></div> : null;
+  const modeControl = onModeChange ? <div className="sino-council-mode" aria-label="讨论模式"><button type="button" className={mode === "sino" ? "is-active" : ""} onClick={() => onModeChange("sino")}>Sino</button><button type="button" className={mode === "council" ? "is-active" : ""} onClick={() => onModeChange("council")}>多模型讨论</button><button type="button" disabled={disabledModes.includes("auto")} title={disabledModes.includes("auto") ? "自动多轮只用于 Strategy Workspace" : undefined} className={mode === "auto" ? "is-active" : ""} onClick={() => onModeChange("auto")}>自动多轮</button></div> : null;
   function handleKeyDown(event) {
     if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.isComposing || event.nativeEvent?.isComposing) return;
     event.preventDefault();

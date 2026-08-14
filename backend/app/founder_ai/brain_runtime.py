@@ -26,6 +26,11 @@ STAGES = (
     "goal_discovery", "goal_review", "goal_confirmed", "strategy_meeting",
     "conflict_validation", "decision_ready", "package_ready", "package_approved",
 )
+WORKSPACE_STAGES = ("goal", "strategy", "validation", "decision", "package")
+STAGE_LABELS = {
+    "goal": "Goal Understanding", "strategy": "Strategy Meeting", "validation": "Validation",
+    "decision": "Decision", "package": "Discussion Package",
+}
 
 
 def _iso(value):
@@ -47,7 +52,19 @@ class SinoBrainRuntime:
     def snapshot(self, conversation_id: str) -> dict[str, Any] | None:
         with SessionLocal() as session:
             record = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
-            return self._serialize(record) if record else None
+            if not record:
+                return None
+            payload = self._serialize(record)
+            messages = list(session.scalars(select(ConversationMessageDB).where(
+                ConversationMessageDB.conversation_id == conversation_id
+            ).order_by(ConversationMessageDB.created_at)))
+            refs = {key: [] for key in WORKSPACE_STAGES}
+            for message in messages:
+                key = self._message_stage(message, payload["active_workspace_stage"])
+                refs[key].append(message.id)
+            for workspace in payload["stage_workspaces"]:
+                workspace["message_refs"] = refs[workspace["stage_key"]]
+            return payload
 
     def process_message(self, conversation_id: str, content: str) -> dict[str, Any]:
         """Use Sino's configured model to understand a goal; rules only validate."""
@@ -422,7 +439,7 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
 
     @staticmethod
     def _serialize(record):
-        return {
+        payload = {
             "brain_id": record.id, "conversation_id": record.conversation_id, "project_id": record.project_id,
             "stage": record.stage, "goal_readiness": record.goal_readiness, "goal_brief": dict(record.goal_brief or {}),
             "discovery": dict(record.discovery or {}), "strategy_proposals": list(record.strategy_proposals or []),
@@ -430,6 +447,55 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             "decision": dict(record.decision or {}), "discussion_package": dict(record.discussion_package or {}),
             "source_message_refs": list(record.source_message_refs or []), "created_at": _iso(record.created_at), "updated_at": _iso(record.updated_at),
         }
+        payload["stage_workspaces"] = SinoBrainRuntime._stage_workspaces(payload)
+        payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] == "active"), "package")
+        return payload
+
+    @staticmethod
+    def _stage_workspaces(brain):
+        internal = brain.get("stage") or "goal_discovery"
+        current = (
+            "goal" if internal in {"goal_discovery", "goal_review"} else
+            "strategy" if internal in {"goal_confirmed", "strategy_meeting"} else
+            "validation" if internal == "conflict_validation" else
+            "decision" if internal == "decision_ready" else "package"
+        )
+        current_index = WORKSPACE_STAGES.index(current)
+        summaries = {
+            "goal": (brain.get("goal_brief") or {}).get("summary") or (brain.get("goal_brief") or {}).get("goal") or "目标理解进行中",
+            "strategy": f"已记录 {len(brain.get('strategy_proposals') or [])} 个策略提案",
+            "validation": f"已记录 {len(brain.get('conflicts') or [])} 个冲突与 {len(brain.get('validations') or [])} 个验证结果",
+            "decision": (brain.get("decision") or {}).get("final_recommendation") or "等待形成唯一推荐方案",
+            "package": (brain.get("discussion_package") or {}).get("title") or "等待形成 Discussion Package",
+        }
+        result = []
+        for index, key in enumerate(WORKSPACE_STAGES):
+            status = "completed" if index < current_index else "active" if index == current_index else "locked"
+            if internal == "package_approved" and key == "package":
+                status = "completed"
+            result.append({
+                "stage_id": f"{brain.get('brain_id')}:{key}", "stage_key": key, "label": STAGE_LABELS[key],
+                "status": status, "summary": summaries[key], "message_refs": [],
+            })
+        return result
+
+    @staticmethod
+    def _message_stage(message, fallback):
+        explicit = dict(message.grounding or {}).get("brain_stage")
+        if explicit in WORKSPACE_STAGES:
+            return explicit
+        message_type = message.message_type or "discussion"
+        if message_type in {"goal_discovery", "goal_understanding", "goal_understanding_error", "goal_brief", "goal_confirmed"}:
+            return "goal"
+        if message_type in {"strategy_meeting", "council", "auto_deliberation", "model_proposal", "sino_synthesis"}:
+            return "strategy"
+        if message_type in {"conflict_validation", "validation"}:
+            return "validation"
+        if message_type == "decision":
+            return "decision"
+        if message_type == "discussion_package":
+            return "package"
+        return fallback if fallback in WORKSPACE_STAGES else "goal"
 
 
 brain_runtime = SinoBrainRuntime()

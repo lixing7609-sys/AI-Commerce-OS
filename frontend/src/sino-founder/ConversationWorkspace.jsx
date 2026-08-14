@@ -230,11 +230,12 @@ export function ConversationWorkspace() {
     sendLockRef.current = true;
     setBusy(true); setError("");
     let id = conversationId;
+    const effectiveMode = discussionMode === "auto" && snapshot?.sino_brain?.active_workspace_stage !== "strategy" ? "sino" : discussionMode;
     let progressTimer;
     try {
       if (!id) { const conversation = await createFounderConversation("新讨论", activeProjectId); id = conversation.id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id); rememberConversation(id, "新讨论"); }
-      if (discussionMode === "council" || discussionMode === "auto") {
-        const messageType = discussionMode === "auto" ? "auto_deliberation" : "council";
+      if (effectiveMode === "council" || effectiveMode === "auto") {
+        const messageType = effectiveMode === "auto" ? "auto_deliberation" : "council";
         setSnapshot((current) => ({ ...(current || {}), conversation: current?.conversation || { id, project_id: activeProjectId, title: "新讨论", state: "exploring" }, messages: [...(current?.messages || []), { message_id: `optimistic-${Date.now()}`, role: "founder", content, message_type: messageType }], council_runs: [...(current?.council_runs || []), { council_run_id: `pending-${Date.now()}`, question: content, discussion_mode: messageType, status: "running", participants: [], model_runs: [] }] }));
         setDiscussionMessage(""); setView("conversation");
       }
@@ -243,7 +244,7 @@ export function ConversationWorkspace() {
         if (sendLockRef.current) progressTimer = window.setTimeout(pollProgress, 700);
       };
       progressTimer = window.setTimeout(pollProgress, 150);
-      const nextSnapshot = discussionMode === "council" ? await discussWithCouncil(id, content) : discussionMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content);
+      const nextSnapshot = effectiveMode === "council" ? await discussWithCouncil(id, content) : effectiveMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content);
       setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); setSinoHealthy(true); rememberConversation(id, nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content);
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
@@ -255,7 +256,7 @@ export function ConversationWorkspace() {
       setSinoHealthy(false);
       setError(`${requestError.message || "Sino 回复失败"}，可重试`);
       setReplyPending(Boolean(id));
-      setPendingReplyMode(discussionMode);
+      setPendingReplyMode(effectiveMode);
       if (id) {
         try {
           const persisted = await getConversationWorkspace(id);
