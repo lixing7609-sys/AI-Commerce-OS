@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { businessAssetName, isDeveloperRecord } from "./assetPresentation.js";
 
 const SIDEBAR_COLLAPSED_KEY = "sino-founder-sidebar-collapsed";
 const HISTORY_GROUPS_KEY = "sino-founder-history-groups";
@@ -37,13 +38,13 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
   const [collapsed, setCollapsed] = useState(restoredCollapsedState);
   const [brandHovered, setBrandHovered] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(true);
-  const [conversationsOpen, setConversationsOpen] = useState(true);
   const [historyGroups, setHistoryGroups] = useState(restoredHistoryGroups);
-  const now = Date.now();
-  const today = conversations.filter((item) => now - item.updatedAt < 86400000);
-  const yesterday = conversations.filter((item) => now - item.updatedAt >= 86400000 && now - item.updatedAt < 172800000);
-  const recent7 = conversations.filter((item) => now - item.updatedAt >= 172800000 && now - item.updatedAt < 604800000);
-  const older = conversations.filter((item) => now - item.updatedAt >= 604800000);
+  const [now] = useState(() => Date.now());
+  const founderConversations = conversations.filter((item) => !isDeveloperRecord(item));
+  const today = founderConversations.filter((item) => now - item.updatedAt < 86400000);
+  const yesterday = founderConversations.filter((item) => now - item.updatedAt >= 86400000 && now - item.updatedAt < 172800000);
+  const recent7 = founderConversations.filter((item) => now - item.updatedAt >= 172800000 && now - item.updatedAt < 604800000);
+  const older = founderConversations.filter((item) => now - item.updatedAt >= 604800000);
 
   function setSidebarCollapsed(next) {
     setCollapsed(next);
@@ -53,7 +54,6 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
   function expandSection(section) {
     setSidebarCollapsed(false);
     if (section === "projects") setProjectsOpen(true);
-    if (section === "conversations") setConversationsOpen(true);
   }
 
   function toggleHistoryGroup(id) {
@@ -86,7 +86,7 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
       <button type="button" title="项目" aria-label="项目" onClick={() => expandSection("projects")}><FolderIcon /></button>
       <button type="button" title="会话" aria-label="会话" onClick={() => expandSection("conversations")}><ConversationIcon /></button>
     </nav>}
-    <section className="sino-sidebar-section"><button className="sino-sidebar-section__toggle sino-sidebar-primary-title" onClick={() => setProjectsOpen((value) => !value)} aria-expanded={projectsOpen}><span><FolderIcon />项目</span><i>{projectsOpen ? "⌄" : "›"}</i></button>{projectsOpen && <div className="sino-project-list">{projects.map((project) => <button key={project.id} className={project.id === activeProjectId ? "is-active" : ""} onClick={() => onSelectProject(project.id)}><i aria-hidden="true">•</i><span>{project.name}</span></button>)}</div>}</section>
+    <section className="sino-sidebar-section"><button className="sino-sidebar-section__toggle sino-sidebar-primary-title" onClick={() => setProjectsOpen((value) => !value)} aria-expanded={projectsOpen}><span><FolderIcon />项目</span><i>{projectsOpen ? "⌄" : "›"}</i></button>{projectsOpen && <div className="sino-project-list">{projects.filter((project) => !isDeveloperRecord(project)).map((project) => <button key={project.id} className={project.id === activeProjectId ? "is-active" : ""} onClick={() => onSelectProject(project.id)} title={project.description || project.name}><i aria-hidden="true">•</i><span>{businessAssetName({ ...project, asset_type: "project" })}</span></button>)}</div>}</section>
     <div className="sino-sidebar__conversation-title sino-sidebar-primary-title"><span><ConversationIcon />会话</span></div>
     </div>
     <div className="sino-sidebar__scroll-region" aria-label="历史会话列表">

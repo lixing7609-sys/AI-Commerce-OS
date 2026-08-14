@@ -1,30 +1,26 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CapabilityCenter, CapabilityObjectWorkspace } from "./CapabilityWorkspace.jsx";
-import { getFounderObject, getFounderObjects } from "../services/founderAiApi.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CapabilityCenter } from "./CapabilityWorkspace.jsx";
+import { getLifecycleAsset, getLifecycleAssets } from "../services/founderAiApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({ getFounderObject: vi.fn(), getFounderObjects: vi.fn() }));
+vi.mock("../services/founderAiApi.js", () => ({ getLifecycleAsset: vi.fn(), getLifecycleAssets: vi.fn() }));
+const skill = { asset_id: "asset-skill", asset_type: "skill", name: "Character Consistency", purpose: "保持角色跨镜头一致性", status: "committed", version: 2, used_by_refs: ["Studio AI"], dependency_refs: [] };
 
-const skill = { object_id: "object-skill", object_type: "skill", name: "Character Consistency", description: "保持角色跨镜头一致性", status: "approved", version: 2, dependency_object_ids: [], execution_refs: [], revisions: [] };
-
-describe("AI Capability Factory visual framework", () => {
-  beforeEach(() => { cleanup(); localStorage.clear(); getFounderObjects.mockResolvedValue([skill]); getFounderObject.mockResolvedValue(skill); });
-
-  it("lists real capability objects and opens the selected object", async () => {
-    const open = vi.fn(); render(<CapabilityCenter onOpenObject={open} />);
+describe("AI Capability Center IA", () => {
+  beforeEach(() => { getLifecycleAssets.mockResolvedValue({ assets: [skill, { asset_id: "decision-1", asset_type: "decision", name: "不应显示" }] }); getLifecycleAsset.mockResolvedValue(skill); });
+  afterEach(cleanup);
+  it("reads the formal Asset Catalog and excludes non-capability assets", async () => {
+    render(<CapabilityCenter />);
     fireEvent.click(await screen.findByRole("button", { name: /Character Consistency/ }));
-    expect(open).toHaveBeenCalledWith(skill);
+    await waitFor(() => expect(getLifecycleAsset).toHaveBeenCalledWith("asset-skill"));
+    expect(screen.queryByText("不应显示")).toBeNull();
+    expect(screen.getByText("Studio AI")).toBeTruthy();
   });
-
-  it("uses one Skill workspace skeleton with discussion, test and publish interactions", async () => {
-    const onContinue = vi.fn(); render(<CapabilityObjectWorkspace object={skill} onContinue={onContinue} onOpenExecution={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "Logic" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "继续讨论" })); expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ object_id: "object-skill" }));
-    fireEvent.click(screen.getByRole("button", { name: "测试" })); expect(screen.getByText(/测试中 · V2/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "完成测试" })); fireEvent.click(screen.getByRole("button", { name: "发布" }));
-    expect(screen.getByText(/已发布 · V2/)).toBeTruthy();
-    await waitFor(() => expect(getFounderObject).toHaveBeenCalledWith("object-skill"));
+  it("keeps one asset identity across cross-page actions", async () => {
+    const openAsset = vi.fn(); render(<CapabilityCenter onNavigateAsset={openAsset} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Character Consistency/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "查看资产记录" }));
+    expect(openAsset).toHaveBeenCalledWith(expect.objectContaining({ asset_id: "asset-skill" }));
   });
 });

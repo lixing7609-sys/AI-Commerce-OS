@@ -35,7 +35,7 @@ describe("AssetLifecycleCenter", () => {
   it("keeps execution results in Execution Center", async () => {
     getLifecycleExecutions.mockResolvedValue({ executions: [{ execution_id: "execution-1", asset_id: "asset-1", asset_name: "AI 短剧 Skill", status: "completed", result: { exit_code: 0 } }] });
     const { container } = render(<LifecycleExecutionCenter />);
-    expect(await within(container).findByText("AI 短剧 Skill")).toBeTruthy();
+    expect(await within(container).findByText("AI 短剧 Skill · 执行")).toBeTruthy();
     expect(within(container).getByText("成功")).toBeTruthy();
   });
 

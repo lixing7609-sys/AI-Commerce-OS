@@ -1,38 +1,19 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getLifecycleAssets } from "../services/founderAiApi.js";
+import { objectTypeLabel, statusLabel } from "./founderTerminology.js";
+import { businessAssetName, businessPurpose, referenceSummary } from "./assetPresentation.js";
 
-export function SystemBuilderPanel({ onPrepare }) {
-  const [goal, setGoal] = useState("");
-  const [plan, setPlan] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+const STRUCTURE = ["project", "agent", "workflow", "skill", "prompt", "knowledge", "capability", "connector"];
 
-  async function submit(event) {
-    event.preventDefault();
-    const nextGoal = goal.trim();
-    if (!nextGoal || busy) return;
-    setBusy(true); setError("");
-    try { const nextPlan = await onPrepare(nextGoal); setPlan(nextPlan); setGoal(""); }
-    catch (requestError) { setError(requestError.message || "System Blueprint 生成失败"); }
-    finally { setBusy(false); }
-  }
-
-  const blueprint = plan?.system_blueprint;
-  const boundaries = blueprint?.system_boundaries || [];
-  const modules = blueprint?.core_modules || [];
-  const relationships = blueprint?.system_relationships || [];
-  const implementation = blueprint?.implementation_plan || [];
-  return (
-    <section className="sino-system-builder" id="system-builder" aria-label="AI 系统构建器面板">
-      <header><div><span className="sino-kicker">系统构建器</span><h2>应用系统架构</h2></div><span>仅生成应用系统架构提案</span></header>
-      <form onSubmit={submit}><input aria-label="应用系统目标" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="描述你希望创建或修改的应用系统……" /><button className="sino-button" disabled={busy || !goal.trim()}>{busy ? "规划中…" : "生成系统蓝图"}</button></form>
-      {error && <p className="sino-error" role="alert">{error}</p>}
-      <div className="sino-builder-flow">
-        <article data-ready={Boolean(blueprint)}><small>01 · 系统目标</small><strong>{blueprint?.system_name || "应用系统目标"}</strong><p>{blueprint?.system_goal || "定义希望创建或修改的应用系统。"}</p></article>
-        <article data-ready={Boolean(boundaries.length)}><small>02 · 系统边界</small><strong>{boundaries.length ? `${boundaries.length} 条边界` : "待生成"}</strong><p>{boundaries.slice(0, 2).join(" · ") || "明确系统范围、约束与非目标。"}</p></article>
-        <article data-ready={Boolean(modules.length)}><small>03 · 核心模块</small><strong>{modules.length ? `${modules.length} 个模块` : "待生成"}</strong><p>{modules.join(" · ") || "定义应用系统的核心模块。"}</p></article>
-        <article data-ready={Boolean(relationships.length)}><small>04 · 系统关系</small><strong>{relationships.length ? `${relationships.length} 条关系` : "待生成"}</strong><p>{relationships.slice(0, 2).join(" · ") || "定义模块与数据之间的关系。"}</p></article>
-        <article data-ready={Boolean(implementation.length)}><small>05 · 实施计划</small><strong>{implementation.length ? "等待 Founder 确认蓝图" : "待生成"}</strong><p>{implementation.slice(0, 2).join(" · ") || "确认蓝图后再生成任务与实施计划。"}</p></article>
-      </div>
-    </section>
-  );
+export function SystemBuilderPanel({ projectId, onOpenAsset }) {
+  const [assets, setAssets] = useState([]); const [selected, setSelected] = useState(null); const [error, setError] = useState("");
+  useEffect(() => { getLifecycleAssets().then((data) => setAssets(data.assets || [])).catch((reason) => setError(reason.message)); }, []);
+  const scoped = useMemo(() => { const related = projectId ? assets.filter((item) => item.project_id === projectId || item.asset_id === projectId) : assets; return related.length ? related : assets; }, [assets, projectId]);
+  const project = scoped.find((item) => item.asset_type === "project");
+  return <section className="sino-lifecycle-center sino-system-structure" aria-label="系统构建器">
+    <header><div><span className="sino-kicker">System Builder</span><h1>{project ? businessAssetName(project) : "系统构建器"}</h1><p>组织 Project、能力资产与依赖关系，回答“这个系统现在由什么组成”。</p></div></header>
+    {error && <p role="alert">{error}</p>}
+    <div className="sino-lifecycle-grid"><div className="sino-system-structure__list">{STRUCTURE.map((type) => { const items = scoped.filter((item) => item.asset_type === type); return <section key={type} data-present={Boolean(items.length)}><header><span>{items.length ? "✓" : "Missing"}</span><strong>{objectTypeLabel(type)}</strong><small>{items.length ? `${items.length} 个正式资产` : "当前系统尚未形成"}</small></header>{items.map((item) => <button key={item.asset_id} onClick={() => setSelected(item)}><strong>{businessAssetName(item)}</strong><small>{statusLabel(item.status)} · V{item.version || 1}</small></button>)}</section>; })}</div>
+      <aside className="sino-asset-detail">{selected ? <><span className="sino-kicker">系统关系对象</span><h2>{businessAssetName(selected)}</h2><p>{businessPurpose(selected)}</p><dl><div><dt>类型</dt><dd>{objectTypeLabel(selected.asset_type)}</dd></div><div><dt>Project</dt><dd>{selected.project_id || "未关联"}</dd></div><div><dt>依赖</dt><dd>{referenceSummary(selected.dependency_refs)}</dd></div><div><dt>被引用</dt><dd>{referenceSummary(selected.used_by_refs)}</dd></div><div><dt>Asset ID</dt><dd>{selected.asset_id}</dd></div></dl><button className="sino-inline-action" onClick={() => onOpenAsset?.(selected)}>查看正式资产</button></> : <div className="sino-inspector-empty"><h2>系统结构</h2><p>绿色项目已形成真实资产；Missing 表示当前 Project 仍缺少该组成部分。</p></div>}</aside></div>
+  </section>;
 }

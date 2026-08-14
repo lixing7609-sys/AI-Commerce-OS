@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, clearFounderObjectDiscussion, continueFounderCandidateDiscussion, continueFounderObjectDiscussion, getFounderObject, reviewFounderCandidate } from "../services/founderAiApi.js";
-import { advanceSinoBrainStage, approveFounderExecution, buildSystemBlueprint, confirmSinoBrainGoal, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, forceSinoBrainGoalReview, getConversationWorkspace, getFounderConversations, getFounderExecution, getFounderProjects, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reviewSinoBrainPackage, startSinoBrainStrategy, submitExecutionDelta } from "../services/founderAiApi.js";
+import { advanceSinoBrainStage, approveFounderExecution, confirmSinoBrainGoal, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, forceSinoBrainGoalReview, getConversationWorkspace, getFounderConversations, getFounderExecution, getFounderProjects, getProjectIntelligence, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reviewSinoBrainPackage, startLifecycleExecution, startSinoBrainStrategy, submitExecutionDelta } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
-import { AssetLifecycleCenter, LifecycleExecutionCenter, LearningWorkspace, LifecycleOverview } from "./AssetLifecycleCenter.jsx";
+import { AssetLifecycleCenter, LifecycleExecutionCenter } from "./AssetLifecycleCenter.jsx";
 import { ConversationThread } from "./ConversationThread.jsx";
 import { ImplementationWorkspace } from "./ImplementationWorkspace.jsx";
 import { CapabilityCenter, CapabilityObjectWorkspace } from "./CapabilityWorkspace.jsx";
@@ -27,7 +27,7 @@ const GOAL_CONTEXT_KEY = "sino-founder-goal-execution-context";
 const PROJECT_KEY = "sino-founder-active-project";
 const WORKSPACE_VIEW_KEY = "sino-founder-object-workspace-view";
 const WORKSPACE_OBJECT_KEY = "sino-founder-object-workspace-selected";
-const WORKSPACE_VIEWS = ["object", "capability-center", "execution", "assets", "builder", "learning", "lifecycle"];
+const WORKSPACE_VIEWS = ["object", "capability-center", "execution", "assets", "builder"];
 const stored = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 const remember = (key, value) => { try { if (value) window.localStorage.setItem(key, value); else window.localStorage.removeItem(key); } catch { /* unavailable */ } };
 const storedHistory = () => {
@@ -42,6 +42,8 @@ const storedGoalContext = () => { try { return JSON.parse(window.localStorage.ge
 export const normalizeFounderView = (next) => {
   if (["reasoning", "blueprint", "system-builder"].includes(next)) return "builder";
   if (["capability", "models", "model-center", "objects"].includes(next)) return "capability-center";
+  if (next === "learning") return "assets";
+  if (next === "lifecycle") return "home";
   return next;
 };
 const queryView = () => { try { return new URLSearchParams(window.location.search).get("workspace"); } catch { return null; } };
@@ -72,7 +74,6 @@ export function ConversationWorkspace() {
   const [replyPending, setReplyPending] = useState(false);
   const [pendingReplyMode, setPendingReplyMode] = useState("sino");
   const [discussionMode, setDiscussionMode] = useState("sino");
-  const [, setAssetSection] = useState("artifacts");
   const [selectedWorkspaceObject, setSelectedWorkspaceObject] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [creationContext, setCreationContext] = useState(null);
@@ -478,6 +479,21 @@ export function ConversationWorkspace() {
     setSelectedWorkspaceObject(item); setView("object"); persistWorkspace("object", item.object_id);
   }
 
+  function continueAsset(item) {
+    const objectId = item.native_id || item.object_id;
+    if (objectId) { continueObject({ ...item, object_id: objectId, object_type: item.asset_type }); return; }
+    setCreationContext({ type: item.asset_type, name: item.name, prompt: item.purpose });
+    setDiscussionMessage(`继续讨论 ${item.name}：`); setView("conversation");
+  }
+
+  function openAssetRecord(item) { setSelectedWorkspaceObject(item); setView("assets"); }
+  async function executeAsset(item) {
+    setBusy(true); setError("");
+    try { openLifecycleExecution(await startLifecycleExecution(item.asset_id)); }
+    catch (requestError) { setError(requestError.message); }
+    finally { setBusy(false); }
+  }
+
   async function createProject(payload) {
     const project = await createFounderProject(payload);
     setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
@@ -511,8 +527,6 @@ export function ConversationWorkspace() {
   async function approve() { if (!executionId || busy) return; setBusy(true); try { const item = await approveFounderExecution(executionId); setExecution(item); setApproved(true); setView("execution"); } catch (requestError) { setError(requestError.message); } finally { setBusy(false); } }
   async function resume() { if (!executionId || busy) return; setBusy(true); try { setExecution(await resumeFounderExecution(executionId)); } catch (requestError) { setError(requestError.message); } finally { setBusy(false); } }
   async function decideDelta(delta, action) { setBusy(true); try { await decideExecutionDelta(execution.id, delta.delta_id, action); setExecution(await getFounderExecution(execution.id)); } catch (requestError) { setError(requestError.message); } finally { setBusy(false); } }
-  async function prepareSystem(systemGoal) { const id = conversationId || (await createFounderConversation(systemGoal.slice(0, 120), activeProjectId)).id; if (!conversationId) { setConversationId(id); remember(CONVERSATION_KEY, id); } await discussWithSino(id, `讨论系统蓝图：${systemGoal}`); const plan = await buildSystemBlueprint(systemGoal, id, activeProjectId); if (activeProjectId) setProjectIntelligence(await getProjectIntelligence(activeProjectId)); return plan; }
-
   function openReturnedAsset() { setView("assets"); }
 
   function openObjectExecution(item) {
@@ -545,18 +559,16 @@ export function ConversationWorkspace() {
   const executionView = <section className="sino-section sino-execution-page" id="execution"><header className="sino-execution-page__header"><span className="sino-kicker">Execution Center</span><h1>执行中心</h1></header>{!executionId ? <><section className="sino-execution-empty" aria-label="当前执行空状态"><span className="sino-kicker">当前执行</span><h2>当前没有正在执行的任务。</h2><p>已确认并进入执行的任务会显示在这里。</p></section><section className="sino-founder-actions" aria-label="待 Founder 处理"><div><span className="sino-kicker">待 Founder 处理</span><h3>当前无需处理</h3></div></section><section className="sino-recent-executions" aria-label="最近完成"><span className="sino-kicker">最近完成</span><h3>暂无执行记录</h3></section><ExecutionContextComposer value={executionMessage} onChange={setExecutionMessage} onSubmit={submitExecutionContext} busy={busy} disabled /></> : <><section className="sino-current-execution" aria-label="当前执行"><span className="sino-kicker">当前执行</span><h2>{result?.task_asset_draft?.title || snapshot?.task_asset?.title || goal?.title || "当前任务"}</h2><dl><div><dt>所属项目</dt><dd>{projectName}</dd></div><div><dt>正式目标</dt><dd>{goal?.title || snapshot?.task_asset?.title || "已确认"}</dd></div><div><dt>已确认范围</dt><dd>{result?.task_asset_draft?.description || snapshot?.task_asset?.description || result?.solution?.summary || "按已批准执行方案"}</dd></div><div><dt>当前阶段</dt><dd>{execution?.status === "draft" ? "Waiting Development" : execution?.status || "准备中"}</dd></div></dl></section>{result && <section className="sino-reasoning-grid" aria-label="已确认执行方案"><SolutionCard solution={result.solution} /><TaskPlanCard draft={result.task_asset_draft} plan={result.task_plan} /><ExecutionCard requirement={result.execution_requirement} executionPackage={result.execution_package} risk={result.risk} /></section>}<ExecutionTimeline status={execution?.status} timeline={execution?.timeline} events={execution?.events} failureReason={execution?.failure_reason} pauseReason={execution?.pause_reason} recoverable={execution?.recoverable} lastEvent={execution?.last_event} executionEngine={execution?.execution_engine_name || execution?.execution_engine || "执行引擎"} onResume={resume} /><ApprovalPanel ready approved={approved} busy={busy} status={execution?.status} latestDelta={latestDelta} onApprove={approve} /><ExecutionDeltaPanel deltas={execution?.deltas || snapshot?.execution_deltas} onDecision={decideDelta} /><ExecutionResultSummary execution={execution} onOpen={openReturnedAsset} />{executionComposer}</>}</section>;
 
   const executionContext = <ContextSummary title="执行上下文"><small>所属项目</small><p>{executionId ? projectName : "—"}</p><small>正式目标</small><p>{executionId ? goal?.title || "已确认" : "—"}</p><small>当前阶段</small><p>{execution?.status || "暂无执行"}</p><small>关键约束</small><p>{executionId ? result?.analysis?.constraints?.join?.(" · ") || "—" : "—"}</p><small>最近补充</small><p>{latestDelta?.content || "—"}</p><small>待审批事项</small><p>{latestDelta?.status === "pending_confirmation" ? "执行补充待确认" : approved ? "无" : executionId ? "执行方案待授权" : "无"}</p></ContextSummary>;
-  const capabilityContext = snapshot?.sino_brain ? <SinoBrainContext brain={snapshot.sino_brain} busy={busy} onConfirmGoal={confirmBrainGoal} onForceReview={forceBrainGoalReview} onStartStrategy={startBrainStrategy} onAdvanceStage={advanceBrainStage} onContinueDiscussion={continueBrainDiscussion} onReviewPackage={reviewBrainPackage} onViewAssets={() => { setAssetSection("strategy"); setView("assets"); }} onNewGoal={newConversation} /> : <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} intelligence={conversationIntelligence} creationContext={creationContext} recognitionStatus={snapshot?.object_recognition} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onOpenObject={openCapabilityObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />;
+  const capabilityContext = snapshot?.sino_brain ? <SinoBrainContext brain={snapshot.sino_brain} busy={busy} onConfirmGoal={confirmBrainGoal} onForceReview={forceBrainGoalReview} onStartStrategy={startBrainStrategy} onAdvanceStage={advanceBrainStage} onContinueDiscussion={continueBrainDiscussion} onReviewPackage={reviewBrainPackage} onViewAssets={() => setView("assets")} onNewGoal={newConversation} /> : <ImplementationWorkspace objects={snapshot?.founder_objects || []} candidates={snapshot?.object_candidates || []} contextObject={snapshot?.context_object || null} contextCandidate={snapshot?.context_candidate || null} intelligence={conversationIntelligence} creationContext={creationContext} recognitionStatus={snapshot?.object_recognition} onApprove={approveObject} onContinue={continueObject} onArchive={archiveObject} onOpenObject={openCapabilityObject} onCandidateReview={reviewCandidate} onCandidateContinue={continueCandidate} busy={busy} />;
   let main = <FounderHome snapshot={snapshot} execution={execution} intelligence={projectIntelligence} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} onNavigate={setView} onOpenConversation={selectConversation} onQuickCreate={quickCreate} healthy={sinoHealthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={selectProjectContext} onCreateProject={createProject} onFiles={openConversationFiles} mode={discussionMode} onModeChange={setDiscussionMode} />;
   let context = capabilityContext;
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
-  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onContinueDiscussion={continueBrainDiscussion} onViewAssets={() => { setAssetSection("strategy"); setView("assets"); }} onNewGoal={newConversation} /></section>; context = capabilityContext; }
-  if (view === "capability-center") { main = <CapabilityCenter onOpenObject={openCapabilityObject} />; context = <ContextSummary title="AI 能力中心"><strong>正式能力资产</strong><p>选择一个真实对象，进入统一单对象工作区。</p></ContextSummary>; }
+  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onContinueDiscussion={continueBrainDiscussion} onViewAssets={() => setView("assets")} onNewGoal={newConversation} /></section>; context = capabilityContext; }
+  if (view === "capability-center") { main = <CapabilityCenter onContinue={continueAsset} onNavigateBuilder={(item) => { setSelectedWorkspaceObject(item); setView("builder"); }} onNavigateExecution={executeAsset} onNavigateAsset={openAssetRecord} />; context = null; }
   if (view === "object") { main = <CapabilityObjectWorkspace object={selectedWorkspaceObject} onContinue={continueObject} onOpenExecution={openObjectExecution} />; context = capabilityContext; }
-  if (view === "execution") { main = executionId ? executionView : <LifecycleExecutionCenter onOpenExecution={openLifecycleExecution} />; context = executionContext; }
-  if (view === "assets") { main = <AssetLifecycleCenter conversationId={conversationId} projectId={activeProjectId} onOpenExecution={openLifecycleExecution} onStartNewGoal={newConversation} />; context = <ContextSummary title="资产中心"><strong>正式资产生命周期</strong><p>只保存已批准、长期可复用的正式版本。Execution Result 归执行中心。</p><button type="button" onClick={() => setView("learning")}>查看 Learning</button></ContextSummary>; }
-  if (view === "learning") { main = <LearningWorkspace />; context = <ContextSummary title="Learning"><strong>执行经验提炼</strong><p>低风险结果记录为 No Update；高影响建议等待 Founder 确认后更新资产。</p></ContextSummary>; }
-  if (view === "lifecycle") { main = <LifecycleOverview onNavigate={setView} />; context = <ContextSummary title="Asset Lifecycle"><strong>Idea → Brain → Asset → Execution → Learning → Reuse</strong><p>每类数据只有一个主归属，其他区域只保存引用。</p></ContextSummary>; }
-  if (view === "builder") { main = <SystemBuilderPanel onPrepare={prepareSystem} />; context = <ContextSummary title="系统构建器"><strong>AI Commerce OS 系统关系</strong><p>系统构建器不替代 Agent、Skill 与 Workflow 的创建工作区。</p></ContextSummary>; }
+  if (view === "execution") { main = executionId ? executionView : <LifecycleExecutionCenter onOpenExecution={openLifecycleExecution} />; context = executionId ? executionContext : null; }
+  if (view === "assets") { main = <AssetLifecycleCenter conversationId={conversationId} projectId={activeProjectId} initialAsset={selectedWorkspaceObject?.asset_id ? selectedWorkspaceObject : null} onOpenExecution={openLifecycleExecution} onStartNewGoal={newConversation} onContinue={continueAsset} />; context = null; }
+  if (view === "builder") { main = <SystemBuilderPanel projectId={activeProjectId} onOpenAsset={openAssetRecord} />; context = null; }
 
   return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
 }
