@@ -216,4 +216,22 @@ describe("ConversationThread layout", () => {
     fireEvent.click(round.querySelector("summary"));
     expect(round.open).toBe(true);
   });
+
+  it("renders one stateful Goal Brief card and suppresses repeated brief messages", () => {
+    const confirm = vi.fn();
+    const revise = vi.fn();
+    const value = { ...snapshot("brief", [
+      { message_id: "b1", role: "assistant", content: "旧 Goal Brief", message_type: "goal_brief" },
+      { message_id: "f1", role: "founder", content: "正确", message_type: "goal_brief" },
+      { message_id: "b2", role: "assistant", content: "重复 Goal Brief", message_type: "goal_brief" },
+    ]), sino_brain: { stage: "goal_review", goal_readiness: "reviewable", goal_brief: { summary: "建立 AI 短剧生产能力", goal: "AI 短剧" }, discovery: { working_understanding: { known_context: ["Founder 先验证"], non_blocking_unknowns: ["技术路线"] } } } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} onConfirmGoal={confirm} onReviseGoal={revise} />);
+    expect(screen.getAllByText("Goal Brief")).toHaveLength(1);
+    expect(screen.queryByText("旧 Goal Brief")).toBeNull();
+    expect(screen.queryByText("重复 Goal Brief")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "确认目标并开始讨论" }));
+    fireEvent.click(screen.getByRole("button", { name: "修正理解" }));
+    expect(confirm).toHaveBeenCalled();
+    expect(revise).toHaveBeenCalled();
+  });
 });

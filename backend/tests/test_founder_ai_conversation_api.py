@@ -60,3 +60,18 @@ def test_missing_workspace_returns_structured_conversation_not_found(monkeypatch
         assert error.detail["code"] == "conversation_not_found"
     else:
         raise AssertionError("missing Conversation must return 404")
+
+
+def test_auto_deliberation_confirmation_starts_real_strategy_path(monkeypatch):
+    calls = []
+    monkeypatch.setattr(api.brain_runtime, "snapshot", lambda _: {"stage": "goal_review"})
+    monkeypatch.setattr(api.brain_runtime, "review_intent", lambda _: "confirm_goal")
+    monkeypatch.setattr(api.brain_runtime, "confirm_goal", lambda cid: calls.append(("confirm", cid)))
+    monkeypatch.setattr(api.brain_runtime, "prepare_strategy_prompt", lambda cid: calls.append(("prepare", cid)) or "confirmed brief")
+    monkeypatch.setattr(api.brain_runtime, "finalize_council", lambda cid, snapshot: calls.append(("finalize", cid)))
+    monkeypatch.setattr(api.council_service, "run_auto", lambda cid, prompt, models, persist_founder_message: calls.append(("auto", prompt)) or {"ok": True})
+    monkeypatch.setattr(api.council_service, "snapshot", lambda cid: {"conversation": {"id": cid}})
+    monkeypatch.setattr(api, "_candidate_snapshot", lambda snapshot, _cid: snapshot)
+    result = api.discuss_with_auto_deliberation("conversation-1", api.CouncilDiscussionIn(content="正确"))
+    assert result["conversation"]["id"] == "conversation-1"
+    assert [item[0] for item in calls] == ["confirm", "prepare", "auto", "finalize"]

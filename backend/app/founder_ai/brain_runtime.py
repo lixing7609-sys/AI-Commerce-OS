@@ -61,6 +61,19 @@ class SinoBrainRuntime:
                 session.add(state); session.flush()
             if state.stage not in {"goal_discovery", "goal_review"}:
                 return {"handled": False, "brain": self._serialize(state)}
+            if state.stage == "goal_review" and self.review_intent(content) == "confirm_goal":
+                state.stage = "strategy_meeting"
+                state.goal_readiness = "confirmed"
+                conversation.conversation_state = "strategy_meeting"
+                state.updated_at = datetime.now(timezone.utc)
+                session.commit()
+                return {
+                    "handled": True,
+                    "reply": "目标已确认。现在开始围绕这份 Goal Brief 组织 Strategy Meeting。",
+                    "message_type": "strategy_meeting",
+                    "action": "confirm_goal",
+                    "brain": self._serialize(state),
+                }
 
             discovery = dict(state.discovery or {})
             turns = list(discovery.get("founder_inputs") or discovery.get("answers") or [])
@@ -133,6 +146,8 @@ class SinoBrainRuntime:
             state.stage = "goal_confirmed"
             state.goal_readiness = "confirmed"
             state.updated_at = datetime.now(timezone.utc)
+            conversation = session.get(ConversationDB, conversation_id)
+            conversation.conversation_state = "goal_confirmed"
             session.add(ConversationMessageDB(conversation_id=conversation_id, role="assistant", message_type="goal_confirmed", content="目标已确认。后续所有模型将以这份 Goal Brief 作为唯一目标上下文。"))
             session.commit()
             return self._serialize(state)
@@ -153,6 +168,8 @@ class SinoBrainRuntime:
                 raise ValueError("必须先确认 Goal Brief")
             state.stage = "strategy_meeting"
             state.updated_at = datetime.now(timezone.utc)
+            conversation = session.get(ConversationDB, conversation_id)
+            conversation.conversation_state = "strategy_meeting"
             brief = dict(state.goal_brief or {})
             session.commit()
         return (
@@ -160,6 +177,21 @@ class SinoBrainRuntime:
             "每个方案必须包含 Proposal、Required Steps、Dependencies、Risks、Cost/Complexity、"
             "Assumptions、Missing Factors、Evidence/Validation Needed。\nGoal Brief:\n" + str(brief)
         )
+
+    @staticmethod
+    def review_intent(content: str) -> str:
+        """Small, explicit gate before the expensive Goal Understanding call."""
+        normalized = re.sub(r"[\s，。！？!?,、；;：:]", "", (content or "").strip().lower())
+        if not normalized:
+            return "unknown"
+        revision_markers = ("不对", "不是", "不同意", "不能", "别", "错了", "有误", "修改", "修正", "补充", "调整")
+        if any(marker in normalized for marker in revision_markers):
+            return "revise_goal"
+        confirmations = {
+            "对", "正确", "真确", "确认", "同意", "可以", "开始", "开始讨论", "讨论", "进入讨论",
+            "就这样", "没问题", "按这个来", "直接讨论", "目标已经够清楚", "目标已经够清楚直接讨论",
+        }
+        return "confirm_goal" if normalized in confirmations else "unknown"
 
     def finalize_council(self, conversation_id: str, council_snapshot: dict[str, Any]) -> dict[str, Any]:
         runs = list(council_snapshot.get("council_runs") or [])

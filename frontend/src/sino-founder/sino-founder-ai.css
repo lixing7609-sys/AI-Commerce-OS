@@ -850,6 +850,23 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-brain-context button { min-height: 30px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text-secondary); }
 .sino-brain-context button.is-primary { border-color: var(--lime); background: var(--lime); color: #071008; font-weight: 650; }
 .sino-brain-context footer span { color: var(--text-muted); font-size: 11px; }
+.sino-brain-context__status dd { color: #e5ece5; font-family: var(--font-sans); font-weight: 650; letter-spacing: .025em; }
+.sino-brain-context h3, .sino-brain-context p { color: #dce5dc; }
+.sino-brain-context dt { color: #98a398; }
+.sino-brain-context dd { color: #c3ccc3; }
+.sino-brain-next-action p { margin: 0 0 12px; font: 500 12px/1.6 var(--font-sans); }
+.sino-conversation-goal-brief { margin: 10px 0 26px; padding: 18px 0; border-block: 1px solid color-mix(in srgb, var(--line) 60%, transparent); color: var(--text-primary); }
+.sino-conversation-goal-brief > span { color: var(--lime); font: 600 12px/1.4 var(--font-sans); }
+.sino-conversation-goal-brief h2 { margin: 8px 0; font: 600 15px/1.5 var(--font-sans); }
+.sino-conversation-goal-brief > p { margin: 0 0 14px; font: 400 15px/1.8 var(--font-serif); }
+.sino-conversation-goal-brief dl { margin: 0; }
+.sino-conversation-goal-brief dl > div { margin-top: 10px; }
+.sino-conversation-goal-brief dt { color: var(--text-muted); font: 500 12px/1.5 var(--font-sans); }
+.sino-conversation-goal-brief dd { margin: 3px 0 0; color: var(--text-secondary); font: 400 14px/1.7 var(--font-serif); }
+.sino-conversation-goal-brief footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.sino-conversation-goal-brief button { min-height: 34px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text-secondary); }
+.sino-conversation-goal-brief button.is-primary { border-color: var(--lime); background: var(--lime); color: #071008; font-weight: 650; }
+.sino-auto-mode-gate { margin: 0 auto 8px; width: min(100%, var(--conversation-content-max-width)); color: #c5cec5; font: 500 12px/1.5 var(--font-sans); }
 .sino-brain-decision > strong { display: block; color: var(--text-primary); font: 600 14px/1.55 var(--font-sans); }
 .sino-discussion-package > span { color: var(--lime); font: 600 11px/1.4 var(--font-sans); }
 .sino-discussion-package > h3 { margin-top: 5px; }

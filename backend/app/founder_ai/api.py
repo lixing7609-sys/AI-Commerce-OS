@@ -378,6 +378,12 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
 def discuss_with_council(conversation_id: str, request: CouncilDiscussionIn):
     try:
         brain_state = brain_runtime.snapshot(conversation_id)
+        if brain_state and brain_state["stage"] == "goal_review" and brain_runtime.review_intent(request.content) == "confirm_goal":
+            brain_runtime.confirm_goal(conversation_id)
+            prompt = brain_runtime.prepare_strategy_prompt(conversation_id)
+            snapshot = council_service.run(conversation_id, prompt, request.models, persist_founder_message=False)
+            brain_runtime.finalize_council(conversation_id, snapshot)
+            return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
         if not brain_state or brain_state["stage"] not in {"goal_confirmed", "strategy_meeting"}:
             brain_turn = brain_runtime.process_message(conversation_id, request.content)
             snapshot = secretary.append_message(conversation_id, request.content, message_type=brain_turn.get("message_type", "goal_discovery"), reply_override=brain_turn.get("reply"), skip_object_recognition=True)
@@ -399,6 +405,12 @@ def discuss_with_council(conversation_id: str, request: CouncilDiscussionIn):
 def discuss_with_auto_deliberation(conversation_id: str, request: CouncilDiscussionIn):
     try:
         brain_state = brain_runtime.snapshot(conversation_id)
+        if brain_state and brain_state["stage"] == "goal_review" and brain_runtime.review_intent(request.content) == "confirm_goal":
+            brain_runtime.confirm_goal(conversation_id)
+            prompt = brain_runtime.prepare_strategy_prompt(conversation_id)
+            snapshot = council_service.run_auto(conversation_id, prompt, request.models, persist_founder_message=False)
+            brain_runtime.finalize_council(conversation_id, snapshot)
+            return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
         if not brain_state or brain_state["stage"] not in {"goal_confirmed", "strategy_meeting"}:
             brain_turn = brain_runtime.process_message(conversation_id, request.content)
             snapshot = secretary.append_message(conversation_id, request.content, message_type=brain_turn.get("message_type", "goal_discovery"), reply_override=brain_turn.get("reply"), skip_object_recognition=True)

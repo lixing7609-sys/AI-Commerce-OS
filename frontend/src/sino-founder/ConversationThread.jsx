@@ -127,7 +127,21 @@ function AutoDeliberationConversation({ run }) {
   </div>;
 }
 
-export function ConversationThread({ snapshot, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion }) {
+function GoalBriefConfirmationCard({ brain, busy, onConfirm, onRevise }) {
+  if (brain?.stage !== "goal_review") return null;
+  const brief = brain.goal_brief || {};
+  const understanding = brain.discovery?.working_understanding || {};
+  const understood = [...(understanding.known_context || []), ...(understanding.inferred_context || [])];
+  return <article className="sino-conversation-goal-brief" aria-label="Goal Brief 确认">
+    <span>Goal Brief</span>
+    <h2>我目前理解的是：</h2>
+    <p>{brief.summary || understanding.interpreted_goal || brief.goal}</p>
+    <dl><div><dt>已确认理解</dt><dd>{understood.join(" · ") || brief.goal}</dd></div><div><dt>仍待 Strategy Meeting 解决</dt><dd>{(understanding.non_blocking_unknowns || brief.unknowns || []).join(" · ") || "暂无"}</dd></div></dl>
+    <footer><button type="button" className="is-primary" disabled={busy} onClick={onConfirm}>确认目标并开始讨论</button><button type="button" disabled={busy} onClick={onRevise}>修正理解</button><button type="button" disabled={busy} onClick={onConfirm}>目标已经够清楚，直接讨论</button></footer>
+  </article>;
+}
+
+export function ConversationThread({ snapshot, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal }) {
   const logRef = useRef(null);
   const conversationRef = useRef(null);
   const scrollAfterSendRef = useRef(false);
@@ -154,12 +168,14 @@ export function ConversationThread({ snapshot, message, onMessage, onSend, busy,
   const contextObject = snapshot?.founder_objects?.find((item) => item.is_context_object);
   const contextCandidate = snapshot?.context_candidate;
   return <section className="sino-conversation-thread" aria-label="Conversation">
-    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}{snapshot?.messages?.length ? snapshot.messages.map((item) => {
+    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}<GoalBriefConfirmationCard brain={snapshot?.sino_brain} busy={busy} onConfirm={onConfirmGoal} onRevise={onReviseGoal} />{snapshot?.messages?.length ? snapshot.messages.map((item) => {
       if (item.role === "assistant" && ["council", "auto_deliberation"].includes(item.message_type)) return null;
+      if (item.role === "assistant" && item.message_type === "goal_brief") return null;
       const run = item.role === "founder" && ["council", "auto_deliberation"].includes(item.message_type) ? latestRuns.get(item.content) : null;
-      const sinoStage = { goal_discovery: "Goal Understanding", goal_understanding: "Goal Understanding", goal_understanding_error: "Goal Understanding", goal_brief: "Goal Brief", goal_confirmed: "Goal Brief", decision: "Decision", discussion_package: "Discussion Package" }[item.message_type];
+      const sinoStage = { goal_discovery: "Goal Understanding", goal_understanding: "Goal Understanding", goal_understanding_error: "Goal Understanding", goal_confirmed: "Goal Brief", strategy_meeting: "Strategy Meeting", decision: "Decision", discussion_package: "Discussion Package" }[item.message_type];
       return <div key={item.message_id} className="sino-message-group"><article data-role={item.role}><strong>{item.role === "founder" ? "Founder" : `* Sino${sinoStage ? ` · ${sinoStage}` : ""}`}</strong><p>{item.content}</p>{item.role === "assistant" ? <GroundingDetails grounding={item.grounding} /> : null}</article>{run ? (item.message_type === "auto_deliberation" ? <AutoDeliberationConversation run={run} /> : <CouncilConversation run={run} />) : null}</div>;
     }) : null}</div></div>
+    {mode === "auto" && !["goal_confirmed", "strategy_meeting", "conflict_validation", "decision_ready", "package_ready", "package_approved"].includes(snapshot?.sino_brain?.stage) ? <p className="sino-auto-mode-gate">请先确认 Goal Brief；确认后将自动启动多轮 Strategy Meeting。</p> : null}
     <div className="sino-conversation-composer-dock"><GlobalSecretaryComposer value={message} onChange={onMessage} onSubmit={submit} busy={busy} healthy={healthy} mode={mode} onModeChange={onModeChange} toolbar={contextControls} toolbarIncludesStatus /></div>
     <div className="sino-conversation-workspace-safe-area" aria-hidden="true" />
   </section>;

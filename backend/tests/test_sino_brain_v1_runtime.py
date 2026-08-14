@@ -83,6 +83,33 @@ def test_force_review_confirm_and_persistence(monkeypatch):
     assert "Goal Brief" in runtime.prepare_strategy_prompt(conversation_id)
 
 
+def test_reviewable_natural_confirmation_bypasses_llm_and_enters_strategy(monkeypatch):
+    runtime, conversation_id = _runtime(monkeypatch)
+    runtime.process_message(conversation_id, "我要做AI短剧")
+    runtime._understanding_runner = lambda _: (_ for _ in ()).throw(AssertionError("LLM must not run"))
+    result = runtime.process_message(conversation_id, "正确")
+    assert result["message_type"] == "strategy_meeting"
+    assert result["brain"]["stage"] == "strategy_meeting"
+    assert result["brain"]["goal_readiness"] == "confirmed"
+
+
+def test_review_intent_tolerates_typo_but_revision_is_not_confirmation():
+    for text in ["正确", "真确", "确认", "同意", "可以", "开始讨论", "讨论", "进入讨论", "就这样", "没问题", "按这个来"]:
+        assert module.SinoBrainRuntime.review_intent(text) == "confirm_goal"
+    for text in ["这里不对，我不是做真人短剧", "修改一下", "这里错了"]:
+        assert module.SinoBrainRuntime.review_intent(text) == "revise_goal"
+
+
+def test_reviewable_revision_returns_to_goal_understanding(monkeypatch):
+    calls = []
+    runtime, conversation_id = _runtime(monkeypatch, lambda context: calls.append(context) or _result())
+    runtime.process_message(conversation_id, "我要做AI短剧")
+    result = runtime.process_message(conversation_id, "这里不对，我不是做真人短剧")
+    assert len(calls) == 2
+    assert result["brain"]["stage"] == "goal_review"
+    assert result["message_type"] == "goal_brief"
+
+
 def test_provider_failure_is_explicit_and_never_uses_fixed_question(monkeypatch):
     def fail(_): raise RuntimeError("provider_down")
     runtime, conversation_id = _runtime(monkeypatch, fail)
