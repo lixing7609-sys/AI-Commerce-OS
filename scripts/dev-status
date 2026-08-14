@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/runtime-common.sh"
+status_line() { if http_ok "$2"; then printf '%-10s ✓ Running\n' "$1"; else printf '%-10s ✕ Stopped\n' "$1"; fi; }
+status_line Frontend "${AICOS_FRONTEND_URL}"
+status_line Backend "${AICOS_BACKEND_URL}"
+if http_ok "${AICOS_BACKEND_URL}"; then
+  printf '%-10s ✓ Running\n' Database
+  printf '%-10s ✓ Healthy\n' Lifecycle
+else
+  printf '%-10s ✕ Unavailable\n' Database
+  printf '%-10s ✕ Unavailable\n' Lifecycle
+  echo "建议操作：./scripts/dev-restart"
+fi
+echo "Mode:      $(cat "${AICOS_RUNTIME}/mode" 2>/dev/null || echo resident-or-stopped)"

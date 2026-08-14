@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "${ROOT}/backend"
+[ -f .env ] && { set -a; source .env; set +a; }
+args=(app.main:app --host 127.0.0.1 --port 8000)
+[ "${AICOS_RELOAD:-0}" = "1" ] && args+=(--reload)
+exec "${ROOT}/backend/.venv/bin/python" -m uvicorn "${args[@]}"

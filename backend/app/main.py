@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.agents import router as agents_router
@@ -331,8 +332,24 @@ app.include_router(
 
 @app.get("/health", tags=["System"])
 def health():
+    try:
+        readiness = DatabaseReadinessService.check_ready()
+    except DatabaseReadinessError as error:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "error",
+                "app": "ok",
+                "database": "unhealthy",
+                "detail": str(error),
+            },
+        )
     return {
         "status": "ok",
         "service": "AI-Commerce-OS",
         "version": "0.1.0",
+        "app": "ok",
+        "database": "healthy",
+        "migration": "head",
+        "revision": readiness.current_revision,
     }

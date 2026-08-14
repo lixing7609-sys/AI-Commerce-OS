@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+tail -n 120 -f "${ROOT}/.runtime/logs/backend.log" "${ROOT}/.runtime/logs/frontend.log"
