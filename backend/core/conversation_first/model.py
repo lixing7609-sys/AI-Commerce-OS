@@ -97,3 +97,24 @@ class ExecutionDeltaDB(Base):
     founder_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SinoBrainSessionDB(Base):
+    """Durable, provider-independent state for one Founder Brain conversation."""
+
+    __tablename__ = "sino_brain_sessions"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("brain"))
+    conversation_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    stage: Mapped[str] = mapped_column(String(40), nullable=False, default="goal_discovery", server_default="goal_discovery")
+    goal_readiness: Mapped[str] = mapped_column(String(30), nullable=False, default="unclear", server_default="unclear")
+    goal_brief: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    discovery: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    strategy_proposals: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    conflicts: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    validations: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    decision: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    discussion_package: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    source_message_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))

@@ -43,6 +43,7 @@ from app.database.db import SessionLocal
 from app.core.task_asset.service import get_founder_task_asset
 from app.core.founder_object.service import approve_object, archive_object, attach_object_context, detach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
 from app.core.founder_intent.service import attach_candidate_context, get_conversation_candidate_context, list_candidates, review_candidate
+from app.founder_ai.brain_runtime import brain_runtime
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -175,6 +176,9 @@ class ObjectDiscussionIn(BaseModel):
 class CandidateReviewIn(BaseModel):
     action: str
 
+class BrainReviewIn(BaseModel):
+    action: str
+
 
 class DeltaCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -272,6 +276,10 @@ def _candidate_snapshot(snapshot: dict, conversation_id: str) -> dict:
         snapshot["object_candidates"] = []
         snapshot["context_candidate"] = None
         snapshot["object_recognition"] = {"status": "unavailable", "error": type(error).__name__}
+    try:
+        snapshot["sino_brain"] = brain_runtime.snapshot(conversation_id)
+    except Exception:
+        snapshot["sino_brain"] = None
     return snapshot
 
 
@@ -354,7 +362,10 @@ def archive_founder_object(object_id: str):
 @router.post("/conversations/{conversation_id}/messages", response_model=dict[str, Any])
 def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
     try:
-        return _candidate_snapshot(secretary.append_message(conversation_id, request.content, intent=request.intent), conversation_id)
+        brain_turn = brain_runtime.process_message(conversation_id, request.content)
+        snapshot = secretary.append_message(conversation_id, request.content, intent=request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")))
+        brain_runtime.sync_message_refs(conversation_id)
+        return _candidate_snapshot(snapshot, conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
@@ -366,7 +377,16 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
 @router.post("/conversations/{conversation_id}/council", response_model=dict[str, Any])
 def discuss_with_council(conversation_id: str, request: CouncilDiscussionIn):
     try:
-        return _candidate_snapshot(council_service.run(conversation_id, request.content, request.models), conversation_id)
+        brain_state = brain_runtime.snapshot(conversation_id)
+        if not brain_state or brain_state["stage"] not in {"goal_confirmed", "strategy_meeting"}:
+            brain_turn = brain_runtime.process_message(conversation_id, request.content)
+            snapshot = secretary.append_message(conversation_id, request.content, message_type=brain_turn.get("message_type", "goal_discovery"), reply_override=brain_turn.get("reply"), skip_object_recognition=True)
+            brain_runtime.sync_message_refs(conversation_id)
+            return _candidate_snapshot(snapshot, conversation_id)
+        prompt = brain_runtime.prepare_strategy_prompt(conversation_id)
+        snapshot = council_service.run(conversation_id, prompt, request.models, persist_founder_message=False)
+        brain_runtime.finalize_council(conversation_id, snapshot)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
@@ -378,13 +398,59 @@ def discuss_with_council(conversation_id: str, request: CouncilDiscussionIn):
 @router.post("/conversations/{conversation_id}/auto-deliberation", response_model=dict[str, Any])
 def discuss_with_auto_deliberation(conversation_id: str, request: CouncilDiscussionIn):
     try:
-        return _candidate_snapshot(council_service.run_auto(conversation_id, request.content, request.models), conversation_id)
+        brain_state = brain_runtime.snapshot(conversation_id)
+        if not brain_state or brain_state["stage"] not in {"goal_confirmed", "strategy_meeting"}:
+            brain_turn = brain_runtime.process_message(conversation_id, request.content)
+            snapshot = secretary.append_message(conversation_id, request.content, message_type=brain_turn.get("message_type", "goal_discovery"), reply_override=brain_turn.get("reply"), skip_object_recognition=True)
+            brain_runtime.sync_message_refs(conversation_id)
+            return _candidate_snapshot(snapshot, conversation_id)
+        prompt = brain_runtime.prepare_strategy_prompt(conversation_id)
+        snapshot = council_service.run_auto(conversation_id, prompt, request.models, persist_founder_message=False)
+        brain_runtime.finalize_council(conversation_id, snapshot)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except LLMGatewayError as error:
         raise HTTPException(status_code=503, detail="自动多轮讨论暂时不可用，可重试") from error
+
+
+@router.post("/conversations/{conversation_id}/brain/goal/confirm", response_model=dict[str, Any])
+def confirm_brain_goal(conversation_id: str):
+    try:
+        brain_runtime.confirm_goal(conversation_id)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/strategy", response_model=dict[str, Any])
+def start_brain_strategy(conversation_id: str, request: CouncilDiscussionIn):
+    try:
+        prompt = brain_runtime.prepare_strategy_prompt(conversation_id)
+        snapshot = council_service.run(conversation_id, prompt, request.models, persist_founder_message=False)
+        brain_runtime.finalize_council(conversation_id, snapshot)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except LLMGatewayError as error:
+        raise HTTPException(status_code=503, detail="Strategy Meeting 暂时不可用，可重试") from error
+
+
+@router.post("/conversations/{conversation_id}/brain/package/review", response_model=dict[str, Any])
+def review_brain_package(conversation_id: str, request: BrainReviewIn):
+    try:
+        brain_runtime.review_package(conversation_id, request.action)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @router.post("/conversations/{conversation_id}/council/retry", response_model=dict[str, Any])
@@ -560,8 +626,9 @@ def analyze_with_sino_brain(conversation_id: str, request: SinoBrainIn):
         raise HTTPException(status_code=404, detail="Founder AI conversation not found")
 
     project_context = request.project_context
-    if project_context is None and conversation.project_id:
-        project_context = get_project_intelligence(conversation.project_id)
+    conversation_project_id = getattr(conversation, "project_id", None)
+    if project_context is None and conversation_project_id:
+        project_context = get_project_intelligence(conversation_project_id)
     result = brain.analyze(
         user_goal=request.user_goal,
         conversation_id=conversation_id,

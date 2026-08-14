@@ -26,7 +26,7 @@ class SinoSecretaryService:
     def __init__(self, *, reply_generator=None):
         self._reply_generator = reply_generator or self._provider_reply
 
-    def append_message(self, conversation_id: str, content: str, *, intent: str | None = None, message_type: str = "discussion") -> dict:
+    def append_message(self, conversation_id: str, content: str, *, intent: str | None = None, message_type: str = "discussion", reply_override: str | None = None, skip_object_recognition: bool = False) -> dict:
         text = (content or "").strip()
         if not text:
             raise ValueError("message must not be empty")
@@ -42,15 +42,16 @@ class SinoSecretaryService:
             message_id = message.id
         # Persist recognition before provider latency so the homepage can poll
         # and show a real Draft while Sino is still composing the reply.
-        try:
-            from app.core.founder_intent.service import intent_engine
-            intent_engine.run(conversation_id, message_id, text)
-        except Exception:
-            pass
+        if not skip_object_recognition:
+            try:
+                from app.core.founder_intent.service import intent_engine
+                intent_engine.run(conversation_id, message_id, text)
+            except Exception:
+                pass
         # The Founder message is committed before the provider is invoked. Provider
         # failure therefore leaves a durable, retryable Conversation rather than
         # rolling back the first message or creating a replacement Conversation.
-        reply, grounding = self._normalize_reply(self._reply_generator(conversation_id, text))
+        reply, grounding = self._normalize_reply(reply_override if reply_override is not None else self._reply_generator(conversation_id, text))
         with SessionLocal() as session:
             conversation = session.get(ConversationDB, conversation_id)
             session.add(ConversationMessageDB(conversation_id=conversation_id, role="assistant", content=reply, message_type=message_type, grounding=grounding))

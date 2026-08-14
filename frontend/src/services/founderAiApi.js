@@ -83,6 +83,18 @@ export function discussWithAutoDeliberation(conversationId, content, models) {
   }, "发起自动多轮讨论失败");
 }
 
+export function confirmSinoBrainGoal(conversationId) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/goal/confirm`, { method: "POST" }, "确认 Goal Brief 失败");
+}
+
+export function startSinoBrainStrategy(conversationId, models) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/strategy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "基于已确认 Goal Brief 开始策略会议", models: models || null }) }, "启动 Strategy Meeting 失败");
+}
+
+export function reviewSinoBrainPackage(conversationId, action) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/package/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "审核 Discussion Package 失败");
+}
+
 export function retryCouncil(conversationId) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/council/retry`, { method: "POST" }, "重试多模型讨论失败");
 }

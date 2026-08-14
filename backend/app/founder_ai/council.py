@@ -238,20 +238,24 @@ class MultiModelCouncilService:
             text = latest.content
         return self.run(conversation_id, text, persist_founder_message=False)
 
-    def run_auto(self, conversation_id: str, question: str, selected_models: list[str] | None = None, *, max_rounds: int = 5) -> dict:
+    def run_auto(self, conversation_id: str, question: str, selected_models: list[str] | None = None, *, max_rounds: int = 5, persist_founder_message: bool = True) -> dict:
         """Run repeated grounded rounds and stop after two low-gain rounds."""
         text = (question or "").strip()
         if not text: raise ValueError("discussion question must not be empty")
         with SessionLocal() as session:
             conversation = session.get(ConversationDB, conversation_id)
             if conversation is None or conversation.system_id != "founder_ai": raise LookupError("Founder AI conversation not found")
-            founder_message = ConversationMessageDB(conversation_id=conversation_id, role="founder", content=text, message_type="auto_deliberation"); session.add(founder_message); session.flush(); founder_message_id = founder_message.id
+            if persist_founder_message:
+                founder_message = ConversationMessageDB(conversation_id=conversation_id, role="founder", content=text, message_type="auto_deliberation"); session.add(founder_message); session.flush(); founder_message_id = founder_message.id
+            else:
+                founder_message_id = session.scalar(select(ConversationMessageDB.id).where(ConversationMessageDB.conversation_id == conversation_id, ConversationMessageDB.role == "founder").order_by(ConversationMessageDB.created_at.desc()))
             conversation.updated_at = datetime.now(timezone.utc); session.commit()
-        try:
-            from app.core.founder_intent.service import intent_engine
-            intent_engine.run(conversation_id, founder_message_id, text)
-        except Exception:
-            pass
+        if persist_founder_message:
+            try:
+                from app.core.founder_intent.service import intent_engine
+                intent_engine.run(conversation_id, founder_message_id, text)
+            except Exception:
+                pass
         self._finalize_running(conversation_id, "superseded_by_new_run")
         context = self._context_package(conversation_id, text)
         targets = self._assign_perspectives(self._resolve_targets(selected_models))

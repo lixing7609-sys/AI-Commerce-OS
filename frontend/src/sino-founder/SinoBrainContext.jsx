@@ -1,0 +1,22 @@
+const STAGE_LABELS = {
+  goal_discovery: "Goal Discovery · 目标澄清", goal_review: "Goal Brief · 目标确认",
+  goal_confirmed: "目标已确认", strategy_meeting: "Strategy Meeting · 策略会议",
+  conflict_validation: "Conflict Validation · 冲突验证", decision_ready: "Decision · 决策",
+  package_ready: "Discussion Package · 成果包", package_approved: "成果包已批准",
+};
+const TYPE_LABELS = { project: "Project（项目）", workflow: "Workflow（工作流）", skill: "Skill（技能）", prompt: "Prompt（提示词）", knowledge: "Knowledge（知识）", capability: "Capability（能力）", agent: "Agent（智能体）", connector: "Connector（连接器）", decision: "Decision（决策）", open_question: "Open Question（待确认问题）" };
+
+export function SinoBrainContext({ brain, busy, onConfirmGoal, onStartStrategy, onReviewPackage }) {
+  if (!brain) return null;
+  const brief = brain.goal_brief || {};
+  const decision = brain.decision || {};
+  const pkg = brain.discussion_package || {};
+  return <section className="sino-brain-context" aria-label="Brain Context">
+    <header><h2>Brain Context</h2><span>{STAGE_LABELS[brain.stage] || brain.stage}</span></header>
+    <dl className="sino-brain-context__status"><div><dt>Goal Status</dt><dd>{brain.goal_readiness}</dd></div><div><dt>Current Stage</dt><dd>{STAGE_LABELS[brain.stage] || brain.stage}</dd></div></dl>
+    {Object.keys(brief).length ? <article className="sino-goal-brief"><h3>Goal Brief</h3><dl>{[["Goal", brief.goal], ["Problem", brief.problem], ["Target User", brief.target_user], ["Product / Business Type", brief.product_business_type], ["Expected Outcome", brief.expected_outcome], ["Scope", brief.scope], ["Constraints", brief.constraints], ["Success Criteria", brief.success_criteria], ["Unknowns", brief.unknowns], ["Assumptions", brief.assumptions]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{Array.isArray(value) ? value.join(" · ") || "暂无" : value || "暂无"}</dd></div>)}</dl>{brain.stage === "goal_review" ? <footer><button type="button" className="is-primary" disabled={busy} onClick={onConfirmGoal}>确认目标</button><span>继续补充可直接在对话中输入</span></footer> : null}{brain.stage === "goal_confirmed" ? <footer><button type="button" className="is-primary" disabled={busy} onClick={onStartStrategy}>开始策略会议</button></footer> : null}</article> : null}
+    {Object.keys(decision).length ? <article className="sino-brain-decision"><h3>Decision</h3><strong>{decision.final_recommendation}</strong><dl><div><dt>Why</dt><dd>{decision.why?.join(" · ") || "暂无"}</dd></div><div><dt>Why Not Alternatives</dt><dd>{decision.why_not_alternatives?.join(" · ") || "暂无明确替代方案"}</dd></div><div><dt>Confidence</dt><dd>{Math.round((decision.confidence || 0) * 100)}%</dd></div><div><dt>Key Risks</dt><dd>{decision.key_risks?.join(" · ") || "暂无"}</dd></div><div><dt>Remaining Unknowns</dt><dd>{decision.remaining_unknowns?.join(" · ") || "暂无"}</dd></div><div><dt>Next Step</dt><dd>{decision.next_step}</dd></div></dl></article> : null}
+    {brain.strategy_proposals?.length ? <details className="sino-brain-evidence"><summary>查看讨论依据</summary>{brain.strategy_proposals.map((item) => <article key={item.model_run_id || `${item.provider}-${item.model}`}><strong>{item.model} · {item.provider}</strong><p>{item.proposal?.core_judgment || item.proposal?.recommendation || "已记录结构化提案"}</p></article>)}</details> : null}
+    {pkg.package_id ? <article className="sino-discussion-package"><span>Discussion Package</span><h3>{pkg.title}</h3><p>状态：{pkg.status === "pending_review" ? "待 Founder 审批" : pkg.status === "approved" ? "已批准" : "已退回"}</p><ul>{Object.entries(pkg.counts || {}).map(([type, count]) => <li key={type}>{TYPE_LABELS[type] || type} ×{count}</li>)}</ul><details><summary>查看成果包</summary>{pkg.objects?.map((item) => <section key={item.discussion_object_id}><strong>{TYPE_LABELS[item.object_type] || item.object_type} · {item.name}</strong><p>{item.action} · {item.purpose}</p><small>Confidence {Math.round((item.confidence || 0) * 100)}% · {item.source}</small></section>)}</details>{pkg.status === "pending_review" ? <footer><button type="button" className="is-primary" disabled={busy} onClick={() => onReviewPackage("approve")}>批准成果包</button><button type="button" disabled={busy} onClick={() => onReviewPackage("return")}>退回</button><span>继续讨论可直接在对话中输入</span></footer> : null}</article> : null}
+  </section>;
+}
