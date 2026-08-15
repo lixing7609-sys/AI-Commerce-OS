@@ -68,7 +68,9 @@ def get_project(project_id: str) -> FounderProjectDB | None:
 
 
 def _iso(value):
-    return value.isoformat() if value else None
+    if not value:
+        return None
+    return value if isinstance(value, str) else value.isoformat()
 
 
 def _memory_content(record):
@@ -127,7 +129,7 @@ def get_project_intelligence(project_id: str) -> dict:
             stored = get_execution_session(execution.id)
             package = stored[1] if stored else None
             if package and package.task_asset.conversation_id in conversation_ids:
-                execution_refs.append({"execution_id": execution.id, "status": execution.status, "task_asset_id": execution.task_asset_id, "goal": package.goal, "execution_allowed": execution.execution_allowed, "updated_at": _iso(execution.completed_at or execution.started_at or execution.created_at)})
+                execution_refs.append({"execution_id": execution.id, "status": execution.status, "task_asset_id": execution.task_asset_id, "goal": package.goal, "execution_allowed": package.execution_allowed, "updated_at": _iso(execution.completed_at or execution.started_at or execution.created_at)})
         project_summary = intelligence.project_summary if intelligence and intelligence.project_summary else (digests[0].summary if digests else project.description or "")
         prompt_delta = digests[0].prompt_delta if digests else {}
         knowledge = [item for item in memories if item.memory_type == "knowledge" and item.status in {"active", "committed"}]
