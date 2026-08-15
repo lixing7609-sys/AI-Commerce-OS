@@ -65,9 +65,6 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
     const latest = (project) => Math.max(conversationTimestamp(project), ...founderConversations.filter((item) => projectForConversation(item) === project.id).map(conversationTimestamp));
     return latest(b) - latest(a);
   });
-  const visibleConversations = activeProjectId && validProjectIds.has(activeProjectId)
-    ? founderConversations.filter((item) => projectForConversation(item) === activeProjectId)
-    : founderConversations;
 
   function setSidebarCollapsed(next) {
     setCollapsed(next);
@@ -134,7 +131,7 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
       <div className="sino-sidebar__conversation-title sino-sidebar-primary-title"><span><ConversationIcon />会话</span></div>
       <div className="sino-sidebar__scroll-region" aria-label="历史会话列表">
         <div className="sino-conversation-navigation">
-          <ConversationList items={visibleConversations} now={now} projects={sortedProjects} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} onMoveConversation={moveConversation} />
+          <ConversationList items={founderConversations} now={now} projects={sortedProjects} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} onMoveConversation={moveConversation} />
         </div>
       </div>
     </section>
