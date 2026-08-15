@@ -18,4 +18,13 @@ describe("Founder sidebar information architecture", () => {
     expect(screen.queryByText("Runtime probe")).toBeNull();
     expect(screen.getAllByText("AI短剧生产系统").length).toBeGreaterThan(1);
   });
+
+  it("renders one updated-at ordered list with time metadata and no groups", () => {
+    const now = Date.now();
+    render(<SecretarySidebar conversations={[{ id: "old", title: "旧工作", updatedAt: now - 86400000 * 8 }, { id: "latest", title: "最新工作", updatedAt: now }]} />);
+    const titles = [...document.querySelectorAll(".sino-conversation-item__open b")].map((item) => item.textContent);
+    expect(titles).toEqual(["最新工作", "旧工作"]);
+    expect(screen.queryByText("最近 7 天")).toBeNull();
+    expect(document.querySelectorAll(".sino-conversation-group")).toHaveLength(0);
+  });
 });

@@ -371,7 +371,7 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(JSON.parse(window.localStorage.getItem("sino-founder-conversation-history"))).toHaveLength(1);
   });
 
-  it("keeps project and Conversation title fixed while only history groups scroll", async () => {
+  it("keeps project and Conversation title fixed while the flat work list scrolls", async () => {
     getFounderConversations.mockResolvedValue(Array.from({ length: 40 }, (_, index) => ({ id: `conv-${index}`, title: `历史会话 ${index}`, updated_at: new Date(Date.now() - index * 86400000).toISOString() })));
     render(<SinoFounderAIApp />);
     const region = await screen.findByLabelText("历史会话列表");
@@ -380,27 +380,23 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(screen.getByText("会话").closest(".sino-sidebar__fixed-top")).toBeTruthy();
     expect(screen.getByTitle("新建讨论").closest(".sino-sidebar__fixed-top")).toBeTruthy();
     expect(screen.getByText("Founder AI Secretary").closest("footer").parentElement).toBe(document.querySelector(".sino-sidebar"));
-    fireEvent.click(screen.getByRole("button", { name: /更早/ }));
     expect(await screen.findByRole("button", { name: /历史会话 39/ })).toBeTruthy();
+    expect(document.querySelectorAll(".sino-conversation-group")).toHaveLength(0);
+    expect(document.querySelectorAll(".sino-conversation-group__toggle")).toHaveLength(0);
   });
 
-  it("persists history accordion expansion within the browser session", async () => {
-    getFounderConversations.mockResolvedValue([{ id: "conv-old", title: "旧会话", updated_at: new Date(Date.now() - 40 * 86400000).toISOString() }]);
-    const { unmount } = render(<SinoFounderAIApp />);
-    expect(screen.queryByRole("button", { name: /旧会话/ })).toBeNull();
-    fireEvent.click(await screen.findByRole("button", { name: /更早/ }));
-    expect(screen.getByRole("button", { name: /旧会话/ })).toBeTruthy();
-    unmount();
+  it("orders every Conversation by updated_at descending without time groups", async () => {
+    const now = Date.now();
+    getFounderConversations.mockResolvedValue([
+      { id: "conv-old", title: "较早更新", updated_at: new Date(now - 20 * 86400000).toISOString() },
+      { id: "conv-latest", title: "最近更新", updated_at: new Date(now).toISOString() },
+      { id: "conv-middle", title: "中间更新", updated_at: new Date(now - 86400000).toISOString() },
+    ]);
     render(<SinoFounderAIApp />);
-    expect(await screen.findByRole("button", { name: /旧会话/ })).toBeTruthy();
-  });
-
-  it("places conversations older than seven days directly in 更早 without a 最近 30 天 group", async () => {
-    getFounderConversations.mockResolvedValue([{ id: "conv-20-days", title: "二十天前会话", updated_at: new Date(Date.now() - 20 * 86400000).toISOString() }]);
-    render(<SinoFounderAIApp />);
-    expect(screen.queryByRole("button", { name: /最近 30 天/ })).toBeNull();
-    fireEvent.click(await screen.findByRole("button", { name: /更早/ }));
-    expect(screen.getByRole("button", { name: /二十天前会话/ })).toBeTruthy();
+    await screen.findByRole("button", { name: /最近更新/ });
+    const titles = [...document.querySelectorAll(".sino-conversation-item__open b")].map((item) => item.textContent);
+    expect(titles).toEqual(["最近更新", "中间更新", "较早更新"]);
+    expect(screen.queryByText("最近 7 天")).toBeNull();
   });
 
   it("cancels and confirms deletion of a non-active Conversation without changing the current one", async () => {

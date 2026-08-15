@@ -2,8 +2,6 @@ import { useState } from "react";
 import { businessAssetName, isDeveloperRecord } from "./assetPresentation.js";
 
 const SIDEBAR_COLLAPSED_KEY = "sino-founder-sidebar-collapsed";
-const HISTORY_GROUPS_KEY = "sino-founder-history-groups";
-const DEFAULT_HISTORY_GROUPS = { today: true, yesterday: true, recent7: false, older: false };
 
 function FolderIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M2.25 4.25h4l1.25 1.5h6.25v6.5H2.25z" /></svg>;
@@ -22,29 +20,33 @@ function restoredCollapsedState() {
   catch { return false; }
 }
 
-function restoredHistoryGroups() {
-  try { return { ...DEFAULT_HISTORY_GROUPS, ...JSON.parse(window.localStorage.getItem(HISTORY_GROUPS_KEY) || "{}") }; }
-  catch { return DEFAULT_HISTORY_GROUPS; }
+function conversationTimestamp(item) {
+  const value = item.updatedAt ?? item.updated_at ?? item.created_at;
+  const timestamp = typeof value === "number" ? value : new Date(value || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function ConversationGroup({ id, label, items, expanded, onToggle, activeConversationId, onSelectConversation, onDeleteConversation }) {
-  return <section className="sino-conversation-group">
-    <button type="button" className="sino-conversation-group__toggle" aria-expanded={expanded} aria-controls={`history-${id}`} onClick={onToggle}><strong>{label}</strong><i>{expanded ? "⌄" : "›"}</i></button>
-    {expanded && <div id={`history-${id}`} className="sino-conversation-group__items">{items.map((item) => <div key={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b>{item.state === "completed" ? <small>完成</small> : null}</button><button type="button" className="sino-conversation-item__menu" aria-label="会话操作" title="删除会话" onClick={() => onDeleteConversation(item)}>···</button></div>)}</div>}
-  </section>;
+function conversationTimeLabel(item, now) {
+  const timestamp = conversationTimestamp(item);
+  if (!timestamp) return "";
+  const date = new Date(timestamp); const current = new Date(now);
+  const startToday = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime();
+  const startYesterday = startToday - 86400000;
+  if (timestamp >= startToday) return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  if (timestamp >= startYesterday) return "昨天";
+  return date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+}
+
+function ConversationList({ items, now, activeConversationId, onSelectConversation, onDeleteConversation }) {
+  return <div className="sino-conversation-list">{items.map((item) => <div key={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b><small>{conversationTimeLabel(item, now)}</small></button><button type="button" className="sino-conversation-item__menu" aria-label="会话操作" title="删除会话" onClick={() => onDeleteConversation(item)}>···</button></div>)}</div>;
 }
 
 export function SecretarySidebar({ onNavigate, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject }) {
   const [collapsed, setCollapsed] = useState(restoredCollapsedState);
   const [brandHovered, setBrandHovered] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(true);
-  const [historyGroups, setHistoryGroups] = useState(restoredHistoryGroups);
   const [now] = useState(() => Date.now());
-  const founderConversations = conversations.filter((item) => !isDeveloperRecord(item));
-  const today = founderConversations.filter((item) => now - item.updatedAt < 86400000);
-  const yesterday = founderConversations.filter((item) => now - item.updatedAt >= 86400000 && now - item.updatedAt < 172800000);
-  const recent7 = founderConversations.filter((item) => now - item.updatedAt >= 172800000 && now - item.updatedAt < 604800000);
-  const older = founderConversations.filter((item) => now - item.updatedAt >= 604800000);
+  const founderConversations = conversations.filter((item) => !isDeveloperRecord(item)).sort((a, b) => conversationTimestamp(b) - conversationTimestamp(a));
 
   function setSidebarCollapsed(next) {
     setCollapsed(next);
@@ -54,14 +56,6 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
   function expandSection(section) {
     setSidebarCollapsed(false);
     if (section === "projects") setProjectsOpen(true);
-  }
-
-  function toggleHistoryGroup(id) {
-    setHistoryGroups((current) => {
-      const next = { ...current, [id]: !current[id] };
-      try { window.localStorage.setItem(HISTORY_GROUPS_KEY, JSON.stringify(next)); } catch { /* unavailable */ }
-      return next;
-    });
   }
 
   return <aside className={`sino-sidebar${collapsed ? " sino-sidebar--collapsed" : ""}`}>
@@ -91,10 +85,7 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
     </div>
     <div className="sino-sidebar__scroll-region" aria-label="历史会话列表">
       <div className="sino-conversation-navigation">
-        <ConversationGroup id="today" label="今天" items={today} expanded={historyGroups.today} onToggle={() => toggleHistoryGroup("today")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
-        <ConversationGroup id="yesterday" label="昨天" items={yesterday} expanded={historyGroups.yesterday} onToggle={() => toggleHistoryGroup("yesterday")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
-        <ConversationGroup id="recent7" label="最近 7 天" items={recent7} expanded={historyGroups.recent7} onToggle={() => toggleHistoryGroup("recent7")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
-        <ConversationGroup id="older" label="更早" items={older} expanded={historyGroups.older} onToggle={() => toggleHistoryGroup("older")} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
+        <ConversationList items={founderConversations} now={now} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} />
       </div>
     </div>
     <footer>AI Commerce OS<br /><small>Founder AI Secretary</small></footer>
