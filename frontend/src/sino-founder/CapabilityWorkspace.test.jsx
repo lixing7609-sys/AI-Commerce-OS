@@ -3,7 +3,7 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CapabilityCenter, CapabilityContext } from "./CapabilityWorkspace.jsx";
-import { getCapabilityDomains, getCapabilityRepositoryAssets, getLifecycleAsset } from "../services/founderAiApi.js";
+import { getCapabilityDomains, getCapabilityRepositoryAssets, getLifecycleAsset, performConversationCapabilityAction } from "../services/founderAiApi.js";
 
 vi.mock("../services/founderAiApi.js", () => ({ getCapabilityDomains: vi.fn(), getCapabilityRepositoryAssets: vi.fn(), getLifecycleAsset: vi.fn(), performConversationCapabilityAction: vi.fn() }));
 const skill = { asset_id: "asset-skill", asset_type: "skill", domain_id: "commerce", name: "商品分镜生成 Skill", purpose: "生成结构化商品分镜", status: "candidate", version: 1, used_by_refs: [], dependency_refs: [], test_run_refs: [], available_actions: ["develop", "archive", "continue_discussion"] };
@@ -24,5 +24,12 @@ describe("AI Capability Center IA", () => {
     fireEvent.click(await screen.findByRole("button", { name: /电商/ }));
     fireEvent.click(await screen.findByRole("button", { name: /商品分镜生成 Skill/ }));
     expect(screen.getByRole("button", { name: "开发" })).toBeTruthy();
+  });
+  it("uses the repository Ready action for the current Conversation", async () => {
+    const ready = { ...skill, status: "ready", available_actions: ["reuse", "upgrade", "deprecate"], reference_count: 2 };
+    performConversationCapabilityAction.mockResolvedValue({ asset: { ...ready, reference_count: 3 } });
+    render(<CapabilityContext selected={ready} conversationId="conv-current" onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "引用" }));
+    await waitFor(() => expect(performConversationCapabilityAction).toHaveBeenCalledWith("conv-current", expect.objectContaining({ action: "reuse", target_asset_id: "asset-skill", target_id: "conv-current" })));
   });
 });

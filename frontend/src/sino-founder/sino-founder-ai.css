@@ -1186,3 +1186,37 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-reuse-suggestions article { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 10px; border-top: 1px solid var(--border-default); }
 .sino-reuse-suggestions article p { margin: 4px 0; }
 .sino-reuse-suggestions article button { flex: 0 0 auto; padding: 7px 12px; border: 1px solid var(--accent); border-radius: 7px; background: transparent; color: var(--accent); cursor: pointer; }
+.sino-capability-lifecycle-card { display: grid; gap: 16px; margin: 0 0 22px; padding: 18px 20px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-raised); }
+.sino-capability-lifecycle-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.sino-capability-lifecycle-card > header span, .sino-capability-run span, .sino-capability-test-result header span { color: var(--text-label); font-size: var(--font-label); text-transform: uppercase; }
+.sino-capability-lifecycle-card > header h2 { margin: 4px 0; color: var(--text-primary); font-size: var(--font-section-title); }
+.sino-capability-lifecycle-card > header p { margin: 0; color: var(--text-secondary); }
+.sino-capability-lifecycle-card > header > strong { color: var(--accent); font-size: var(--font-body-small); }
+.sino-capability-timeline { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; margin: 0; padding: 0; list-style: none; }
+.sino-capability-timeline li { display: grid; gap: 5px; color: var(--text-disabled); font-size: 11px; }
+.sino-capability-timeline li::after { content: ""; height: 2px; background: var(--border-default); }
+.sino-capability-timeline li.is-complete, .sino-capability-timeline li.is-current { color: var(--text-secondary); }
+.sino-capability-timeline li.is-complete::after, .sino-capability-timeline li.is-current::after { background: var(--accent); }
+.sino-capability-timeline li span { color: inherit; }
+.sino-capability-lifecycle-card__identity, .sino-capability-test-result dl { display: grid; gap: 0; margin: 0; }
+.sino-capability-lifecycle-card__identity div, .sino-capability-test-result dl div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-top: 1px solid var(--border-default); }
+.sino-capability-lifecycle-card dt, .sino-capability-test-result dt { color: var(--text-label); font-size: var(--font-label); }
+.sino-capability-lifecycle-card dd, .sino-capability-test-result dd { margin: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
+.sino-capability-run, .sino-capability-test-result { padding: 12px 14px; border: 1px solid var(--border-default); border-radius: 8px; }
+.sino-capability-run strong { display: block; margin-top: 4px; color: var(--text-primary); }
+.sino-capability-run p { margin: 4px 0 0; color: var(--text-secondary); }
+.sino-capability-test-result header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.sino-capability-test-result header strong { color: var(--accent); }
+.sino-capability-lifecycle-card > footer { display: flex; flex-wrap: wrap; gap: 8px; }
+.sino-capability-lifecycle-card button, .sino-capability-candidates button { padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: 7px; background: transparent; color: var(--text-primary); cursor: pointer; }
+.sino-capability-lifecycle-card button.is-primary { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+.sino-capability-lifecycle-card button:disabled { color: var(--text-disabled); cursor: wait; }
+.sino-capability-lifecycle-card__error { margin: 0; padding: 10px 12px; border-left: 2px solid #b49072; background: rgba(180,144,114,.08); color: #d8b99e; }
+.sino-capability-event { flex: 0 0 auto; margin: 0 20px 8px; padding: 10px 14px; border-left: 2px solid var(--accent); background: rgba(202,255,79,.045); }
+.sino-capability-event span { color: var(--text-label); font-size: var(--font-label); text-transform: uppercase; }
+.sino-capability-event p { margin: 4px 0 0; color: var(--text-primary); line-height: 1.55; }
+.sino-capability-candidates { display: grid; gap: 0; }
+.sino-capability-candidates article { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--border-default); }
+.sino-capability-candidates article div { display: grid; gap: 4px; }
+.sino-capability-candidates article span, .sino-workspace-row__identity small { color: var(--text-muted); font-size: var(--font-label); }
+@media (max-width: 820px) { .sino-capability-timeline { grid-template-columns: repeat(4, minmax(0, 1fr)); } .sino-capability-lifecycle-card__identity div, .sino-capability-test-result dl div { grid-template-columns: 1fr; gap: 3px; } }

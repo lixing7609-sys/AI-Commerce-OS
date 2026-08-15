@@ -24,7 +24,7 @@ function PackageOverview({ pkg }) {
   </section>;
 }
 
-export function SinoBrainContext({ brain, busy, capabilityAction, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal }) {
+export function SinoBrainContext({ brain, busy, capabilityAction, capabilityAsset, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal }) {
   if (!brain) return null;
   const brief = brain.goal_brief || {};
   const decision = brain.decision || {};
@@ -44,6 +44,7 @@ export function SinoBrainContext({ brain, busy, capabilityAction, onCapabilityAc
       <div><dt>Current Risk</dt><dd>{risk}</dd></div>
       <div><dt>Remaining Question</dt><dd>{question}</dd></div>
       <div><dt>Next Step</dt><dd>{action?.description || "继续当前讨论"}</dd></div>
+      {capabilityAsset ? <><div><dt>Current Capability</dt><dd>{capabilityAsset.name}</dd></div><div><dt>Lifecycle Status</dt><dd>{capabilityAsset.status} · V{capabilityAsset.version || 1}</dd></div><div><dt>Available Actions</dt><dd>{capabilityAsset.available_actions?.join(" · ") || "继续讨论"}</dd></div></> : null}
     </dl>
     {brain.stage === "goal_discovery" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onForceReview}>目标已经够清楚，开始讨论</button> : null}
     {brain.stage === "goal_confirmed" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onStartStrategy}>开始策略会议</button> : null}
