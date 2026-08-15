@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { businessAssetName, isDeveloperRecord } from "./assetPresentation.js";
 import { bindFounderConversationProject, createFounderProject, deleteFounderProject, updateFounderProject } from "../services/founderAiApi.js";
 
@@ -43,12 +43,11 @@ function ConversationList({ items, now, projects, activeConversationId, onSelect
   return <div className="sino-conversation-list">{items.map((item) => <div key={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b><small>{conversationTimeLabel(item, now)}</small></button><button type="button" className="sino-conversation-item__menu" aria-label={`会话操作 ${item.title}`} onClick={() => setMenu(menu === item.id ? null : item.id)}>···</button>{menu === item.id ? <div className="sino-sidebar-popover sino-conversation-move-menu"><strong>Move to Project</strong>{projects.filter((project) => project.id !== item.project_id).map((project) => <button key={project.id} type="button" onClick={() => { onMoveConversation(item.id, project.id); setMenu(null); }}>{project.name}</button>)}{item.project_id ? <button type="button" onClick={() => { onMoveConversation(item.id, null); setMenu(null); }}>移出 Project</button> : null}<button type="button" onClick={() => onDeleteConversation(item)}>删除会话</button></div> : null}</div>)}</div>;
 }
 
-export function SecretarySidebar({ onNavigate, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject }) {
+export function SecretarySidebar({ onNavigate, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject, onProjectsChanged }) {
   const [collapsed, setCollapsed] = useState(restoredCollapsedState);
   const [brandHovered, setBrandHovered] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(true);
   const [now] = useState(() => Date.now());
-  const [localProjects, setLocalProjects] = useState(projects);
   const [expandedProjects, setExpandedProjects] = useState({});
   const [creatingProject, setCreatingProject] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -56,10 +55,13 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
   const [editingProject, setEditingProject] = useState(null);
   const [projectAssignments, setProjectAssignments] = useState({});
   const [projectError, setProjectError] = useState("");
-  useEffect(() => { setLocalProjects(projects); }, [projects]);
   const founderConversations = conversations.filter((item) => !isDeveloperRecord(item)).sort((a, b) => conversationTimestamp(b) - conversationTimestamp(a));
-  const projectForConversation = (item) => Object.hasOwn(projectAssignments, item.id) ? projectAssignments[item.id] : item.project_id;
-  const sortedProjects = localProjects.filter((project) => !isDeveloperRecord(project)).sort((a, b) => {
+  const validProjectIds = new Set(projects.map((project) => project.id));
+  const projectForConversation = (item) => {
+    const projectId = Object.hasOwn(projectAssignments, item.id) ? projectAssignments[item.id] : item.project_id;
+    return projectId && validProjectIds.has(projectId) ? projectId : null;
+  };
+  const sortedProjects = projects.filter((project) => !isDeveloperRecord(project)).sort((a, b) => {
     const latest = (project) => Math.max(conversationTimestamp(project), ...founderConversations.filter((item) => projectForConversation(item) === project.id).map(conversationTimestamp));
     return latest(b) - latest(a);
   });
@@ -77,24 +79,24 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
 
   async function createProject(event) {
     event.preventDefault(); const name = projectName.trim(); if (!name) return;
-    try { const project = await createFounderProject({ name, description: null }); setLocalProjects((current) => [project, ...current]); setExpandedProjects((current) => ({ ...current, [project.id]: true })); setCreatingProject(false); setProjectName(""); onSelectProject(project.id); }
+    try { const project = await createFounderProject({ name, description: null }); await onProjectsChanged?.(); setExpandedProjects((current) => ({ ...current, [project.id]: true })); setCreatingProject(false); setProjectName(""); onSelectProject(project.id); }
     catch (error) { setProjectError(error.message); }
   }
 
   async function renameProject(project, name) {
     const nextName = name.trim(); if (!nextName) return;
-    try { const updated = await updateFounderProject(project.id, { name: nextName }); setLocalProjects((current) => current.map((item) => item.id === project.id ? { ...item, ...updated } : item)); setEditingProject(null); }
+    try { await updateFounderProject(project.id, { name: nextName }); await onProjectsChanged?.(); setEditingProject(null); }
     catch (error) { setProjectError(error.message); }
   }
 
   async function archiveProject(project) {
-    try { await updateFounderProject(project.id, { status: "archived" }); setLocalProjects((current) => current.filter((item) => item.id !== project.id)); setProjectMenu(null); if (project.id === activeProjectId) onNavigate("home"); }
+    try { await updateFounderProject(project.id, { status: "archived" }); if (project.id === activeProjectId) onNavigate("home"); await onProjectsChanged?.(); setProjectMenu(null); }
     catch (error) { setProjectError(error.message); }
   }
 
   async function removeProject(project) {
     if (!window.confirm(`删除 Project「${project.name}」？Conversation 将移出 Project，Ready 能力仍会保留。`)) return;
-    try { await deleteFounderProject(project.id); setLocalProjects((current) => current.filter((item) => item.id !== project.id)); setProjectAssignments((current) => ({ ...current, ...Object.fromEntries(founderConversations.filter((item) => projectForConversation(item) === project.id).map((item) => [item.id, null])) })); setProjectMenu(null); if (project.id === activeProjectId) onNavigate("home"); }
+    try { await deleteFounderProject(project.id); setProjectAssignments((current) => ({ ...current, ...Object.fromEntries(founderConversations.filter((item) => projectForConversation(item) === project.id).map((item) => [item.id, null])) })); if (project.id === activeProjectId) onNavigate("home"); await onProjectsChanged?.(); setProjectMenu(null); }
     catch (error) { setProjectError(error.message); }
   }
 

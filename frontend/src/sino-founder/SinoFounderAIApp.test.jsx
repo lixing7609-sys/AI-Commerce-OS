@@ -313,6 +313,38 @@ describe("Sino Founder AI interaction responsibilities", () => {
     await waitFor(() => expect(within(screen.getByLabelText("当前上下文")).getByRole("region", { name: "实现工作区" })).toBeTruthy());
   });
 
+  it("clears a stale active Project when the authoritative Project list is empty", async () => {
+    window.localStorage.setItem("sino-founder-active-project", "deleted-project");
+    window.sessionStorage.setItem("sino-founder-active-project", "deleted-project");
+    window.localStorage.setItem("sino-founder-object-workspace-view", "project");
+    getFounderProjects.mockResolvedValue([]);
+    getFounderConversations.mockResolvedValue([{ id: "conv-kept", project_id: null, title: "删除 Project 后保留的会话", updated_at: new Date().toISOString() }]);
+
+    render(<SinoFounderAIApp />);
+
+    expect(await screen.findByRole("heading", { name: "创造什么 AI 能力？" })).toBeTruthy();
+    await waitFor(() => expect(window.localStorage.getItem("sino-founder-active-project")).toBeNull());
+    expect(window.sessionStorage.getItem("sino-founder-active-project")).toBeNull();
+    expect(screen.queryByText("Founder project not found")).toBeNull();
+    expect(screen.getAllByTitle("删除 Project 后保留的会话").length).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".sino-project-item")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "新建 Project" })).toBeTruthy();
+  });
+
+  it("treats Project intelligence 404 as a deleted Project and returns Home without a red error", async () => {
+    const missing = new Error("获取项目智能失败：Founder project not found");
+    missing.status = 404;
+    missing.code = "project_not_found";
+    getProjectIntelligence.mockRejectedValue(missing);
+    render(<SinoFounderAIApp />);
+
+    fireEvent.click(await screen.findByTitle("Founder system"));
+
+    expect(await screen.findByRole("heading", { name: "创造什么 AI 能力？" })).toBeTruthy();
+    expect(screen.queryByText(/Founder project not found/)).toBeNull();
+    expect(window.localStorage.getItem("sino-founder-active-project")).toBeNull();
+  });
+
   it("creates a Project-scoped Conversation from the Project workspace composer", async () => {
     createFounderConversation.mockResolvedValue({ id: "conv-project-new" });
     discussWithSino.mockResolvedValue({ ...emptySnapshot, conversation: { id: "conv-project-new", project_id: "project-ai-commerce-os", title: "Prompt 升级规则", state: "exploring" }, messages: [{ message_id: "m-project", role: "founder", content: "继续讨论 Project Intelligence 的 Prompt 升级规则" }] });

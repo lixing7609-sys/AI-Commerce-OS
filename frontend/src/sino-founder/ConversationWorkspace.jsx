@@ -30,6 +30,10 @@ const WORKSPACE_OBJECT_KEY = "sino-founder-object-workspace-selected";
 const WORKSPACE_VIEWS = ["object", "capability-center", "execution", "assets", "builder"];
 const stored = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 const remember = (key, value) => { try { if (value) window.localStorage.setItem(key, value); else window.localStorage.removeItem(key); } catch { /* unavailable */ } };
+const forgetProject = () => {
+  remember(PROJECT_KEY, null);
+  try { window.sessionStorage.removeItem(PROJECT_KEY); } catch { /* unavailable */ }
+};
 const storedHistory = () => {
   try {
     const history = JSON.parse(window.localStorage.getItem(CONVERSATION_HISTORY_KEY) || "[]");
@@ -114,6 +118,17 @@ export function ConversationWorkspace() {
       window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
     } catch { /* unavailable */ }
   }, []);
+
+  const recoverMissingProject = useCallback(() => {
+    setActiveProjectId(null);
+    setProjectIntelligence(null);
+    setProjectLoading(false);
+    setProjectLoadError("");
+    setError((current) => /project not found|项目.*不存在|获取项目智能失败/i.test(current || "") ? "" : current);
+    forgetProject();
+    persistWorkspace("home", null);
+    setView("home");
+  }, [persistWorkspace]);
 
 
   useEffect(() => {
@@ -206,14 +221,31 @@ export function ConversationWorkspace() {
     }).catch(() => {});
     return () => { active = false; };
   }, [conversationId]);
-  useEffect(() => { getFounderProjects().then(setProjects).catch(() => {}); }, []);
+  const refreshProjects = useCallback(async () => {
+    try {
+      const items = await getFounderProjects();
+      const realProjects = Array.isArray(items) ? items : [];
+      setProjects(realProjects);
+      const selectedId = activeProjectId || stored(PROJECT_KEY);
+      if (selectedId && !realProjects.some((project) => project.id === selectedId)) recoverMissingProject();
+      return realProjects;
+    } catch (requestError) {
+      setProjects([]);
+      throw requestError;
+    }
+  }, [activeProjectId, recoverMissingProject]);
+  useEffect(() => { Promise.resolve().then(refreshProjects).catch(() => {}); }, [refreshProjects]);
   useEffect(() => {
     if (!activeProjectId) { setProjectIntelligence(null); setProjectLoading(false); setProjectLoadError(""); return undefined; }
     let active = true;
     setProjectLoading(true); setProjectLoadError("");
-    getProjectIntelligence(activeProjectId).then((value) => { if (active) { setProjectIntelligence(value); setProjectLoading(false); } }).catch((requestError) => { if (active) { setProjectIntelligence(null); setProjectLoading(false); setProjectLoadError(requestError.message || "项目加载失败"); setError(requestError.message); } });
+    getProjectIntelligence(activeProjectId).then((value) => { if (active) { setProjectIntelligence(value); setProjectLoading(false); } }).catch((requestError) => {
+      if (!active) return;
+      if (requestError.status === 404 || requestError.code === "project_not_found" || /project not found/i.test(requestError.message || "")) { recoverMissingProject(); return; }
+      setProjectIntelligence(null); setProjectLoading(false); setProjectLoadError(requestError.message || "项目加载失败"); setError(requestError.message);
+    });
     return () => { active = false; };
-  }, [activeProjectId, projectReloadKey]);
+  }, [activeProjectId, projectReloadKey, recoverMissingProject]);
   useEffect(() => {
     if (!executionId || execution) return;
     getFounderExecution(executionId).then((item) => { setExecution(item); setApproved(Boolean(item.execution_allowed)); }).catch(() => { remember(EXECUTION_KEY, null); setExecutionId(null); });
@@ -263,7 +295,10 @@ export function ConversationWorkspace() {
       setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); setSinoHealthy(true); rememberConversation(id, founderConversationTitle(nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content, nextSnapshot.sino_brain?.goal_brief?.goal));
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
-        catch (projectError) { setError(`项目智能更新失败，已保留上一版本：${projectError.message}`); }
+        catch (projectError) {
+          if (projectError.status === 404 || projectError.code === "project_not_found" || /project not found/i.test(projectError.message || "")) recoverMissingProject();
+          else setError(`项目智能更新失败，已保留上一版本：${projectError.message}`);
+        }
       }
       const explicitGoal = nextSnapshot.goals?.find((item) => item.status === "goal_confirmed");
       if (explicitGoal) await prepareGoal(explicitGoal); else setView("conversation");
@@ -344,7 +379,10 @@ export function ConversationWorkspace() {
       setSnapshot(nextSnapshot); setReplyPending(false); setSinoHealthy(true); rememberConversation(conversationId, founderConversationTitle(nextSnapshot.conversation?.title, nextSnapshot.sino_brain?.goal_brief?.goal));
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
-        catch (projectError) { setError(`项目智能更新失败，已保留上一版本：${projectError.message}`); }
+        catch (projectError) {
+          if (projectError.status === 404 || projectError.code === "project_not_found" || /project not found/i.test(projectError.message || "")) recoverMissingProject();
+          else setError(`项目智能更新失败，已保留上一版本：${projectError.message}`);
+        }
       }
     } catch (requestError) { setSinoHealthy(false); setError(`${requestError.message || "Sino 回复失败"}，可重试`); setReplyPending(true); }
     finally { sendLockRef.current = false; setBusy(false); }
@@ -353,7 +391,7 @@ export function ConversationWorkspace() {
   function newConversation(preserveProject = false) {
     const keepProject = preserveProject === true || preserveProject?.type === "click";
     setConversationId(null); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setResult(null); setExecutionId(null); setExecution(null); setApproved(false); setError("");
-    if (!keepProject) { setActiveProjectId(null); setProjectIntelligence(null); remember(PROJECT_KEY, null); }
+    if (!keepProject) { setActiveProjectId(null); setProjectIntelligence(null); forgetProject(); }
     remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(WORKSPACE_VIEW_KEY, null); setCreationContext(null); setSelectedWorkspaceObject(null); setView("home");
   }
 
@@ -396,7 +434,7 @@ export function ConversationWorkspace() {
       removeConversationHistory(id);
       if (id === conversationId) {
         setConversationId(null); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setExecutionId(null); setExecution(null); setApproved(false); setActiveProjectId(null); setProjectIntelligence(null);
-        remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(PROJECT_KEY, null); setView("home");
+        remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); forgetProject(); setView("home");
       }
       setDeleteTarget(null);
     } catch (requestError) { setError(requestError.message); }
@@ -634,7 +672,7 @@ export function ConversationWorkspace() {
   if (view === "assets") { main = <AssetLifecycleCenter selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} initialAsset={selectedWorkspaceObject?.asset_id ? selectedWorkspaceObject : null} onStartNewGoal={newConversation} />; context = <AssetContext selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} conversationId={conversationId} projectId={activeProjectId} onOpenExecution={openLifecycleExecution} onContinue={continueAsset} />; }
   if (view === "builder") { main = <SystemBuilderPanel projectId={activeProjectId} selected={selectedSystemAsset} onSelect={setSelectedSystemAsset} />; context = <SystemContext selected={selectedSystemAsset} onOpenAsset={openAssetRecord} />; }
 
-  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
+  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject, onProjectsChanged: refreshProjects }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
 }
 
 function ContextSummary({ title, children }) {
