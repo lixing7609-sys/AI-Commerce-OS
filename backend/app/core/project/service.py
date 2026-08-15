@@ -1,11 +1,12 @@
 import json
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.artifact.model import ArtifactAssetDB
 from app.core.memory.model import MemoryAssetDB
 from app.core.project.model import FounderProjectDB, ProjectIntelligenceDB
+from app.core.asset_lifecycle.model import AssetCatalogDB
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import CandidateGoalDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
 from app.core.decision.model import DecisionAssetDB
@@ -27,6 +28,38 @@ def create_project(*, name: str, description: str | None = None) -> FounderProje
         record = FounderProjectDB(system_id=FOUNDER_SYSTEM_KEY, name=name.strip(), description=(description or "").strip() or None)
         session.add(record); session.commit(); session.refresh(record)
         return record
+
+
+def project_counts(project_ids: list[str]) -> dict[str, dict[str, int]]:
+    counts = {project_id: {"conversation_count": 0, "candidate_count": 0, "ready_count": 0} for project_id in project_ids}
+    if not project_ids: return counts
+    with SessionLocal() as session:
+        for project_id, count in session.execute(select(ConversationDB.project_id, func.count()).where(ConversationDB.project_id.in_(project_ids), ConversationDB.system_id == FOUNDER_SYSTEM_KEY).group_by(ConversationDB.project_id)):
+            counts[project_id]["conversation_count"] = count
+        for project_id, status, count in session.execute(select(AssetCatalogDB.project_id, AssetCatalogDB.status, func.count()).where(AssetCatalogDB.project_id.in_(project_ids), AssetCatalogDB.status.in_(["candidate", "ready"])).group_by(AssetCatalogDB.project_id, AssetCatalogDB.status)):
+            counts[project_id][f"{status}_count"] = count
+    return counts
+
+
+def update_project(project_id: str, *, name: str | None = None, status: str | None = None) -> FounderProjectDB:
+    with SessionLocal() as session:
+        record = session.scalar(select(FounderProjectDB).where(FounderProjectDB.id == project_id, FounderProjectDB.system_id == FOUNDER_SYSTEM_KEY))
+        if record is None: raise LookupError("Founder project not found")
+        if name is not None: record.name = name.strip()
+        if status is not None: record.status = status
+        record.updated_at = datetime.now(timezone.utc)
+        session.commit(); session.refresh(record); return record
+
+
+def delete_project(project_id: str) -> dict:
+    with SessionLocal() as session:
+        record = session.scalar(select(FounderProjectDB).where(FounderProjectDB.id == project_id, FounderProjectDB.system_id == FOUNDER_SYSTEM_KEY))
+        if record is None: raise LookupError("Founder project not found")
+        session.query(ConversationDB).filter_by(project_id=project_id).update({"project_id": None}, synchronize_session=False)
+        session.query(AssetCatalogDB).filter_by(project_id=project_id).update({"project_id": None}, synchronize_session=False)
+        session.query(ProjectIntelligenceDB).filter_by(project_id=project_id).delete(synchronize_session=False)
+        session.delete(record); session.commit()
+        return {"project_id": project_id, "deleted": True, "assets_preserved": True}
 
 
 def get_project(project_id: str) -> FounderProjectDB | None:

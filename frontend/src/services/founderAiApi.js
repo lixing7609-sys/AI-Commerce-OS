@@ -47,6 +47,8 @@ export function getFounderProjects() {
 export function createFounderProject(payload) {
   return request("/founder-ai/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "创建 Founder 项目失败");
 }
+export function updateFounderProject(projectId, payload) { return request(`/founder-ai/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "更新 Founder 项目失败"); }
+export function deleteFounderProject(projectId) { return request(`/founder-ai/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" }, "删除 Founder 项目失败"); }
 
 export function getProjectIntelligence(projectId) {
   return request(`/founder-ai/projects/${encodeURIComponent(projectId)}/intelligence`, undefined, "获取项目智能失败");

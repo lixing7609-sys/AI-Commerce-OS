@@ -11,9 +11,9 @@ from app.main import app
 def cleanup_persisted_api_fixtures():
     yield
     with SessionLocal() as session:
-        session.query(ConversationDB).filter(ConversationDB.title.in_(["Founder Conversation Test", "Read Test", "Binding"])).delete(synchronize_session=False)
+        session.query(ConversationDB).filter(ConversationDB.title.in_(["Founder Conversation Test", "Read Test", "Binding", "Project CRUD Conversation"])).delete(synchronize_session=False)
         from app.core.project.model import FounderProjectDB
-        session.query(FounderProjectDB).filter(FounderProjectDB.name == "Binding Test").delete(synchronize_session=False)
+        session.query(FounderProjectDB).filter(FounderProjectDB.name.in_(["Binding Test", "Project CRUD", "Project Renamed"])).delete(synchronize_session=False)
         session.commit()
 
 
@@ -52,6 +52,21 @@ def test_conversation_project_binding_persists_and_can_be_cleared():
         from app.core.project.model import FounderProjectDB
         session.query(FounderProjectDB).filter_by(id=project["id"]).delete()
         session.commit()
+
+
+def test_project_can_be_renamed_archived_and_deleted_without_deleting_conversation():
+    with TestClient(app) as client:
+        project = client.post("/api/v1/founder-ai/projects", json={"name": "Project CRUD", "description": None}).json()
+        conversation = client.post("/api/v1/conversations", json={"title": "Project CRUD Conversation", "project_id": project["id"]}).json()
+        renamed = client.patch(f"/api/v1/founder-ai/projects/{project['id']}", json={"name": "Project Renamed"})
+        listed = client.get("/api/v1/founder-ai/projects")
+        deleted = client.delete(f"/api/v1/founder-ai/projects/{project['id']}")
+        restored = client.get(f"/api/v1/conversations/{conversation['id']}")
+    assert renamed.status_code == 200 and renamed.json()["name"] == "Project Renamed"
+    summary = next(item for item in listed.json() if item["id"] == project["id"])
+    assert summary["conversation_count"] == 1
+    assert deleted.status_code == 200 and deleted.json()["assets_preserved"] is True
+    assert restored.status_code == 200 and restored.json()["project_id"] is None
 
 
 def test_nonexistent_application_system_cannot_be_created_via_public_api():

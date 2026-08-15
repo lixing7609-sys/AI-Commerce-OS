@@ -199,7 +199,7 @@ export function ConversationWorkspace() {
     let active = true;
     getFounderConversations().then((items) => {
       if (!active) return;
-      const valid = items.map((item) => ({ id: item.id, title: item.title, state: item.state, updatedAt: new Date(item.updated_at || item.created_at || 0).getTime() || Date.now() }));
+      const valid = items.map((item) => ({ id: item.id, title: item.title, state: item.state, project_id: item.project_id || null, updatedAt: new Date(item.updated_at || item.created_at || 0).getTime() || Date.now() }));
       setConversations(valid); remember(CONVERSATION_HISTORY_KEY, JSON.stringify(valid));
       const activeId = stored(CONVERSATION_KEY);
       if (activeId && !valid.some((item) => item.id === activeId) && activeId !== conversationId) remember(CONVERSATION_KEY, null);
@@ -350,10 +350,11 @@ export function ConversationWorkspace() {
     finally { sendLockRef.current = false; setBusy(false); }
   }
 
-  function newConversation() {
+  function newConversation(preserveProject = false) {
+    const keepProject = preserveProject === true || preserveProject?.type === "click";
     setConversationId(null); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setResult(null); setExecutionId(null); setExecution(null); setApproved(false); setError("");
-    setActiveProjectId(null); setProjectIntelligence(null);
-    remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(PROJECT_KEY, null); remember(WORKSPACE_VIEW_KEY, null); setCreationContext(null); setSelectedWorkspaceObject(null); setView("home");
+    if (!keepProject) { setActiveProjectId(null); setProjectIntelligence(null); remember(PROJECT_KEY, null); }
+    remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(WORKSPACE_VIEW_KEY, null); setCreationContext(null); setSelectedWorkspaceObject(null); setView("home");
   }
 
   async function quickCreate(type) {
@@ -518,7 +519,6 @@ export function ConversationWorkspace() {
     selectProjectContext(project.id);
     return project;
   }
-
   async function submitExecutionContext(event) {
     event.preventDefault();
     const content = executionMessage.trim();
