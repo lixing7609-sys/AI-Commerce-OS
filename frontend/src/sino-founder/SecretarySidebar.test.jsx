@@ -20,7 +20,8 @@ describe("Founder sidebar information architecture", () => {
       projects={[{ id: "project-1", name: "验证AI短剧生产的可行性，跑通从创意到成片的全流程，为后续商业化或产品化打基础。 Project", description: "验证 AI 短剧生产可行性" }]}
     />);
     expect(screen.queryByText("Runtime probe")).toBeNull();
-    expect(screen.getAllByText("AI短剧生产系统").length).toBeGreaterThan(1);
+    expect(document.querySelectorAll(".sino-sidebar__scroll-region .sino-conversation-item__open b")).toHaveLength(1);
+    expect(document.querySelector(".sino-project-item .sino-conversation-list")).toBeNull();
   });
 
   it("renders one updated-at ordered list with time metadata and no groups", () => {
@@ -30,6 +31,27 @@ describe("Founder sidebar information architecture", () => {
     expect(titles).toEqual(["最新工作", "旧工作"]);
     expect(screen.queryByText("最近 7 天")).toBeNull();
     expect(document.querySelectorAll(".sino-conversation-group")).toHaveLength(0);
+  });
+
+  it("renders one fixed Conversation section after Project and never nests Conversations inside Project items", () => {
+    const conversations = [
+      { id: "project-work", project_id: "project-1", title: "Project 内工作", updatedAt: 20 },
+      { id: "general-work", project_id: null, title: "普通工作", updatedAt: 10 },
+    ];
+    const projects = [{ id: "project-1", name: "AI 电商" }];
+    const { rerender } = render(<SecretarySidebar conversations={conversations} projects={projects} onSelectConversation={vi.fn()} />);
+
+    expect(document.querySelectorAll(".sino-project-heading")).toHaveLength(1);
+    expect(document.querySelectorAll(".sino-sidebar__conversation-title")).toHaveLength(1);
+    expect(document.querySelector(".sino-project-item .sino-conversation-list")).toBeNull();
+    const title = document.querySelector(".sino-sidebar__conversation-title");
+    const list = document.querySelector(".sino-sidebar__scroll-region .sino-conversation-list");
+    expect(title.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect([...list.querySelectorAll("b")].map((item) => item.textContent)).toEqual(["Project 内工作", "普通工作"]);
+
+    rerender(<SecretarySidebar conversations={conversations} projects={projects} activeProjectId="project-1" onSelectConversation={vi.fn()} />);
+    expect([...document.querySelectorAll(".sino-sidebar__scroll-region .sino-conversation-item__open b")].map((item) => item.textContent)).toEqual(["Project 内工作"]);
+    expect(document.querySelectorAll(".sino-sidebar__conversation-title")).toHaveLength(1);
   });
 
   it("creates, renames, expands and moves Conversations through the Project workspace", async () => {
