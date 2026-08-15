@@ -400,7 +400,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-sidebar .sino-new-conversation { flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 40px; margin-top: 34px; border-color: transparent; background: #171a16; }
 .sino-sidebar .sino-new-conversation span { color: var(--accent); font-size: 16px; }.sino-sidebar .sino-new-conversation b { font-size: 12px; font-weight: 500; }
 .sino-sidebar-section { margin-top: 26px; }
-.sino-sidebar__conversation-title { flex: none; margin-top: 26px; }
+.sino-sidebar__conversation-title { flex: none; }
 .sino-sidebar-section__toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 7px 10px; border: 0; background: transparent; color: #757d73; font-size: 12px; text-align: left; cursor: pointer; }
 .sino-sidebar-section__toggle i { color: #4f574e; font-style: normal; }
 .sino-sidebar-primary-title { box-sizing: border-box; width: 100%; padding: 7px 10px; color: #757d73; font-size: 12px; font-weight: 500; line-height: 16px; }
@@ -448,7 +448,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-app { display: block; }
 .sino-founder-shell { display: grid; grid-template-columns: var(--sidebar-width, 244px) 5px minmax(0, 1fr) 5px var(--context-width, 320px); grid-template-rows: 66px minmax(0, 1fr); width: 100%; height: 100dvh; overflow: hidden; }
 .sino-founder-shell > .sino-sidebar { grid-column: 1; grid-row: 1 / 3; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: 100%; min-width: 0; height: 100%; min-height: 0; overflow: hidden; border-right: 0; }
-.sino-sidebar__fixed-top { min-width: 0; min-height: 0; flex-shrink: 0; }.sino-sidebar__fixed-top .sino-sidebar-section { margin-top: 26px; }.sino-sidebar__scroll-region { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }.sino-sidebar__scroll-region::-webkit-scrollbar { display: none; width: 0; height: 0; }.sino-founder-shell > .sino-sidebar > footer { flex-shrink: 0; margin-top: 0; padding-top: 15px; background: rgba(8,10,9,.96); }
+.sino-sidebar__fixed-top { min-width: 0; min-height: 0; flex-shrink: 0; }.sino-sidebar__fixed-top .sino-sidebar-section { margin-top: 26px; }.sino-sidebar__conversation-section { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }.sino-sidebar__scroll-region { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }.sino-sidebar__scroll-region::-webkit-scrollbar { display: none; width: 0; height: 0; }.sino-founder-shell > .sino-sidebar > footer { flex-shrink: 0; margin-top: 0; padding-top: 15px; background: rgba(8,10,9,.96); }
 .sino-founder-shell > .sino-sidebar::-webkit-scrollbar, .sino-founder-main::-webkit-scrollbar, .sino-founder-context::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-founder-topbar { grid-column: 3 / 6; grid-row: 1; z-index: 10; display: flex; align-items: center; justify-content: space-between; min-width: 0; height: 66px; padding: 0 30px; border-bottom: 1px solid var(--line); background: rgba(8,10,9,.88); backdrop-filter: blur(18px); }
 .sino-founder-main, .sino-founder-context { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }

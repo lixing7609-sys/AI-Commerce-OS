@@ -44,14 +44,17 @@ describe("Founder sidebar information architecture", () => {
     expect(document.querySelectorAll(".sino-project-heading")).toHaveLength(1);
     expect(document.querySelectorAll(".sino-sidebar__conversation-title")).toHaveLength(1);
     expect(document.querySelector(".sino-project-item .sino-conversation-list")).toBeNull();
-    const title = document.querySelector(".sino-sidebar__conversation-title");
-    const list = document.querySelector(".sino-sidebar__scroll-region .sino-conversation-list");
+    const section = document.querySelector(".sino-sidebar__conversation-section");
+    const title = section.querySelector(":scope > .sino-sidebar__conversation-title");
+    const list = section.querySelector(".sino-sidebar__scroll-region .sino-conversation-list");
+    expect([...section.children]).toEqual([title, section.querySelector(":scope > .sino-sidebar__scroll-region")]);
     expect(title.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect([...list.querySelectorAll("b")].map((item) => item.textContent)).toEqual(["Project 内工作", "普通工作"]);
 
     rerender(<SecretarySidebar conversations={conversations} projects={projects} activeProjectId="project-1" onSelectConversation={vi.fn()} />);
     expect([...document.querySelectorAll(".sino-sidebar__scroll-region .sino-conversation-item__open b")].map((item) => item.textContent)).toEqual(["Project 内工作"]);
     expect(document.querySelectorAll(".sino-sidebar__conversation-title")).toHaveLength(1);
+    expect(document.querySelector('.sino-collapsed-navigation [aria-label="会话"]')).toBeNull();
   });
 
   it("creates, renames, expands and moves Conversations through the Project workspace", async () => {
