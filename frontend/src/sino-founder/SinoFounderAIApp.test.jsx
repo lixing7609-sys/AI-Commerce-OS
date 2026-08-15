@@ -411,7 +411,7 @@ describe("Sino Founder AI interaction responsibilities", () => {
     expect(screen.getByText("项目").closest(".sino-sidebar__fixed-top")).toBeTruthy();
     expect(screen.getByText("会话").closest(".sino-sidebar__fixed-top")).toBeTruthy();
     expect(screen.getByTitle("新建讨论").closest(".sino-sidebar__fixed-top")).toBeTruthy();
-    expect(screen.getByText("Founder AI Secretary").closest("footer").parentElement).toBe(document.querySelector(".sino-sidebar"));
+    expect(screen.getByRole("button", { name: "⚙ 设置" }).closest("footer").parentElement).toBe(document.querySelector(".sino-sidebar"));
     expect(await screen.findByRole("button", { name: /历史会话 39/ })).toBeTruthy();
     expect(document.querySelectorAll(".sino-conversation-group")).toHaveLength(0);
     expect(document.querySelectorAll(".sino-conversation-group__toggle")).toHaveLength(0);

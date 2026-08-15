@@ -10,6 +10,15 @@ vi.mock("../services/founderAiApi.js", () => ({ bindFounderConversationProject: 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Founder sidebar information architecture", () => {
+  it("uses one fixed Settings entry and navigates to the existing settings view", () => {
+    const onNavigate = vi.fn();
+    render(<SecretarySidebar conversations={[]} projects={[]} onNavigate={onNavigate} />);
+    expect(screen.queryByText("AI Commerce OS")).toBeNull();
+    expect(screen.queryByText("Founder AI Secretary")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "⚙ 设置" }));
+    expect(onNavigate).toHaveBeenCalledWith("settings");
+  });
+
   it("keeps real conversations and hides only records with explicit test provenance", () => {
     const now = Date.now();
     render(<SecretarySidebar

@@ -70,6 +70,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-approval-note i { flex: none; width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(201,244,91,.5); }
 .sino-approval-note div { display: grid; gap: 4px; }.sino-approval-note strong { color: #dce1d8; font-size: 12px; }.sino-approval-note small { color: #6c7569; font-size: 12px; line-height: 1.45; }
 .sino-sidebar footer { margin-top: auto; padding: 18px 4px 0; }
+.sino-sidebar-settings { width: 100%; border: 0; background: transparent; color: inherit; padding: 7px 8px; text-align: left; font: inherit; border-radius: 7px; cursor: pointer; }
+.sino-sidebar-settings:hover, .sino-sidebar-settings[aria-current="page"] { background: var(--surface-selected, rgba(255,255,255,.06)); color: var(--text-primary, #e8ece9); }
 .sino-workspace { width: 100%; max-width: 1440px; margin: 0 auto; padding: 0 clamp(30px, 5vw, 78px) 120px; scroll-padding-top: 88px; }
 .sino-topbar { position: sticky; z-index: 10; top: 0; display: flex; justify-content: space-between; align-items: center; min-height: 66px; margin: 0 calc(clamp(30px, 5vw, 78px) * -1); padding: 0 clamp(30px, 5vw, 78px); border-bottom: 1px solid rgba(37,42,35,.75); background: rgba(8,10,9,.82); backdrop-filter: blur(18px); color: #8b9389; font-size: 12px; }
 .sino-topbar > div { display: flex; align-items: center; gap: 10px; }.sino-topbar__mark { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid #424a37; border-radius: 6px; color: var(--accent); font-weight: 800; }.sino-topbar__date { color: #525a51; }

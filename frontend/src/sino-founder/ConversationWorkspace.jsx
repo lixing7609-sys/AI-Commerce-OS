@@ -7,6 +7,7 @@ import { AssetContext, AssetLifecycleCenter, ExecutionContext, LifecycleExecutio
 import { ConversationThread } from "./ConversationThread.jsx";
 import { ImplementationWorkspace } from "./ImplementationWorkspace.jsx";
 import { CapabilityCenter, CapabilityContext, CapabilityObjectWorkspace } from "./CapabilityWorkspace.jsx";
+import { ModelCenter } from "./ModelCenter.jsx";
 import { ComposerContextControls } from "./ComposerContextControls.jsx";
 import { ExecutionCard } from "./ExecutionCard.jsx";
 import { ExecutionContextComposer } from "./ExecutionContextComposer.jsx";
@@ -27,7 +28,7 @@ const GOAL_CONTEXT_KEY = "sino-founder-goal-execution-context";
 const PROJECT_KEY = "sino-founder-active-project";
 const WORKSPACE_VIEW_KEY = "sino-founder-object-workspace-view";
 const WORKSPACE_OBJECT_KEY = "sino-founder-object-workspace-selected";
-const WORKSPACE_VIEWS = ["object", "capability-center", "execution", "assets", "builder"];
+const WORKSPACE_VIEWS = ["object", "capability-center", "execution", "assets", "builder", "settings"];
 const stored = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 const remember = (key, value) => { try { if (value) window.localStorage.setItem(key, value); else window.localStorage.removeItem(key); } catch { /* unavailable */ } };
 const forgetProject = () => {
@@ -45,7 +46,8 @@ const storedHistory = () => {
 const storedGoalContext = () => { try { return JSON.parse(window.localStorage.getItem(GOAL_CONTEXT_KEY) || "{}"); } catch { return {}; } };
 export const normalizeFounderView = (next) => {
   if (["reasoning", "blueprint", "system-builder"].includes(next)) return "builder";
-  if (["capability", "models", "model-center", "objects"].includes(next)) return "capability-center";
+  if (["models", "model-center"].includes(next)) return "settings";
+  if (["capability", "objects"].includes(next)) return "capability-center";
   if (next === "learning") return "assets";
   if (next === "lifecycle") return "home";
   return next;
@@ -671,6 +673,7 @@ export function ConversationWorkspace() {
   if (view === "execution") { main = executionId ? executionView : <LifecycleExecutionCenter selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} />; context = executionId ? executionContext : <ExecutionContext selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} onOpenExecution={openLifecycleExecution} />; }
   if (view === "assets") { main = <AssetLifecycleCenter selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} initialAsset={selectedWorkspaceObject?.asset_id ? selectedWorkspaceObject : null} onStartNewGoal={newConversation} />; context = <AssetContext selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} conversationId={conversationId} projectId={activeProjectId} onOpenExecution={openLifecycleExecution} onContinue={continueAsset} />; }
   if (view === "builder") { main = <SystemBuilderPanel projectId={activeProjectId} selected={selectedSystemAsset} onSelect={setSelectedSystemAsset} />; context = <SystemContext selected={selectedSystemAsset} onOpenAsset={openAssetRecord} />; }
+  if (view === "settings") { main = <ModelCenter />; context = null; }
 
   return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject, onProjectsChanged: refreshProjects }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
 }

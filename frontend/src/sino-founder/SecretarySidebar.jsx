@@ -43,7 +43,7 @@ function ConversationList({ items, now, projects, activeConversationId, onSelect
   return <div className="sino-conversation-list">{items.map((item) => <div key={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b><small>{conversationTimeLabel(item, now)}</small></button><button type="button" className="sino-conversation-item__menu" aria-label={`会话操作 ${item.title}`} onClick={() => setMenu(menu === item.id ? null : item.id)}>···</button>{menu === item.id ? <div className="sino-sidebar-popover sino-conversation-move-menu"><strong>Move to Project</strong>{projects.filter((project) => project.id !== item.project_id).map((project) => <button key={project.id} type="button" onClick={() => { onMoveConversation(item.id, project.id); setMenu(null); }}>{project.name}</button>)}{item.project_id ? <button type="button" onClick={() => { onMoveConversation(item.id, null); setMenu(null); }}>移出 Project</button> : null}<button type="button" onClick={() => onDeleteConversation(item)}>删除会话</button></div> : null}</div>)}</div>;
 }
 
-export function SecretarySidebar({ onNavigate, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject, onProjectsChanged }) {
+export function SecretarySidebar({ active, onNavigate, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject, onProjectsChanged }) {
   const [collapsed, setCollapsed] = useState(restoredCollapsedState);
   const [brandHovered, setBrandHovered] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(true);
@@ -135,6 +135,6 @@ export function SecretarySidebar({ onNavigate, conversations = [], activeConvers
         </div>
       </div>
     </section>
-    <footer>AI Commerce OS<br /><small>Founder AI Secretary</small></footer>
+    <footer><button type="button" className="sino-sidebar-settings" onClick={() => onNavigate("settings")} aria-current={active === "settings" ? "page" : undefined}>⚙ 设置</button></footer>
   </aside>;
 }

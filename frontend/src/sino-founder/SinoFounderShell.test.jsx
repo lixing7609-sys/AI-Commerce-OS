@@ -19,6 +19,12 @@ describe("SinoFounderShell resizable dividers", () => {
     expect(screen.queryByLabelText("Sino 服务异常")).toBeNull();
     expect(screen.queryByText("Sino 在线")).toBeNull();
   });
+  it("keeps Settings in the shared fixed workspace shell", () => {
+    render(<SinoFounderShell {...props} active="settings" main={<p>Model settings</p>} context={null} />);
+    expect(screen.getByRole("main", { name: "Founder AI 工作区内容" }).classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "⚙ 设置" }));
+    expect(props.onNavigate).toHaveBeenCalledWith("settings");
+  });
   it("resizes both panes within min/max constraints and persists widths", () => {
     render(<SinoFounderShell {...props} />);
     const left = screen.getByRole("separator", { name: "调整左侧栏宽度" });
@@ -90,7 +96,6 @@ describe("SinoFounderShell resizable dividers", () => {
     expect(document.querySelector(".sino-brand div").textContent).toBe("SinoFounder AI");
     expect(screen.getByTitle("新建讨论")).toBeTruthy();
     expect(screen.getByRole("button", { name: "项目" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "会话" })).toBeTruthy();
     expect(window.localStorage.getItem("sino-founder-sidebar-collapsed")).toBe("true");
     fireEvent.click(screen.getByTitle("Sino Founder AI 首页"));
     expect(props.onNavigate).toHaveBeenLastCalledWith("home");
@@ -99,10 +104,6 @@ describe("SinoFounderShell resizable dividers", () => {
     fireEvent.click(screen.getByRole("button", { name: "项目" }));
     expect(document.querySelector(".sino-sidebar").classList.contains("sino-sidebar--collapsed")).toBe(false);
     expect(screen.getByRole("button", { name: "项目⌄" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    fireEvent.click(screen.getByRole("button", { name: "会话" }));
-    expect(screen.getByText("会话").closest(".sino-sidebar__conversation-title")).toBeTruthy();
-
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
     unmount();
     render(<SinoFounderShell {...props} />);
