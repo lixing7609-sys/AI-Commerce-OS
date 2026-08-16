@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.context.service import get_founder_context
 from app.core.project.service import get_project_intelligence
-from app.core.conversation.service import get_conversation
+from app.core.conversation.service import get_conversation, resolve_conversation_id
 from app.founder_ai.orchestrator import (
     FOUNDER_SYSTEM_KEY,
     TaskAssetDraft,
@@ -61,6 +61,7 @@ from app.core.asset_lifecycle.service import (
     start_development,
     suggest_reuse,
 )
+from app.core.draft.service import get_draft, list_drafts, sync_cognitive_outcome
 
 
 class FounderAnalyzeIn(BaseModel):
@@ -81,6 +82,11 @@ class CapabilityActionIn(BaseModel):
     target_type: str | None = None
     target_id: str | None = None
     note: str | None = None
+
+
+class DraftSyncIn(BaseModel):
+    conversation_id: str
+    cognitive_outcome_ref: str
 
 
 def _lifecycle_conflict(error: ValueError) -> HTTPException:
@@ -213,6 +219,20 @@ class CandidateReviewIn(BaseModel):
 class BrainReviewIn(BaseModel):
     action: str
 
+class ConstitutionWorkItemReviewIn(BaseModel):
+    work_item_id: str
+    decision: str
+
+class ConstitutionWorkItemSemanticIn(BaseModel):
+    work_item_id: str
+
+class ConstitutionWorkItemRoutingReviewIn(BaseModel):
+    work_item_id: str
+    decision: str
+
+class FormalObjectProposalConfirmIn(BaseModel):
+    work_item_id: str
+
 
 class DeltaCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -326,6 +346,7 @@ def _candidate_snapshot(snapshot: dict, conversation_id: str) -> dict:
 
 @router.get("/conversations/{conversation_id}/workspace", response_model=dict[str, Any])
 def get_conversation_workspace(conversation_id: str):
+    conversation_id = resolve_conversation_id(conversation_id)
     try:
         snapshot = council_service.snapshot(conversation_id)
     except LookupError as error:
@@ -343,6 +364,29 @@ def get_conversation_workspace(conversation_id: str):
     snapshot["context_object"] = get_conversation_context_object(conversation_id)
     snapshot["active_context_object_id"] = snapshot["context_object"]["object_id"] if snapshot["context_object"] else None
     return _candidate_snapshot(snapshot, conversation_id)
+
+
+@router.get("/drafts", response_model=dict[str, Any])
+def founder_drafts(project_id: str | None = None, include_archived: bool = False):
+    return {"drafts": list_drafts(project_id=project_id, include_archived=include_archived)}
+
+
+@router.get("/drafts/{draft_id}", response_model=dict[str, Any])
+def founder_draft(draft_id: str):
+    try:
+        return get_draft(draft_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "draft_not_found", "message": str(error)}) from error
+
+
+@router.post("/drafts/sync-cognitive-outcome", response_model=dict[str, Any])
+def sync_founder_draft(payload: DraftSyncIn):
+    try:
+        return sync_cognitive_outcome(conversation_id=payload.conversation_id, cognitive_outcome_ref=payload.cognitive_outcome_ref)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail={"code": "draft_source_not_found", "message": str(error)}) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail={"code": "outcome_not_draft_worthy", "message": str(error)}) from error
 
 
 @router.get("/conversations/{conversation_id}/objects", response_model=list[dict[str, Any]])
@@ -402,9 +446,10 @@ def archive_founder_object(object_id: str):
 
 @router.post("/conversations/{conversation_id}/messages", response_model=dict[str, Any])
 def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
+    conversation_id = resolve_conversation_id(conversation_id)
     try:
         brain_turn = brain_runtime.process_message(conversation_id, request.content)
-        snapshot = secretary.append_message(conversation_id, request.content, intent=request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"))
+        snapshot = secretary.append_message(conversation_id, request.content, intent=brain_turn.get("intent") or request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"))
         brain_runtime.sync_message_refs(conversation_id)
         return _candidate_snapshot(snapshot, conversation_id)
     except LookupError as error:
@@ -417,6 +462,7 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
 
 @router.post("/conversations/{conversation_id}/council", response_model=dict[str, Any])
 def discuss_with_council(conversation_id: str, request: CouncilDiscussionIn):
+    conversation_id = resolve_conversation_id(conversation_id)
     try:
         brain_state = brain_runtime.snapshot(conversation_id)
         if brain_state and brain_state["stage"] == "goal_review" and brain_runtime.review_intent(request.content) == "confirm_goal":
@@ -444,6 +490,7 @@ def discuss_with_council(conversation_id: str, request: CouncilDiscussionIn):
 
 @router.post("/conversations/{conversation_id}/auto-deliberation", response_model=dict[str, Any])
 def discuss_with_auto_deliberation(conversation_id: str, request: CouncilDiscussionIn):
+    conversation_id = resolve_conversation_id(conversation_id)
     try:
         brain_state = brain_runtime.snapshot(conversation_id)
         if brain_state and brain_state["stage"] == "goal_review" and brain_runtime.review_intent(request.content) == "confirm_goal":
@@ -473,6 +520,109 @@ def discuss_with_auto_deliberation(conversation_id: str, request: CouncilDiscuss
 def confirm_brain_goal(conversation_id: str):
     try:
         brain_runtime.confirm_goal(conversation_id)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/constitution/review", response_model=dict[str, Any])
+def review_brain_constitution(conversation_id: str, request: BrainReviewIn):
+    try:
+        brain_runtime.review_constitution(conversation_id, request.action)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/project-outcome/review", response_model=dict[str, Any])
+def review_project_outcome(conversation_id: str, request: BrainReviewIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        brain_runtime.review_project_outcome(conversation_id, request.action)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/implementation-plan/review", response_model=dict[str, Any])
+def review_implementation_plan(conversation_id: str, request: BrainReviewIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        brain_runtime.review_implementation_plan(conversation_id, request.action)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/execution-package/revalidate", response_model=dict[str, Any])
+def revalidate_execution_package(conversation_id: str):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        brain_runtime.revalidate_execution_package(conversation_id)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/project-planning/continue", response_model=dict[str, Any])
+def continue_project_planning_analysis(conversation_id: str):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        brain_runtime.execute_autonomous_analysis(conversation_id)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/constitution/work-items/review", response_model=dict[str, Any])
+def review_brain_constitution_work_item(conversation_id: str, request: ConstitutionWorkItemReviewIn):
+    try:
+        brain_runtime.review_constitution_work_item(conversation_id, request.work_item_id, request.decision)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/constitution/work-items/understand", response_model=dict[str, Any])
+def understand_brain_constitution_work_item(conversation_id: str, request: ConstitutionWorkItemSemanticIn):
+    try:
+        brain_runtime.ensure_constitution_work_item_semantics(conversation_id, request.work_item_id)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/constitution/work-items/routing/review", response_model=dict[str, Any])
+def review_brain_constitution_work_item_routing(conversation_id: str, request: ConstitutionWorkItemRoutingReviewIn):
+    try:
+        brain_runtime.review_constitution_work_item_routing(conversation_id, request.work_item_id, request.decision)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/constitution/work-items/formal-object/confirm", response_model=dict[str, Any])
+def confirm_brain_formal_object_proposal(conversation_id: str, request: FormalObjectProposalConfirmIn):
+    try:
+        brain_runtime.confirm_formal_object_proposal(conversation_id, request.work_item_id)
         return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
@@ -1119,6 +1269,9 @@ def reuse_lifecycle_asset(asset_id: str, request: AssetReuseIn):
 @router.get("/asset-lifecycle/conversations/{conversation_id}/reuse-suggestions")
 def get_lifecycle_reuse_suggestions(conversation_id: str):
     try:
+        brain = brain_runtime.snapshot(conversation_id)
+        if brain and brain.get("message_intent") == "project_context_update":
+            return {"assets": []}
         return {"assets": suggest_reuse(conversation_id)}
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error

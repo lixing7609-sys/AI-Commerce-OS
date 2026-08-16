@@ -21,6 +21,9 @@ class ConversationOut(BaseModel):
     project_id: str | None
     title: str
     status: str
+    conversation_kind: str
+    topic_key: str | None
+    merged_into_conversation_id: str | None
     created_at: datetime
     updated_at: datetime
 

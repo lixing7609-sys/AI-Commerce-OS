@@ -58,6 +58,14 @@ class SinoSecretaryService:
             session.add(ConversationMessageDB(conversation_id=conversation_id, role="assistant", content=reply, message_type=message_type, grounding={**grounding, **stage_grounding}))
             conversation.updated_at = datetime.now(timezone.utc)
             session.commit()
+        if message_type == "project_planning":
+            try:
+                from app.founder_ai.brain_runtime import brain_runtime
+                brain_runtime.judge_project_maturity(conversation_id)
+            except Exception:
+                # The reply is already durable. A maturity provider failure must
+                # remain retryable and must not manufacture a default verdict.
+                pass
         # The discussion is durable before enrichment starts. A failed distillation
         # must never erase the Founder message or the completed Sino reply.
         try:
@@ -93,6 +101,12 @@ class SinoSecretaryService:
             session.add(ConversationMessageDB(conversation_id=conversation_id, role="assistant", content=reply, message_type=message_type, grounding=grounding))
             conversation.updated_at = datetime.now(timezone.utc)
             session.commit()
+        if message_type == "project_planning":
+            try:
+                from app.founder_ai.brain_runtime import brain_runtime
+                brain_runtime.judge_project_maturity(conversation_id)
+            except Exception:
+                pass
         try:
             with SessionLocal() as session:
                 conversation = session.get(ConversationDB, conversation_id)
@@ -132,6 +146,7 @@ class SinoSecretaryService:
 
         text = message.content
         is_capability_lifecycle = message.message_type in {"capability_lifecycle", "capability_lifecycle_error"}
+        is_project_context_update = message.message_type == "project_context_update" or message.intent == "project_context_update"
         constraints = list(digest.constraints or [])
         if any(term in text for term in ("不要", "必须", "禁止", "只能", "保持", "不得")) and text not in constraints:
             constraints.append(text)
@@ -155,7 +170,7 @@ class SinoSecretaryService:
             memory_candidates.append(text)
         digest.memory_candidates = memory_candidates[-12:]
         asset_candidates = list(digest.asset_candidates or [])
-        if any(term in text for term in ("标准", "规范", "Prompt", "工作流", "方案")) and text not in asset_candidates:
+        if not is_project_context_update and any(term in text for term in ("标准", "规范", "Prompt", "工作流", "方案")) and text not in asset_candidates:
             asset_candidates.append(text)
         digest.asset_candidates = asset_candidates[-12:]
         if conversation.title in {"New Conversation", "新讨论", ""}:
@@ -172,7 +187,7 @@ class SinoSecretaryService:
                 session.add(MemoryAssetDB(system_id="founder_ai", conversation_id=conversation.id, memory_type="knowledge", title=knowledge_text[:80], content=json.dumps({"knowledge": knowledge_text}, ensure_ascii=False), confidence=0.8, source_message_ids=[message.id, assistant.id] if assistant else [message.id]))
         candidate = None
         goal_markers = ("实现", "开发", "创建", "修复", "重构", "build", "implement", "正式目标", "目标确定为", "目标是", "按这个执行", "做成任务", "开始实施")
-        if not is_capability_lifecycle and any(term in text.lower() for term in goal_markers):
+        if not is_capability_lifecycle and not is_project_context_update and any(term in text.lower() for term in goal_markers):
             candidate = session.scalar(select(CandidateGoalDB).where(CandidateGoalDB.conversation_id == conversation.id, CandidateGoalDB.title == text[:200], CandidateGoalDB.status == "candidate"))
             if candidate is None:
                 candidate = CandidateGoalDB(conversation_id=conversation.id, title=text[:200], description=text, source_message_ids=[message.id], confidence=0.8 if any(term in text for term in ("按这个执行", "做成任务", "开始实施")) else 0.65)
@@ -278,7 +293,11 @@ class SinoSecretaryService:
         if dialogue_runtime is None:
             raise InvalidResponseError()
         request = LLMRequest(
-            system_prompt="你是 Sino Founder AI。围绕 Founder 当前讨论给出简洁、具体、可继续推进的中文回复。普通讨论不得自动创建 Goal、Task 或 Execution。只返回 JSON。",
+            system_prompt="""你是 Sino Founder AI。Founder 不负责 Prompt Engineering。围绕当前 Project 与 Conversation 给出简洁、具体、可继续推进的中文回复。
+如果 project_context 包含 parent_confirmed_context 与 child_project_context，必须把短指令（如“继续”“下一步呢”“你怎么看”）理解为推进当前 Project：先判断已有状态和最重要缺口，再主动给出专业下一步。不得要求 Founder 重复提供已继承的 Constitution、Parent、Architecture Role、Initial Positioning 或 Initial Scope。
+回复应说明：你如何理解当前 Project、最重要缺口及优先原因、建议下一步、你可以先完成的分析、真正需要 Founder 判断的少量问题。不要机械复述 Context。
+必须先自行分析职责、边界、父子关系、输入输出和能力需求；这些属于 Sino 的专业工作，不得反问 Founder“它应该负责什么”“与上层如何交互”或要求 Founder 排能力清单。只有无法从 confirmed Context 推断、且会实质改变系统方向的偏好，才能列为 founder_questions，最多 1–2 个；其余使用可修正的暂定判断。
+普通讨论不得自动创建 Goal、Candidate、Capability、Task 或 Execution。只返回 JSON。优先使用 {"reply":"完整回复"}；如需结构化思考，可使用 understanding、gap、priority_reason、next_step、analysis、founder_questions 字段。""",
             user_prompt=json.dumps({"current_message": text, "recent_messages": recent_messages, "project_context": project_context, "context_object": context_object}, ensure_ascii=False),
             temperature=0.3,
             max_tokens=1200,
@@ -292,6 +311,18 @@ class SinoSecretaryService:
         try:
             payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
             reply = str(payload.get("reply", "")).strip()
+            if not reply and any(payload.get(key) for key in ("understanding", "gap", "next_step", "analysis")):
+                sections = [
+                    ("我目前如何理解", payload.get("understanding")),
+                    ("当前最重要的缺口", payload.get("gap")),
+                    ("为什么优先处理", payload.get("priority_reason")),
+                    ("建议下一步", payload.get("next_step")),
+                    ("Sino 可以先完成", payload.get("analysis")),
+                ]
+                reply = "\n\n".join(f"**{title}**\n{value}" for title, value in sections if value)
+                questions = [str(item).strip() for item in payload.get("founder_questions") or [] if str(item).strip()]
+                if questions:
+                    reply += "\n\n**真正需要 Founder 判断**\n" + "\n".join(f"{index}. {item}" for index, item in enumerate(questions, 1))
         except (AttributeError, TypeError, ValueError, json.JSONDecodeError) as error:
             raise InvalidResponseError() from error
         if not reply:
@@ -320,6 +351,9 @@ class SinoSecretaryService:
         knowledge = list(project_context.get("relevant_knowledge") or [])
         constraints = list(project_context.get("constraints") or [])
         terminology = list(project_context.get("terminology") or [])
+        parent_context = dict(project_context.get("parent_confirmed_context") or {})
+        parent_constitution = dict(parent_context.get("constitution") or {})
+        child_context = dict(project_context.get("child_project_context") or {})
         historical_message_count = max(0, len(recent_messages) - 1)
 
         def source(key, label, *, available=False, used=False, count=None, version=None, references=None):
@@ -344,6 +378,10 @@ class SinoSecretaryService:
             source("goals", "项目目标", available=bool(project_intelligence.get("candidate_goals") or project_intelligence.get("active_goals")), used=False, count=0),
             source("conversation_history", "历史会话", available=historical_message_count > 0, used=historical_message_count > 0, count=historical_message_count),
             source("current_conversation", "当前会话", available=True, used=True, count=len(recent_messages), references=[{"source_id": conversation_id}]),
+            source("parent_project", "Parent Project", available=bool(parent_context), used=bool(parent_context), references=[{"source_id": parent_context.get("project_id"), "title": parent_context.get("project_name")}] if parent_context else None),
+            source("parent_constitution", "Parent Constitution", available=bool(parent_constitution), used=bool(parent_constitution), references=[{"source_id": parent_constitution.get("source_conversation_id"), "title": parent_constitution.get("title")}] if parent_constitution else None),
+            source("child_project_context", "Child Project Context", available=bool(child_context), used=bool(child_context), references=[{"source_id": child_context.get("project_id"), "title": child_context.get("project_name")}] if child_context else None),
+            source("initial_project_context", "Initial Project Context", available=bool(child_context.get("source_proposal_id")), used=bool(child_context.get("source_proposal_id")), references=[{"source_id": child_context.get("source_proposal_id"), "title": child_context.get("source_conversation_title")}] if child_context.get("source_proposal_id") else None),
             source("founder_current_message", "Founder 当前输入", available=True, used=True, count=1),
             source("external_model_knowledge", "模型通用知识", available=True, used=True, references=[{"source_id": provider, "title": model}]),
         ]

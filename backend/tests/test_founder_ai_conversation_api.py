@@ -96,3 +96,15 @@ def test_package_approval_api_runs_asset_commit_and_returns_completed_workspace(
     assert calls == [("conversation-1", "approve")]
     assert result["conversation"]["state"] == "completed"
     assert result["sino_brain"]["current_action"]["action_id"] == "assets_committed"
+
+
+def test_execution_package_revalidation_api_reuses_resolved_conversation(monkeypatch):
+    calls = []
+    monkeypatch.setattr(api, "resolve_conversation_id", lambda cid: "canonical-conversation")
+    monkeypatch.setattr(api.brain_runtime, "revalidate_execution_package", lambda cid: calls.append(cid))
+    monkeypatch.setattr(api.council_service, "snapshot", lambda cid: {"conversation": {"id": cid}, "execution_package": {"package_id": "execution-package-1"}})
+    monkeypatch.setattr(api, "_candidate_snapshot", lambda snapshot, _cid: snapshot)
+    result = api.revalidate_execution_package("merged-conversation")
+    assert calls == ["canonical-conversation"]
+    assert result["conversation"]["id"] == "canonical-conversation"
+    assert result["execution_package"]["package_id"] == "execution-package-1"

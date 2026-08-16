@@ -17,6 +17,9 @@ class ProjectOut(BaseModel):
     id: str
     name: str
     description: str | None
+    parent_project_id: str | None = None
+    project_type: str = "project"
+    architecture_role: str | None = None
     status: str
     created_at: datetime
     updated_at: datetime
@@ -37,7 +40,7 @@ router = APIRouter(prefix="/founder-ai/projects", tags=["Founder Projects"])
 @router.get("", response_model=list[ProjectOut])
 def list_founder_projects():
     projects = list_projects(); counts = project_counts([item.id for item in projects])
-    return [{"id": item.id, "name": item.name, "description": item.description, "status": item.status, "created_at": item.created_at, "updated_at": item.updated_at, **counts[item.id]} for item in projects]
+    return [{"id": item.id, "name": item.name, "description": item.description, "parent_project_id": item.parent_project_id, "project_type": item.project_type, "architecture_role": item.architecture_role, "status": item.status, "created_at": item.created_at, "updated_at": item.updated_at, **counts[item.id]} for item in projects]
 
 
 @router.post("", response_model=ProjectOut, status_code=201)

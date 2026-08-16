@@ -1,10 +1,13 @@
+import json
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
 from app.core.project.model import FounderProjectDB
-from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, PendingQuestionDB, SecretaryDigestDB
+from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, PendingQuestionDB, SecretaryDigestDB, SinoBrainSessionDB
 import app.core.project.service as project_service
 import app.core.conversation.service as conversation_service
 import app.core.model_center.service as model_center_service
@@ -48,6 +51,44 @@ def test_conversation_project_is_optional_and_invalid_project_is_rejected(monkey
         raise AssertionError("invalid Founder project must be rejected")
 
 
+def test_project_topic_conversations_merge_without_losing_messages(monkeypatch):
+    factory = _database(monkeypatch)
+    project = project_service.create_project(name="Lifecycle Project", description="Lifecycle")
+    monkeypatch.setattr(conversation_service, "get_project", lambda _project_id: project)
+    first = conversation_service.create_conversation(title="Project definition", project_id=project.id)
+    second = conversation_service.create_conversation(title="Planning continuation", project_id=project.id)
+    with factory() as session:
+        baseline = datetime(2026, 1, 1, tzinfo=UTC)
+        session.add_all([
+            ConversationMessageDB(conversation_id=first.id, role="founder", content="first", created_at=baseline),
+            ConversationMessageDB(conversation_id=second.id, role="founder", content="continue", created_at=baseline + timedelta(seconds=1)),
+            SinoBrainSessionDB(conversation_id=first.id, project_id=project.id, stage="goal_discovery", source_message_refs=[]),
+            SinoBrainSessionDB(conversation_id=second.id, project_id=project.id, stage="project_planning", source_message_refs=[]),
+        ])
+        session.commit()
+
+    canonical = conversation_service.merge_project_conversations(
+        project_id=project.id,
+        conversation_ids=[first.id, second.id],
+        canonical_id=first.id,
+        topic_key=f"project:{project.id}:definition",
+    )
+
+    with factory() as session:
+        merged = session.get(type(second), second.id)
+        messages = list(session.query(ConversationMessageDB).filter_by(conversation_id=first.id).order_by(ConversationMessageDB.created_at, ConversationMessageDB.id))
+        brain = session.query(SinoBrainSessionDB).filter_by(conversation_id=first.id).one()
+        assert canonical.id == first.id
+        assert [item.content for item in messages] == ["first", "continue"]
+        assert merged.status == "merged"
+        assert merged.merged_into_conversation_id == first.id
+        assert brain.stage == "project_planning"
+        assert second.id in brain.discovery["merged_conversation_refs"]
+    assert conversation_service.resolve_conversation_id(second.id) == first.id
+    assert project_service.project_counts([project.id])[project.id]["conversation_count"] == 1
+    assert [item.id for item in conversation_service.list_conversations() if item.project_id == project.id] == [first.id]
+
+
 def test_project_intelligence_distills_conversation_and_versions_living_prompt(monkeypatch):
     factory = _database(monkeypatch)
     project = project_service.create_project(name="AI Commerce OS", description="Founder system")
@@ -69,6 +110,78 @@ def test_project_intelligence_distills_conversation_and_versions_living_prompt(m
     upgraded = project_service.get_project_intelligence(project.id)
     assert upgraded["prompt_version"] == 2
     assert upgraded["decisions"]
+
+
+def test_project_intelligence_projects_constitution_maturity_without_copying_source(monkeypatch):
+    factory = _database(monkeypatch)
+    project = project_service.create_project(name="AI Commerce OS", description="Founder system")
+    monkeypatch.setattr(conversation_service, "get_project", lambda _project_id: project)
+    conversation = conversation_service.create_conversation(title="Constitution V1", project_id=project.id)
+    constitution = """AI Commerce OS Constitution V1
+将以下内容写入 Project Context，作为最高层长期基线。
+Intelligence Evolution Layer
+AI Commerce OS Cloud
+Sino Founder AI
+Sino Operator AI
+Sino Studio AI
+Sino Industrial AI
+Sino Quant AI
+Idea → Discussion → Project Intelligence → Candidate → Founder Approval → Developing → Testing → Founder Approval → Ready → Reuse → Learning → Version Evolution"""
+    with factory() as session:
+        session.add(ConversationMessageDB(conversation_id=conversation.id, role="founder", content=constitution, message_type="project_context_update", intent="project_context_update"))
+        session.add(SinoBrainSessionDB(conversation_id=conversation.id, project_id=project.id, stage="context_updated", discovery={"message_intent": "project_context_update"}))
+        session.commit()
+
+    intelligence = project_service.get_project_intelligence(project.id)
+    projected = intelligence["constitution"]
+    assert projected["status"] == "founder_review"
+    assert projected["source_conversation_id"] == conversation.id
+    assert projected["foundation_layer_count"] == 2
+    assert projected["application_layer_count"] == 5
+    assert projected["system_objects_count"] == 7
+    assert projected["proposed_work_items_count"] == 10
+    assert projected["founder_decisions_count"] == 0
+    assert constitution not in str(projected)
+
+
+def test_system_project_intelligence_projects_persisted_creation_context(monkeypatch):
+    factory = _database(monkeypatch)
+    parent = project_service.create_project(name="AI Commerce OS")
+    monkeypatch.setattr(conversation_service, "get_project", lambda _project_id: parent)
+    source = conversation_service.create_conversation(title="AI Commerce OS Constitution V1", project_id=parent.id)
+    with factory() as session:
+        child = FounderProjectDB(
+            id="project-intelligence-layer",
+            system_id="founder_ai",
+            name="Intelligence Evolution Layer",
+            project_type="system_project",
+            parent_project_id=parent.id,
+            architecture_role="Foundation Layer",
+            source_conversation_id=source.id,
+            source_work_item_id="work-intelligence-layer",
+            source_proposal_id="proposal-intelligence-layer",
+            initial_positioning="Foundation Layer 的正式系统对象。",
+            initial_scope=["定义职责与边界", "建立 Project Structure"],
+            creation_reason="Constitution 已明确它是长期基础系统。",
+        )
+        session.add(child)
+        session.commit()
+
+    context = project_service.get_project_intelligence("project-intelligence-layer")["initial_project_context"]
+    assert context == {
+        "project_type": "system_project",
+        "parent_project_id": parent.id,
+        "parent_project_name": "AI Commerce OS",
+        "architecture_role": "Foundation Layer",
+        "initial_positioning": "Foundation Layer 的正式系统对象。",
+        "initial_scope": ["定义职责与边界", "建立 Project Structure"],
+        "reason": "Constitution 已明确它是长期基础系统。",
+        "source_conversation_id": source.id,
+        "source_conversation_title": "AI Commerce OS Constitution V1",
+        "source_work_item_id": "work-intelligence-layer",
+        "source_proposal_id": "proposal-intelligence-layer",
+        "inherited_constitution": None,
+    }
 
 
 def test_project_intelligence_restores_and_revises_conflicting_prompt_rule(monkeypatch):
@@ -228,6 +341,82 @@ def test_answer_grounding_records_request_context_and_persists(monkeypatch):
     assert sources["current_conversation"]["used"] is True
     restored = secretary_service.SinoSecretaryService(reply_generator=lambda _id, _text: "unused").snapshot(conversation.id)
     assert restored["messages"][-1]["grounding"] == assistant["grounding"]
+
+
+def test_child_project_short_instruction_inherits_confirmed_parent_context(monkeypatch):
+    factory = _database(monkeypatch)
+    parent = project_service.create_project(name="AI Commerce OS")
+    monkeypatch.setattr(conversation_service, "get_project", lambda _project_id: parent)
+    parent_conversation = conversation_service.create_conversation(title="AI Commerce OS Constitution V1", project_id=parent.id)
+    understanding = {
+        "constitution_title": "AI Commerce OS Constitution V1",
+        "status": "founder_approved",
+        "core_definition": "AI Commerce OS 是能力创造、复用与业务运行体系。",
+        "foundation_layer": [{"name": "Intelligence Evolution Layer"}, {"name": "AI Commerce OS Cloud"}],
+        "application_layer": [{"name": "Sino Founder AI"}],
+        "system_objects": [{"name": "Intelligence Evolution Layer", "role": "Foundation / Intelligence Evolution"}],
+        "capability_lifecycle": ["Candidate", "Developing", "Testing", "Ready", "Reuse", "Learning"],
+        "capability_rules": ["Ready 前必须通过真实测试"],
+        "founder_boundary": "Founder 负责目标、批准和验收。",
+        "sino_boundary": "Sino 负责理解、分析和流程推进。",
+        "shared_vs_isolated_principle": "Capability 可共享，Business 数据隔离。",
+        "execution_principle": "批准后才执行。",
+        "validation_principle": "真实测试后才 Ready。",
+    }
+    with factory() as session:
+        session.add(SinoBrainSessionDB(conversation_id=parent_conversation.id, project_id=parent.id, stage="context_updated", discovery={"constitution_understanding": understanding}))
+        child = FounderProjectDB(id="project-intelligence-layer", system_id="founder_ai", name="Intelligence Evolution Layer", parent_project_id=parent.id, project_type="system_project", architecture_role="Foundation Layer", initial_positioning="Foundation Layer 的正式系统对象。", initial_scope=["定义职责与边界"], source_conversation_id=parent_conversation.id, source_work_item_id="work-1", source_proposal_id="proposal-1")
+        session.add(child)
+        session.commit()
+    child_conversation = conversation_service.create_conversation(title="Intelligence Evolution Layer 规划", project_id="project-intelligence-layer")
+    captured = {}
+
+    def generate(provider, model, request):
+        captured["request"] = request
+        return LLMResponse(content='{"reply":"基于继承的 Constitution 与当前 Initial Scope，我建议先完成系统职责和边界定义。"}', provider="deepseek", model="deepseek-chat", usage=None, latency_ms=8)
+
+    monkeypatch.setattr(model_center_service, "resolve_runtime_config", lambda **kwargs: type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})())
+    monkeypatch.setattr(secretary_service.llm_gateway, "generate_for_model", generate)
+    snapshot = secretary_service.SinoSecretaryService().append_message(child_conversation.id, "下一步怎么做？", intent="discussion", message_type="project_planning", skip_object_recognition=True)
+    injected = json.loads(captured["request"].user_prompt)["project_context"]
+    assert injected["parent_confirmed_context"]["project_name"] == "AI Commerce OS"
+    assert injected["parent_confirmed_context"]["constitution"]["title"] == "AI Commerce OS Constitution V1"
+    assert injected["child_project_context"]["architecture_role"] == "Foundation Layer"
+    assert injected["child_project_context"]["initial_scope"] == ["定义职责与边界"]
+    assert injected["master_prompt"] == ""
+    assert injected["constraints"] == []
+    assert injected["relevant_knowledge"] == []
+    sources = {item["key"]: item for item in snapshot["messages"][-1]["grounding"]["sources"]}
+    assert sources["parent_project"]["used"] is True
+    assert sources["parent_constitution"]["used"] is True
+    assert sources["child_project_context"]["used"] is True
+    assert sources["initial_project_context"]["used"] is True
+    assert snapshot["goals"] == []
+
+
+def test_project_aware_structured_provider_judgment_is_rendered_as_reply(monkeypatch):
+    _database(monkeypatch)
+    project = project_service.create_project(name="Intelligence Evolution Layer")
+    monkeypatch.setattr(conversation_service, "get_project", lambda _project_id: project)
+    conversation = conversation_service.create_conversation(project_id=project.id)
+    monkeypatch.setattr(model_center_service, "resolve_runtime_config", lambda **kwargs: type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})())
+    monkeypatch.setattr(secretary_service.llm_gateway, "generate_for_model", lambda *_args: LLMResponse(content=json.dumps({"understanding": "这是 Foundation Layer 项目。", "gap": "尚未明确职责边界。", "priority_reason": "边界决定后续能力设计。", "next_step": "先形成职责与边界分析。", "analysis": "Sino 可以先完成第一版分析。", "founder_questions": ["是否认可这条边界？"]}, ensure_ascii=False), provider="deepseek", model="deepseek-chat", usage=None, latency_ms=5))
+    reply, _grounding = secretary_service.SinoSecretaryService._provider_reply(conversation.id, "下一步怎么做？")
+    assert "我目前如何理解" in reply
+    assert "尚未明确职责边界" in reply
+    assert "真正需要 Founder 判断" in reply
+
+
+def test_project_planning_reply_triggers_maturity_judgment_on_same_conversation(monkeypatch):
+    _database(monkeypatch)
+    project = project_service.create_project(name="Maturity Project")
+    monkeypatch.setattr(conversation_service, "get_project", lambda _project_id: project)
+    conversation = conversation_service.create_conversation(project_id=project.id)
+    called = []
+    from app.founder_ai import brain_runtime
+    monkeypatch.setattr(brain_runtime.brain_runtime, "judge_project_maturity", lambda conversation_id: called.append(conversation_id))
+    secretary_service.SinoSecretaryService(reply_generator=lambda _id, _text: "完成本轮分析").append_message(conversation.id, "继续", message_type="project_planning", skip_object_recognition=True)
+    assert called == [conversation.id]
 
 
 def test_unscoped_answer_grounding_has_no_project_provenance(monkeypatch):
