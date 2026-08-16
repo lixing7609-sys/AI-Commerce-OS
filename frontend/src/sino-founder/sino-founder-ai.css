@@ -652,6 +652,43 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-model-center > header h2 { margin: 4px 0 0; }
 .sino-model-center > header p, .sino-model-center-message { margin: 0; color: #7e877b; font-size: 12px; }
 .sino-model-center-message { margin-bottom: 14px; }
+.sino-settings { position: relative; box-sizing: border-box; width: 100%; min-height: 100%; padding: 30px clamp(24px, 4vw, 56px); }
+.sino-settings > header { align-items: flex-start; }
+.sino-settings > header > div { display: grid; gap: 5px; }
+.sino-settings-tabs { display: flex; gap: 22px; margin: 8px 0 24px; border-bottom: 1px solid var(--line); }
+.sino-settings-tabs button { padding: 11px 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: 14px; cursor: pointer; }
+.sino-settings-tabs button:hover { color: var(--text-primary); }
+.sino-settings-tabs button.is-active { border-bottom-color: var(--accent); color: var(--text-primary); }
+.sino-settings-content { min-width: 0; width: 100%; }
+.sino-settings-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0 0 28px; }
+.sino-settings-summary div { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; }
+.sino-settings-summary dt { color: var(--text-label); font-size: 12px; }
+.sino-settings-summary dd { margin: 0; color: var(--text-primary); font-size: 14px; }
+.sino-settings-context > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.sino-settings-context > header h3 { margin: 0; color: var(--text-primary); font-size: 15px; }
+.sino-settings-context > header p { margin: 7px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.sino-settings-context > header button { flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); font-size: 21px; line-height: 1; cursor: pointer; }
+.sino-settings-context > header button:hover { background: var(--surface-raised); color: var(--text-primary); }
+.sino-settings-context > article { padding-top: 20px; }
+.sino-settings-provider-name { margin: 5px 0 18px; color: var(--text-secondary); font-size: 13px; }
+.sino-settings-context-action, .sino-settings-context-heading button, .sino-settings-key-editor button, .sino-settings-connection-test button { padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text-primary); font-size: 12px; cursor: pointer; }
+.sino-settings-key-editor { display: grid; gap: 9px; margin: 12px 0 20px; }
+.sino-settings-key-editor input { box-sizing: border-box; width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-base); color: var(--text-primary); }
+.sino-settings-key-editor > div { display: flex; gap: 7px; }
+.sino-settings-context article > section { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.sino-settings-context-heading, .sino-settings-connection-test { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sino-settings-context-heading > div, .sino-settings-connection-test > div { display: grid; gap: 4px; }
+.sino-settings-context-heading small, .sino-settings-connection-test span { color: var(--text-secondary); font-size: 12px; }
+.sino-settings-context .sino-model-choices { max-height: 260px; margin-top: 10px; overflow-y: auto; }
+.sino-settings-context .sino-model-choices > label { grid-template-columns: auto minmax(0, 1fr); }
+.sino-settings-context .sino-model-choices b { display: none; }
+.sino-settings-object-list { display: grid; border-top: 1px solid var(--line); }
+.sino-settings-object-list button { display: flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; padding: 18px 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
+.sino-settings-object-list button:hover { background: var(--surface-raised); }
+.sino-settings-object-list button span { color: var(--text-secondary); font-size: 13px; }
+.sino-settings-context-select { display: grid; gap: 7px; margin-top: 18px; color: var(--text-secondary); font-size: 13px; }
+.sino-settings-context-select select { box-sizing: border-box; width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-base); color: var(--text-primary); }
+@media (max-width: 760px) { .sino-settings > header { flex-direction: column; }.sino-settings-tabs { overflow-x: auto; }.sino-settings-tabs button { white-space: nowrap; } }
 .sino-model-provider-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .sino-model-provider { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.015); }
 .sino-model-provider-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
@@ -746,12 +783,15 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-capability-tabs button, .sino-capability-section-heading button, .sino-provider-install button, .sino-model-library-card footer button { font-size: 14px; }
 .sino-capability-section-heading h3 { font-size: 21px; font-weight: 600; }
 .sino-capability-section { padding-block: 10px 28px; }
-.sino-my-models { display: grid; gap: 2px; border-top: 1px solid var(--line); }
-.sino-my-models article { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 20px; padding: 18px 4px; border-bottom: 1px solid var(--line); }
-.sino-my-models article > div { display: grid; gap: 4px; }
-.sino-my-models strong { font-size: 17px; font-weight: 600; }
-.sino-my-models article > div span, .sino-my-models article > span { color: #8d968a; font-size: 13px; }
-.sino-my-models button, .sino-provider-connections button, .sino-provider-manager button { border: 1px solid var(--line); border-radius: 8px; background: transparent; color: #c4cbc0; padding: 8px 12px; font-size: 14px; cursor: pointer; }
+.sino-my-models { min-width: 0; display: grid; border-top: 1px solid var(--line); overflow-x: auto; }
+.sino-my-models__header, .sino-my-models > button { display: grid; grid-template-columns: minmax(170px, 1.7fr) minmax(100px, 1fr) repeat(6, minmax(62px, .7fr)); align-items: center; gap: 12px; }
+.sino-my-models__header { min-width: 820px; min-height: 34px; padding: 0 10px; border-bottom: 1px solid var(--line); color: var(--text-label); font-size: 11px; }
+.sino-my-models > button { min-width: 820px; width: 100%; min-height: 52px; padding: 8px 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.sino-my-models > button:hover { background: var(--surface-raised); }
+.sino-my-models > button.is-selected { box-shadow: inset 2px 0 var(--accent); background: var(--surface-selected); }
+.sino-my-models > button strong { min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.sino-my-models > button span { min-width: 0; overflow: hidden; color: #8d968a; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.sino-provider-connections button, .sino-provider-manager button { border: 1px solid var(--line); border-radius: 8px; background: transparent; color: #c4cbc0; padding: 8px 12px; font-size: 14px; cursor: pointer; }
 .sino-provider-connections { margin-top: 24px; }
 .sino-provider-connections > div { display: flex; align-items: center; gap: 16px; padding: 11px 4px; color: #aeb6aa; font-size: 14px; }
 .sino-provider-connections > div small { color: #c86a6a; }

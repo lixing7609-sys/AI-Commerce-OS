@@ -4,18 +4,18 @@ import { checkModelProvider, deleteModelProvider, discoverProviderModels, getMod
 const empty = { provider_catalog: [], providers: [], roles: [], agents: [], health_cost: [], execution_engines: [] };
 const MODEL_TASK_LABELS = { sino_conversation: "默认对话模型", deep_thinking: "深度思考模型", goal_reasoning: "目标推理模型", project_analysis: "项目分析模型", system_builder: "系统构建模型", solution_review: "方案评审模型" };
 const stateLabel = (value) => ({ healthy: "正常", unhealthy: "异常", disabled: "已停用", pending_check: "待检查", pending_selection: "待选择模型", not_configured: "未配置" }[value] || "未检查");
-const modelId = (value) => typeof value === "string" ? value : value.model_id;
+const modelId = (value) => typeof value === "string" ? value : value?.model_id;
 const failureLabel = (value) => ({ invalid_credentials: "认证失败", authentication_failed: "认证失败", insufficient_quota: "账户额度不足", provider_unavailable: "无法连接服务", invalid_response: "服务返回异常", model_unavailable: "模型不可用" }[value] || "连接异常");
 const actionFailure = (action) => `${action}失败，请检查服务商授权或连接后重试`;
 
-export function ModelCenter() {
+export function ModelCenter({ onContextChange }) {
   const [center, setCenter] = useState(empty);
-  const [section, setSection] = useState("agents");
-  const [managedAgentId, setManagedAgentId] = useState(null);
+  const [section, setSection] = useState("models");
   const [adding, setAdding] = useState(false);
   const [installStep, setInstallStep] = useState(1);
   const [installProviderKey, setInstallProviderKey] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [selectedModel, setSelectedModel] = useState(null);
   const [install, setInstall] = useState({ provider_type: "openai", api_key: "", base_url: "", display_name: "" });
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
@@ -24,7 +24,7 @@ export function ModelCenter() {
   const installed = useMemo(() => center.providers.filter((item) => item.installed), [center.providers]);
 
   async function reload() { const value = await getModelCenter(); setCenter(value); return value; }
-  useEffect(() => { reload().catch((error) => setMessage(error.message)); }, []);
+  useEffect(() => { reload().catch((error) => setMessage(error.message)); onContextChange?.({ section: "models" }); }, []);
 
   function providerState(providerKey) { return providerActionState[providerKey] || {}; }
   function updateProviderState(providerKey, patch) { setProviderActionState((current) => ({ ...current, [providerKey]: { ...(current[providerKey] || {}), ...patch } })); }
@@ -61,29 +61,86 @@ export function ModelCenter() {
   async function toggle(provider) { const key = provider.provider_key; updateProviderState(key, { isSaving: true, error: "", successMessage: "正在保存…" }); try { const result = await setModelProviderEnabled(key, !provider.enabled); mergeProvider(result); updateProviderState(key, { successMessage: provider.enabled ? "服务已停用" : "服务已启用" }); } catch (error) { updateProviderState(key, { error: "服务状态保存失败", successMessage: "" }); } finally { updateProviderState(key, { isSaving: false }); } }
   async function health(provider) { const key = provider.provider_key; updateProviderState(key, { isCheckingHealth: true, error: "", successMessage: "正在检查…" }); try { const result = await checkModelProvider(key); mergeProvider(result.configuration); const feedback = result.status === "healthy" ? "连接正常" : failureLabel(result.configuration?.health_error); updateProviderState(key, { successMessage: result.status === "healthy" ? feedback : "", error: result.status === "healthy" ? "" : feedback }); } catch (error) { updateProviderState(key, { error: failureLabel(provider.health_error), successMessage: "" }); } finally { updateProviderState(key, { isCheckingHealth: false }); } }
   async function remove(provider) { setBusy(`delete:${provider.provider_key}`); try { await deleteModelProvider(provider.provider_key); setPendingRemoval(null); setEditing(null); setMessage("服务已移除"); await reload(); } catch (error) { setMessage(actionFailure("移除服务")); } finally { setBusy(""); } }
-  function edit(provider) { setEditing(provider.provider_key); setInstall({ provider_type: provider.provider_type, api_key: "", base_url: provider.base_url, display_name: provider.display_name }); }
+  function selectModel(provider, model) { setEditing(provider.provider_key); setSelectedModel(model); }
+  async function updateCredentials(provider, values) { const key = provider.provider_key; updateProviderState(key, { isConnecting: true, error: "", successMessage: "正在保存…" }); try { const result = await updateModelProviderCredentials(key, values); mergeProvider(result); updateProviderState(key, { isConnecting: false, error: "", successMessage: "Provider 配置已保存" }); } catch (error) { updateProviderState(key, { isConnecting: false, error: actionFailure("Provider 配置"), successMessage: "" }); } }
   async function assignCapability(capabilityKey, value) { const [providerKey, model] = value ? value.split("::") : [null, null]; setBusy(`capability:${capabilityKey}`); try { setCenter(await saveCapabilityAssignment(capabilityKey, providerKey, model)); setMessage("Sino 模型配置已保存"); } catch (error) { setMessage(actionFailure("Sino 模型配置")); } finally { setBusy(""); } }
   async function assignExecutionEngine(engineId) { setBusy("execution-engine"); try { setCenter(await saveExecutionEngine(engineId)); setMessage("执行引擎已保存"); } catch (error) { setMessage(actionFailure("执行引擎")); } finally { setBusy(""); } }
   const modelOptions = installed.filter((item) => item.enabled && item.health_status === "healthy").flatMap((provider) => provider.selected_models.map((model) => ({ value: `${provider.provider_key}::${model}`, provider, model, label: (provider.available_models.find((item) => modelId(item) === model) || {}).display_name || model })));
-  return <section className="sino-model-center" aria-label="AI 能力中心">
-    <header><div><span className="sino-kicker">AI 能力中心</span><h2>AI 能力中心</h2></div><p>管理 AI Commerce OS 中已创建的 AI Agent，并为它们配置模型、工作与执行能力。</p></header>
-    <nav className="sino-capability-tabs" aria-label="AI 能力中心区域">{[["agents", "Agent"], ["library", "模型"], ["health", "状态与成本"]].map(([key, label]) => <button type="button" key={key} className={section === key ? "is-active" : ""} onClick={() => { setSection(key); if (key !== "agents") setManagedAgentId(null); }}>{label}</button>)}</nav>
+  async function saveCouncil(models) { setBusy("multi"); try { setCenter(await saveMultiModelAssignment(models)); setMessage("多模型讨论配置已保存"); } catch (error) { setMessage(actionFailure("多模型讨论配置")); } finally { setBusy(""); } }
+  const selectedProvider = installed.find((provider) => provider.provider_key === editing);
+  const selectedModelMeta = selectedProvider?.available_models.find((model) => modelId(model) === selectedModel) || (selectedModel ? { model_id: selectedModel, display_name: selectedModel } : null);
+  const modelRows = installed.flatMap((provider) => provider.selected_models.map((selected) => {
+    const meta = provider.available_models.find((item) => modelId(item) === selected) || { model_id: selected, display_name: selected };
+    const metrics = center.health_cost.find((item) => item.provider_key === provider.provider_key && (!item.model || item.model === selected || item.selected_models?.includes(selected))) || {};
+    return { provider, selected, meta, health: metrics.health_status || provider.health_status, usage: metrics.usage || {} };
+  }));
+  useEffect(() => {
+    if (section === "models" && selectedProvider && selectedModelMeta) onContextChange?.({ section, provider: selectedProvider, model: selectedModelMeta, action: providerState(selectedProvider.provider_key), onCredentialSave: (values) => updateCredentials(selectedProvider, values), onRefresh: () => refresh(selectedProvider), onHealth: () => health(selectedProvider), onChoose: (model, checked) => choose(selectedProvider, model, checked) });
+    else onContextChange?.({ section });
+  }, [section, editing, selectedModel, center, providerActionState]);
+  return <section className="sino-model-center sino-settings" aria-label="设置">
+    <header><div><span className="sino-kicker">Settings</span><h2>设置</h2></div></header>
+    <nav className="sino-settings-tabs" aria-label="设置分类">{[["models", "模型与 API"], ["sino", "Sino AI"], ["executor", "执行器"], ["discussion", "讨论配置"]].map(([key, label]) => <button type="button" key={key} className={section === key ? "is-active" : ""} onClick={() => { setSection(key); setEditing(null); setSelectedModel(null); }}>{label}</button>)}</nav>
+    <div className="sino-settings-content">
     {message && <p className="sino-model-center-message" role="status">{message}</p>}
-
-    {section === "agents" && !managedAgentId && <AgentHome agents={center.agents || []} onManage={setManagedAgentId} />}
-
-    {section === "agents" && managedAgentId === "sino_founder_ai" && <SinoAgentDetail agent={(center.agents || []).find((item) => item.agent_id === managedAgentId)} skills={center.skills || []} roles={center.roles || []} options={modelOptions} engines={center.execution_engines || []} busy={busy} onBack={() => setManagedAgentId(null)} onAssign={assignCapability} onEngineAssign={assignExecutionEngine} onCouncilSave={async (models) => { setBusy("multi"); try { setCenter(await saveMultiModelAssignment(models)); setMessage("多模型讨论配置已保存"); } catch (error) { setMessage(actionFailure("多模型讨论配置")); } finally { setBusy(""); } }} />}
-
-    {section === "library" && <section className="sino-capability-section" aria-label="我的模型">
+    {section === "models" && <section className="sino-capability-section" aria-label="模型与 API">
       <div className="sino-capability-section-heading"><div><h3>我的模型</h3><p>管理已经接入 AI Commerce OS 的模型与服务。</p></div><button type="button" onClick={() => { setEditing(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></div>
-      <div className="sino-my-models">{installed.flatMap((provider) => provider.selected_models.map((selected) => { const meta = provider.available_models.find((item) => modelId(item) === selected) || { model_id: selected, display_name: selected }; return <article key={`${provider.provider_key}-${selected}`}><div><strong>{meta.display_name}</strong><span>{provider.display_name}</span></div><span data-health={provider.health_status}>● {provider.health_status === "healthy" ? "可用" : stateLabel(provider.health_status)}</span><button type="button" onClick={() => edit(provider)}>管理</button></article>; }))}</div>
-      {editing && (() => { const provider = installed.find((item) => item.provider_key === editing); if (!provider) return null; const action = providerState(provider.provider_key); const providerBusy = Boolean(action.isConnecting || action.isRefreshingModels || action.isCheckingHealth || action.isSaving); const recommended = provider.available_models.filter((item) => item.recommendation_score >= 80); return <section className="sino-provider-manager" aria-label={`${provider.display_name} 管理`} data-provider-key={provider.provider_key}><header><div><strong>{provider.display_name}</strong><span data-health={provider.health_status}>● {stateLabel(provider.health_status)}</span></div><button type="button" onClick={() => { setEditing(null); setAdding(false); }}>关闭</button></header>{action.error ? <p className="sino-provider-result is-error" role="status">{action.error}</p> : action.successMessage ? <p className="sino-provider-result is-success" role="status">{action.successMessage}</p> : provider.health_status === "unhealthy" && <p className="sino-provider-result is-error">{failureLabel(provider.health_error)}</p>}<div className="sino-provider-manager-actions"><button type="button" onClick={() => health(provider)} disabled={providerBusy}>{action.isCheckingHealth ? "正在检查…" : "检查连接"}</button><button type="button" onClick={() => refresh(provider)} disabled={providerBusy}>{action.isRefreshingModels ? "正在刷新模型…" : "刷新模型"}</button><button type="button" onClick={() => setAdding(true)} disabled={providerBusy}>{action.isConnecting ? "正在连接…" : "重新连接"}</button></div><h4>已启用模型</h4><ul>{provider.selected_models.map((item) => <li key={`${provider.provider_key}-${item}`}>{(provider.available_models.find((model) => modelId(model) === item) || {}).display_name || item}</li>)}</ul><h4>推荐模型</h4><ModelChoices models={recommended} provider={provider} onChoose={choose} busy={providerBusy} /><details><summary>全部模型</summary><ModelChoices models={provider.available_models} provider={provider} onChoose={choose} busy={providerBusy} /></details><details><summary>高级设置</summary><p>{provider.base_url}</p></details><footer><button type="button" onClick={() => toggle(provider)} disabled={providerBusy}>{provider.enabled ? "停用服务" : "启用服务"}</button>{pendingRemoval === provider.provider_key ? <span className="sino-remove-confirm">确认移除服务？ <button type="button" onClick={() => remove(provider)}>确认</button><button type="button" onClick={() => setPendingRemoval(null)}>取消</button></span> : <button className="is-danger" type="button" onClick={() => setPendingRemoval(provider.provider_key)}>移除服务</button>}</footer></section>; })()}
+      <div className="sino-my-models" role="table" aria-label="模型状态列表"><div className="sino-my-models__header" role="row"><strong>模型</strong><strong>Provider</strong><strong>健康状态</strong><strong>调用</strong><strong>Token</strong><strong>成本</strong><strong>延迟</strong><strong>额度</strong></div>{modelRows.map(({ provider, selected, meta, health: healthState, usage }) => { const active = editing === provider.provider_key && selectedModel === selected; return <button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} key={`${provider.provider_key}-${selected}`} onClick={() => selectModel(provider, selected)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span><span>{usage.calls ?? "—"}</span><span>{usage.tokens ?? "—"}</span><span>{usage.cost ?? "—"}</span><span>{usage.average_latency_ms == null ? "—" : `${usage.average_latency_ms} ms`}</span><span>{usage.quota ?? "—"}</span></button>; })}</div>
     </section>}
 
     {adding && <AddModelModal step={installStep} center={center} install={install} editing={editing} busy={busy} providerKey={installProviderKey} onSelectProvider={beginProviderConnection} onInstallChange={setInstall} onConnect={addProvider} onChoose={choose} onClose={() => { setAdding(false); setInstallStep(1); setInstallProviderKey(null); }} />}
 
-    {section === "health" && <section className="sino-capability-section" aria-label="状态与成本"><div className="sino-capability-section-heading"><div><h3>状态与成本</h3><p>集中查看模型健康与已记录用量。</p></div></div><div className="sino-health-cost-table" role="table"><div role="row"><strong>模型</strong><strong>健康状态</strong><strong>调用</strong><strong>Token</strong><strong>成本</strong><strong>延迟</strong><strong>额度</strong></div>{center.health_cost.filter((item) => item.installed).flatMap((item) => item.selected_models.length ? item.selected_models.map((model) => ({ ...item, row_key: `${item.provider_key}-${model}`, model_name: (item.available_models.find((entry) => modelId(entry) === model) || {}).display_name || model })) : [{ ...item, row_key: item.provider_key, model_name: item.display_name }]).map((item) => <div role="row" key={item.row_key}><span>{item.model_name}</span><span data-health={item.health_status}>{stateLabel(item.health_status)}</span><span>{item.usage.calls}</span><span>{item.usage.tokens ?? "—"}</span><span>{item.usage.cost ?? "—"}</span><span>{item.usage.average_latency_ms == null ? "—" : `${item.usage.average_latency_ms} ms`}</span><span>{item.usage.quota ?? "—"}</span></div>)}</div></section>}
+    {section === "sino" && <SinoSettings roles={center.roles || []} onSelect={(role) => onContextChange?.({ section: "sino", role, options: modelOptions, busy, onAssign: assignCapability })} />}
+    {section === "executor" && <ExecutorSettings roles={center.roles || []} engines={center.execution_engines || []} onSelect={() => onContextChange?.({ section: "executor", roles: center.roles || [], engines: center.execution_engines || [], options: modelOptions, busy, onAssign: assignCapability, onEngineAssign: assignExecutionEngine })} />}
+    {section === "discussion" && <DiscussionSettings roles={center.roles || []} onSelect={() => onContextChange?.({ section: "discussion", roles: center.roles || [], options: modelOptions, onSave: saveCouncil })} />}
+    </div>
   </section>;
+}
+
+export function SettingsContext({ detail, onClose }) {
+  const provider = detail?.provider;
+  return <div className="sino-context-summary sino-settings-context"><header><div><h3>Sino Founder AI 系统配置</h3><p>配置 Sino Founder AI 使用的模型、API、讨论与执行环境。</p></div><button type="button" onClick={onClose} aria-label="关闭设置">×</button></header><article>{provider ? <ProviderSettingsContext detail={detail} /> : detail?.role ? <RoleSettingsContext detail={detail} /> : detail?.section === "executor" && detail.engines ? <ExecutorSettingsContext detail={detail} /> : detail?.section === "discussion" && detail.roles ? <DiscussionSettingsContext detail={detail} /> : <><span className="sino-kicker">Settings Context</span><h3>设置详情</h3><p>选择一个 Provider、模型或配置项查看详情。</p></>}</article></div>;
+}
+
+function ProviderSettingsContext({ detail }) {
+  const { provider, model, action = {}, onCredentialSave, onRefresh, onHealth, onChoose } = detail;
+  const [editingKey, setEditingKey] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  useEffect(() => { setEditingKey(false); setApiKey(""); }, [provider.provider_key, modelId(model)]);
+  const busy = Boolean(action.isConnecting || action.isRefreshingModels || action.isCheckingHealth || action.isSaving);
+  async function saveKey(event) { event.preventDefault(); await onCredentialSave?.({ api_key: apiKey, base_url: null, display_name: null }); setApiKey(""); setEditingKey(false); }
+  return <><span className="sino-kicker">Model</span><h3>{model?.display_name || modelId(model)}</h3><p className="sino-settings-provider-name">{provider.display_name} / {provider.provider_type}</p>{action.error ? <p className="sino-provider-result is-error" role="status">{action.error}</p> : action.successMessage ? <p className="sino-provider-result is-success" role="status">{action.successMessage}</p> : null}<dl><div><dt>连接状态</dt><dd>{stateLabel(provider.health_status)}</dd></div><div><dt>API Key</dt><dd>{provider.api_key_mask || "未配置"}</dd></div></dl>{editingKey ? <form className="sino-settings-key-editor" onSubmit={saveKey}><input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="输入新的 API Key" aria-label="新的 API Key" /><div><button type="submit" disabled={!apiKey || busy}>保存</button><button type="button" onClick={() => { setEditingKey(false); setApiKey(""); }}>取消</button></div></form> : <button type="button" className="sino-settings-context-action" onClick={() => setEditingKey(true)}>更新 API Key</button>}<section><div className="sino-settings-context-heading"><div><strong>Available Models</strong><small>{provider.available_models?.length || 0}</small></div><button type="button" onClick={onRefresh} disabled={busy}>{action.isRefreshingModels ? "正在刷新…" : "刷新模型"}</button></div><ModelChoices models={provider.available_models || []} provider={provider} onChoose={(_, item, checked) => onChoose?.(item, checked)} busy={busy} /></section><dl><div><dt>Base URL</dt><dd>{provider.base_url || "默认"}</dd></div><div><dt>当前启用模型</dt><dd>{provider.selected_models?.join(" · ") || "未选择"}</dd></div></dl><section className="sino-settings-connection-test"><div><strong>连接测试</strong><span data-health={provider.health_status}>{stateLabel(provider.health_status)}</span></div><button type="button" onClick={onHealth} disabled={busy}>{action.isCheckingHealth ? "正在测试…" : "测试连接"}</button></section></>;
+}
+
+function RoleSettingsContext({ detail }) {
+  const { role, options = [], busy, onAssign } = detail;
+  return <><span className="sino-kicker">Sino AI</span><h3>{MODEL_TASK_LABELS[role.role_key] || role.label}</h3><p className="sino-settings-provider-name">配置当前智能任务使用的模型。</p><label className="sino-settings-context-select"><span>当前模型</span><select value={role.provider_key && role.model ? `${role.provider_key}::${role.model}` : ""} onChange={(event) => onAssign?.(role.role_key, event.target.value)} disabled={busy === `capability:${role.role_key}`}><option value="">未分配</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></>;
+}
+
+function ExecutorSettingsContext({ detail }) {
+  const execution = detail.roles.find((role) => role.role_key === "code_execution") || {};
+  return <><span className="sino-kicker">Executor</span><h3>{detail.engines.find((engine) => engine.engine_id === execution.execution_engine_id)?.display_name || "Execution Engine"}</h3><label className="sino-settings-context-select"><span>系统模型</span><select value={execution.provider_key && execution.model ? `${execution.provider_key}::${execution.model}` : ""} onChange={(event) => detail.onAssign?.("code_execution", event.target.value)} disabled={detail.busy === "capability:code_execution"}><option value="">未分配</option>{detail.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><label className="sino-settings-context-select"><span>执行引擎</span><select aria-label="执行引擎" value={execution.execution_engine_id || ""} onChange={(event) => detail.onEngineAssign?.(event.target.value)} disabled={detail.busy === "execution-engine"}>{detail.engines.filter((engine) => engine.status === "available").map((engine) => <option key={engine.engine_id} value={engine.engine_id}>{engine.display_name}</option>)}</select></label></>;
+}
+
+function DiscussionSettingsContext({ detail }) {
+  const council = detail.roles.find((role) => role.role_key === "multi_model_discussion") || { models: [] };
+  return <><span className="sino-kicker">Discussion</span><h3>讨论配置</h3><p className="sino-settings-provider-name">多模型讨论与自动多轮共用参与模型。</p><MultiModelSelect role={council} options={detail.options} onSave={detail.onSave} /></>;
+}
+
+function SinoSettings({ roles, onSelect }) {
+  const keys = ["sino_conversation", "deep_thinking", "goal_reasoning", "project_analysis", "system_builder", "solution_review"];
+  return <section className="sino-capability-section" aria-label="Sino AI"><div className="sino-capability-section-heading"><div><h3>Sino AI</h3><p>选择一项 Sino 智能任务，在右侧配置其模型。</p></div></div><div className="sino-settings-object-list">{keys.map((key) => roles.find((role) => role.role_key === key)).filter(Boolean).map((role) => <button type="button" key={role.role_key} onClick={() => onSelect(role)}><strong>{MODEL_TASK_LABELS[role.role_key] || role.label}</strong><span>{role.model || "未分配"}</span></button>)}</div></section>;
+}
+
+function ExecutorSettings({ roles, engines, onSelect }) {
+  const execution = roles.find((role) => role.role_key === "code_execution") || {};
+  const engine = engines.find((item) => item.engine_id === execution.execution_engine_id);
+  return <section className="sino-capability-section" aria-label="执行器"><div className="sino-capability-section-heading"><div><h3>执行器</h3><p>选择执行环境，在右侧查看和管理。</p></div></div><div className="sino-settings-object-list"><button type="button" onClick={onSelect}><strong>{engine?.display_name || "Execution Engine"}</strong><span>{execution.model || "未分配系统模型"}</span></button></div></section>;
+}
+
+function DiscussionSettings({ roles, onSelect }) {
+  const council = roles.find((role) => role.role_key === "multi_model_discussion") || { models: [] };
+  return <section className="sino-capability-section" aria-label="讨论配置"><div className="sino-capability-section-heading"><div><h3>讨论配置</h3><p>选择讨论配置，在右侧管理参与模型。</p></div></div><div className="sino-settings-object-list"><button type="button" onClick={onSelect}><strong>多模型讨论</strong><span>{council.models?.length || 0} 个参与模型</span></button><button type="button" onClick={onSelect}><strong>自动多轮</strong><span>Strategy Workspace 中可用</span></button></div></section>;
 }
 
 function AddModelModal({ step, center, install, editing, busy, providerKey, onSelectProvider, onInstallChange, onConnect, onChoose, onClose }) {
