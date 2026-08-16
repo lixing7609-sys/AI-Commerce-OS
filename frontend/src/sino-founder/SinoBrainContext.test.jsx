@@ -4,6 +4,106 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SinoBrainContext } from "./SinoBrainContext.jsx";
 
 describe("SinoBrainContext", () => {
+  it("projects a short system-project instruction as Project Planning without a Goal", () => {
+    const { container } = render(<SinoBrainContext brain={{ project_id: "project-child", stage: "project_planning", goal_brief: {}, current_action: { action_id: "continue_project_planning", title: "Project Planning", description: "Sino 正在基于继承的 Project Context 判断关键缺口与下一步。", primary_label: "继续讨论" }, discovery: { project_aware: true, current_project: { project_id: "project-child", project_name: "Intelligence Evolution Layer" }, discussion_maturity: { maturity_status: "continue_analysis", reason: "现有 Context 足够继续分析。", autonomous_next_analysis: "Sino 将继续基于已有 Context 完成下一轮实质分析", outcomes: [{ outcome_id: "draft" }] } } }} />);
+    expect(screen.getAllByText("Project Planning · 项目规划").length).toBeGreaterThan(0);
+    expect(screen.getByText("Intelligence Evolution Layer")).toBeTruthy();
+    expect(screen.queryByText("Project-aware Discussion")).toBeNull();
+    expect(screen.queryByText("None")).toBeNull();
+    expect(screen.queryByText("目标待理解")).toBeNull();
+    expect(screen.getByText("现有 Context 足够继续分析。")).toBeTruthy();
+    expect(screen.queryByText("Outcome Summary")).toBeNull();
+    expect(container.querySelector(".sino-founder-action-card")).toBeNull();
+    expect(screen.queryByRole("button", { name: /继续/ })).toBeNull();
+  });
+  it("counts only currently used Context Sources and keeps unused context behind a nested fold", () => {
+    render(<SinoBrainContext brain={{ project_id: "project-child", stage: "project_planning", discovery: { project_aware: true, current_project: { project_name: "Intelligence Evolution Layer" }, discussion_maturity: { maturity_status: "continue_analysis", reason: "继续分析", autonomous_next_analysis: "继续" } } }} contextGroundings={[{ message_id: "message-1", sources: [{ key: "parent_constitution", label: "Parent Constitution", used: true, references: [{ source_id: "conv-1", title: "AI Commerce OS Constitution V1" }] }, { key: "goals", label: "项目目标", used: false }] }]} />);
+    const details = screen.getByText("Context Sources · 1").closest("details");
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain("Parent Constitution");
+    expect(details.textContent).toContain("AI Commerce OS Constitution V1");
+    expect(screen.getByText("Unused Context · 1").closest("details").open).toBe(false);
+  });
+  it("uses the latest resolved maturity projection and removes stale blocker detail", () => {
+    render(<SinoBrainContext brain={{ project_id: "project-child", stage: "project_planning", discovery: { project_aware: true, current_project: { project_name: "Intelligence Evolution Layer" }, blocking_question_resolution: { status: "resolved" }, discussion_maturity: { maturity_status: "continue_analysis", reason: "Founder 回答已吸收。", autonomous_next_analysis: "继续起草系统定义。", blocking_question: "旧问题", why_founder_needed: "旧理由", sino_recommendation: "旧建议" } } }} />);
+    expect(screen.getByText("继续自主分析")).toBeTruthy();
+    expect(screen.getByText("继续起草系统定义。")).toBeTruthy();
+    expect(screen.queryByText("Pending Question")).toBeNull();
+    expect(screen.queryByText("Sino Recommendation")).toBeNull();
+    expect(screen.queryByText("旧问题")).toBeNull();
+    expect(screen.queryByText("旧建议")).toBeNull();
+  });
+  it("shows Constitution semantics instead of Goal fields for a context update", () => {
+    render(<SinoBrainContext brain={{ message_intent: "project_context_update", stage: "context_updated", goal_readiness: "unclear", goal_brief: {}, constitution_understanding: { status: "pending_founder_review", system_objects: Array.from({ length: 7 }, (_, index) => ({ name: `Object ${index}` })), proposed_work_items: Array.from({ length: 10 }, (_, index) => ({ work_item_id: `work-${index}`, founder_decision: index < 2 ? "approved" : "pending" })) } }} />);
+    expect(screen.getByText("Constitution Review Status")).toBeTruthy();
+    expect(screen.getByText("2 / 10")).toBeTruthy();
+    expect(screen.queryByText("Goal Status")).toBeNull();
+    expect(screen.queryByText("Goal", { selector: "dt" })).toBeNull();
+  });
+  it("shows the selected Work Item and records Founder decisions only from the right context", () => {
+    const review = vi.fn();
+    const item = { work_item_id: "work-1", title: "Intelligence Evolution Layer", existing_state: "not_found", source: "system_objects:Intelligence Evolution Layer", reason: "Constitution 定义了基础层对象。", recommended_action: "完善系统定义。", founder_decision: "pending" };
+    const brain = { message_intent: "project_context_update", stage: "context_updated", constitution_understanding: { status: "founder_approved", system_objects: Array.from({ length: 7 }), proposed_work_items: [item] } };
+    const { rerender } = render(<SinoBrainContext brain={brain} selectedConstitutionWorkItemId="work-1" onReviewConstitutionWorkItem={review} />);
+    expect(screen.getByRole("region", { name: "当前建议工作项" })).toBeTruthy();
+    expect(screen.getByText("Intelligence Evolution Layer")).toBeTruthy();
+    expect(screen.getByText("Pending")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "同意推进" }));
+    expect(review).toHaveBeenCalledWith("work-1", "approved");
+    rerender(<SinoBrainContext brain={{ ...brain, constitution_understanding: { ...brain.constitution_understanding, proposed_work_items: [{ ...item, founder_decision: "approved" }] } }} selectedConstitutionWorkItemId="work-1" onReviewConstitutionWorkItem={review} />);
+    expect(screen.getByText("1 / 1")).toBeTruthy();
+    expect(screen.getByText("Recorded")).toBeTruthy();
+    expect(screen.getByText("✓ 已同意推进")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "同意推进" })).toBeNull();
+    expect(screen.getByText("等待 Sino 判断该 Work Item 应进入哪一种正式工作流程")).toBeTruthy();
+  });
+  it("projects discuss and deferred Founder decisions as static right-context states", () => {
+    const item = { work_item_id: "work-1", title: "AI Commerce OS Cloud", existing_state: "not_found", source: "system_objects:cloud", reason: "基础层对象", recommended_action: "继续核对", founder_decision: "discuss" };
+    const brain = { message_intent: "project_context_update", stage: "context_updated", constitution_understanding: { status: "founder_approved", system_objects: [{}], proposed_work_items: [item] } };
+    const { rerender } = render(<SinoBrainContext brain={brain} selectedConstitutionWorkItemId="work-1" />);
+    expect(screen.queryByRole("button", { name: "同意推进" })).toBeNull();
+    expect(screen.getByText("继续讨论", { selector: "strong" })).toBeTruthy();
+    rerender(<SinoBrainContext brain={{ ...brain, constitution_understanding: { ...brain.constitution_understanding, proposed_work_items: [{ ...item, founder_decision: "deferred" }] } }} selectedConstitutionWorkItemId="work-1" />);
+    expect(screen.getByText("暂不处理", { selector: "strong" })).toBeTruthy();
+  });
+  it("shows Sino routing judgment separately and reviews it without creating an object", () => {
+    const reviewRouting = vi.fn();
+    const routing = { recommended_route: "system_project", reason: "这是长期基础系统，不是一次性 Goal。", proposed_object: "Intelligence Evolution Layer", existing_state: "not_found", next_action: "建议进入正式对象创建前的 Founder Review。", confidence: .93, routing_status: "pending_founder_review" };
+    const item = { work_item_id: "work-1", title: "Intelligence Evolution Layer", existing_state: "not_found", source: "system_objects:Intelligence Evolution Layer", reason: "基础层对象", recommended_action: "建立系统定义", founder_decision: "approved", routing_recommendation: routing };
+    render(<SinoBrainContext brain={{ message_intent: "project_context_update", stage: "context_updated", constitution_understanding: { status: "founder_approved", system_objects: Array.from({ length: 7 }), proposed_work_items: [item] } }} selectedConstitutionWorkItemId="work-1" onReviewConstitutionRouting={reviewRouting} />);
+    expect(screen.getByRole("region", { name: "Sino Routing Recommendation" })).toBeTruthy();
+    expect(screen.getByText("System Project")).toBeTruthy();
+    expect(screen.getByText("93%")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "批准建议" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回讨论" }));
+    expect(reviewRouting.mock.calls).toEqual([["work-1", "approved"], ["work-1", "discuss"]]);
+  });
+  it("replaces repeated routing approval with one confirmable Formal Object Proposal", () => {
+    const reviewRouting = vi.fn();
+    const confirmFormalObject = vi.fn();
+    const proposal = { proposal_id: "formal-1", proposed_object: "Intelligence Evolution Layer", object_type: "system_project", parent_project: "AI Commerce OS", architecture_role: "Foundation Layer", source_constitution: "AI Commerce OS Constitution V1", source_work_item: "Intelligence Evolution Layer", initial_positioning: "Foundation Layer 的正式系统对象。", reason: "需要长期建设。", initial_scope: ["定义职责与边界"], status: "awaiting_founder_confirmation", creation_enabled: false };
+    const routing = { recommended_route: "system_project", reason: "长期基础系统", proposed_object: "Intelligence Evolution Layer", existing_state: "not_found", next_action: "形成正式对象提案", confidence: .95, routing_status: "approved", routing_decision: "approved", formal_object_proposal: proposal };
+    const item = { work_item_id: "work-1", title: "Intelligence Evolution Layer", existing_state: "not_found", source: "system_objects:Intelligence Evolution Layer", reason: "基础层对象", recommended_action: "建立系统定义", founder_decision: "approved", routing_recommendation: routing };
+    render(<SinoBrainContext brain={{ message_intent: "project_context_update", stage: "context_updated", constitution_understanding: { status: "founder_approved", system_objects: Array.from({ length: 7 }), proposed_work_items: [item] } }} selectedConstitutionWorkItemId="work-1" onReviewConstitutionRouting={reviewRouting} onConfirmFormalObject={confirmFormalObject} />);
+    expect(screen.queryByRole("button", { name: "批准建议" })).toBeNull();
+    expect(screen.getByText("✓ 已批准")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Formal Object Proposal" })).toBeTruthy();
+    expect(screen.getByText("AI Commerce OS")).toBeTruthy();
+    expect(screen.getByText("Awaiting Founder Confirmation")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
+    expect(confirmFormalObject).toHaveBeenCalledWith("work-1");
+  });
+  it("shows a created Formal Object result and navigates to the persisted Project", () => {
+    const openProject = vi.fn();
+    const proposal = { proposal_id: "formal-1", proposed_object: "Intelligence Evolution Layer", object_type: "system_project", parent_project: "AI Commerce OS", architecture_role: "Foundation Layer", source_constitution: "AI Commerce OS Constitution V1", source_work_item: "Intelligence Evolution Layer", initial_positioning: "Foundation Layer 的正式系统对象。", reason: "需要长期建设。", initial_scope: ["定义职责与边界"], status: "created", created_project_id: "project-intelligence" };
+    const routing = { recommended_route: "system_project", reason: "长期基础系统", proposed_object: "Intelligence Evolution Layer", existing_state: "not_found", next_action: "形成正式对象提案", confidence: .95, routing_status: "approved", formal_object_proposal: proposal };
+    const item = { work_item_id: "work-1", title: "Intelligence Evolution Layer", existing_state: "not_found", source: "system_objects:Intelligence Evolution Layer", reason: "基础层对象", recommended_action: "建立系统定义", founder_decision: "approved", routing_recommendation: routing };
+    render(<SinoBrainContext brain={{ message_intent: "project_context_update", stage: "context_updated", constitution_understanding: { status: "founder_approved", system_objects: Array.from({ length: 7 }), proposed_work_items: [item] } }} selectedConstitutionWorkItemId="work-1" onOpenProject={openProject} />);
+    expect(screen.getByRole("region", { name: "Creation Result" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "确认创建" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "进入 Project" }));
+    expect(openProject).toHaveBeenCalledWith("project-intelligence");
+  });
   afterEach(cleanup);
   it("renders a reviewable Goal Brief and confirmation gate", () => {
     const confirm = vi.fn();

@@ -80,6 +80,14 @@ describe("Founder sidebar information architecture", () => {
     expect(titles()).toEqual(["最近讨论", "较早讨论"]);
   });
 
+  it("renders a System Project beneath its persisted parent Project", () => {
+    render(<SecretarySidebar conversations={[]} projects={[{ id: "parent", name: "AI Commerce OS" }, { id: "child", name: "Intelligence Evolution Layer", parent_project_id: "parent", project_type: "system_project" }]} onSelectProject={vi.fn()} />);
+    const items = [...document.querySelectorAll(".sino-project-item")];
+    expect(items.map((item) => item.textContent)).toEqual(expect.arrayContaining([expect.stringContaining("AI Commerce OS"), expect.stringContaining("Intelligence Evolution Layer")]));
+    expect(items[1].classList.contains("is-child")).toBe(true);
+    expect(items[1].style.marginLeft).toBe("14px");
+  });
+
   it("creates, renames, expands and moves Conversations through the Project workspace", async () => {
     createFounderProject.mockResolvedValue({ id: "project-commerce", name: "AI电商", status: "active", updated_at: new Date().toISOString() });
     updateFounderProject.mockResolvedValue({ id: "project-commerce", name: "AI电商系统", status: "active" });

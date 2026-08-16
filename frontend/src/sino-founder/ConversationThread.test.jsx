@@ -7,12 +7,113 @@ const snapshot = (id, messages) => ({ conversation: { id }, messages });
 afterEach(() => cleanup());
 
 describe("ConversationThread layout", () => {
+  it("links a Cognitive Outcome to its canonical Draft without replacing the source message", () => {
+    const openDraft = vi.fn();
+    const grounding = { cognitive_work: { cognitive_outcome_id: "cognitive-real" } };
+    const draft = { draft_id: "draft-real", title: "System Definition Draft", draft_type: "system_definition", status: "refining", source_cognitive_outcome_ref: "cognitive-real" };
+    render(<ConversationThread snapshot={snapshot("conv-canonical", [{ message_id: "outcome-message", role: "assistant", content: "完整 Cognitive Outcome", grounding }])} drafts={[draft]} onOpenDraft={openDraft} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("完整 Cognitive Outcome")).toBeTruthy();
+    expect(screen.getByText("本轮成果")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "查看草案" }));
+    expect(openDraft).toHaveBeenCalledWith(draft);
+  });
+  it("keeps one Project Planning primary action in the workspace", () => {
+    const continuePlanning = vi.fn();
+    const value = { ...snapshot("project-planning", [{ message_id: "message-1", role: "assistant", content: "Sino 最新分析" }]), sino_brain: { stage: "project_planning", active_workspace_stage: "goal", current_action: { action_id: "continue_project_planning", title: "Project Planning", description: "旧动作说明", primary_label: "继续讨论" }, discovery: { discussion_maturity: { maturity_status: "continue_analysis", reason: "Sino 仍可基于已有 Project Context 完成实质分析，无需 Founder 补充信息。", outcomes: [{ outcome_id: "draft", title: "尚未进入审核" }] } }, stage_workspaces: [{ stage_id: "planning:goal", stage_key: "goal", label: "Project Planning", status: "active", summary: "Project Context 分析进行中", message_refs: ["message-1"] }] } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} onContinueProjectAnalysis={continuePlanning} />);
+    expect(screen.queryByRole("button", { name: "继续讨论" })).toBeNull();
+    const primary = screen.getByRole("button", { name: "继续分析" });
+    expect(screen.getByText("继续自主分析")).toBeTruthy();
+    expect(screen.queryByText("Discussion Maturity")).toBeNull();
+    expect(screen.queryByText("尚未进入审核")).toBeNull();
+    const log = screen.getByLabelText("讨论记录");
+    const action = log.querySelector(".sino-founder-action-card");
+    const latestMessage = screen.getByText("Sino 最新分析");
+    expect(action).toBeTruthy();
+    expect(latestMessage.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(primary);
+    expect(continuePlanning).toHaveBeenCalledTimes(1);
+  });
+  it("shows the locked Cognitive Work target while autonomous analysis is running", () => {
+    const value = { ...snapshot("cognitive-running", [{ message_id: "m1", role: "assistant", content: "上一轮结果" }]), sino_brain: { stage: "project_planning", active_workspace_stage: "goal", discovery: { discussion_maturity: { maturity_status: "continue_analysis", autonomous_next_analysis: "完成治理边界定义" }, cognitive_work_run: { run_id: "run-1", work_target: "完成治理边界定义", run_status: "running" } }, stage_workspaces: [{ stage_id: "planning:goal", stage_key: "goal", label: "Project Planning", status: "active", message_refs: ["m1"] }] } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy onContinueProjectAnalysis={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "Sino 正在执行" })).toBeTruthy();
+    expect(screen.getByText("完成治理边界定义")).toBeTruthy();
+    expect(screen.getByText("分析中")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "继续分析" })).toBeNull();
+  });
+  it("projects a blocking maturity judgment as Founder input without a continue action", () => {
+    const value = { ...snapshot("blocking-planning", [{ message_id: "message-1", role: "assistant", content: "当前分析" }]), sino_brain: { stage: "project_planning", active_workspace_stage: "goal", current_action: { action_id: "answer_project_question", title: "需要 Founder 判断", description: "边界选择待确认", primary_label: "回答关键问题" }, discovery: { discussion_maturity: { maturity_status: "founder_input_required", reason: "该选择会改变系统边界。", blocking_question: "是否允许跨业务域共享学习结果？", why_founder_needed: "这属于 Founder 的产品治理权限。", sino_recommendation: "首版保持域内隔离。", recommendation_reason: "避免错误学习跨域传播。" } }, stage_workspaces: [{ stage_id: "planning:goal", stage_key: "goal", label: "Project Planning", status: "active", message_refs: ["message-1"] }] } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByRole("heading", { name: "需要 Founder 判断" })).toBeTruthy();
+    expect(screen.getByText(/为什么需要 Founder：这属于 Founder 的产品治理权限/)).toBeTruthy();
+    expect(screen.getByText(/Sino 建议：首版保持域内隔离/)).toBeTruthy();
+    expect(screen.getByText(/建议理由：避免错误学习跨域传播/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /继续分析|回答关键问题/ })).toBeNull();
+  });
+  it("drops resolved blocker content from the latest Current Action projection", () => {
+    const value = { ...snapshot("resolved-planning", [{ message_id: "answer", role: "founder", content: "采用推荐边界。" }, { message_id: "confirmation", role: "assistant", content: "已确认，继续推进定义。" }]), sino_brain: { stage: "project_planning", active_workspace_stage: "goal", current_action: { action_id: "answer_project_question", title: "需要 Founder 判断", description: "旧问题", primary_label: "回答关键问题" }, discovery: { blocking_question_resolution: { status: "resolved" }, discussion_maturity: { maturity_status: "continue_analysis", reason: "原问题已解决。", autonomous_next_analysis: "继续起草系统定义。", blocking_question: "旧问题", why_founder_needed: "旧理由", sino_recommendation: "旧建议" } }, stage_workspaces: [{ stage_id: "planning:goal", stage_key: "goal", label: "Project Planning", status: "active", message_refs: ["answer", "confirmation"] }] } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByRole("heading", { name: "继续自主分析" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "继续分析" })).toBeTruthy();
+    expect(screen.queryByText("旧问题")).toBeNull();
+    expect(screen.queryByText("旧理由")).toBeNull();
+    expect(screen.queryByText("旧建议")).toBeNull();
+  });
   it("normalizes strings, arrays, objects and null display values", () => {
     expect(normalizeDisplayText(null)).toBe("");
     expect(normalizeDisplayText(["一", { content: "二" }])).toBe("一；二");
     expect(normalizeDisplayText({ first: "一", second: true })).toBe("first：一；second：true");
     expect(normalizeTextList("单项")).toEqual(["单项"]);
     expect(normalizeTextList({ reason: "对象原因" })).toEqual(["对象原因"]);
+  });
+
+  it("uses the same structured message renderer for Founder and Sino", () => {
+    const value = snapshot("markdown", [
+      { message_id: "f1", role: "founder", content: "# Founder 标题\n\n1. 第一项\n2. 第二项" },
+      { message_id: "a1", role: "assistant", content: "## Sino 标题\n\n- 建议一\n- 建议二" },
+    ]);
+    const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByRole("heading", { level: 1, name: "Founder 标题" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Sino 标题" })).toBeTruthy();
+    expect(container.querySelector('[data-role="founder"] .sino-message-body ol')).toBeTruthy();
+    expect(container.querySelector('[data-role="assistant"] .sino-message-body ul')).toBeTruthy();
+  });
+
+  it("renders a source message before its derived Constitution review exactly once", () => {
+    const source = { message_id: "constitution-source", role: "founder", content: "# AI Commerce OS Constitution V1\n\n最高层 Constitution 原文" };
+    const object = { name: "Intelligence Evolution Layer", layer: "foundation", role: "Foundation" };
+    const value = { ...snapshot("constitution", [source]), sino_brain: { stage: "context_updated", active_workspace_stage: "goal", source_message_refs: [source.message_id], constitution_understanding: { status: "founder_approved", core_definition: "核心定义", foundation_layer: [object], application_layer: [], system_objects: [object], capability_lifecycle: [], capability_rules: [], proposed_work_items: [{ work_item_id: "work-1", title: "Intelligence Evolution Layer", existing_state: "existing", founder_decision: "approved" }] }, stage_workspaces: [{ stage_id: "context", stage_key: "goal", label: "Constitution Understanding · Founder Review", status: "active", message_refs: [source.message_id] }] } };
+    const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const sourceMessage = container.querySelector('[data-role="founder"]');
+    const derived = screen.getByRole("region", { name: "Constitution Understanding" });
+    expect(sourceMessage.compareDocumentPosition(derived) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole("heading", { name: "AI Commerce OS Constitution V1" })).toHaveLength(1);
+    expect(derived.textContent).toContain("Proposed Work Items");
+  });
+
+  it("collapses a processed long-form Founder source and restores the untouched original on demand", () => {
+    const original = `# Enterprise Constitution\n\n${Array.from({ length: 18 }, (_, index) => `## Section ${index + 1}\n\n原始段落 ${index + 1}：${"完整内容".repeat(12)}`).join("\n\n")}`;
+    const source = { message_id: "long-source", role: "founder", content: original };
+    const object = { name: "System", layer: "foundation", role: "Foundation" };
+    const value = { ...snapshot("long-document", [source]), sino_brain: { stage: "context_updated", active_workspace_stage: "goal", source_message_refs: [source.message_id], constitution_understanding: { status: "founder_approved", core_definition: "核心", foundation_layer: [object], application_layer: [], system_objects: [object], capability_lifecycle: [], capability_rules: [], proposed_work_items: [] }, stage_workspaces: [{ stage_id: "context", stage_key: "goal", label: "Founder Review", status: "active", message_refs: [source.message_id] }] } };
+    const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const sourceMessage = container.querySelector('[data-role="founder"]');
+    const derived = screen.getByRole("region", { name: "Constitution Understanding" });
+    expect(screen.getByText("长文本 · 已进入后续处理")).toBeTruthy();
+    expect(sourceMessage.querySelector(".sino-message-body")).toBeNull();
+    expect(sourceMessage.compareDocumentPosition(derived) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "展开原文" }));
+    expect(sourceMessage.querySelector(".sino-message-body").textContent).toContain("原始段落 18");
+    fireEvent.click(screen.getByRole("button", { name: "收起原文" }));
+    expect(sourceMessage.querySelector(".sino-message-body")).toBeNull();
+  });
+
+  it("never adds long-form controls to a short Founder message", () => {
+    render(<ConversationThread snapshot={snapshot("short-message", [{ message_id: "short", role: "founder", content: "下一步怎么做？" }])} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.queryByRole("button", { name: "展开原文" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "收起原文" })).toBeNull();
+    expect(screen.getByText("下一步怎么做？")).toBeTruthy();
   });
 
   it("keeps history and composer in independent flex regions", () => {
@@ -59,12 +160,33 @@ describe("ConversationThread layout", () => {
     Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1200 });
     Object.defineProperty(log, "clientHeight", { configurable: true, value: 300 });
     log.scrollTop = 100;
+    fireEvent.scroll(log);
     fireEvent.submit(screen.getByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……").closest("form"));
     rerender(<ConversationThread snapshot={snapshot("conv-history", [{ message_id: "m1", role: "founder", content: "较早消息" }, { message_id: "m2", role: "assistant", content: "新回复" }])} message="" onMessage={vi.fn()} onSend={onSend} busy={false} />);
     expect(log.scrollTop).toBe(100);
+    expect(screen.getByRole("button", { name: "↓ 最新" })).toBeTruthy();
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1500 });
+    fireEvent.click(screen.getByRole("button", { name: "↓ 最新" }));
+    expect(log.scrollTop).toBe(1500);
+    expect(screen.queryByRole("button", { name: "↓ 最新" })).toBeNull();
   });
 
-  it("renders and expands persisted answer grounding without exposing unused unscoped project sources", () => {
+  it("follows a material Current Action update while Founder remains near latest", () => {
+    const first = { ...snapshot("conv-action", [{ message_id: "m1", role: "assistant", content: "分析完成" }]), sino_brain: { stage: "project_planning", current_action: { title: "Project Planning" }, discovery: { discussion_maturity: { maturity_status: "continue_analysis", reason: "继续形成定义", autonomous_next_analysis: "形成边界" } } } };
+    const { rerender } = render(<ConversationThread snapshot={first} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} onContinueProjectAnalysis={vi.fn()} />);
+    const log = screen.getByLabelText("讨论记录");
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 300 });
+    log.scrollTop = 700; fireEvent.scroll(log);
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1250 });
+    const next = { ...first, sino_brain: { ...first.sino_brain, discovery: { discussion_maturity: { maturity_status: "continue_analysis", reason: "新的实质分析已就绪", autonomous_next_analysis: "验证接口" } } } };
+    rerender(<ConversationThread snapshot={next} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} onContinueProjectAnalysis={vi.fn()} />);
+    expect(log.scrollTop).toBe(1250);
+    expect(screen.getByRole("button", { name: "继续分析" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "↓ 最新" })).toBeNull();
+  });
+
+  it("keeps persisted Context Sources out of the Conversation reading flow", () => {
     const grounding = { schema_version: 1, sources: [
       { key: "living_prompt", label: "动态提示词", available: true, used: true, version: "v2", references: [{ source_id: "project-1", title: "AI Commerce OS" }] },
       { key: "knowledge", label: "项目知识", available: true, used: true, count: 3 },
@@ -74,15 +196,12 @@ describe("ConversationThread layout", () => {
       { key: "external_model_knowledge", label: "模型通用知识", available: true, used: true },
     ] };
     render(<ConversationThread snapshot={snapshot("conv-grounded", [{ message_id: "m1", role: "assistant", content: "基于项目上下文回答。", grounding }])} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
-    const summary = screen.getByText("本次依据").closest("summary");
-    expect(summary.textContent).toContain("动态提示词 v2 · 项目知识 · 当前会话");
-    fireEvent.click(summary);
-    expect(screen.getByText("3 条")).toBeTruthy();
-    expect(screen.getByText("未引用")).toBeTruthy();
-    expect(screen.getByText("AI Commerce OS")).toBeTruthy();
+    expect(screen.getByText("基于项目上下文回答。")).toBeTruthy();
+    expect(screen.queryByText("本次依据")).toBeNull();
+    expect(screen.queryByText("动态提示词")).toBeNull();
   });
 
-  it("shows only real non-project grounding for an unscoped reply", () => {
+  it("does not insert unscoped grounding into a normal reply", () => {
     const grounding = { schema_version: 1, sources: [
       { key: "living_prompt", label: "动态提示词", available: false, used: false },
       { key: "knowledge", label: "项目知识", available: false, used: false, count: 0 },
@@ -91,7 +210,7 @@ describe("ConversationThread layout", () => {
       { key: "external_model_knowledge", label: "模型通用知识", available: true, used: true },
     ] };
     render(<ConversationThread snapshot={snapshot("conv-unscoped", [{ message_id: "m1", role: "assistant", content: "通用回答。", grounding }])} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
-    expect(screen.getByText("本次依据").closest("summary").textContent).toContain("当前会话 · Founder 当前输入 · 模型通用知识");
+    expect(screen.queryByText("本次依据")).toBeNull();
     expect(screen.queryByText("动态提示词")).toBeNull();
     expect(screen.queryByText("项目知识")).toBeNull();
   });

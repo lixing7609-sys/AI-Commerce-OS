@@ -5,29 +5,26 @@ import { CapabilityLifecycleCard } from "./CapabilityLifecycleCard.jsx";
 import { AssetCommitWorkspace } from "./AssetCommitWorkspace.jsx";
 import { founderConversationTitle } from "./founderConversationTitle.js";
 import { objectTypeLabel, statusLabel } from "./founderTerminology.js";
-
-const PROJECT_SOURCE_KEYS = new Set(["project_summary", "current_position", "living_prompt", "confirmed_decisions", "knowledge", "constraints", "terminology", "pending_questions", "goals"]);
-
-function GroundingDetails({ grounding }) {
-  const sources = Array.isArray(grounding?.sources) ? grounding.sources : [];
-  if (!sources.length) return null;
-  const hasProjectContext = sources.some((item) => PROJECT_SOURCE_KEYS.has(item.key) && (item.available || item.used));
-  const visibleSources = sources.filter((item) => hasProjectContext || !PROJECT_SOURCE_KEYS.has(item.key));
-  const used = visibleSources.filter((item) => item.used);
-  const summary = used.map((item) => `${item.label}${item.version ? ` ${item.version}` : ""}`).join(" · ");
-  const participatingModels = Array.isArray(grounding?.participating_models) ? grounding.participating_models : [];
-  return <details className="sino-answer-grounding">
-    <summary><span>本次依据</span>{summary ? `：${summary}` : ""}</summary>
-    <dl>{visibleSources.map((item) => <div key={item.key}>
-      <dt>{item.label}</dt>
-      <dd>{item.used ? (item.version || (typeof item.count === "number" && item.count > 0 ? `${item.count} 条` : "已引用")) : "未引用"}</dd>
-      {item.references?.length ? <ul>{item.references.map((reference, index) => <li key={`${reference.source_id || reference.title || item.key}-${index}`}>{reference.title || reference.source_id}</li>)}</ul> : null}
-    </div>)}</dl>{participatingModels.length ? <p className="sino-grounding-models">参与模型：{participatingModels.map((item) => item.label || item.provider).join(" · ")}</p> : null}
-  </details>;
-}
+import { MessageBody } from "./MessageBody.jsx";
+import { ConstitutionUnderstandingCard } from "./ConstitutionUnderstandingCard.jsx";
+import { ExecutionPackageCard, ImplementationPlanCard, ProjectMaturityCard } from "./ProjectMaturityCard.jsx";
+import { projectCurrentAction, projectMaturityProjection } from "./projectMaturityProjection.js";
 
 const MODEL_NAMES = { claude: "Claude", gpt: "GPT", deepseek: "DeepSeek" };
 const HUMAN_FIELDS = ["text", "content", "message", "title", "summary", "description", "reason", "recommendation", "value"];
+const LONGFORM_SOURCE_TERMS = /constitution|document|knowledge|prompt|宪法|文档|知识|提示词/i;
+
+function longformSource(content, role) {
+  if (role !== "founder") return false;
+  const text = String(content || "");
+  const paragraphs = text.split(/\n\s*\n/).filter((item) => item.trim());
+  const lines = text.split("\n").filter((item) => item.trim());
+  return text.length > 800 || paragraphs.length >= 4 || lines.length >= 12 || (text.length > 240 && LONGFORM_SOURCE_TERMS.test(text));
+}
+
+function longformTitle(content) {
+  return String(content || "").split("\n").map((item) => item.replace(/^#{1,6}\s*/, "").trim()).find(Boolean) || "Founder 长文本";
+}
 
 export function normalizeDisplayText(value) {
   if (value == null) return "";
@@ -87,10 +84,10 @@ function CouncilConversation({ run }) {
   if (!synthesisLines.length && ["completed", "completed_partial"].includes(run?.status) && hasCompletedProposal) {
     synthesisLines.push("已基于当前可用模型完成本轮讨论，但综合内容暂未完整返回。");
   }
-  if (!ordered.length && run?.status === "running") return <article className={messageClass} data-role="assistant" data-message-type="system_status"><strong>* Sino</strong><p>正在组织多模型讨论…</p></article>;
+  if (!ordered.length && run?.status === "running") return <article className={messageClass} data-role="assistant" data-message-type="system_status"><strong>* Sino</strong><MessageBody>正在组织多模型讨论…</MessageBody></article>;
   return <div className="sino-council-conversation">
-    {ordered.map((item, index) => { const text = proposalText(item.proposal); const modelName = normalizeDisplayText(item.model_display_name) || MODEL_NAMES[item.provider] || normalizeDisplayText(item.model) || "模型"; const providerName = normalizeDisplayText(item.provider_display_name); return <article className={messageClass} key={`${run.council_run_id}-${identityKey(item) || index}`} data-role="assistant" data-message-type="model_proposal"><strong>* {modelName}{providerName ? ` · ${providerName}` : ""}</strong>{item.status === "completed" ? <p>{text || "返回内容暂时无法完整展示"}</p> : item.status === "running" ? <p>思考中…</p> : <p>暂时不可用</p>}</article>; })}
-    {run.status === "running" ? <article className={messageClass} data-role="assistant" data-message-type="system_status"><strong>* Sino</strong><p>{ordered.some((item) => item.status === "completed") ? "正在提炼共识与分歧…" : "正在组织多模型讨论…"}</p></article> : synthesisLines.length ? <article className={messageClass} data-role="assistant" data-message-type="sino_synthesis"><strong>* Sino</strong><p>{synthesisLines.join("\n")}</p></article> : null}
+    {ordered.map((item, index) => { const text = proposalText(item.proposal); const modelName = normalizeDisplayText(item.model_display_name) || MODEL_NAMES[item.provider] || normalizeDisplayText(item.model) || "模型"; const providerName = normalizeDisplayText(item.provider_display_name); return <article className={messageClass} key={`${run.council_run_id}-${identityKey(item) || index}`} data-role="assistant" data-message-type="model_proposal"><strong>* {modelName}{providerName ? ` · ${providerName}` : ""}</strong><MessageBody>{item.status === "completed" ? (text || "返回内容暂时无法完整展示") : item.status === "running" ? "思考中…" : "暂时不可用"}</MessageBody></article>; })}
+    {run.status === "running" ? <article className={messageClass} data-role="assistant" data-message-type="system_status"><strong>* Sino</strong><MessageBody>{ordered.some((item) => item.status === "completed") ? "正在提炼共识与分歧…" : "正在组织多模型讨论…"}</MessageBody></article> : synthesisLines.length ? <article className={messageClass} data-role="assistant" data-message-type="sino_synthesis"><strong>* Sino</strong><MessageBody>{synthesisLines.join("\n")}</MessageBody></article> : null}
   </div>;
 }
 
@@ -121,18 +118,19 @@ function AutoDeliberationConversation({ run }) {
   return <div className="sino-council-conversation sino-auto-deliberation" data-deliberation-id={run?.council_run_id}>
     {roundNumbers.map((roundNumber) => { const items = modelRuns.filter((item) => Number(item?.round_number) === roundNumber); const trace = persistedRounds.find((item) => Number(item?.round_number) === roundNumber); return <details className="sino-deliberation-round" key={`${run.council_run_id}-round-${roundNumber}`} open>
       <summary>第 {roundNumber} 轮 <span>收起本轮 / 展开本轮</span></summary>
-      <div className="sino-deliberation-round__messages">{items.map((item, index) => <article className="sino-council-message" key={item.model_run_id || `${roundNumber}-${index}`} data-message-type="model_proposal"><strong>* {identity(item)}</strong><p>{item.status === "completed" ? (proposalText(item.proposal) || "返回内容暂时无法完整展示") : "本轮暂时未返回"}</p></article>)}</div>
-      <article className="sino-council-message" data-message-type="sino_round_summary"><strong>* Sino</strong><p>{trace ? roundSummaryText(trace.sino_round_summary) : "正在整理本轮共识、分歧与新增信息…"}</p></article>
+      <div className="sino-deliberation-round__messages">{items.map((item, index) => <article className="sino-council-message" key={item.model_run_id || `${roundNumber}-${index}`} data-message-type="model_proposal"><strong>* {identity(item)}</strong><MessageBody>{item.status === "completed" ? (proposalText(item.proposal) || "返回内容暂时无法完整展示") : "本轮暂时未返回"}</MessageBody></article>)}</div>
+      <article className="sino-council-message" data-message-type="sino_round_summary"><strong>* Sino</strong><MessageBody>{trace ? roundSummaryText(trace.sino_round_summary) : "正在整理本轮共识、分歧与新增信息…"}</MessageBody></article>
     </details>; })}
-    {run?.status === "running" ? <article className="sino-council-message" data-role="assistant" data-message-type="system_status"><strong>* Sino</strong><p>Sino 正在主持自动多轮讨论…</p></article> : ["completed", "completed_partial"].includes(run?.status) ? <>
-      <article className="sino-council-message" data-message-type="stop_reason"><strong>* Sino</strong><p>{normalizeDisplayText(run?.deliberation?.stop_explanation) || "讨论已基本形成结论，本轮结束。"}</p></article>
-      <article className="sino-council-message" data-role="assistant" data-message-type="sino_synthesis" data-source-count={run?.deliberation?.source_refs?.length || 0}><strong>* Sino · 最终综合</strong><p>{finalContent || "本轮自动讨论已完成。"}</p></article>
+    {run?.status === "running" ? <article className="sino-council-message" data-role="assistant" data-message-type="system_status"><strong>* Sino</strong><MessageBody>Sino 正在主持自动多轮讨论…</MessageBody></article> : ["completed", "completed_partial"].includes(run?.status) ? <>
+      <article className="sino-council-message" data-message-type="stop_reason"><strong>* Sino</strong><MessageBody>{normalizeDisplayText(run?.deliberation?.stop_explanation) || "讨论已基本形成结论，本轮结束。"}</MessageBody></article>
+      <article className="sino-council-message" data-role="assistant" data-message-type="sino_synthesis" data-source-count={run?.deliberation?.source_refs?.length || 0}><strong>* Sino · 最终综合</strong><MessageBody>{finalContent || "本轮自动讨论已完成。"}</MessageBody></article>
     </> : null}
   </div>;
 }
 
-function GoalBriefConfirmationCard({ brain, busy, onConfirm, onRevise }) {
+function GoalBriefConfirmationCard({ brain, busy, onConfirm, onRevise, onReviseGoal }) {
   if (brain?.stage !== "goal_review") return null;
+  onRevise = onRevise || onReviseGoal;
   const brief = brain.goal_brief || {};
   const understanding = brain.discovery?.working_understanding || {};
   const understood = [...(understanding.known_context || []), ...(understanding.inferred_context || [])];
@@ -171,32 +169,70 @@ function ReuseSuggestions({ items, busy, onReuse, onDevelop }) {
   return <section className="sino-reuse-suggestions" aria-label="可复用能力"><span>Capability Repository</span><h2>检测到已有相关能力</h2>{items.map((item) => <article key={item.asset_id}><div><strong>{item.name} · V{item.version}</strong><p>{item.reuse_reason}</p><small>{item.domain_id} · {statusLabel(item.status)}</small></div>{item.can_reuse ? <button type="button" disabled={busy} onClick={() => onReuse?.(item)}>引用</button> : <button type="button" disabled={busy} onClick={() => onDevelop?.({ action_id: "candidates_saved", asset_id: item.asset_id })}>开发</button>}</article>)}</section>;
 }
 
-export function ConversationThread({ snapshot, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onContinueDiscussion, onViewAssets, onNewGoal, capabilityAction, capabilityAsset, capabilityError, onCapabilityAction, reuseSuggestions, onReuse }) {
+export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onReviewConstitution, onReviewProjectOutcome, onReviewImplementationPlan, onContinueProjectAnalysis, selectedConstitutionWorkItemId, onSelectConstitutionWorkItem, onContinueDiscussion, onViewAssets, onNewGoal, capabilityAction, capabilityAsset, capabilityError, onCapabilityAction, reuseSuggestions, onReuse }) {
   const logRef = useRef(null);
   const conversationRef = useRef(null);
   const scrollAfterSendRef = useRef(false);
+  const latestProjectionRef = useRef("");
+  const nearBottomRef = useRef(true);
+  const [showReturnToLatest, setShowReturnToLatest] = useState(false);
   const conversationId = snapshot?.conversation?.id;
   const messageCount = snapshot?.messages?.length || 0;
+  const latestProjection = JSON.stringify({
+    conversationId,
+    latestMessageId: snapshot?.messages?.at?.(-1)?.message_id || null,
+    messageCount,
+    currentAction: snapshot?.sino_brain?.current_action || null,
+    maturity: snapshot?.sino_brain?.discovery?.discussion_maturity || null,
+    draftRefs: drafts.filter((item) => item.source_conversation_id === conversationId).map((item) => `${item.draft_id}:${item.updated_at || item.version}`),
+  });
   const stages = snapshot?.sino_brain?.stage_workspaces || FALLBACK_STAGES;
   const currentStage = snapshot?.sino_brain?.active_workspace_stage || "goal";
   const [selection, setSelection] = useState({ conversationId, currentStage, stage: currentStage });
+  const [longMessageExpansion, setLongMessageExpansion] = useState({});
   const activeStage = selection.conversationId === conversationId && selection.currentStage === currentStage ? selection.stage : currentStage;
   const selectStage = (stage) => setSelection({ conversationId, currentStage, stage });
 
-  useLayoutEffect(() => {
-    const restored = conversationId && conversationRef.current !== conversationId;
-    if (logRef.current && (restored || scrollAfterSendRef.current)) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-      scrollAfterSendRef.current = false;
-    }
-    conversationRef.current = conversationId;
-  }, [conversationId, messageCount]);
+  const scrollToLatest = () => {
+    const log = logRef.current;
+    if (!log) return;
+    log.scrollTop = log.scrollHeight;
+    nearBottomRef.current = true;
+    scrollAfterSendRef.current = false;
+    setShowReturnToLatest(false);
+  };
 
-  useLayoutEffect(() => { if (logRef.current) logRef.current.scrollTop = 0; }, [activeStage]);
+  useLayoutEffect(() => {
+    const restored = Boolean(conversationId && conversationRef.current !== conversationId);
+    const changed = latestProjectionRef.current !== latestProjection;
+    if (restored || (changed && (nearBottomRef.current || scrollAfterSendRef.current))) scrollToLatest();
+    else if (changed && conversationRef.current === conversationId) setShowReturnToLatest(true);
+    conversationRef.current = conversationId;
+    latestProjectionRef.current = latestProjection;
+  }, [conversationId, latestProjection]);
+
+  function trackReadingPosition() {
+    const log = logRef.current;
+    if (!log) return;
+    const threshold = Math.max(96, log.clientHeight * 0.18);
+    const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight <= threshold;
+    nearBottomRef.current = nearBottom;
+    if (nearBottom) setShowReturnToLatest(false);
+    else if (scrollAfterSendRef.current) scrollAfterSendRef.current = false;
+  }
+
+  useLayoutEffect(() => {
+    const log = logRef.current;
+    if (!log) return undefined;
+    log.addEventListener("scroll", trackReadingPosition, { passive: true });
+    return () => log.removeEventListener("scroll", trackReadingPosition);
+  }, [conversationId]);
 
   function submit(event) {
     const log = logRef.current;
-    scrollAfterSendRef.current = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    const threshold = log ? Math.max(96, log.clientHeight * 0.18) : 96;
+    scrollAfterSendRef.current = !log || log.scrollHeight - log.scrollTop - log.clientHeight <= threshold;
+    nearBottomRef.current = scrollAfterSendRef.current;
     return onSend(event);
   }
 
@@ -209,16 +245,50 @@ export function ConversationThread({ snapshot, message, onMessage, onSend, busy,
   const hasStageProjection = Boolean(snapshot?.sino_brain?.stage_workspaces?.length);
   const visibleMessages = hasStageProjection ? (snapshot?.messages || []).filter((item) => selectedRefs.has(item.message_id)) : (snapshot?.messages || []);
   const latestLifecycleEvent = [...(snapshot?.messages || [])].reverse().find((item) => item.role === "assistant" && item.message_type === "capability_lifecycle");
+  const constitutionUnderstanding = snapshot?.sino_brain?.constitution_understanding;
+  const constitutionSourceRefs = new Set(snapshot?.sino_brain?.source_message_refs || []);
+  const constitutionSourceMessage = constitutionUnderstanding ? visibleMessages.find((item) => item.role === "founder" && constitutionSourceRefs.has(item.message_id)) || visibleMessages.find((item) => item.role === "founder") : null;
+  const constitutionDerivedContent = constitutionUnderstanding ? <ConstitutionUnderstandingCard understanding={constitutionUnderstanding} busy={busy} onReview={onReviewConstitution} selectedWorkItemId={selectedConstitutionWorkItemId} onSelectWorkItem={onSelectConstitutionWorkItem} /> : null;
+  const maturity = projectMaturityProjection(snapshot?.sino_brain);
+  const currentAction = projectCurrentAction(snapshot?.sino_brain, maturity);
+  const isProjectPlanning = snapshot?.sino_brain?.stage === "project_planning";
+  const cognitiveWorkRunning = ["pending", "running"].includes(snapshot?.sino_brain?.discovery?.cognitive_work_run?.run_status);
+  const isOutcomeReview = isProjectPlanning && maturity.maturity_status === "ready_for_review";
+  const implementationPlan = snapshot?.sino_brain?.discovery?.implementation_planning;
+  const isImplementationPlanning = snapshot?.sino_brain?.stage === "implementation_planning";
+  const executionPackage = snapshot?.sino_brain?.discovery?.execution_package;
+  const isExecutionPackage = snapshot?.sino_brain?.stage === "execution_package";
+  const workspaceAction = cognitiveWorkRunning ? currentAction : isProjectPlanning && maturity.maturity_status === "continue_analysis"
+    ? { ...currentAction, title: "继续自主分析", description: maturity.reason || currentAction?.description, primary_label: "继续分析", secondary_label: null }
+    : isProjectPlanning && maturity.maturity_status === "founder_input_required"
+      ? { ...currentAction, title: "需要 Founder 判断", description: [maturity.blocking_question || currentAction?.description, maturity.why_founder_needed ? `为什么需要 Founder：${maturity.why_founder_needed}` : maturity.reason, maturity.sino_recommendation ? `Sino 建议：${maturity.sino_recommendation}` : null, maturity.recommendation_reason ? `建议理由：${maturity.recommendation_reason}` : null].filter(Boolean).join("\n\n"), primary_label: null, secondary_label: null }
+      : currentAction;
+  const timelineAction = activeStage !== currentStage ? null : capabilityAction
+    ? <CapabilityLifecycleCard asset={capabilityAsset} action={capabilityAction} candidates={snapshot?.sino_brain?.discussion_package?.asset_commit?.items || []} error={capabilityError} busy={busy} onAction={onCapabilityAction} onContinue={onContinueDiscussion} onOpenRepository={onViewAssets} />
+    : isExecutionPackage
+      ? <ExecutionPackageCard pkg={executionPackage} />
+    : isImplementationPlanning
+      ? <><ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} /><ImplementationPlanCard plan={implementationPlan} busy={busy} onReview={onReviewImplementationPlan} /></>
+    : isOutcomeReview
+      ? <ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} />
+      : <FounderActionCard action={workspaceAction} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onReviseGoal} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueProjectAnalysis={onContinueProjectAnalysis} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} />;
   return <section className="sino-conversation-thread" aria-label="Conversation">
     <header className="sino-conversation-header"><div><h1>{founderConversationTitle(snapshot?.conversation?.title, snapshot?.sino_brain?.goal_brief?.goal)}</h1><p>{selectedStage?.label || activeStage}</p></div><dl><div><dt>Status</dt><dd>{snapshot?.sino_brain?.current_action?.title || "讨论中"}</dd></div><div><dt>Confidence</dt><dd>{snapshot?.sino_brain?.decision?.confidence ? `${Math.round(snapshot.sino_brain.decision.confidence * 100)}%` : "—"}</dd></div></dl></header>
     <StageNavigator stages={stages} activeStage={activeStage} onSelect={selectStage} />
-    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" data-stage-workspace={selectedStage?.label || activeStage} tabIndex={0}><div className="sino-conversation-reading-column">{activeStage === currentStage && capabilityAction ? <CapabilityLifecycleCard asset={capabilityAsset} action={capabilityAction} candidates={snapshot?.sino_brain?.discussion_package?.asset_commit?.items || []} error={capabilityError} busy={busy} onAction={onCapabilityAction} onContinue={onContinueDiscussion} onOpenRepository={onViewAssets} /> : activeStage === currentStage ? <FounderActionCard action={snapshot?.sino_brain?.current_action} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onReviseGoal} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} /> : null}<ReuseSuggestions items={reuseSuggestions} busy={busy} onReuse={onReuse} onDevelop={onCapabilityAction} />{activeStage === "asset_commit" ? <AssetCommitWorkspace commit={snapshot?.sino_brain?.discussion_package?.asset_commit} onViewAssets={onViewAssets} onReturnDiscussion={() => selectStage("package")} onNewGoal={onNewGoal} /> : null}{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}{activeStage === "goal" && !snapshot?.sino_brain?.current_action ? <GoalBriefConfirmationCard brain={snapshot?.sino_brain} busy={busy} onConfirm={onConfirmGoal} onRevise={onReviseGoal} /> : null}<StageSummary stage={selectedStage} brain={snapshot?.sino_brain} currentStage={currentStage} onSelect={selectStage} />{visibleMessages.length ? visibleMessages.map((item) => {
+    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" data-stage-workspace={selectedStage?.label || activeStage} tabIndex={0}><div className="sino-conversation-reading-column"><ReuseSuggestions items={reuseSuggestions} busy={busy} onReuse={onReuse} onDevelop={onCapabilityAction} />{activeStage === "asset_commit" ? <AssetCommitWorkspace commit={snapshot?.sino_brain?.discussion_package?.asset_commit} onViewAssets={onViewAssets} onReturnDiscussion={() => selectStage("package")} onNewGoal={onNewGoal} /> : null}{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}{activeStage === "goal" && !snapshot?.sino_brain?.current_action && !snapshot?.sino_brain?.constitution_understanding ? <GoalBriefConfirmationCard brain={snapshot?.sino_brain} busy={busy} onConfirm={onConfirmGoal} onReviseGoal={onReviseGoal} /> : null}<StageSummary stage={selectedStage} brain={snapshot?.sino_brain} currentStage={currentStage} onSelect={selectStage} />{visibleMessages.length ? visibleMessages.map((item) => {
       if (item.role === "assistant" && ["council", "auto_deliberation"].includes(item.message_type)) return null;
       if (item.role === "assistant" && ["goal_brief", "decision", "discussion_package"].includes(item.message_type)) return null;
       if (item.role === "assistant" && item.message_type === "capability_lifecycle") return null;
       const run = (!hasStageProjection || activeStage === "strategy") && item.role === "founder" && ["council", "auto_deliberation"].includes(item.message_type) ? latestRuns.get(item.content) : null;
-      return <div key={item.message_id} className="sino-message-group"><article data-role={item.role}><strong>{item.role === "founder" ? "Founder" : "* Sino"}</strong><p>{item.content}</p>{item.role === "assistant" ? <GroundingDetails grounding={item.grounding} /> : null}</article>{run ? (item.message_type === "auto_deliberation" ? <AutoDeliberationConversation run={run} /> : <CouncilConversation run={run} />) : null}</div>;
-    }) : null}{(!hasStageProjection || activeStage === "strategy") && !visibleMessages.some((item) => ["council", "auto_deliberation"].includes(item.message_type)) ? (snapshot?.council_runs || []).map((run) => run.discussion_mode === "auto_deliberation" ? <AutoDeliberationConversation key={run.council_run_id} run={run} /> : <CouncilConversation key={run.council_run_id} run={run} />) : null}</div></div>
+      const longform = String(item.content || "").length > 800 || String(item.content || "").includes("\n\n");
+      const collapsible = longformSource(item.content, item.role);
+      const processedSource = item.message_id === constitutionSourceMessage?.message_id && Boolean(constitutionDerivedContent);
+      const expanded = longMessageExpansion[item.message_id] ?? !processedSource;
+      const cognitiveOutcomeId = item.grounding?.cognitive_work?.cognitive_outcome_id;
+      const draft = drafts.find((entry) => entry.source_message_refs?.at?.(-1) === item.message_id || (!entry.source_message_refs?.length && entry.source_cognitive_outcome_ref === cognitiveOutcomeId));
+      return <div key={item.message_id} className="sino-message-group"><article data-role={item.role} className={longform ? "is-longform" : ""}><strong>{item.role === "founder" ? "Founder" : "* Sino"}</strong>{collapsible && !expanded ? <div className="sino-long-source-summary"><b>{longformTitle(item.content)}</b><span>长文本 · {processedSource ? "已进入后续处理" : "已收起"}</span><button type="button" onClick={() => setLongMessageExpansion((current) => ({ ...current, [item.message_id]: true }))}>展开原文</button></div> : <><MessageBody>{item.content}</MessageBody>{collapsible ? <button type="button" className="sino-long-source-toggle" onClick={() => setLongMessageExpansion((current) => ({ ...current, [item.message_id]: false }))}>收起原文</button> : null}</>}</article>{draft ? <aside className="sino-cognitive-draft-ref" aria-label="本轮成果"><span>本轮成果</span><strong>{draft.title}</strong><small>{draft.draft_type === "system_definition" ? "System Definition Draft" : draft.draft_type} · {draft.status === "refining" ? "完善中" : draft.status}</small><button type="button" onClick={() => onOpenDraft?.(draft)}>查看草案</button></aside> : null}{run ? (item.message_type === "auto_deliberation" ? <AutoDeliberationConversation run={run} /> : <CouncilConversation run={run} />) : null}{item.message_id === constitutionSourceMessage?.message_id ? constitutionDerivedContent : null}</div>;
+    }) : null}{constitutionDerivedContent && !constitutionSourceMessage ? constitutionDerivedContent : null}{(!hasStageProjection || activeStage === "strategy") && !visibleMessages.some((item) => ["council", "auto_deliberation"].includes(item.message_type)) ? (snapshot?.council_runs || []).map((run) => run.discussion_mode === "auto_deliberation" ? <AutoDeliberationConversation key={run.council_run_id} run={run} /> : <CouncilConversation key={run.council_run_id} run={run} />) : null}{timelineAction}</div></div>
+    {showReturnToLatest ? <div className="sino-return-latest"><button type="button" onClick={scrollToLatest}>↓ 最新</button></div> : null}
     {latestLifecycleEvent ? <section className="sino-capability-event" aria-label="能力状态更新"><span>Capability Update</span><p>{latestLifecycleEvent.content}</p></section> : null}
     <div className="sino-conversation-composer-dock">{mode === "auto" && currentStage !== "strategy" ? <p className="sino-auto-mode-gate">自动多轮只用于 Strategy Workspace。请先完成并确认 Goal Brief。</p> : null}<GlobalSecretaryComposer value={message} onChange={onMessage} onSubmit={submit} busy={busy} healthy={healthy} mode={mode} onModeChange={onModeChange} disabledModes={currentStage === "strategy" ? [] : ["auto"]} toolbar={contextControls} toolbarIncludesStatus /></div>
     <div className="sino-conversation-workspace-safe-area" aria-hidden="true" />

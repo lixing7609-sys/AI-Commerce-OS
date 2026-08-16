@@ -73,6 +73,6 @@ describe("Conversation Composer layout", () => {
   it("uses Sans identity labels and a Serif long-form AI body without changing Founder typography", () => {
     expect(css).toContain('font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif');
     expect(css).toContain('font-family: "Songti SC", "STSong", "SimSun", serif');
-    expect(css).toContain('.sino-conversation-log article[data-role="founder"] > p');
+    expect(css).toContain('.sino-conversation-log article[data-role="founder"] > .sino-message-body');
   });
 });

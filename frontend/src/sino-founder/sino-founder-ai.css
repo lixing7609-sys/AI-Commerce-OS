@@ -238,7 +238,96 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-council-conversation article[data-message-type="sino_round_summary"],
 .sino-council-conversation article[data-message-type="stop_reason"],
 .sino-council-conversation article[data-message-type="sino_synthesis"] { background: transparent; }
-.sino-council-conversation article p { white-space: pre-line; }
+.sino-message-body { margin-top: 9px; color: #d7dcd5; font-size: 15px; line-height: 1.75; overflow-wrap: anywhere; text-align: left; }
+.sino-message-body > :first-child { margin-top: 0; }
+.sino-message-body > :last-child { margin-bottom: 0; }
+.sino-message-body p { margin: 0 0 1em; }
+.sino-message-body h1, .sino-message-body h2, .sino-message-body h3 { margin: 1.35em 0 .55em; color: var(--text-primary); font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; line-height: 1.35; }
+.sino-message-body h1 { font-size: 22px; }.sino-message-body h2 { font-size: 18px; }.sino-message-body h3 { font-size: 16px; }
+.sino-message-body ol, .sino-message-body ul { margin: .55em 0 1em; padding-left: 1.65em; }
+.sino-message-body li { margin: .42em 0; padding-left: .22em; }
+.sino-conversation-log .sino-message-body strong { color: inherit; font: inherit; font-weight: 700; }
+.sino-conversation-log article[data-role="founder"].is-longform { justify-self: stretch; border-color: transparent; background: transparent; }
+.sino-constitution-understanding { display: grid; gap: 16px; margin-bottom: 26px; padding: 20px 0; border-block: 1px solid var(--line); }
+.sino-constitution-understanding > header span { color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.sino-constitution-understanding > header h2 { margin: 6px 0 8px; color: var(--text-primary); font-size: 20px; }
+.sino-constitution-understanding > header p, .sino-constitution-understanding details p { margin: 0; color: var(--text-secondary); line-height: 1.65; }
+.sino-constitution-layers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.sino-constitution-layers h3 { margin: 0 0 8px; color: var(--text-label); font-size: 12px; text-transform: uppercase; }
+.sino-constitution-layers article { padding: 9px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+.sino-constitution-layers article strong { color: var(--text-primary); }
+.sino-constitution-layers article p { margin: 3px 0 0; color: var(--text-secondary); font-size: 12px; }
+.sino-constitution-understanding details { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.sino-constitution-understanding summary { color: var(--text-primary); cursor: pointer; }
+.sino-constitution-understanding ol, .sino-constitution-understanding ul { display: grid; gap: 7px; margin: 12px 0 0; padding-left: 22px; color: var(--text-secondary); }
+.sino-constitution-understanding li span { display: block; color: var(--text-muted); font-size: 12px; }
+.sino-constitution-understanding footer { display: flex; align-items: center; gap: 9px; }
+.sino-constitution-understanding footer button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text-primary); cursor: pointer; }
+.sino-constitution-understanding footer button.is-primary { border-color: var(--accent); background: var(--accent); color: #0b0d0a; }
+.sino-constitution-understanding footer strong { color: var(--accent); }
+.sino-constitution-confirmed { padding: 0 !important; border: 0 !important; }
+.sino-constitution-confirmed > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 0; border-block: 1px solid var(--line); list-style: none; }
+.sino-constitution-confirmed > summary::-webkit-details-marker { display: none; }
+.sino-constitution-confirmed > summary span { color: var(--text-label); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; }
+.sino-constitution-confirmed > summary strong { color: var(--accent); font-size: 13px; }
+.sino-constitution-understanding__details { display: grid; gap: 12px; padding-top: 12px; }
+.sino-proposed-work-items { display: grid; gap: 0; margin-top: 12px; padding-top: 20px; border-top: 1px solid var(--line); }
+.sino-proposed-work-items > header { margin-bottom: 10px; }
+.sino-proposed-work-items > header span { color: var(--accent); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.sino-proposed-work-items > header h3 { margin: 5px 0; color: var(--text-primary); font-size: 18px; }
+.sino-proposed-work-items > header p, .sino-proposed-work-items__gate { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.sino-proposed-work-items > article { padding: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+.sino-proposed-work-items > article.is-selected { box-shadow: inset 2px 0 0 var(--border-strong); background: color-mix(in srgb, var(--surface-selected) 55%, transparent); }
+.sino-proposed-work-item__select { width: 100%; padding: 11px 10px; border: 0; color: inherit; text-align: left; background: transparent; cursor: pointer; }
+.sino-proposed-work-item__select:disabled { cursor: default; }
+.sino-proposed-work-item__select:hover:not(:disabled) { background: color-mix(in srgb, var(--surface-selected) 70%, transparent); }
+.sino-proposed-work-item__select > header { display: flex; justify-content: space-between; gap: 16px; }
+.sino-proposed-work-item__select > header div { display: grid; gap: 3px; }
+.sino-proposed-work-item__select > header strong { color: var(--text-primary); }
+.sino-proposed-work-item__select > header small, .sino-proposed-work-item__select > header b { color: var(--text-muted); font-size: 12px; font-weight: 500; }
+.sino-proposed-work-item__select > header b.is-decision-pending { color: var(--text-muted); }
+.sino-proposed-work-item__select > header b.is-decision-approved { color: var(--accent); }
+.sino-proposed-work-item__select > header b.is-decision-discuss { color: #c6a45f; }
+.sino-proposed-work-item__select > header b.is-decision-deferred { color: var(--text-disabled); }
+.sino-proposed-work-items__gate { padding-top: 12px; }
+.sino-work-item-context { display: grid; gap: 12px; padding-top: 18px; border-top: 1px solid var(--border-default); }
+.sino-work-item-context header span { color: var(--accent); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.sino-work-item-context header h3 { margin: 5px 0 0; color: var(--text-primary); font-size: 16px; }
+.sino-work-item-context dl { display: grid; gap: 10px; margin: 0; }
+.sino-work-item-context dl div { display: grid; gap: 3px; }
+.sino-work-item-context dt { color: var(--text-label); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+.sino-work-item-context dd { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.sino-work-item-context footer { display: flex; flex-wrap: wrap; gap: 7px; }
+.sino-work-item-context footer button { padding: 7px 9px; }
+.sino-work-item-decision { align-self: center; font-size: 13px; }
+.sino-work-item-decision.is-approved { color: var(--accent); }
+.sino-work-item-decision.is-discuss { color: #c6a45f; }
+.sino-work-item-decision.is-deferred { color: var(--text-muted); }
+.sino-routing-recommendation { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid var(--border-default); }
+.sino-routing-recommendation header span { color: var(--accent); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.sino-routing-recommendation header h3 { margin: 5px 0 0; color: var(--text-primary); font-size: 16px; }
+.sino-routing-recommendation dl { display: grid; gap: 10px; margin: 0; }
+.sino-routing-recommendation dl div { display: grid; gap: 3px; }
+.sino-routing-recommendation dt { color: var(--text-label); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+.sino-routing-recommendation dd { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.sino-routing-recommendation footer { display: flex; gap: 7px; }
+.sino-routing-approved { align-self: center; color: var(--accent); font-size: 13px; }
+.sino-formal-object-proposal { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid var(--border-default); }
+.sino-formal-object-proposal header span { color: var(--accent); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.sino-formal-object-proposal header h3 { margin: 5px 0 0; color: var(--text-primary); font-size: 16px; }
+.sino-formal-object-proposal dl { display: grid; gap: 10px; margin: 0; }
+.sino-formal-object-proposal dl div { display: grid; gap: 3px; }
+.sino-formal-object-proposal dt { color: var(--text-label); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+.sino-formal-object-proposal dd { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.sino-formal-object-proposal ul { margin: 0; padding-left: 18px; }
+.sino-formal-object-proposal footer { display: flex; gap: 7px; }
+.sino-formal-object-proposal > p { margin: 0; color: var(--text-muted); font-size: 12px; }
+.sino-formal-object-result { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--border-default); }
+.sino-formal-object-result header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sino-formal-object-result header span { color: var(--text-label); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.sino-formal-object-result header strong { color: var(--accent); font-size: 12px; }
+.sino-formal-object-result > button { justify-self: start; }
+@media (max-width: 760px) { .sino-constitution-layers { grid-template-columns: 1fr; } }
 .sino-deliberation-round { display: grid; gap: 20px; }
 .sino-deliberation-round > summary { cursor: pointer; list-style: none; font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-size: var(--font-label); font-weight: 600; color: var(--text-primary); padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.08); }
 .sino-deliberation-round > summary::-webkit-details-marker { display: none; }
@@ -248,9 +337,9 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-conversation-log article small { font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
 .sino-conversation-log article strong { color: #a7afa5; font-size: 14px; font-weight: 600; line-height: 1.4; }
 .sino-conversation-log article small { display: block; margin-top: 3px; color: #747d73; font-size: 12px; line-height: 1.4; }
-.sino-conversation-log article:not([data-role="founder"]) > p,
-.sino-council-conversation .sino-council-message > p { margin: 9px 0 0; color: #d7dcd5; font-family: "Songti SC", "STSong", "SimSun", serif; font-size: 15px; line-height: 1.78; text-align: left; }
-.sino-conversation-log article[data-role="founder"] > p { margin: 8px 0 0; color: #d7dcd5; font-size: 15px; line-height: 1.65; }
+.sino-conversation-log article:not([data-role="founder"]) > .sino-message-body,
+.sino-council-conversation .sino-council-message > .sino-message-body { font-family: "Songti SC", "STSong", "SimSun", serif; line-height: 1.78; }
+.sino-conversation-log article[data-role="founder"] > .sino-message-body { margin-top: 8px; line-height: 1.65; }
 .sino-conversation-log article[data-role="assistant"] > strong,
 .sino-council-conversation article[data-message-type="sino_round_summary"] > strong,
 .sino-council-conversation article[data-message-type="stop_reason"] > strong,
@@ -264,6 +353,13 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-answer-grounding dt, .sino-answer-grounding dd { margin: 0; }
 .sino-answer-grounding dd { color: #a1a8a0; }
 .sino-answer-grounding ul { grid-column: 1 / -1; margin: 0; padding-left: 14px; color: #707970; }
+.sino-long-source-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 14px; padding-top: 7px; }
+.sino-long-source-summary b { color: var(--text-primary); font-size: 14px; }
+.sino-long-source-summary span { grid-column: 1; color: var(--text-muted); font-size: 12px; }
+.sino-long-source-summary button, .sino-long-source-toggle { border: 0; padding: 2px 0; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.sino-long-source-summary button { grid-column: 2; grid-row: 1 / span 2; }
+.sino-long-source-summary button:hover, .sino-long-source-toggle:hover { color: var(--accent); }
+.sino-long-source-toggle { margin-top: 10px; }
 .sino-composer__toolbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .sino-composer-context-controls { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .sino-composer-files, .sino-project-selector__clear { padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; color: #7b8479; font-size: var(--font-label); cursor: pointer; }
@@ -357,6 +453,9 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-conversation-thread .sino-conversation-log { align-content: start; max-height: none; min-width: 0; min-height: 0; margin: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .sino-conversation-thread .sino-conversation-log::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-conversation-composer-dock { z-index: 2; width: 100%; background: #090b09; box-sizing: border-box; }
+.sino-return-latest { display: flex; justify-content: flex-end; width: min(100%, var(--conversation-content-max-width)); margin: 0 auto 6px; padding-inline: var(--conversation-content-gutter); box-sizing: border-box; }
+.sino-return-latest button { min-height: 28px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: #101410; color: var(--text-secondary); font: 550 12px/1 var(--font-sans); cursor: pointer; }
+.sino-return-latest button:hover { border-color: var(--border-strong); color: var(--text-primary); }
 .sino-conversation-workspace-safe-area { min-height: 10px; pointer-events: none; }
 .sino-conversation-thread .sino-global-composer { width: calc(100% - (2 * var(--conversation-content-gutter))); max-width: calc(var(--conversation-content-max-width) - (2 * var(--conversation-content-gutter))); margin-inline: auto; }
 .sino-conversation-composer-dock .sino-global-composer { min-height: 118px; padding: 10px 14px; border-radius: 14px; box-shadow: 0 12px 38px rgba(0,0,0,.22); box-sizing: border-box; }
@@ -1027,6 +1126,23 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-lifecycle-overview > div button small { color: var(--text-muted); }
 @media (max-width: 900px) { .sino-lifecycle-center { padding: 20px 16px; } .sino-lifecycle-grid { grid-template-columns: 1fr; } .sino-asset-detail { border-left: 0; border-top: 1px solid var(--line); padding: 18px 0; } }
 
+.sino-repository-tabs { order: -1; border-bottom: 1px solid var(--line); }
+.sino-draft-detail { min-height: 0; overflow: auto; padding-right: 12px; }
+.sino-draft-detail > h2 { margin: 8px 0; font-size: 25px; }
+.sino-draft-detail > p { color: var(--text-secondary); line-height: 1.65; }
+.sino-draft-back { margin-bottom: 22px; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.sino-draft-document { display: grid; gap: 8px; margin-top: 24px; }
+.sino-draft-document section { padding: 18px 0; border-top: 1px solid var(--line); }
+.sino-draft-document h3 { margin: 0 0 12px; text-transform: capitalize; }
+.sino-draft-document p, .sino-draft-document li, .sino-draft-document dd { color: var(--text-secondary); line-height: 1.65; }
+.sino-cognitive-draft-ref { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; margin: 8px 0 18px 38px; padding: 12px 0 12px 14px; border-left: 2px solid var(--accent); }
+.sino-cognitive-draft-ref span, .sino-cognitive-draft-ref small { color: var(--text-muted); }
+.sino-cognitive-draft-ref button { grid-column: 2; grid-row: 1 / 4; align-self: center; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+.sino-project-drafts { margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.sino-project-drafts > header { display: flex; gap: 8px; padding: 8px 0; color: var(--text-secondary); }
+.sino-project-drafts > button { width: 100%; display: flex; justify-content: space-between; padding: 12px 0; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text-primary); cursor: pointer; text-align: left; }
+.sino-project-drafts > button span { color: var(--text-muted); }
+
 /* Founder Visual Readability Pass V1 — shared semantic contrast for all five primary pages. */
 .sino-app :is(h1, h2, h3, h4, strong) { color: var(--text-primary); }
 .sino-app :is(p, li, dd) { color: var(--text-secondary); }
@@ -1238,3 +1354,14 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-capability-candidates article div { display: grid; gap: 4px; }
 .sino-capability-candidates article span, .sino-workspace-row__identity small { color: var(--text-muted); font-size: var(--font-label); }
 @media (max-width: 820px) { .sino-capability-timeline { grid-template-columns: repeat(4, minmax(0, 1fr)); } .sino-capability-lifecycle-card__identity div, .sino-capability-test-result dl div { grid-template-columns: 1fr; gap: 3px; } }
+.sino-project-maturity{margin:0 24px 12px;padding:12px 0;border:0;border-bottom:1px solid var(--border-default);background:transparent}
+.sino-project-maturity>header span,.sino-founder-input-required>span,.sino-outcome-review>span{color:var(--text-label);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.sino-project-maturity h2,.sino-project-maturity h3{margin:5px 0 10px;color:var(--text-primary)}
+.sino-project-maturity p,.sino-project-maturity dd{color:var(--text-secondary);line-height:1.6}
+.sino-project-maturity article,.sino-founder-input-required,.sino-outcome-review>article{margin-top:14px;padding-top:14px;border-top:1px solid var(--border-default)}
+.sino-founder-input-required dl,.sino-outcome-review dl{display:grid;gap:10px;margin:12px 0}
+.sino-founder-input-required dt,.sino-outcome-review dt{color:var(--text-label);font-size:11px;text-transform:uppercase}
+.sino-founder-input-required dd,.sino-outcome-review dd{margin:3px 0 0}
+.sino-outcome-review>article{display:grid;gap:6px}.sino-outcome-review>article small{color:var(--accent)}
+.sino-outcome-review footer{display:flex;gap:10px;margin-top:18px}.sino-outcome-review footer button{min-height:36px;padding:0 14px}
+.sino-outcome-review footer button.is-primary{border-color:var(--accent);background:var(--accent);color:#071007;font-weight:650;opacity:1;cursor:pointer}.sino-outcome-review footer button:disabled{opacity:.35;cursor:default}.sino-implementation-plan .sino-outcome-review>article>div{margin-top:12px;padding-top:12px;border-top:1px solid var(--border-default)}

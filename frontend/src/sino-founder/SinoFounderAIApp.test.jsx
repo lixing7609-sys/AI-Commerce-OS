@@ -270,7 +270,7 @@ describe("Sino Founder AI interaction responsibilities", () => {
     getConversationWorkspace.mockImplementation((id) => Promise.resolve(id === "conv-scoped" ? scoped : unscoped));
     render(<SinoFounderAIApp />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "AI Commerce OS" }));
+    fireEvent.click(await screen.findByTitle("Founder system"));
     const projectWorkspace = await screen.findByRole("region", { name: "项目工作区" });
     expect(screen.queryByRole("heading", { name: "今天想讨论什么？" })).toBeNull();
     expect(screen.queryByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……")).toBeNull();
@@ -360,6 +360,20 @@ describe("Sino Founder AI interaction responsibilities", () => {
     await waitFor(() => expect(createFounderConversation).toHaveBeenCalledWith("新讨论", "project-ai-commerce-os"));
     expect(await screen.findByText("继续讨论 Project Intelligence 的 Prompt 升级规则")).toBeTruthy();
     expect(await within(screen.getByLabelText("当前上下文")).findByRole("region", { name: "实现工作区" })).toBeTruthy();
+  });
+
+  it("continues the current Project Conversation instead of creating a Brain-step Conversation", async () => {
+    getFounderConversations.mockResolvedValue([{ id: "conv-project-current", project_id: "project-ai-commerce-os", title: "Project Definition", updated_at: new Date().toISOString() }]);
+    discussWithSino.mockResolvedValue({ ...emptySnapshot, conversation: { id: "conv-project-current", project_id: "project-ai-commerce-os", title: "Project Definition", state: "active" }, messages: [{ message_id: "m-project", role: "founder", content: "下一步怎么做？" }] });
+    render(<SinoFounderAIApp />);
+
+    fireEvent.click(await screen.findByTitle("Founder system"));
+    const input = await screen.findByPlaceholderText("继续和 Sino 讨论 AI Commerce OS……");
+    fireEvent.change(input, { target: { value: "下一步怎么做？" } });
+    fireEvent.click(within(input.closest("form")).getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(discussWithSino).toHaveBeenCalledWith("conv-project-current", "下一步怎么做？"));
+    expect(createFounderConversation).not.toHaveBeenCalled();
   });
 
   it("restores a selected historical Conversation without creating one", async () => {

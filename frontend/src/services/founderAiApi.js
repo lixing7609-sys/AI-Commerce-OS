@@ -54,6 +54,15 @@ export function getProjectIntelligence(projectId) {
   return request(`/founder-ai/projects/${encodeURIComponent(projectId)}/intelligence`, undefined, "获取项目智能失败");
 }
 
+export function getFounderDrafts(projectId) {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  return request(`/founder-ai/drafts${query}`, undefined, "获取草案中心失败");
+}
+
+export function getFounderDraft(draftId) {
+  return request(`/founder-ai/drafts/${encodeURIComponent(draftId)}`, undefined, "获取草案详情失败");
+}
+
 export function getConversationWorkspace(conversationId) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/workspace`, undefined, "恢复 Sino 讨论失败");
 }
@@ -94,6 +103,38 @@ export function confirmSinoBrainGoal(conversationId) {
 
 export function forceSinoBrainGoalReview(conversationId) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/goal/force-review`, { method: "POST" }, "进入目标确认失败");
+}
+
+export function reviewConstitutionUnderstanding(conversationId, action) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/constitution/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "审核 Constitution Understanding 失败");
+}
+
+export function reviewProjectOutcome(conversationId, action) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/project-outcome/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "审核 Project Planning 成果失败");
+}
+
+export function reviewImplementationPlan(conversationId, action) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/implementation-plan/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "审核实施方案失败");
+}
+
+export function continueProjectPlanningAnalysis(conversationId) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/project-planning/continue`, { method: "POST" }, "继续自主分析失败");
+}
+
+export function reviewConstitutionWorkItem(conversationId, workItemId, decision) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/constitution/work-items/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ work_item_id: workItemId, decision }) }, "记录建议工作项决定失败");
+}
+
+export function understandConstitutionWorkItem(conversationId, workItemId) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/constitution/work-items/understand`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ work_item_id: workItemId }) }, "理解建议工作项失败");
+}
+
+export function reviewConstitutionWorkItemRouting(conversationId, workItemId, decision) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/constitution/work-items/routing/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ work_item_id: workItemId, decision }) }, "审核 Sino Routing Recommendation 失败");
+}
+
+export function confirmFormalObjectProposal(conversationId, workItemId) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/constitution/work-items/formal-object/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ work_item_id: workItemId }) }, "创建 System Project 失败");
 }
 
 export function startSinoBrainStrategy(conversationId, models) {

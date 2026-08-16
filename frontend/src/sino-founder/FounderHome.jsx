@@ -63,23 +63,35 @@ export function ProjectIntelligenceContext({ intelligence, onNavigate, onOpenCon
     previousRef.current = next;
     return undefined;
   }, [intelligence]);
-  const empty = !intelligence;
-  const latestDecisions = (intelligence?.decisions || []).filter((item) => item.confirmed).slice(0, 5);
-  const pendingQuestions = (intelligence?.pending_questions || []).slice(0, 5);
-  const activeGoals = [...(intelligence?.active_goals || []), ...(intelligence?.candidate_goals || [])].filter((item, index, items) => items.findIndex((candidate) => candidate.goal_id === item.goal_id) === index).slice(0, 5);
-  const promptDelta = intelligence?.prompt_delta || {};
+  const constitution = intelligence?.constitution;
+  const initialContext = intelligence?.initial_project_context;
+  const confirmed = constitution?.status === "confirmed";
+  const statusLabel = confirmed ? "Confirmed" : "Founder Review";
+  const recognitionLabel = confirmed ? "已确认" : "已识别 · 待确认";
+  const pendingQuestions = intelligence?.pending_questions || [];
   return <section className="sino-project-context" aria-label="当前项目智能">
-    <header><span className="sino-kicker">项目上下文</span><small>当前项目</small><strong>{intelligence?.project_name || "未选择"}</strong></header>
-    <article><span>项目摘要</span><p>{intelligence?.project_summary || "—"}</p></article>
-    <article><span>当前定位</span><p>{intelligence?.current_positioning || "—"}</p></article>
-    <article><span>动态提示词</span>{empty ? <strong>—</strong> : <><strong>v{intelligence.prompt_version || 1}</strong><small>最近变更：新增 {promptDelta.added?.length || 0} · 修订 {promptDelta.revised?.length || 0}</small><button type="button" onClick={() => onNavigate("assets")}>查看 Prompt</button></>}</article>
-    <article className={changed.includes("decisions") ? "is-intelligence-updated" : ""}><span>正式决策</span>{latestDecisions.length ? <ul>{latestDecisions.map((item) => <li key={item.decision_id}>{item.title}</li>)}</ul> : <small>—</small>}</article>
-    <article className={changed.includes("knowledge") ? "is-intelligence-updated" : ""}><span>项目知识</span>{intelligence?.knowledge?.length ? <ul>{intelligence.knowledge.slice(0, 5).map((item, index) => <li key={item.memory_id || `knowledge-${index}`}>{item.title || item.content || String(item)}</li>)}</ul> : <small>—</small>}</article>
-    <article><span>项目约束</span>{intelligence?.constraints?.length ? <ul>{intelligence.constraints.slice(0, 5).map((item, index) => <li key={item.constraint_id || `constraint-${index}`}>{item.title || item.content || String(item)}</li>)}</ul> : <small>—</small>}</article>
-    <article><span>项目术语</span>{intelligence?.terminology?.length ? <ul>{intelligence.terminology.slice(0, 5).map((item, index) => <li key={item.term_id || `term-${index}`}>{item.term || item.title || item.content || String(item)}</li>)}</ul> : <small>—</small>}</article>
-    <article className={changed.includes("questions") ? "is-intelligence-updated" : ""}><span>待确认问题</span>{pendingQuestions.length ? <ul>{pendingQuestions.map((item) => <li key={item.question_id}><button type="button" onClick={() => onOpenConversation(item.conversation_id)}>{item.content}</button></li>)}</ul> : <small>—</small>}</article>
-    <article className={changed.includes("goals") ? "is-intelligence-updated" : ""}><span>项目目标</span>{activeGoals.length ? <ul>{activeGoals.map((item) => <li key={item.goal_id}><button type="button" onClick={() => item.conversation_id ? onOpenConversation(item.conversation_id) : onNavigate("reasoning")}>{item.title}<small>{item.status}</small></button></li>)}</ul> : <small>—</small>}</article>
-    <footer><span>最近更新</span><time>{intelligence?.updated_at ? formatTime(intelligence.updated_at) : "—"}</time></footer>
+    <header><span className="sino-kicker">Project Intelligence</span><small>当前项目</small><strong>{intelligence?.project_name || "未选择"}</strong></header>
+    <article><span>Project Summary</span><p>{intelligence?.project_summary || "—"}</p></article>
+    {initialContext ? <>
+      <article><span>Project Name</span><strong>{intelligence.project_name}</strong></article>
+      <article><span>Parent</span><strong>{initialContext.parent_project_name || "—"}</strong></article>
+      <article><span>Architecture Role</span><strong>{initialContext.architecture_role || "—"}</strong></article>
+      <article><span>Initial Positioning</span><p>{initialContext.initial_positioning || "—"}</p></article>
+      <article><span>Initial Scope</span>{initialContext.initial_scope?.length ? <ul>{initialContext.initial_scope.map((item) => <li key={item}>{item}</li>)}</ul> : <small>—</small>}</article>
+      <article><span>Inherited Constitution</span><strong>{initialContext.inherited_constitution?.title || "—"}</strong><small>Context Status · {initialContext.inherited_constitution?.status === "confirmed" ? "Inherited / Active" : "—"}</small></article>
+      <article className="sino-project-constitution"><span>Source</span><strong>{initialContext.source_conversation_title || "AI Commerce OS Constitution V1"}</strong>{initialContext.source_conversation_id ? <button type="button" onClick={() => onOpenConversation(initialContext.source_conversation_id)}>查看原文</button> : null}</article>
+    </> : null}
+    {constitution ? <>
+      <article className="sino-project-constitution"><span>Constitution</span><strong>V{constitution.version} · {statusLabel}</strong><button type="button" onClick={() => onOpenConversation(constitution.source_conversation_id)}>查看原文</button></article>
+      <article><span>System Architecture</span><dl><div><dt>Foundation Layer</dt><dd>{constitution.foundation_layer_count}</dd></div><div><dt>Application Layer</dt><dd>{constitution.application_layer_count}</dd></div><div><dt>System Objects</dt><dd>{constitution.system_objects_count} · {recognitionLabel}</dd></div></dl></article>
+      <article><span>Capability Lifecycle</span><strong>{constitution.capability_lifecycle_status === "confirmed" ? "已确认" : "已识别"}</strong></article>
+      <article><span>Capability Rules</span><strong>{constitution.capability_rules_count} 条</strong></article>
+      <article><span>Founder Boundary</span><strong>{constitution.founder_boundary_status === "confirmed" ? "已确认" : "已识别"}</strong></article>
+      <article><span>Sino Boundary</span><strong>{constitution.sino_boundary_status === "confirmed" ? "已确认" : "已识别"}</strong></article>
+      <article><span>Proposed Work Items</span><strong>{constitution.proposed_work_items_count}</strong><small>Founder Decisions · {constitution.founder_decisions_count} / {constitution.proposed_work_items_count}</small></article>
+    </> : <article><span>Constitution</span><small>尚未形成结构化 Constitution Understanding</small></article>}
+    <article className={changed.includes("questions") ? "is-intelligence-updated" : ""}><span>待确认问题</span><strong>{pendingQuestions.length}</strong></article>
+    <footer><span>最近更新</span><time>{constitution?.updated_at || intelligence?.updated_at ? formatTime(constitution?.updated_at || intelligence.updated_at) : "—"}</time></footer>
     {intelligence?.developer_debug && <details className="sino-intelligence-debug"><summary>Developer Debug</summary><pre>{JSON.stringify(intelligence.developer_debug, null, 2)}</pre></details>}
   </section>;
 }
@@ -125,11 +137,12 @@ export function ConversationIntelligenceContext({ intelligence }) {
   </section>;
 }
 
-export function ProjectWorkspace({ intelligence, loading, error, onOpenConversation, message, onMessage, onSend, busy, healthy, mode, onModeChange }) {
+export function ProjectWorkspace({ intelligence, drafts = [], loading, error, onOpenConversation, onOpenDraft, message, onMessage, onSend, busy, healthy, mode, onModeChange }) {
   if (!intelligence) return <section className="sino-project-workspace" aria-label="项目工作区"><p className="sino-project-workspace__state" role="status">{loading ? "正在加载项目…" : error || "项目暂时不可用"}</p></section>;
   const conversations = [...(intelligence.conversation_refs || [])].sort((left, right) => new Date(right.updated_at || 0) - new Date(left.updated_at || 0));
   return <section className="sino-project-workspace" aria-label="项目工作区">
     <header><h1>{intelligence.project_name}</h1><span>项目讨论</span></header>
+    {drafts.length ? <section className="sino-project-drafts" aria-label="项目草案"><header><strong>Drafts</strong><span>{drafts.length}</span></header>{drafts.map((draft) => <button type="button" key={draft.draft_id} onClick={() => onOpenDraft?.(draft)}><strong>{draft.title}</strong><span>{draft.status === "refining" ? "完善中" : draft.status === "confirmed" ? `已确认${draft.implementation?.execution_package?.preflight_status === "ready" ? " · 执行准备完成" : draft.implementation?.execution_package ? ` · Preflight ${draft.implementation.execution_package.preflight_status}` : draft.implementation?.execution_approval === "approved" ? " · 实施方案已批准" : draft.implementation ? " · 实施方案待批准" : ""}` : draft.status}</span></button>)}</section> : null}
     <div className="sino-project-conversations" role="region" aria-label={`${intelligence.project_name} 项目会话`}>
       {conversations.length ? conversations.map((item) => <button type="button" className="sino-project-conversation-row" key={item.conversation_id} onClick={() => onOpenConversation(item.conversation_id)}>
         <strong>{item.title || "新讨论"}</strong>
