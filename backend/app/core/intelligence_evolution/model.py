@@ -21,3 +21,15 @@ class CapabilityVersionDB(Base):
     content: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+
+class EvolutionFeedbackDB(Base):
+    __tablename__ = "intelligence_evolution_feedback"
+
+    id: Mapped[str] = mapped_column(String(48), primary_key=True, default=lambda: f"feedback-{uuid4().hex[:20]}")
+    capability_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    capability_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_system: Mapped[str] = mapped_column(String(80), nullable=False)
+    metrics: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    context: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"), index=True)

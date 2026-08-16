@@ -33,7 +33,7 @@ from app.core.reference.model import IntelligenceReferenceDB
 from app.core.asset_lifecycle.model import AssetCatalogDB, AssetLearningDB
 from app.core.product_visibility.model import FounderProductVisibilityDB
 from app.core.draft.model import FounderDraftDB
-from app.core.intelligence_evolution.model import CapabilityVersionDB
+from app.core.intelligence_evolution.model import CapabilityVersionDB, EvolutionFeedbackDB
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
 from app.core.council.model import CouncilModelRunDB, CouncilRunDB
 from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
