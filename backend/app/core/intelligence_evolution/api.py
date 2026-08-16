@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database.db import SessionLocal
@@ -8,8 +9,8 @@ from .auth import require_roles
 from .evaluation import apply_evaluation, evaluate_upgrade
 from .evolution_engine import create_upgrade_request
 from .feedback_pipeline import build_learning_signal, receive_feedback
-from .model import UpgradeRequestDB
-from .version_repository import list_versions
+from .model import CapabilityVersionDB, UpgradeRequestDB
+from .version_repository import list_versions, register_version, transition_version
 
 
 router = APIRouter(tags=["Intelligence Evolution"])
@@ -32,6 +33,7 @@ class FeedbackIn(BaseModel):
 class UpgradeRequestIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     thresholds: dict[str, float] = Field(default_factory=dict)
+    target_version: str = Field(min_length=1, max_length=40)
 
 
 class FounderDecisionIn(BaseModel):
@@ -65,6 +67,14 @@ def request_upgrade(capability_id: str, request: UpgradeRequestIn, _claims=Depen
     record = create_upgrade_request(session, signal=signal, thresholds=request.thresholds)
     if record is None:
         raise HTTPException(status_code=409, detail="Learning signal does not justify an upgrade")
+    current = session.scalar(select(CapabilityVersionDB).where(CapabilityVersionDB.capability_id == capability_id, CapabilityVersionDB.version == signal.get("capability_version")))
+    if current is None:
+        raise HTTPException(status_code=409, detail="Source capability version is not registered")
+    if session.scalar(select(CapabilityVersionDB).where(CapabilityVersionDB.capability_id == capability_id, CapabilityVersionDB.version == request.target_version)):
+        raise HTTPException(status_code=409, detail="Target capability version already exists")
+    transition_version(current, "learning")
+    transition_version(current, "version_evolution")
+    record.proposal = {**record.proposal, "target_version": request.target_version}
     session.commit()
     return serialize_upgrade(record)
 
@@ -85,5 +95,12 @@ def decide_upgrade(request_id: str, request: FounderDecisionIn, claims=Depends(r
     report = record.evaluation_report or evaluate_upgrade(metrics={"stability": 1, "compatibility": 1}, risk_level="high")
     apply_evaluation(record, report, founder_decision=request.decision, actor=claims.get("sub"))
     record.founder_decision = {**record.founder_decision, "rationale": request.rationale}
+    if request.decision == "approved":
+        current = session.scalar(select(CapabilityVersionDB).where(CapabilityVersionDB.capability_id == record.capability_id, CapabilityVersionDB.version == record.source_version))
+        if current is None or current.status != "version_evolution":
+            raise HTTPException(status_code=409, detail="Source version is not ready for approved migration")
+        target = register_version(session, capability_id=record.capability_id, version=record.proposal["target_version"], change_log=record.proposal.get("reason", ""), dependencies=current.dependencies, compatibility=current.compatibility, content=current.content)
+        transition_version(current, "deprecated", founder_approved=True)
+        target.status = "ready"
     session.commit()
     return serialize_upgrade(record)

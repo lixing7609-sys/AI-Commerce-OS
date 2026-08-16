@@ -55,7 +55,7 @@ def build_learning_signal(session, capability_id: str, capability_version: str |
             values.setdefault(name, []).append(float(value))
     return {
         "capability_id": capability_id,
-        "capability_version": capability_version,
+        "capability_version": capability_version or (next(iter({record.capability_version for record in feedback})) if len({record.capability_version for record in feedback}) == 1 else None),
         "sample_count": len(feedback),
         "metrics": {
             name: {"mean": sum(samples) / len(samples), "p50": _percentile(samples, 0.50), "p95": _percentile(samples, 0.95)}

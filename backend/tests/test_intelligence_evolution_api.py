@@ -50,8 +50,12 @@ def test_api_auth_roles_and_four_endpoints(monkeypatch):
         response = client.post("/api/v1/feedback", headers=runtime, json={"capability_id": "cap-a", "capability_version": "1.0.0", "source_system": "operator", "metrics": {"performance_ms": performance, "stability": 0.9}})
         assert response.status_code == 201
     assert client.get("/api/v1/capabilities/cap-a/versions", headers=founder).json()[0]["version"] == "1.0.0"
-    created = client.post("/api/v1/capabilities/cap-a/upgrade-request", headers=runtime, json={}).json()
+    upgrade_response = client.post("/api/v1/capabilities/cap-a/upgrade-request", headers=runtime, json={"target_version": "1.1.0"})
+    assert upgrade_response.status_code == 201, upgrade_response.json()
+    created = upgrade_response.json()
     request_id = created["upgrade_request_id"]
     assert client.get(f"/api/v1/upgrade-requests/{request_id}", headers=runtime).json()["status"] == "pending_review"
     assert client.post(f"/api/v1/upgrade-requests/{request_id}/decision", headers=runtime, json={"decision": "approved"}).status_code == 403
     assert client.post(f"/api/v1/upgrade-requests/{request_id}/decision", headers=founder, json={"decision": "approved"}).json()["status"] == "approved"
+    versions = client.get("/api/v1/capabilities/cap-a/versions", headers=founder).json()
+    assert {item["version"]: item["status"] for item in versions} == {"1.0.0": "deprecated", "1.1.0": "ready"}
