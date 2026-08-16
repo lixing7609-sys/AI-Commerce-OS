@@ -1,0 +1,23 @@
+from datetime import datetime
+from uuid import uuid4
+
+from sqlalchemy import DateTime, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.database.base import Base
+
+
+class CapabilityVersionDB(Base):
+    __tablename__ = "intelligence_evolution_versions"
+    __table_args__ = (UniqueConstraint("capability_id", "version", name="uq_evolution_capability_version"),)
+
+    id: Mapped[str] = mapped_column(String(48), primary_key=True, default=lambda: f"version-{uuid4().hex[:20]}")
+    capability_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    version: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="ready", server_default="ready", index=True)
+    change_log: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    compatibility: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    dependencies: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    content: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
