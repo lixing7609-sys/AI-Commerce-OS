@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
 from app.core.asset_lifecycle.model import AssetCatalogDB
+from app.core.product_visibility.service import is_product_hidden
 from app.core.asset_lifecycle.service import LifecycleConflict, capability_available_actions, perform_capability_action, suggest_reuse, upsert_catalog_record
 from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
@@ -799,6 +800,11 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             "source_message_refs": list(record.source_message_refs or []), "created_at": _iso(record.created_at), "updated_at": _iso(record.updated_at),
         }
         package = payload["discussion_package"]
+        if package.get("package_id"):
+            with SessionLocal() as visibility_session:
+                if is_product_hidden(visibility_session, "discussion_package", package.get("package_id")):
+                    package = {}
+                    payload["discussion_package"] = package
         ids = [item.get("asset_id") for item in package.get("objects") or [] if item.get("asset_id")]
         if ids:
             try:

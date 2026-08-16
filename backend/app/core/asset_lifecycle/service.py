@@ -10,6 +10,7 @@ from app.core.asset_lifecycle.model import AssetCatalogDB, AssetLearningDB
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB
 from app.core.reference.model import IntelligenceReferenceDB
+from app.core.product_visibility.service import hidden_entity_ids
 from app.core.task_asset.service import create_task_asset
 from app.database.db import SessionLocal
 from app.founder_ai.execution_registry import create_execution_session, get_execution_session, list_execution_sessions
@@ -108,7 +109,8 @@ def upsert_catalog_record(session, *, asset_id: str, asset_type: str, native_typ
 
 def list_assets(asset_type: str | None = None, *, include_legacy: bool = True, domain_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
     with SessionLocal() as session:
-        query = select(AssetCatalogDB).where(AssetCatalogDB.status.notin_(["archived", "deprecated"]))
+        hidden_ids = hidden_entity_ids(session, "asset")
+        query = select(AssetCatalogDB).where(AssetCatalogDB.status.notin_(["archived", "deprecated"]), AssetCatalogDB.id.notin_(hidden_ids))
         if asset_type:
             query = query.where(AssetCatalogDB.asset_type == asset_type)
         elif not include_legacy:
@@ -123,7 +125,8 @@ def list_assets(asset_type: str | None = None, *, include_legacy: bool = True, d
 
 def list_domains() -> list[dict[str, Any]]:
     with SessionLocal() as session:
-        records = list(session.scalars(select(AssetCatalogDB).where(AssetCatalogDB.asset_type.in_(OFFICIAL_ASSET_TYPES))))
+        hidden_ids = hidden_entity_ids(session, "asset")
+        records = list(session.scalars(select(AssetCatalogDB).where(AssetCatalogDB.asset_type.in_(OFFICIAL_ASSET_TYPES), AssetCatalogDB.id.notin_(hidden_ids))))
         configured = {key: label for key, label in DEFAULT_DOMAINS}
         for record in records:
             configured.setdefault(record.domain_id or "general", record.domain_id or "通用")

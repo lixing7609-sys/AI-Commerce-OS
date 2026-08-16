@@ -10,6 +10,7 @@ from app.core.task_asset.model import TaskAssetDB
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB, SinoBrainSessionDB
 from app.core.council.model import CouncilModelRunDB, CouncilRunDB
 from app.core.project.service import get_project
+from app.core.product_visibility.service import hidden_entity_ids
 from app.database.db import SessionLocal
 from core.founder_intent.model import ConversationCandidateContextDB, FounderObjectCandidateDB
 from core.founder_object.model import ConversationObjectContextDB, FounderObjectDB, FounderObjectRevisionDB
@@ -45,10 +46,14 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
 
 def list_conversations() -> list[ConversationDB]:
     with SessionLocal() as session:
+        hidden_ids = hidden_entity_ids(session, "conversation")
         records = list(
             session.scalars(
                 select(ConversationDB)
-                .where(ConversationDB.system_id == FOUNDER_SYSTEM_KEY)
+                .where(
+                    ConversationDB.system_id == FOUNDER_SYSTEM_KEY,
+                    ConversationDB.id.notin_(hidden_ids),
+                )
                 .order_by(ConversationDB.updated_at.desc())
             )
         )

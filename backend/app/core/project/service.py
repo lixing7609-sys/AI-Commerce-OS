@@ -10,6 +10,7 @@ from app.core.asset_lifecycle.model import AssetCatalogDB
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import CandidateGoalDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
 from app.core.decision.model import DecisionAssetDB
+from app.core.product_visibility.service import hidden_entity_ids
 from app.database.db import SessionLocal
 
 FOUNDER_SYSTEM_KEY = "founder_ai"
@@ -114,14 +115,18 @@ def get_project_intelligence(project_id: str) -> dict:
         if project is None or project.system_id != FOUNDER_SYSTEM_KEY:
             raise LookupError("Founder project not found")
         intelligence = session.get(ProjectIntelligenceDB, project_id)
-        conversations = list(session.scalars(select(ConversationDB).where(ConversationDB.project_id == project_id, ConversationDB.system_id == FOUNDER_SYSTEM_KEY).order_by(ConversationDB.updated_at.desc())))
+        hidden_conversations = hidden_entity_ids(session, "conversation")
+        hidden_memories = hidden_entity_ids(session, "memory")
+        all_conversations = list(session.scalars(select(ConversationDB).where(ConversationDB.project_id == project_id, ConversationDB.system_id == FOUNDER_SYSTEM_KEY).order_by(ConversationDB.updated_at.desc())))
+        conversations = [item for item in all_conversations if item.id not in hidden_conversations]
         conversation_ids = [item.id for item in conversations]
+        all_conversation_ids = [item.id for item in all_conversations]
         decisions = list(session.scalars(select(DecisionAssetDB).where(DecisionAssetDB.conversation_id.in_(conversation_ids)).order_by(DecisionAssetDB.created_at.desc()))) if conversation_ids else []
         questions = list(session.scalars(select(PendingQuestionDB).where(PendingQuestionDB.conversation_id.in_(conversation_ids), PendingQuestionDB.status == "open").order_by(PendingQuestionDB.created_at.desc()))) if conversation_ids else []
         candidates = list(session.scalars(select(CandidateGoalDB).where(CandidateGoalDB.conversation_id.in_(conversation_ids), CandidateGoalDB.status == "candidate").order_by(CandidateGoalDB.created_at.desc()))) if conversation_ids else []
         goals = list(session.scalars(select(GoalAssetDB).where(GoalAssetDB.conversation_id.in_(conversation_ids)).order_by(GoalAssetDB.created_at.desc()))) if conversation_ids else []
         digests = list(session.scalars(select(SecretaryDigestDB).where(SecretaryDigestDB.conversation_id.in_(conversation_ids)).order_by(SecretaryDigestDB.updated_at.desc()))) if conversation_ids else []
-        memories = list(session.scalars(select(MemoryAssetDB).where(MemoryAssetDB.conversation_id.in_(conversation_ids)))) if conversation_ids else []
+        memories = list(session.scalars(select(MemoryAssetDB).where(MemoryAssetDB.conversation_id.in_(all_conversation_ids), MemoryAssetDB.id.notin_(hidden_memories)))) if all_conversation_ids else []
         artifacts = list(session.scalars(select(ArtifactAssetDB).where(ArtifactAssetDB.conversation_id.in_(conversation_ids)))) if conversation_ids else []
         from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions
         execution_refs = []

@@ -39,6 +39,7 @@ from app.core.task_asset.model import TaskAssetDB
 from app.core.artifact.model import ArtifactAssetDB
 from app.core.memory.model import MemoryAssetDB
 from app.core.asset_lifecycle.model import AssetCatalogDB, AssetLearningDB
+from app.core.product_visibility.model import FounderProductVisibilityDB
 from app.core.reference.model import IntelligenceReferenceDB
 from app.core.council.model import CouncilModelRunDB, CouncilRunDB
 from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
