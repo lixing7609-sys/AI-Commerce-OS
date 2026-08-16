@@ -33,3 +33,18 @@ class EvolutionFeedbackDB(Base):
     metrics: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
     context: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"), index=True)
+
+
+class UpgradeRequestDB(Base):
+    __tablename__ = "intelligence_evolution_upgrade_requests"
+
+    id: Mapped[str] = mapped_column(String(48), primary_key=True, default=lambda: f"upgrade-{uuid4().hex[:20]}")
+    capability_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    source_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending_review", server_default="pending_review", index=True)
+    learning_signal: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    proposal: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    evaluation_report: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    founder_decision: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
