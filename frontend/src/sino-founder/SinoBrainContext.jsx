@@ -42,11 +42,13 @@ function PackageOverview({ pkg }) {
 export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAction, capabilityAsset, selectedConstitutionWorkItemId, onReviewConstitutionWorkItem, onReviewConstitutionRouting, onConfirmFormalObject, onOpenProject, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal }) {
   if (!brain) return null;
   const brief = brain.goal_brief || {};
+  const quickFixRoute = brain.discovery?.task_complexity_route;
+  const isQuickFix = quickFixRoute?.classification === "QUICK_FIX";
   const decision = brain.decision || {};
   const understanding = brain.discovery?.working_understanding || {};
   const risk = decision.key_risks?.[0] || "暂无关键风险";
   const question = decision.remaining_unknowns?.[0] || brief.unknowns?.[0] || "暂无待确认问题";
-  const action = capabilityAction || brain.current_action || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "确认后开始 Strategy Meeting。", primary_label: "开始讨论", secondary_label: "修改目标" } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "确认后把讨论成果沉淀为候选能力。", primary_label: "批准候选能力", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
+  const action = isQuickFix ? null : capabilityAction || brain.current_action || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "确认后开始 Strategy Meeting。", primary_label: "开始讨论", secondary_label: "修改目标" } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "确认后把讨论成果沉淀为候选能力。", primary_label: "批准候选能力", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
   const constitution = brain.message_intent === "project_context_update" ? brain.constitution_understanding || {} : null;
   const workItems = constitution?.proposed_work_items || [];
   const reviewedWorkItems = workItems.filter((item) => item.founder_decision && item.founder_decision !== "pending").length;
@@ -62,9 +64,11 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
   const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
   return <section className="sino-brain-context sino-brain-dashboard" aria-label="Brain Dashboard">
-    {!projectAware ? <FounderActionCard compact action={action} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} /> : null}
-    <header><h2>{constitution ? "Constitution Review Status" : "Brain Dashboard"}</h2><span>{projectLifecycle?.rank >= 300 ? projectLifecycle.stage_label : STAGE_LABELS[brain.stage] || brain.stage}</span></header>
-    {constitution ? <dl className="sino-brain-dashboard__grid">
+    {!projectAware && !isQuickFix ? <FounderActionCard compact action={action} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} /> : null}
+    <header><h2>{constitution ? "Constitution Review Status" : "Brain Dashboard"}</h2><span>{isQuickFix ? "Quick Fix" : projectLifecycle?.rank >= 300 ? projectLifecycle.stage_label : STAGE_LABELS[brain.stage] || brain.stage}</span></header>
+    {isQuickFix ? <dl className="sino-brain-dashboard__grid">
+      <div><dt>Task Type</dt><dd>Quick Fix</dd></div><div><dt>Target</dt><dd>{quickFixRoute.quick_fix_contract?.target_area}</dd></div><div><dt>Current Step</dt><dd>Inspect / Fix / Verify</dd></div><div><dt>Founder Decision</dt><dd>Not Required</dd></div><div><dt>Next Action</dt><dd>Sino 自动执行</dd></div>
+    </dl> : constitution ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Understanding Status</dt><dd>{constitution.status === "founder_approved" ? "Confirmed" : constitution.status === "revision_requested" ? "继续讨论" : "Founder Review"}</dd></div>
       <div><dt>System Objects</dt><dd>{constitution.system_objects?.length || 0}</dd></div>
       <div><dt>Proposed Work Items</dt><dd>{workItems.length}</dd></div>
@@ -138,8 +142,8 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
         </section> : null}
       </section> : null}
     </section> : null}
-    {brain.stage === "goal_discovery" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onForceReview}>目标已经够清楚，开始讨论</button> : null}
-    {brain.stage === "goal_confirmed" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onStartStrategy}>开始策略会议</button> : null}
+    {!isQuickFix && brain.stage === "goal_discovery" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onForceReview}>目标已经够清楚，开始讨论</button> : null}
+    {!isQuickFix && brain.stage === "goal_confirmed" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onStartStrategy}>开始策略会议</button> : null}
     <PackageOverview pkg={brain.discussion_package} />
     {brain.discussion_package?.asset_commit ? <section className="sino-asset-commit-dashboard" aria-label="Candidate Commit Status"><h3>Candidate Commit Status</h3>{brain.discussion_package.asset_commit.items?.map((item) => <div key={item.asset_id}><span>{TYPE_LABELS[item.object_type] || item.object_type}</span><strong>{item.name}</strong><b>{item.lifecycle_status === "ready" ? "Ready" : "Candidate"}</b></div>)}</section> : null}
     {brain.strategy_proposals?.length || brain.discussion_package?.lifecycle?.length ? <details className="sino-brain-evidence"><summary>Developer Timeline · 查看讨论依据</summary>{brain.strategy_proposals?.map((item) => <article key={item.model_run_id || `${item.provider}-${item.model}`}><strong>{item.model} · {item.provider}</strong><p>{item.proposal?.core_judgment || item.proposal?.recommendation || "已记录结构化提案"}</p></article>)}{brain.discussion_package?.lifecycle?.map((item, index) => <article key={`${item.status}-${index}`}><strong>{item.status}</strong><p>{item.at}</p></article>)}</details> : null}

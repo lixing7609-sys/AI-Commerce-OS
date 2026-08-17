@@ -88,6 +88,22 @@ describe("Founder sidebar information architecture", () => {
     expect(items[1].style.marginLeft).toBe("14px");
   });
 
+  it("collapses and expands only the selected parent project subtree", async () => {
+    const projects = [{ id: "commerce", name: "AI Commerce OS" }, { id: "intel", name: "Intelligence Evolution Layer", parent_project_id: "commerce" }, { id: "cloud", name: "AI Commerce OS Cloud", parent_project_id: "commerce" }, { id: "operator", name: "Sino Operator AI" }];
+    render(<SecretarySidebar conversations={[]} projects={projects} activeProjectId="commerce" onSelectProject={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("Intelligence Evolution Layer")).toBeTruthy());
+    const parent = screen.getByRole("button", { name: /AI Commerce OS/ });
+    expect(parent.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(parent);
+    expect(screen.queryByText("Intelligence Evolution Layer")).toBeNull();
+    expect(screen.queryByText("AI Commerce OS Cloud")).toBeNull();
+    expect(screen.getByText("Sino Operator AI")).toBeTruthy();
+    fireEvent.click(parent);
+    expect(screen.getByText("Intelligence Evolution Layer")).toBeTruthy();
+    expect(screen.getByText("AI Commerce OS Cloud")).toBeTruthy();
+    expect(screen.getByText("Sino Operator AI")).toBeTruthy();
+  });
+
   it("creates, renames, expands and moves Conversations through the Project workspace", async () => {
     createFounderProject.mockResolvedValue({ id: "project-commerce", name: "AI电商", status: "active", updated_at: new Date().toISOString() });
     updateFounderProject.mockResolvedValue({ id: "project-commerce", name: "AI电商系统", status: "active" });

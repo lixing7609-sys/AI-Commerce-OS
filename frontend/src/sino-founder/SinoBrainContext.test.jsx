@@ -4,6 +4,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SinoBrainContext } from "./SinoBrainContext.jsx";
 
 describe("SinoBrainContext", () => {
+  it("projects Quick Fix without Goal confirmation or Strategy actions", () => {
+    render(<SinoBrainContext brain={{ stage: "goal_review", discovery: { task_complexity_route: { classification: "QUICK_FIX", founder_gate_required: false, quick_fix_contract: { target_area: "Left Sidebar / AI Commerce OS Project Tree" } } } }} />);
+    expect(screen.getAllByText("Quick Fix")).toHaveLength(2);
+    expect(screen.getByText("Left Sidebar / AI Commerce OS Project Tree")).toBeTruthy();
+    expect(screen.getByText("Not Required")).toBeTruthy();
+    expect(screen.getByText("Sino 自动执行")).toBeTruthy();
+    expect(screen.queryByText("确认后开始 Strategy Meeting。")).toBeNull();
+    expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "修改目标" })).toBeNull();
+  });
   it("projects a short system-project instruction as Project Planning without a Goal", () => {
     const { container } = render(<SinoBrainContext brain={{ project_id: "project-child", stage: "project_planning", goal_brief: {}, current_action: { action_id: "continue_project_planning", title: "Project Planning", description: "Sino 正在基于继承的 Project Context 判断关键缺口与下一步。", primary_label: "继续讨论" }, discovery: { project_aware: true, current_project: { project_id: "project-child", project_name: "Intelligence Evolution Layer" }, discussion_maturity: { maturity_status: "continue_analysis", reason: "现有 Context 足够继续分析。", autonomous_next_analysis: "Sino 将继续基于已有 Context 完成下一轮实质分析", outcomes: [{ outcome_id: "draft" }] } } }} />);
     expect(screen.getAllByText("Project Planning · 项目规划").length).toBeGreaterThan(0);
