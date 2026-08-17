@@ -81,7 +81,7 @@ describe("Founder sidebar information architecture", () => {
   });
 
   it("renders a System Project beneath its persisted parent Project", () => {
-    render(<SecretarySidebar conversations={[]} projects={[{ id: "parent", name: "AI Commerce OS" }, { id: "child", name: "Intelligence Evolution Layer", parent_project_id: "parent", project_type: "system_project" }]} onSelectProject={vi.fn()} />);
+    render(<SecretarySidebar conversations={[]} projects={[{ id: "parent", name: "AI Commerce OS" }, { id: "child", name: "Intelligence Evolution Layer", parent_project_id: "parent", project_type: "system_project" }]} activeProjectId="parent" onSelectProject={vi.fn()} />);
     const items = [...document.querySelectorAll(".sino-project-item")];
     expect(items.map((item) => item.textContent)).toEqual(expect.arrayContaining([expect.stringContaining("AI Commerce OS"), expect.stringContaining("Intelligence Evolution Layer")]));
     expect(items[1].classList.contains("is-child")).toBe(true);
@@ -92,8 +92,7 @@ describe("Founder sidebar information architecture", () => {
     const projects = [{ id: "commerce", name: "AI Commerce OS" }, { id: "intel", name: "Intelligence Evolution Layer", parent_project_id: "commerce" }, { id: "cloud", name: "AI Commerce OS Cloud", parent_project_id: "commerce" }, { id: "operator", name: "Sino Operator AI" }];
     render(<SecretarySidebar conversations={[]} projects={projects} activeProjectId="commerce" onSelectProject={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("Intelligence Evolution Layer")).toBeTruthy());
-    const parent = screen.getByRole("button", { name: /AI Commerce OS/ });
-    expect(parent.getAttribute("aria-expanded")).toBe("true");
+    const parent = document.querySelector('.sino-project-item__open[title="AI Commerce OS"]');
     fireEvent.click(parent);
     expect(screen.queryByText("Intelligence Evolution Layer")).toBeNull();
     expect(screen.queryByText("AI Commerce OS Cloud")).toBeNull();

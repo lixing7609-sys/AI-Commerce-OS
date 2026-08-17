@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { businessAssetName, isDeveloperRecord } from "./assetPresentation.js";
 import { bindFounderConversationProject, createFounderProject, deleteFounderProject, updateFounderProject } from "../services/founderAiApi.js";
 
@@ -70,15 +70,11 @@ export function SecretarySidebar({ active, onNavigate, conversations = [], activ
     const parentId = project.parent_project_id && validProjectIds.has(project.parent_project_id) ? project.parent_project_id : null;
     childrenByParent.set(parentId, [...(childrenByParent.get(parentId) || []), project]);
   });
-  useEffect(() => {
-    const parentIds = projects.filter((project) => projects.some((candidate) => candidate.parent_project_id === project.id)).map((project) => project.id);
-    setExpandedProjects((current) => ({ ...Object.fromEntries(parentIds.filter((id) => !Object.hasOwn(current, id)).map((id) => [id, true])), ...current }));
-  }, [projects]);
   const orderedProjects = [];
   const appendProject = (project, depth = 0) => {
     orderedProjects.push({ project, depth });
     const children = childrenByParent.get(project.id) || [];
-    const expanded = expandedProjects[project.id] ?? children.length > 0;
+    const expanded = expandedProjects[project.id] ?? project.id === activeProjectId;
     if (expanded) children.forEach((child) => appendProject(child, depth + 1));
   };
   (childrenByParent.get(null) || []).forEach((project) => appendProject(project));
