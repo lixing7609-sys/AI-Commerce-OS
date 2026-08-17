@@ -17,9 +17,16 @@ def route_task_complexity(text: str, *, image_understanding: str | dict | None =
     quick = re.search(r"折叠|滚动|去掉|删除|移除|REMOVE_UI_ELEMENT|按钮.*(?:点不了|无效)|卡片错位|文案错误|状态展示|返回定位|样式|局部.*(?:ui|页面)|sidebar|scroll|click|layout", combined, re.I)
     clarification_required = bool(grounded.get("clarification_required")) or bool(image_context_status == "unavailable" and not quick and len(text.strip()) <= 12)
     classification = FOUNDER_GATE_TASK if gate else STRATEGIC_TASK if strategic else QUICK_FIX if quick or grounded or clarification_required else STANDARD_TASK
+    capability_build = bool(re.search(r"(?:创建|构建|build|create).*(?:image generation|图片生成|图像生成).*capability|(?:image generation|图片生成|图像生成).*capability", decision_text, re.I))
+    if capability_build and not gate:
+        classification = STANDARD_TASK
+        clarification_required = False
     result = {"classification": classification, "founder_gate_required": classification == FOUNDER_GATE_TASK,
               "strategy_meeting_required": classification == STRATEGIC_TASK, "architecture_proposal_required": classification == STRATEGIC_TASK,
               "clarification_required": clarification_required, "evidence": {"text": text, "image_understanding_used": bool(image_understanding), "image_context_status": image_context_status}}
+    if capability_build:
+        result["task_type"] = "CAPABILITY_BUILD_TASK"
+        result["required_capability_type"] = "image_generation"
     if classification == QUICK_FIX:
         target_area = "Left Sidebar / AI Commerce OS Project Tree" if re.search(r"左边栏|侧边栏|sidebar|AI Commerce OS.*折叠|折叠.*AI Commerce OS", combined, re.I) else "Founder UI area identified by message and screenshot"
         target_area = grounded.get("visual_location") or target_area

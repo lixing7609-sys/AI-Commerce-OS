@@ -9,14 +9,14 @@ from app.studio_ai import service
 
 
 def test_image_capability_lookup_does_not_treat_storyboard_as_image_generation(monkeypatch):
-    monkeypatch.setattr(service, "list_assets", lambda **_: [{"asset_id": "skill-storyboard", "name": "商品分镜生成 Skill", "purpose": "生成商品分镜", "content": {}, "status": "ready"}])
+    monkeypatch.setattr(service, "lookup_image_generation_compatibility", lambda: {"status": "CAPABILITY_MISSING", "selected": None, "related_but_incompatible": [{"asset_id": "skill-storyboard", "classification": "RELATED_BUT_INCOMPATIBLE"}]})
     result = service.lookup_image_capability()
     assert result["status"] == "capability_missing"
     assert result["temporary_binding"] is None
 
 
 def test_image_capability_lookup_accepts_only_explicit_ready_image_generation_asset(monkeypatch):
-    monkeypatch.setattr(service, "list_assets", lambda **_: [{"asset_id": "cap-image", "name": "商品主图生成", "purpose": "图片生成", "content": {}, "status": "ready"}])
+    monkeypatch.setattr(service, "lookup_image_generation_compatibility", lambda: {"status": "EXACT_REUSE", "selected": {"asset_id": "cap-image", "name": "商品主图生成", "status": "ready"}})
     result = service.lookup_image_capability()
     assert result["status"] == "available"
     assert result["capability"]["asset_id"] == "cap-image"
@@ -34,7 +34,7 @@ def test_model_lookup_uses_verified_image_generation_metadata(monkeypatch):
 
 
 def test_real_studio_conversation_is_isolated_and_stops_at_missing_capability(monkeypatch):
-    monkeypatch.setattr(service, "list_assets", lambda **_: [])
+    monkeypatch.setattr(service, "lookup_image_generation_compatibility", lambda: {"status": "CAPABILITY_MISSING", "selected": None, "related_but_incompatible": []})
     monkeypatch.setattr(service, "get_model_center", lambda: {"models": []})
     conversation_id = None
     try:

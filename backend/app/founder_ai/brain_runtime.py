@@ -3317,6 +3317,21 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         for item in objects: counts[item["object_type"]] = counts.get(item["object_type"], 0) + 1
         return counts
 
+    def attach_autonomous_main_loop(self, conversation_id: str, route: dict, loop: dict) -> dict:
+        """Project an already-dispatched autonomous lane into the current Brain."""
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {})
+            discovery["task_complexity_route"] = route
+            discovery["autonomous_main_loop"] = loop
+            state.discovery = discovery
+            state.stage = "autonomous_execution"
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit(); session.refresh(state)
+            return self._serialize(state)
+
     @staticmethod
     def _get(session, conversation_id):
         state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
@@ -3351,6 +3366,8 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         payload["stage_workspaces"] = SinoBrainRuntime._stage_workspaces(payload)
         payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] == "active"), "asset_commit" if record.stage == "conversation_completed" else "package")
         route = dict(payload["discovery"].get("task_complexity_route") or {})
+        if payload["discovery"].get("autonomous_main_loop"):
+            payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] in {"active", "blocked"}), "complete")
         if route.get("classification") == "QUICK_FIX":
             current_step = route.get("current_step") or ("issue" if route.get("clarification_required") else "inspect")
             current_index = ("issue", "inspect", "fix", "verify", "complete").index(current_step)
@@ -3365,6 +3382,15 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
     @staticmethod
     def _current_action(brain):
         route = dict((brain.get("discovery") or {}).get("task_complexity_route") or {})
+        autonomous = dict((brain.get("discovery") or {}).get("autonomous_main_loop") or {})
+        if autonomous:
+            status = autonomous.get("status")
+            if status == "founder_gate_required":
+                blocker = autonomous.get("capability_compatibility", {}).get("status")
+                return {"action_id": "image_model_probe_gate", "title": "Image Model Probe 需要授权边界", "description": f"Capability compatibility: {blocker}. Sino 已自动推进到真实模型 Probe；未执行未授权的外部生成调用。", "status_label": "Founder Gate Required", "primary_label": None}
+            if status == "technical_blocker":
+                return {"action_id": "capability_build_blocked", "title": "Capability Build Technical Blocker", "description": (autonomous.get("technical_blocker") or {}).get("reason"), "status_label": "Blocked", "primary_label": None}
+            return {"action_id": "capability_build_running", "title": "Sino 正在自动执行", "description": "Capability Gap → Model Probe → Capability Build → Validate → Studio Binding", "status_label": status, "primary_label": None}
         if route.get("classification") == "QUICK_FIX":
             if route.get("clarification_required"):
                 return {"action_id": "quick_fix_clarification", "title": "需要确认目标位置", "description": "截图标注不足以唯一定位目标；保持 Quick Fix，不进入 Strategy Meeting。", "primary_label": None}
@@ -3461,6 +3487,23 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
     @staticmethod
     def _stage_workspaces(brain):
         internal = brain.get("stage") or "goal_discovery"
+        autonomous = dict((brain.get("discovery") or {}).get("autonomous_main_loop") or {})
+        if autonomous:
+            progress = {item.get("stage"): item.get("status") for item in autonomous.get("progress") or []}
+            stages = (("capability_gap", "Capability Gap", "capability_compatibility"), ("model_probe", "Model Probe", "model_probe"), ("capability_build", "Capability Build", "codex_executor"), ("validate", "Validate", "validation"), ("studio_binding", "Studio Binding", "studio_binding"), ("complete", "Complete", "complete"))
+            blocked = autonomous.get("status") in {"founder_gate_required", "technical_blocker"}
+            active_seen = False
+            result = []
+            for key, label, source in stages:
+                source_status = progress.get(source)
+                if source_status in {"completed", "ready", "PASS"}:
+                    status = "completed"
+                elif not active_seen:
+                    status = "blocked" if blocked else "active"; active_seen = True
+                else:
+                    status = "pending"
+                result.append({"stage_key": key, "label": label, "status": status, "message_refs": list(brain.get("source_message_refs") or [])})
+            return result
         lifecycle = brain.get("project_lifecycle") or {}
         lifecycle_stage = lifecycle.get("lifecycle_stage")
         current = (

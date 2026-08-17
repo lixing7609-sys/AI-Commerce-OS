@@ -4,6 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SinoBrainContext } from "./SinoBrainContext.jsx";
 
 describe("SinoBrainContext", () => {
+  it("projects an auto-started capability build without Continue or Strategy", () => {
+    render(<SinoBrainContext brain={{ stage: "autonomous_execution", current_action: { action_id: "image_model_probe_gate", title: "Image Model Probe 需要授权边界", description: "已自动推进到 Probe。", primary_label: null }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", task_type: "CAPABILITY_BUILD_TASK" }, autonomous_main_loop: { task_type: "CAPABILITY_BUILD_TASK", status: "founder_gate_required", manual_continue_count: 0, manual_codex_instruction_count: 0, founder_gate_required: true, capability_compatibility: { status: "CAPABILITY_MISSING" }, model_candidates: [{ model_id: "image-model" }] } } }} />);
+    expect(screen.getByText("Autonomous Capability Build")).toBeTruthy();
+    expect(screen.getByText("CAPABILITY_MISSING")).toBeTruthy();
+    expect(screen.getAllByText("0").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
+    expect(screen.queryByText("Strategy Meeting")).toBeNull();
+  });
   it("projects Quick Fix without Goal confirmation or Strategy actions", () => {
     render(<SinoBrainContext brain={{ stage: "goal_review", discovery: { task_complexity_route: { classification: "QUICK_FIX", founder_gate_required: false, quick_fix_contract: { target_area: "Left Sidebar / AI Commerce OS Project Tree" } } } }} />);
     expect(screen.getAllByText("Quick Fix")).toHaveLength(2);

@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
-from app.core.asset_lifecycle.service import list_assets
+from app.founder_ai.capability_compatibility import lookup_image_generation_compatibility
 from app.core.context.model import ConversationContextDB
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB
@@ -13,7 +13,6 @@ from app.core.model_center.service import get_model_center
 from app.database.db import SessionLocal
 
 SYSTEM_ID = "studio_ai"
-IMAGE_CAPABILITY_TERMS = ("图片生成", "图像生成", "image generation", "text-to-image", "商品主图生成")
 
 
 def _iso(value):
@@ -48,15 +47,11 @@ def _require_conversation(session, conversation_id: str):
 
 
 def lookup_image_capability() -> dict:
-    candidates = []
-    for item in list_assets(include_legacy=False, status="ready"):
-        searchable = " ".join((item.get("name") or "", item.get("purpose") or "", str(item.get("content") or {}))).casefold()
-        if any(term.casefold() in searchable for term in IMAGE_CAPABILITY_TERMS):
-            candidates.append(item)
-    if not candidates:
-        return {"status": "capability_missing", "capability": None, "temporary_binding": None}
-    selected = candidates[0]
-    return {"status": "available", "capability": {"asset_id": selected["asset_id"], "name": selected["name"], "status": selected["status"]}, "temporary_binding": None}
+    result = lookup_image_generation_compatibility()
+    if result["status"] not in {"EXACT_REUSE", "COMPATIBLE_REUSE"}:
+        return {"status": "capability_missing", "capability": None, "temporary_binding": None, "compatibility": result}
+    selected = result["selected"]
+    return {"status": "available", "capability": {"asset_id": selected["asset_id"], "name": selected["name"], "status": selected["status"]}, "temporary_binding": None, "compatibility": result}
 
 
 def lookup_image_generation_model() -> dict:
