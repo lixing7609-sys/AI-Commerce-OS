@@ -26,7 +26,7 @@ def _action(*, work_item: dict, capability: str, operation_type: str, target_typ
     }
 
 
-def compile_action_contract(*, package: dict, proposal: dict, source_handoff_id: str, source_session_id: str, source_scope_fingerprint: str, contract_version: int = 1) -> dict:
+def compile_action_contract(*, package: dict, proposal: dict, source_handoff_id: str, source_session_id: str, source_scope_fingerprint: str, contract_version: int = 1, evidence_resolution: dict | None = None) -> dict:
     content = dict(proposal.get("content") or {})
     discovery = dict(content.get("environment_discovery") or {})
     candidates = {item.get("logical_dependency"): dict(item) for item in discovery.get("candidate_infrastructure") or []}
@@ -58,20 +58,25 @@ def compile_action_contract(*, package: dict, proposal: dict, source_handoff_id:
             target_source="environment_discovery.candidate_infrastructure[compute]", evidence_refs=["founder_gate_proposal.environment_discovery.compute", "runtime_binding.resource_bindings.compute"],
             verification={"observe": ["process_health.running", "basic_compute_probe.exit_code"], "pass": "running == true AND exit_code == 0", "fail": "running == false OR exit_code != 0", "blocked": "health or compute probe unavailable"},
             status="executable" if compute and compute.get("availability") == "ACTIVE" else "ACTION_BLOCKED_MISSING_EVIDENCE", blocker=None if compute else "No observed compute target."))
+    evidence_resolution = dict(evidence_resolution or {})
     for capability in ("iam", "network"):
         if capability in by_capability:
+            resolved = dict(evidence_resolution.get(capability) or {})
+            observed = bool(resolved.get("observed") and resolved.get("target") and (resolved.get("evidence") or {}).get("evidence_id"))
             actions.append(_action(
-                work_item=by_capability[capability], capability=capability, operation_type="VERIFY_CONFIGURATION", target_type=f"observed_{capability}_configuration",
-                target=None, target_source=f"architecture_candidate.{capability}_strategy", evidence_refs=[f"founder_gate_proposal.resolution_evidence.resource:{capability}"],
-                verification={"observe": f"{capability}_configuration.exists", "pass": "value == true", "fail": "value == false", "blocked": "no observed configuration target"},
-                status="ACTION_BLOCKED_MISSING_EVIDENCE", blocker=f"{capability.upper()} is a DESIGNABLE architecture boundary, but no observed configured target exists. Creating one would require APPLY_LOCAL_CONFIGURATION outside the current repository-path contract."))
+                work_item=by_capability[capability], capability=capability, operation_type="VERIFY_CONFIGURATION", target_type=resolved.get("target_type") or f"observed_{capability}_configuration",
+                target=resolved.get("target") if observed else None, target_source=f"autonomous_evidence_resolution.{capability}" if observed else f"architecture_candidate.{capability}_strategy",
+                evidence_refs=[(resolved.get("evidence") or {}).get("evidence_id")] if observed else [f"founder_gate_proposal.resolution_evidence.resource:{capability}"],
+                verification={"observe": f"{capability}_configuration.evidence_checks", "pass": "all checks == true AND sensitive == false AND external_write == false", "fail": "any check == false", "blocked": "observed target or evidence unavailable"},
+                status="executable" if observed else "ACTION_BLOCKED_MISSING_EVIDENCE", blocker=None if observed else f"{capability.upper()} is a DESIGNABLE architecture boundary, but no observed configured target exists. Creating one would require APPLY_LOCAL_CONFIGURATION outside the current repository-path contract."))
+    prerequisites_executable = all(any(action["capability"] == name and action["action_status"] == "executable" for action in actions) for name in ("storage", "compute", "iam", "network"))
     if "overall_runtime_validation" in by_capability:
         actions.append(_action(
             work_item=by_capability["overall_runtime_validation"], capability="overall_runtime_validation", operation_type="READ_ONLY_VALIDATE", target_type="dependency_validation",
             target={"target_id": "dependency-check/intelligence-evolution-layer/wi-007", "required_signals": ["storage", "compute", "iam", "network"]},
             target_source="execution_package.validation_plan.final_acceptance", evidence_refs=["execution_package.validation_plan", "dependency_evidence.intelligence_evolution_layer.wi-007"],
             verification={"observe": ["dependency.storage", "dependency.compute", "dependency.iam", "dependency.network", "iel.wi-007.resumable"], "pass": "all dependencies == true AND resumable == true", "fail": "any dependency == false", "blocked": "any prerequisite action is not PASS"},
-            status="ACTION_BLOCKED_DEPENDENCY", blocker="Depends on WI-001 through WI-004; IAM and network actions currently lack observed targets."))
+            status="executable" if prerequisites_executable else "ACTION_BLOCKED_DEPENDENCY", blocker=None if prerequisites_executable else "Depends on WI-001 through WI-004; at least one prerequisite action is blocked."))
 
     allowed_work_ids = {item.get("work_item_id") for item in work_items}
     allowed_capabilities = set(((package.get("execution_readiness_contract") or {}).get("execution_scope") or {}).get("included_capabilities") or [])
