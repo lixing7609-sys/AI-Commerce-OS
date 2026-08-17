@@ -57,3 +57,17 @@ def test_reuse_lineage_is_new_and_does_not_mutate_source(monkeypatch):
     assert result["package"]["package_id"] != source.get("package_id")
     assert source["task_closed"] is True
     assert result["action_contract"]["founder_decision_required"] is False
+
+
+def test_completed_reuse_session_is_idempotent_and_not_executed_again(tmp_path, monkeypatch):
+    record = {"task": {"task_id": "reuse-task-existing", "status": "ready_for_execution"}, "execution_status": "completed"}
+    path = tmp_path / ".founder-execution" / "reuse-validations" / "reuse-task-existing.json"
+    path.parent.mkdir(parents=True); path.write_text(__import__("json").dumps(record))
+    monkeypatch.setattr(module, "compile_reused_runtime_validation", lambda repository_head: {"task": record["task"], "package": {"package_id": "p", "execution_readiness_contract": {"contract_id": "r", "execution_scope": {"execution_goal": "g", "included_capabilities": [], "allowed_files_or_paths": [], "allowed_operations": [], "excluded_operations": []}, "executor": {}, "verification_contract": {}, "rollback_contract": {}, "side_effect_contract": {}, "automatic_stop_conditions": []}}, "action_contract": {"action_contract_id": "a", "action_contract_fingerprint": "af", "source_scope_fingerprint": "sf", "actions": []}, "reuse": {}})
+    monkeypatch.setattr(module, "scope_fingerprint_v2", lambda *args: "scope")
+    session = type("Session", (), {"status": "completed", "result": {"verification_result": "PASS"}})()
+    monkeypatch.setattr(module, "create_controlled_handoff_session_v2", lambda **kwargs: session)
+    monkeypatch.setattr(module, "execute_frozen_actions", lambda **kwargs: (_ for _ in ()).throw(AssertionError("must not execute again")))
+    monkeypatch.setattr(module.subprocess, "run", lambda args, **kwargs: type("Result", (), {"stdout": "" if "status" in args else "head\n"})())
+    result = module.execute_reused_runtime_validation(repo_root=tmp_path)
+    assert result["task"]["status"] == "completed"
