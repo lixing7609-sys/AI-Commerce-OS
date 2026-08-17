@@ -132,6 +132,10 @@ export function reviewFounderGateProposal(conversationId, proposalId, action) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/founder-gate-proposals/${encodeURIComponent(proposalId)}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "审核 Founder Gate Proposal 失败");
 }
 
+export function decideImageModelProbeGate(conversationId, action, boundary) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/image-model-probe-gate/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, boundary }) }, "记录 Image Model Probe Founder Decision 失败");
+}
+
 export function continueProjectPlanningAnalysis(conversationId) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/project-planning/continue`, { method: "POST" }, "继续自主分析失败");
 }

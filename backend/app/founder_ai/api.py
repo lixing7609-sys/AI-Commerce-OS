@@ -224,6 +224,11 @@ class CandidateReviewIn(BaseModel):
 class BrainReviewIn(BaseModel):
     action: str
 
+
+class ImageModelProbeDecisionIn(BaseModel):
+    action: str
+    boundary: dict[str, Any] | None = None
+
 class ConstitutionWorkItemReviewIn(BaseModel):
     work_item_id: str
     decision: str
@@ -696,6 +701,19 @@ def review_founder_gate_proposal(conversation_id: str, proposal_id: str, request
     conversation_id = resolve_conversation_id(conversation_id)
     try:
         brain_runtime.review_founder_gate_proposal(conversation_id, proposal_id, request.action)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/image-model-probe-gate/decision", response_model=dict[str, Any])
+def decide_image_model_probe(conversation_id: str, request: ImageModelProbeDecisionIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        from app.founder_ai.image_model_probe_gate import decide_image_model_probe_gate
+        decide_image_model_probe_gate(conversation_id, action=request.action, boundary=request.boundary)
         return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error

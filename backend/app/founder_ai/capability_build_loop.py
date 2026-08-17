@@ -6,7 +6,10 @@ import hashlib
 import re
 
 from app.core.model_center.service import get_model_center
+from app.database.db import SessionLocal
 from app.founder_ai.capability_compatibility import lookup_image_generation_compatibility
+from app.core.conversation_first.model import SinoBrainSessionDB
+from sqlalchemy import select
 
 IMAGE_MODEL_PATTERN = re.compile(r"image|seedream", re.I)
 TEST_DEFAULTS = {
@@ -76,3 +79,40 @@ def run_capability_build_loop(*, conversation_id: str, goal: str, executor_dispa
         "status": "founder_gate_required" if founder_gate else "technical_blocker" if blocker else "executor_dispatched" if executor.get("status") != "not_dispatched" else "ready",
         "progress": progress, "created_at": now,
     }
+
+
+def resume_authorized_capability_build_loop(conversation_id: str, decision: dict) -> dict:
+    """Resume the existing loop at its bounded probe step, never at a manual continue gate.
+
+    The external probe worker consumes this durable dispatch projection. Keeping the
+    dispatch separate from the HTTP decision transaction makes retries auditable.
+    """
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {})
+        loop = dict(discovery.get("autonomous_main_loop") or {})
+        if loop.get("task_id") != decision.get("task_id") or decision.get("approval_status") != "approved":
+            raise ValueError("Founder decision does not match the current autonomous task")
+        candidates = [dict(item) for item in loop.get("model_candidates") or []]
+        ranked = sorted(
+            (item for item in candidates if item.get("probe_status") == "NOT_RUN"),
+            key=lambda item: (not bool(item.get("provider_id")), "seedream" not in str(item.get("model_id", "")).lower(), str(item.get("model_id"))),
+        )[: int(decision["max_probe_candidate_count"])]
+        loop["probe_dispatch"] = {
+            "status": "queued",
+            "decision_id": decision["decision_id"],
+            "candidate_count": len(ranked),
+            "candidates": ranked,
+            "stop_after_first_pass": True,
+            "manual_continue_required": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        loop["status"] = "model_probe_queued"
+        loop["progress"] = [*(loop.get("progress") or []), {"stage": "model_probe", "status": "queued", "decision_id": decision["decision_id"]}]
+        discovery["autonomous_main_loop"] = loop
+        state.discovery = discovery
+        state.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        return loop
