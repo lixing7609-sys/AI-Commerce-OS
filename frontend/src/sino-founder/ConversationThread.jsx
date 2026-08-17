@@ -276,7 +276,8 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
     : isProjectPlanning && maturity.maturity_status === "founder_input_required"
       ? { ...currentAction, title: "需要 Founder 判断", description: [maturity.blocking_question || currentAction?.description, maturity.why_founder_needed ? `为什么需要 Founder：${maturity.why_founder_needed}` : maturity.reason, maturity.sino_recommendation ? `Sino 建议：${maturity.sino_recommendation}` : null, maturity.recommendation_reason ? `建议理由：${maturity.recommendation_reason}` : null].filter(Boolean).join("\n\n"), primary_label: null, secondary_label: null }
       : currentAction;
-  const timelineAction = activeStage !== currentStage ? null : autonomousLoop?.status === "founder_gate_required"
+  const imageProbeDecisionVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
+  const timelineAction = activeStage !== currentStage ? null : imageProbeDecisionVisible
     ? <ImageModelProbeDecisionCard loop={autonomousLoop} busy={busy} onDecision={onImageProbeDecision} />
     : capabilityAction
     ? <CapabilityLifecycleCard asset={capabilityAsset} action={capabilityAction} candidates={snapshot?.sino_brain?.discussion_package?.asset_commit?.items || []} error={capabilityError} busy={busy} onAction={onCapabilityAction} onContinue={onContinueDiscussion} onOpenRepository={onViewAssets} />

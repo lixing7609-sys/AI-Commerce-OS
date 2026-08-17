@@ -34,4 +34,10 @@ describe("ImageModelProbeDecisionCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存授权边界" }));
     expect(decide).toHaveBeenCalledWith("modify", expect.objectContaining({ max_probe_candidate_count: 2 }));
   });
+
+  it("renders the durable approved state without offering a second decision", () => {
+    render(<ImageModelProbeDecisionCard loop={{ status: "model_probe_queued", founder_probe_decision: { approval_status: "approved" } }} busy={false} onDecision={vi.fn()} />);
+    expect(screen.getByText("approved")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "批准有限 Probe" })).toBeNull();
+  });
 });
