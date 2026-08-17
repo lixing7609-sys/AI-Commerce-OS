@@ -16,7 +16,7 @@ def _goal_requires_mutation(goal: str) -> bool:
     return any(term in lowered for term in ("配置", "创建", "provision", "configure", "create", "apply", "deploy"))
 
 
-def build_closure_contract(*, package: dict, post_execution: dict, working_tree_clean: bool, historical_integrity: bool) -> dict:
+def build_closure_contract(*, package: dict, post_execution: dict, working_tree_clean: bool, historical_integrity: bool, founder_closure_decision: dict | None = None, revision: int = 1, previous_contract_id: str | None = None) -> dict:
     result = dict(post_execution.get("result_record") or {})
     artifacts = list(post_execution.get("artifacts") or [])
     learnings = list(post_execution.get("learnings") or [])
@@ -25,9 +25,11 @@ def build_closure_contract(*, package: dict, post_execution: dict, working_tree_
     goal = str(result.get("execution_goal") or "")
     side_effects = dict(result.get("side_effects") or {})
     mutation_effects = sum(len(side_effects.get(key) or []) for key in ("LOCAL_RUNTIME_MUTATION", "EXTERNAL_SERVICE_WRITE", "CLOUD_INFRASTRUCTURE_WRITE", "PRODUCTION_WRITE"))
-    goal_effect_alignment = not _goal_requires_mutation(goal) or mutation_effects > 0
+    founder_closure_decision = dict(founder_closure_decision or {})
+    stage_equivalence_accepted = founder_closure_decision.get("decision") == "existing_validated_runtime_satisfies_current_stage_configured_and_validated_goal" and founder_closure_decision.get("current_deployment_stage") == "LOCAL"
+    goal_effect_alignment = not _goal_requires_mutation(goal) or mutation_effects > 0 or stage_equivalence_accepted
     completion_claim = (
-        "All five evidence-bound runtime validation actions passed and produced a verified read-only result."
+        "All five evidence-bound local-runtime actions passed; under the Founder-approved Stage 1 interpretation, the existing validated local runtime satisfies the current-stage configured-and-validated goal."
         if goal_effect_alignment else
         "The runtime validation portion is proven complete, but the approved execution goal also claims configuration; the read-only result contains no mutation evidence proving that configuration work occurred."
     )
@@ -51,7 +53,8 @@ def build_closure_contract(*, package: dict, post_execution: dict, working_tree_
     ready = all(checklist.values()) and not founder_required
     now = datetime.now(timezone.utc).isoformat()
     return {
-        "closure_contract_id": _id("closure-contract", f"{package_id}:{result.get('result_id')}"),
+        "closure_contract_id": _id("closure-contract", f"{package_id}:{result.get('result_id')}:{revision}"),
+        "closure_revision": revision, "previous_closure_contract_id": previous_contract_id,
         "package_id": package_id, "result_id": result.get("result_id"), "execution_session_id": result.get("execution_session_id"),
         "handoff_id": result.get("handoff_id"), "action_contract_id": result.get("action_contract_id"), "reuse_candidate_id": reuse.get("reuse_candidate_id"),
         "execution_goal": goal, "completion_claim": completion_claim,
@@ -63,6 +66,7 @@ def build_closure_contract(*, package: dict, post_execution: dict, working_tree_
         "working_tree_status": "clean" if working_tree_clean else "dirty", "historical_integrity_status": "passed" if historical_integrity else "failed",
         "closure_scope": "Close only this Package task; preserve Project, Conversation, execution history, and candidate lifecycle.",
         "closure_checklist": checklist, "founder_decision_required": founder_required,
+        "founder_closure_decision": founder_closure_decision or None,
         "closure_status": "closure_ready" if ready else "founder_closure_decision_required" if founder_required else "closure_blocked",
         "semantic_blocker": None if goal_effect_alignment else "execution_goal_result_effect_mismatch: configuration claimed, read-only validation evidenced",
         "created_at": now,
@@ -74,6 +78,7 @@ def close_task_if_ready(*, package: dict, contract: dict, post_execution: dict) 
         return {**post_execution, "closure_contract": contract, "task_status": "completed_pending_closure", "task_closed": False}, None
     now = datetime.now(timezone.utc).isoformat()
     result = dict(post_execution.get("result_record") or {})
+    decision = dict(contract.get("founder_closure_decision") or {})
     record = {
         "task_closure_id": _id("task-closure", contract["closure_contract_id"]), "closure_contract_id": contract["closure_contract_id"],
         "package_id": package.get("package_id"), "result_id": result.get("result_id"), "final_task_status": "completed",
@@ -82,5 +87,6 @@ def close_task_if_ready(*, package: dict, contract: dict, post_execution: dict) 
         "learning_refs": contract["completion_evidence"]["learning_refs"], "decision_memory_refs": list((post_execution.get("decision_memory") or {}).get("links") or []),
         "reuse_candidate_refs": [contract.get("reuse_candidate_id")], "unresolved_items": [], "historical_integrity": "passed",
         "next_action": "Task completed; return to Founder workspace and wait for new input.",
+        "deployment_scope": {"current_deployment_stage": decision.get("current_deployment_stage"), "validated_runtime": decision.get("validated_runtime"), "next_planned_deployment_stage": decision.get("next_planned_deployment_stage"), "commercial_cloud": decision.get("commercial_cloud")},
     }
     return {**post_execution, "closure_contract": contract, "task_closure_record": record, "task_status": "completed", "task_closed": True, "closed_at": now, "closed_by": "sino_autonomous_closure"}, record

@@ -1305,6 +1305,35 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             session.commit()
             return {"closure_contract": contract, "task_closure_record": closure_record, "task_status": package["task_status"], "task_closed": package["task_closed"]}
 
+    def apply_founder_closure_decision(self, conversation_id: str, *, package_id: str, decision: dict) -> dict:
+        """Append a closure-contract revision, then let Sino close when every machine check passes."""
+        repo_root = Path(__file__).resolve().parents[3]
+        clean = not subprocess.run(["git", "status", "--porcelain=v1"], cwd=repo_root, text=True, capture_output=True, check=True).stdout.strip()
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {}); package = dict(discovery.get("execution_package") or {})
+            if package.get("package_id") != package_id:
+                raise ValueError("closure_package_mismatch")
+            post = dict(package.get("post_execution_commit") or {})
+            old_contract = dict(post.get("closure_contract") or {})
+            if old_contract.get("closure_status") != "founder_closure_decision_required":
+                raise ValueError("founder_closure_decision_not_required")
+            history = [dict(item) for item in post.get("closure_contract_history") or []]
+            if not history:
+                history.append(old_contract)
+            old_handoff = dict(package.get("executor_handoff") or {}); old_result = dict((package.get("execution_attempt_history") or [{}])[0])
+            historical_integrity = bool(old_handoff.get("handoff_id") and old_result.get("execution_session_id")) and old_result.get("handoff_id") == old_handoff.get("handoff_id") and old_result.get("execution_status") == "blocked" and old_result.get("commands_executed") == [] and old_result.get("files_changed") == []
+            contract = build_closure_contract(package=package, post_execution=post, working_tree_clean=clean, historical_integrity=historical_integrity, founder_closure_decision=decision, revision=int(old_contract.get("closure_revision") or 1) + 1, previous_contract_id=old_contract.get("closure_contract_id"))
+            updated, closure_record = close_task_if_ready(package=package, contract=contract, post_execution=post)
+            updated["closure_contract_history"] = [*history, contract]
+            package["post_execution_commit"] = updated; package["task_status"] = updated.get("task_status"); package["task_closed"] = updated.get("task_closed")
+            package["closed_at"] = updated.get("closed_at"); package["closed_by"] = updated.get("closed_by"); package["current_action"] = "Task completed; wait for new Founder input"
+            discovery["execution_package"] = package; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return {"closure_contract": contract, "task_closure_record": closure_record, "task_status": package["task_status"], "task_closed": package["task_closed"]}
+
     def ensure_founder_gate_proposal(self, conversation_id: str) -> dict | None:
         """Materialize one canonical review object for the current Founder Gate."""
         from app.core.draft.model import FounderDraftDB

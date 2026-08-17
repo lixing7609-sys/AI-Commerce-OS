@@ -38,3 +38,21 @@ def test_missing_closure_evidence_blocks_without_closing(monkeypatch):
     assert contract["closure_status"] == "closure_blocked"
     updated, record = close_task_if_ready(package=package, contract=contract, post_execution=post)
     assert updated["task_closed"] is False and record is None
+
+
+def test_founder_stage_decision_supports_new_revision_and_preserves_candidate(monkeypatch):
+    monkeypatch.setattr("app.founder_ai.task_closure.list_execution_sessions", lambda: [])
+    package, post = payload(goal="Configure storage, compute, IAM, and network and validate them")
+    decision = {"decision": "existing_validated_runtime_satisfies_current_stage_configured_and_validated_goal", "current_deployment_stage": "LOCAL", "validated_runtime": "local development runtime", "next_planned_deployment_stage": "NAS", "commercial_cloud": "not configured / not in current scope"}
+    contract = build_closure_contract(package=package, post_execution=post, working_tree_clean=True, historical_integrity=True, founder_closure_decision=decision, revision=2, previous_contract_id="closure-v1")
+    assert contract["closure_revision"] == 2
+    assert contract["previous_closure_contract_id"] == "closure-v1"
+    assert contract["closure_checklist"]["completion_claim_supported"] is True
+    assert contract["closure_status"] == "closure_ready"
+    assert all(contract["closure_checklist"].values())
+    updated, record = close_task_if_ready(package=package, contract=contract, post_execution=post)
+    assert updated["task_closed"] is True
+    assert record["closed_by"] == "sino_autonomous_closure"
+    assert record["deployment_scope"]["current_deployment_stage"] == "LOCAL"
+    assert record["deployment_scope"]["next_planned_deployment_stage"] == "NAS"
+    assert updated["reuse_candidate"]["status"] == "candidate"
