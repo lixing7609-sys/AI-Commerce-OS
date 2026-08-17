@@ -35,6 +35,7 @@ from app.founder_ai.working_tree_resolution import analyze_working_tree
 from app.founder_ai.execution_readiness import build_execution_readiness_contract
 from app.founder_ai.autonomous_checkpoint import execute_autonomous_checkpoint
 from app.founder_ai.controlled_handoff import create_controlled_handoff
+from app.founder_ai.controlled_handoff import create_controlled_handoff_v2
 from app.founder_ai.controlled_execution import blocked_execution_result, scope_guard, start_precondition_checks
 from app.founder_ai.action_contract import compile_action_contract
 from app.founder_ai.evidence_resolution import discover_iam_network_evidence
@@ -1181,6 +1182,37 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
             return {"evidence_resolution": evidence, "action_contract": contract}
+
+    def create_controlled_executor_handoff_v2(self, conversation_id: str, *, expected: dict) -> dict:
+        """Create one inert v2 handoff/session while preserving the blocked v1 history."""
+        repo_root = Path(__file__).resolve().parents[3]
+        if subprocess.run(["git", "status", "--porcelain=v1"], cwd=repo_root, text=True, capture_output=True, check=True).stdout.strip():
+            raise ValueError("working_tree_not_clean")
+        if subprocess.run(["git", "branch", "--show-current"], cwd=repo_root, text=True, capture_output=True, check=True).stdout.strip() != expected["branch"]:
+            raise ValueError("branch_changed")
+        if subprocess.run(["git", "merge-base", "--is-ancestor", expected["repository_checkpoint"], "HEAD"], cwd=repo_root, check=False).returncode != 0:
+            raise ValueError("repository_checkpoint_unavailable")
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {})
+            package = dict(discovery.get("execution_package") or {})
+            existing = dict(package.get("active_executor_handoff_v2") or {})
+            if existing:
+                return existing
+            old_handoff = dict(package.get("executor_handoff") or {})
+            old_result = dict(package.get("execution_result") or {})
+            handoff, _session = create_controlled_handoff_v2(package=package, expected=expected)
+            package["executor_handoffs"] = [old_handoff, handoff]
+            package["active_executor_handoff_v2"] = handoff
+            package["execution_status"] = "not_started"
+            package["execution_attempt_history"] = [old_result]
+            discovery["execution_package"] = package
+            state.discovery = discovery
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return handoff
 
     def ensure_founder_gate_proposal(self, conversation_id: str) -> dict | None:
         """Materialize one canonical review object for the current Founder Gate."""

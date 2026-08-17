@@ -112,6 +112,27 @@ def create_controlled_handoff_session(*, session_id: str, handoff_id: str, packa
         return session
 
 
+def create_controlled_handoff_session_v2(*, session_id: str, handoff_id: str, package_id: str, readiness_contract_id: str, action_contract_id: str, action_contract_fingerprint: str, scope_fingerprint: str, executor_provider: str, package: ExecutionPackage) -> ExecutionSession:
+    """Persist one inert v2 session that freezes a machine-action contract."""
+    with _lock:
+        existing = _sessions.get(session_id)
+        if existing:
+            if existing.handoff_id != handoff_id or existing.action_contract_fingerprint != action_contract_fingerprint:
+                raise ValueError("handoff_v2_scope_mismatch")
+            return existing
+        session = ExecutionSession(
+            id=session_id, task_asset_id=package_id, execution_package_id=package_id,
+            executor=executor_provider, status="created", handoff_id=handoff_id,
+            readiness_contract_id=readiness_contract_id, scope_fingerprint=scope_fingerprint,
+            session_version=2, action_contract_id=action_contract_id,
+            action_contract_fingerprint=action_contract_fingerprint,
+        )
+        _sessions[session.id] = session
+        _packages[session.id] = package
+        _persist(session.id)
+        return session
+
+
 def approve_execution_session(execution_id: str) -> tuple[ExecutionSession, ExecutionPackage] | None:
     session = _sessions.get(execution_id)
     package = _packages.get(execution_id)
