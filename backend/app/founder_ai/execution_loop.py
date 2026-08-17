@@ -45,6 +45,10 @@ class ExecutionSession:
     session_version: int = 1
     action_contract_id: str | None = None
     action_contract_fingerprint: str | None = None
+    lifecycle_migration_version: int | None = None
+    restart_recovery_migrated_at: str | None = None
+    source_status: str | None = None
+    source_error_message: str | None = None
 
     def log(self, stage: str, message: str, *, timestamp: str | None = None) -> None:
         self.execution_logs.append({"timestamp": timestamp or datetime.now(timezone.utc).isoformat(), "stage": stage, "message": message})

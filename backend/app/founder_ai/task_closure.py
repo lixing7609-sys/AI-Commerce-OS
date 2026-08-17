@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 
-from app.founder_ai.execution_registry import list_execution_sessions
+from app.founder_ai.execution_registry import list_actually_active_sessions
 
 
 def _id(prefix: str, seed: str) -> str:
@@ -34,7 +34,7 @@ def build_closure_contract(*, package: dict, post_execution: dict, working_tree_
         "The runtime validation portion is proven complete, but the approved execution goal also claims configuration; the read-only result contains no mutation evidence proving that configuration work occurred."
     )
     package_id = package.get("package_id")
-    active = [item for item in list_execution_sessions() if item.execution_package_id == package_id and item.status in {"created", "approved", "queued", "executing", "testing", "paused"}]
+    active = list_actually_active_sessions(package_id=package_id)
     action_results = list(result.get("action_results") or [])
     checklist = {
         "execution_completed": result.get("final_status") == "completed",

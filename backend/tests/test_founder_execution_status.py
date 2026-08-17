@@ -173,8 +173,31 @@ def test_registry_migrates_legacy_backend_restart_failure_to_paused(monkeypatch,
         assert restored.pause_reason == "Backend restarted"
         assert restored.recoverable is True
         assert restored.events[-1]["event_name"] == "backend_restarted"
+        assert restored.source_status == "failed"
+        assert restored.source_error_message.startswith("Backend restarted")
+        assert restored.lifecycle_migration_version == 1
     finally:
         registry._sessions.clear()
         registry._sessions.update(sessions_before)
         registry._packages.clear()
         registry._packages.update(packages_before)
+
+
+def test_restart_migration_is_persisted_and_repeated_restore_is_stable(monkeypatch, tmp_path):
+    registry_path = tmp_path / "runtime" / "registry.json"
+    monkeypatch.setenv("FOUNDER_EXECUTION_REGISTRY_PATH", str(registry_path))
+    sessions_before, packages_before = dict(registry._sessions), dict(registry._packages)
+    try:
+        registry._sessions.clear(); registry._packages.clear()
+        session = ExecutionSession("execution-repeat-restore", "task", "package", status="failed", created_at="", started_at="2026-08-10T01:00:02+00:00", completed_at="2026-08-10T01:00:04+00:00", error_message="Backend restarted during execution; review state before retrying")
+        registry.save_execution_session(session, _package())
+        snapshots = []
+        for _ in range(3):
+            registry._sessions.clear(); registry._packages.clear(); registry.load_execution_sessions()
+            restored, _ = registry.get_execution_session(session.id)
+            snapshots.append((restored.status, restored.created_at, restored.restart_recovery_migrated_at, restored.lifecycle_migration_version, len([event for event in restored.events if event["event_name"] == "backend_restarted"])))
+        assert snapshots[0] == snapshots[1] == snapshots[2]
+        assert snapshots[0] == ("paused", "2026-08-10T01:00:02+00:00", "2026-08-10T01:00:04+00:00", 1, 1)
+    finally:
+        registry._sessions.clear(); registry._sessions.update(sessions_before)
+        registry._packages.clear(); registry._packages.update(packages_before)

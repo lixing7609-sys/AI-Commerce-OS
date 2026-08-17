@@ -9,7 +9,7 @@ def payload(*, goal="Validate the runtime"):
 
 
 def test_closure_ready_when_claim_and_effects_align(monkeypatch):
-    monkeypatch.setattr("app.founder_ai.task_closure.list_execution_sessions", lambda: [])
+    monkeypatch.setattr("app.founder_ai.task_closure.list_actually_active_sessions", lambda **kwargs: [])
     package, post = payload()
     contract = build_closure_contract(package=package, post_execution=post, working_tree_clean=True, historical_integrity=True)
     assert contract["closure_status"] == "closure_ready"
@@ -20,7 +20,7 @@ def test_closure_ready_when_claim_and_effects_align(monkeypatch):
 
 
 def test_configuration_goal_with_read_only_result_requires_founder_closure(monkeypatch):
-    monkeypatch.setattr("app.founder_ai.task_closure.list_execution_sessions", lambda: [])
+    monkeypatch.setattr("app.founder_ai.task_closure.list_actually_active_sessions", lambda **kwargs: [])
     package, post = payload(goal="Configure storage, compute, IAM, and network and validate them")
     contract = build_closure_contract(package=package, post_execution=post, working_tree_clean=True, historical_integrity=True)
     assert contract["closure_checklist"]["completion_claim_supported"] is False
@@ -32,7 +32,7 @@ def test_configuration_goal_with_read_only_result_requires_founder_closure(monke
 
 
 def test_missing_closure_evidence_blocks_without_closing(monkeypatch):
-    monkeypatch.setattr("app.founder_ai.task_closure.list_execution_sessions", lambda: [])
+    monkeypatch.setattr("app.founder_ai.task_closure.list_actually_active_sessions", lambda **kwargs: [])
     package, post = payload(); post["artifacts"] = []
     contract = build_closure_contract(package=package, post_execution=post, working_tree_clean=True, historical_integrity=True)
     assert contract["closure_status"] == "closure_blocked"
@@ -41,7 +41,7 @@ def test_missing_closure_evidence_blocks_without_closing(monkeypatch):
 
 
 def test_founder_stage_decision_supports_new_revision_and_preserves_candidate(monkeypatch):
-    monkeypatch.setattr("app.founder_ai.task_closure.list_execution_sessions", lambda: [])
+    monkeypatch.setattr("app.founder_ai.task_closure.list_actually_active_sessions", lambda **kwargs: [])
     package, post = payload(goal="Configure storage, compute, IAM, and network and validate them")
     decision = {"decision": "existing_validated_runtime_satisfies_current_stage_configured_and_validated_goal", "current_deployment_stage": "LOCAL", "validated_runtime": "local development runtime", "next_planned_deployment_stage": "NAS", "commercial_cloud": "not configured / not in current scope"}
     contract = build_closure_contract(package=package, post_execution=post, working_tree_clean=True, historical_integrity=True, founder_closure_decision=decision, revision=2, previous_contract_id="closure-v1")

@@ -50,6 +50,7 @@ def _classify(path: str, content: str) -> tuple[list[str], str, bool]:
         ("runtime_environment_registry", ("runtime_environment_registry", "runtime_environment_router", "runtimeenvironmentregistry", "runtime environment registry", "runtime-environments", "sino-runtime")),
         ("capability_reuse", ("capability_reuse", "reuse-first", "reused_action_template", "reuse validation")),
         ("autonomous_main_loop", ("autonomous_main_loop", "autonomous main loop", "manual_continue_count", "main_loop_stalled")),
+        ("session_lifecycle_reconciliation", ("session_lifecycle", "actually_active", "resumable_paused", "stale_paused", "restart_recovery", "migrate_restart_failure")),
     )
     for capability, terms in markers:
         if any(term in text for term in terms):

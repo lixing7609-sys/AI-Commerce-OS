@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app.core.artifact.model import ArtifactAssetDB
 from app.core.memory.model import MemoryAssetDB
-from app.founder_ai.execution_registry import list_execution_sessions
+from app.founder_ai.execution_registry import list_actually_active_sessions
 
 
 def _stable_id(prefix: str, seed: str) -> str:
@@ -101,7 +101,7 @@ def persist_post_execution_records(session, *, records: dict, conversation_id: s
             session.add(MemoryAssetDB(id=payload["learning_id"], system_id="founder_ai", conversation_id=conversation_id, memory_type=payload["learning_type"], title=payload["statement"][:200], content=json.dumps(payload, ensure_ascii=False), summary=payload["statement"], confidence=1.0, status="active", source_message_ids=[]))
     session.flush()
     package_id = records["result_record"]["package_id"]
-    active = [item for item in list_execution_sessions() if item.execution_package_id == package_id and item.status in {"created", "approved", "queued", "executing", "testing", "paused"}]
+    active = list_actually_active_sessions(package_id=package_id)
     checks = {
         "execution_completed": records["result_record"]["final_status"] == "completed", "verification_pass": records["result_record"]["verification_status"] == "PASS",
         "result_record_exists": bool(records["result_record"].get("result_id")), "artifacts_recorded": len(records["artifacts"]) > 0,

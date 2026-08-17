@@ -125,10 +125,16 @@ def migrate_legacy_events(session) -> None:
         session.current_stage = session.events[-1]["event_name"]
 
 
-def migrate_restart_failure(session) -> None:
+def migrate_restart_failure(session) -> bool:
     """Turn the former restart-as-failure representation into a paused session."""
+    if getattr(session, "lifecycle_migration_version", None):
+        return False
     if session.status != "failed" or not str(session.error_message or "").startswith("Backend restarted during execution"):
-        return
+        return False
+    session.source_status = "failed"
+    session.source_error_message = session.error_message
+    session.lifecycle_migration_version = 1
+    session.restart_recovery_migrated_at = session.completed_at or session.started_at or session.created_at
     interrupted_status = "testing" if session.testing_at else "executing"
     session.status = "paused"
     session.pause_reason = "Backend restarted"
@@ -143,6 +149,7 @@ def migrate_restart_failure(session) -> None:
         message="Backend restarted during execution; review and resume when safe",
         metadata={"interrupted_status": interrupted_status, "recoverable": session.recoverable, "migrated": True},
     )
+    return True
 
 
 def _legacy_status(event_name: str, final_status: str) -> str:

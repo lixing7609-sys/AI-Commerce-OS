@@ -14,7 +14,7 @@ from app.founder_ai.orchestrator import (
     generate_task_asset_draft,
 )
 from app.founder_ai.execution_registry import approve_execution_session, create_execution_session
-from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions
+from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions, list_actually_active_sessions
 from app.founder_ai.execution_worker import enqueue_execution, execution_queue, resume_execution
 from app.founder_ai.sino_brain import SinoBrain
 from app.llm.exceptions import LLMGatewayError
@@ -372,7 +372,7 @@ def get_conversation_workspace(conversation_id: str):
         snapshot = council_service.snapshot(conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail={"code": "conversation_not_found", "message": str(error)}) from error
-    active = next((item for item in reversed(list_execution_sessions()) if item.status in {"draft", "approved", "queued", "executing", "testing", "paused"}), None)
+    active = next(iter(reversed(list_actually_active_sessions(queue_getter=execution_queue.get, task_lookup=get_founder_task_asset))), None)
     if active:
         record = get_execution_session(active.id)
         package = record[1] if record else None

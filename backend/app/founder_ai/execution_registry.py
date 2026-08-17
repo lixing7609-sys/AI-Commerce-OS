@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from .execution_loop import ExecutionSession
 from .execution_events import append_event, migrate_legacy_events, migrate_restart_failure
+from .session_lifecycle import classify_session_lifecycle
 from .orchestrator import ExecutionPackage, TaskAssetDraft
 from app.core.model_center.service import resolve_execution_capability
 
@@ -23,6 +24,13 @@ def _registry_path() -> Path:
 
 def _package_from_dict(data: dict) -> ExecutionPackage:
     return ExecutionPackage(**{**data, "task_asset": TaskAssetDraft(**data["task_asset"])})
+
+
+def _session_from_dict(data: dict) -> ExecutionSession:
+    normalized = dict(data)
+    if not normalized.get("created_at"):
+        normalized["created_at"] = normalized.get("started_at") or normalized.get("completed_at") or "1970-01-01T00:00:00+00:00"
+    return ExecutionSession(**normalized)
 
 
 def _session_path(execution_id: str) -> Path:
@@ -41,14 +49,15 @@ def _persist(execution_id: str) -> None:
 def load_execution_sessions() -> None:
     sessions = {}
     packages = {}
+    migrated = set()
     path = _registry_path()
     if path.exists():
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            legacy_sessions = {key: ExecutionSession(**value) for key, value in payload.get("sessions", {}).items()}
+            legacy_sessions = {key: _session_from_dict(value) for key, value in payload.get("sessions", {}).items() if not _session_path(value.get("id") or key).exists()}
             for session in legacy_sessions.values():
                 migrate_legacy_events(session)
-                migrate_restart_failure(session)
+                if migrate_restart_failure(session): migrated.add(session.id)
             sessions.update(legacy_sessions)
             packages.update({key: _package_from_dict(value) for key, value in payload.get("packages", {}).items()})
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
@@ -56,9 +65,9 @@ def load_execution_sessions() -> None:
     for item in sorted((path.parent / "sessions").glob("*.json")):
         try:
             payload = json.loads(item.read_text(encoding="utf-8"))
-            session = ExecutionSession(**payload["session"])
+            session = _session_from_dict(payload["session"])
             migrate_legacy_events(session)
-            migrate_restart_failure(session)
+            if migrate_restart_failure(session): migrated.add(session.id)
             package = _package_from_dict(payload["package"])
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             continue
@@ -67,6 +76,9 @@ def load_execution_sessions() -> None:
     with _lock:
         _sessions.update(sessions)
         _packages.update(packages)
+        for execution_id in migrated:
+            if execution_id in _packages:
+                _persist(execution_id)
 
 
 def save_execution_session(session: ExecutionSession, package: ExecutionPackage | None = None) -> None:
@@ -157,6 +169,19 @@ def get_execution_session(execution_id: str) -> tuple[ExecutionSession, Executio
 def list_execution_sessions() -> list[ExecutionSession]:
     """Return a read-only snapshot for Founder state analysis."""
     return list(_sessions.values())
+
+
+def list_actually_active_sessions(*, queue_getter=None, task_lookup=None, package_id: str | None = None) -> list[ExecutionSession]:
+    active = []
+    for session in list_execution_sessions():
+        if package_id and session.execution_package_id != package_id:
+            continue
+        package = _packages.get(session.id)
+        task = task_lookup(session.task_asset_id) if task_lookup else None
+        queue_item = queue_getter(session.id) if queue_getter else None
+        if classify_session_lifecycle(session, package=package, task=task, queue_item=queue_item)["actually_active"]:
+            active.append(session)
+    return active
 
 
 load_execution_sessions()
