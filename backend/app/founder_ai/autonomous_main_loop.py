@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 
 from app.founder_ai.capability_reuse import compile_reused_runtime_validation, execute_reused_runtime_validation
+from app.founder_ai.task_complexity_router import route_task_complexity
 
 
 MAX_MAIN_LOOP_CYCLES = 20
@@ -70,13 +71,16 @@ def _result_record(execution: dict) -> dict:
     }
 
 
-def run_autonomous_main_loop(*, repo_root: Path, goal: str, max_cycles: int = MAX_MAIN_LOOP_CYCLES, persist: bool = True) -> dict:
+def run_autonomous_main_loop(*, repo_root: Path, goal: str, image_understanding: str | None = None, max_cycles: int = MAX_MAIN_LOOP_CYCLES, persist: bool = True) -> dict:
     if not goal.strip():
         raise ValueError("founder_goal_required")
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_root, text=True, capture_output=True, check=True).stdout.strip()
     loop_id = _id("autonomous-main-loop", f"{goal}:{head}")
     task_id = _id("autonomous-task", loop_id)
-    context = {"task": {"task_id": task_id, "goal": goal, "status": "active"}, "manual_continue_count": 0, "founder_gate_count": 0, "technical_blocker_count": 0}
+    route = route_task_complexity(goal, image_understanding=image_understanding)
+    context = {"task": {"task_id": task_id, "goal": goal, "status": "active", "complexity_route": route}, "manual_continue_count": 0, "founder_gate_count": 0, "technical_blocker_count": 0}
+    if route["founder_gate_required"]:
+        context["founder_gate_required"] = True; context["founder_gate_count"] = 1
     state, progress = "idea_received", []
     for cycle in range(1, max_cycles + 1):
         consistency = _consistency(state, context, repo_root)

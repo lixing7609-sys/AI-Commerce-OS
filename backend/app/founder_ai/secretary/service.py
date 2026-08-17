@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
+from app.founder_ai.attachments import attachments_for_messages, bind_attachments
 from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
 from app.core.project.service import apply_project_distillation
@@ -26,7 +27,7 @@ class SinoSecretaryService:
     def __init__(self, *, reply_generator=None):
         self._reply_generator = reply_generator or self._provider_reply
 
-    def append_message(self, conversation_id: str, content: str, *, intent: str | None = None, message_type: str = "discussion", reply_override: str | None = None, skip_object_recognition: bool = False, brain_stage: str | None = None) -> dict:
+    def append_message(self, conversation_id: str, content: str, *, intent: str | None = None, message_type: str = "discussion", reply_override: str | None = None, skip_object_recognition: bool = False, brain_stage: str | None = None, attachment_ids: list[str] | None = None) -> dict:
         text = (content or "").strip()
         if not text:
             raise ValueError("message must not be empty")
@@ -41,6 +42,7 @@ class SinoSecretaryService:
             conversation.updated_at = datetime.now(timezone.utc)
             session.commit()
             message_id = message.id
+        bind_attachments(conversation_id, message_id, list(attachment_ids or []))
         # Persist recognition before provider latency so the homepage can poll
         # and show a real Draft while Sino is still composing the reply.
         if not skip_object_recognition:
@@ -437,7 +439,8 @@ class SinoSecretaryService:
                 "goals": goal_payload,
                 "updated_at": digest_payload["updated_at"] or _iso(conversation.updated_at),
             }
-            payload = {"conversation": {"id": conversation.id, "project_id": conversation.project_id, "title": conversation.title, "state": conversation.conversation_state, "updated_at": _iso(conversation.updated_at)}, "messages": [{"message_id": m.id, "role": m.role, "content": m.content, "message_type": m.message_type, "intent": m.intent, "grounding": dict(m.grounding or {}), "created_at": _iso(m.created_at)} for m in messages], "digest": digest_payload, "conversation_intelligence": conversation_intelligence, "project_context": project_context, "goals": goal_payload}
+            attachment_map = attachments_for_messages(conversation_id, [m.id for m in messages])
+            payload = {"conversation": {"id": conversation.id, "project_id": conversation.project_id, "title": conversation.title, "state": conversation.conversation_state, "updated_at": _iso(conversation.updated_at)}, "messages": [{"message_id": m.id, "role": m.role, "content": m.content, "message_type": m.message_type, "intent": m.intent, "grounding": dict(m.grounding or {}), "attachment_refs": attachment_map.get(m.id, []), "created_at": _iso(m.created_at)} for m in messages], "digest": digest_payload, "conversation_intelligence": conversation_intelligence, "project_context": project_context, "goals": goal_payload}
         try:
             from app.core.founder_object.service import list_conversation_objects
             payload["founder_objects"] = list_conversation_objects(conversation_id)

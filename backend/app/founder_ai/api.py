@@ -1,7 +1,9 @@
 from dataclasses import asdict, replace
 from typing import Any
+from urllib.parse import unquote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.context.service import get_founder_context
@@ -204,6 +206,7 @@ class DiscussionMessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=10000)
     intent: str | None = None
     interaction_context: dict[str, Any] | None = None
+    attachment_ids: list[str] = Field(default_factory=list, max_length=8)
 
 
 class CouncilDiscussionIn(BaseModel):
@@ -469,16 +472,42 @@ def archive_founder_object(object_id: str):
 def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
     conversation_id = resolve_conversation_id(conversation_id)
     try:
-        brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=request.interaction_context)
-        snapshot = secretary.append_message(conversation_id, request.content, intent=brain_turn.get("intent") or request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"))
+        interaction_context = dict(request.interaction_context or {})
+        if request.attachment_ids:
+            from app.founder_ai.vision_routing import understand_images
+            try:
+                interaction_context["image_understanding"] = understand_images(conversation_id, request.content, request.attachment_ids)
+            except (ValueError, LLMGatewayError):
+                snapshot = secretary.append_message(conversation_id, request.content, intent=request.intent, message_type="discussion", reply_override="当前没有可用 Vision Model，图片已随消息安全保存，但 Sino 没有假装读取图片。", skip_object_recognition=True, attachment_ids=request.attachment_ids)
+                return _candidate_snapshot(snapshot, conversation_id)
+        brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=interaction_context or None)
+        snapshot = secretary.append_message(conversation_id, request.content, intent=brain_turn.get("intent") or request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"), attachment_ids=request.attachment_ids)
         brain_runtime.sync_message_refs(conversation_id)
         return _candidate_snapshot(snapshot, conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+        status = 409 if str(error) == "vision_model_unavailable" else 400
+        raise HTTPException(status_code=status, detail=str(error)) from error
     except LLMGatewayError as error:
         raise HTTPException(status_code=503, detail="Sino 回复失败，可重试") from error
+
+
+@router.post("/conversations/{conversation_id}/attachments", response_model=dict[str, Any])
+async def upload_founder_image(conversation_id: str, request: Request):
+    from app.founder_ai.attachments import save_pending_image
+    try: return save_pending_image(resolve_conversation_id(conversation_id), unquote(request.headers.get("x-original-filename", "image")), (request.headers.get("content-type") or "").split(";", 1)[0], await request.body())
+    except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error: raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/conversations/{conversation_id}/attachments/{attachment_id}")
+def get_founder_image(conversation_id: str, attachment_id: str):
+    from app.founder_ai.attachments import attachment_file
+    try:
+        path, mime_type = attachment_file(resolve_conversation_id(conversation_id), attachment_id)
+        return FileResponse(path, media_type=mime_type)
+    except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.post("/conversations/{conversation_id}/council", response_model=dict[str, Any])

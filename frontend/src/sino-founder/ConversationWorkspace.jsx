@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, clearFounderObjectDiscussion, continueFounderCandidateDiscussion, continueFounderObjectDiscussion, getFounderObject, reviewFounderCandidate } from "../services/founderAiApi.js";
-import { advanceSinoBrainStage, approveFounderExecution, confirmFormalObjectProposal, confirmSinoBrainGoal, continueProjectPlanningAnalysis, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, ensureFounderGateProposal, forceSinoBrainGoalReview, getConversationWorkspace, getFounderDraft, getFounderConversations, getFounderDrafts, getFounderExecution, getFounderProjects, getLifecycleAsset, getLifecycleReuseSuggestions, getProjectIntelligence, performConversationCapabilityAction, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reviewConstitutionUnderstanding, reviewConstitutionWorkItem, reviewConstitutionWorkItemRouting, reviewFounderGateProposal, reviewImplementationPlan, reviewProjectOutcome, reviewSinoBrainPackage, startLifecycleExecution, startSinoBrainStrategy, submitExecutionDelta, understandConstitutionWorkItem } from "../services/founderAiApi.js";
+import { advanceSinoBrainStage, approveFounderExecution, confirmFormalObjectProposal, confirmSinoBrainGoal, continueProjectPlanningAnalysis, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, ensureFounderGateProposal, forceSinoBrainGoalReview, getConversationWorkspace, getFounderDraft, getFounderConversations, getFounderDrafts, getFounderExecution, getFounderProjects, getLifecycleAsset, getLifecycleReuseSuggestions, getProjectIntelligence, performConversationCapabilityAction, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reviewConstitutionUnderstanding, reviewConstitutionWorkItem, reviewConstitutionWorkItemRouting, reviewFounderGateProposal, reviewImplementationPlan, reviewProjectOutcome, reviewSinoBrainPackage, startLifecycleExecution, startSinoBrainStrategy, submitExecutionDelta, understandConstitutionWorkItem, uploadFounderImage } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { AssetContext, AssetLifecycleCenter, ExecutionContext, LifecycleExecutionCenter } from "./AssetLifecycleCenter.jsx";
@@ -53,6 +53,7 @@ export const normalizeFounderView = (next) => {
   if (next === "lifecycle") return "home";
   return next;
 };
+export const conversationResponseMatches = (requestedId, activeId, response) => Boolean(requestedId && requestedId === activeId && (response?.conversation?.id || requestedId) === requestedId);
 const queryView = () => { try { return new URLSearchParams(window.location.search).get("workspace"); } catch { return null; } };
 const queryObject = () => { try { return new URLSearchParams(window.location.search).get("object"); } catch { return null; } };
 
@@ -71,6 +72,7 @@ export function ConversationWorkspace() {
   const [projectLoading, setProjectLoading] = useState(false);
   const [projectLoadError, setProjectLoadError] = useState("");
   const [discussionMessage, setDiscussionMessage] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState([]);
   const [executionMessage, setExecutionMessage] = useState("");
   const [goalExecutionContext, setGoalExecutionContext] = useState(storedGoalContext);
   const [goal, setGoal] = useState(null);
@@ -104,6 +106,16 @@ export function ConversationWorkspace() {
   const explicitNewConversationRef = useRef(false);
   const skipNextRestoreRef = useRef(false);
   const initialRestoreRef = useRef(Boolean(conversationId));
+  const activeConversationRef = useRef(conversationId);
+  useEffect(() => { activeConversationRef.current = conversationId; }, [conversationId]);
+
+  const resetConversationProjection = useCallback(() => {
+    setSnapshot(null); setGoal(null); setResult(null); setExecution(null); setExecutionId(null); setApproved(false);
+    setSelectedFounderGateProposal(null); setSelectedDraft(null); setSelectedConstitutionWorkItemId(null);
+    setActiveCapabilityAsset(null); setReuseSuggestions([]); setDiscussionMessage(""); setExecutionMessage("");
+    setPendingAttachments((items) => { items.forEach((item) => URL.revokeObjectURL(item.preview)); return []; });
+    remember(EXECUTION_KEY, null);
+  }, []);
 
   useEffect(() => {
     const objects = snapshot?.founder_objects || [];
@@ -177,6 +189,7 @@ export function ConversationWorkspace() {
 
   const applyConversationSnapshot = useCallback((id, restored) => {
     const resolvedId = restored.conversation?.id || id;
+    if (!conversationResponseMatches(id, activeConversationRef.current || id, restored)) return false;
     setConversationId(resolvedId); setSnapshot(restored); setDiscussionMessage(""); setExecutionMessage(""); setError("");
     setActiveProjectId(restored.conversation?.project_id || null); setProjectIntelligence(null);
     remember(CONVERSATION_KEY, resolvedId); remember(PROJECT_KEY, restored.conversation?.project_id || null);
@@ -185,12 +198,13 @@ export function ConversationWorkspace() {
     setGoal(restoredGoal);
     if (restored.active_execution) { setExecution(restored.active_execution); setExecutionId(restored.active_execution.id); setApproved(Boolean(restored.active_execution.execution_allowed)); remember(EXECUTION_KEY, restored.active_execution.id); }
     else { setExecution(null); setExecutionId(null); setApproved(false); remember(EXECUTION_KEY, null); }
-    setView("conversation");
+    setView("conversation"); return true;
   }, [rememberConversation]);
 
   const restoreWorkspace = useCallback(async (id) => {
     if (!id) return;
     const restored = await getConversationWorkspace(id);
+    if (!conversationResponseMatches(id, activeConversationRef.current, restored)) return;
     setSnapshot(restored);
     setActiveProjectId(restored.conversation?.project_id || null);
     remember(PROJECT_KEY, restored.conversation?.project_id || null);
@@ -305,12 +319,15 @@ export function ConversationWorkspace() {
         const currentProjectConversation = conversations.find((item) => item.project_id === activeProjectId);
         if (currentProjectConversation) {
           id = currentProjectConversation.id;
+          activeConversationRef.current = id;
           skipNextRestoreRef.current = true;
           setConversationId(id);
           remember(CONVERSATION_KEY, id);
         }
       }
-      if (!id) { const conversation = await createFounderConversation("新讨论", activeProjectId); id = conversation.id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id); rememberConversation(id, "新讨论"); }
+      if (!id) { const conversation = await createFounderConversation("新讨论", activeProjectId); id = conversation.id; activeConversationRef.current = id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id); rememberConversation(id, "新讨论"); }
+      const uploadedAttachments = [];
+      for (const attachment of pendingAttachments) uploadedAttachments.push(await uploadFounderImage(id, attachment.file));
       explicitNewConversationRef.current = false;
       if (effectiveMode === "council" || effectiveMode === "auto") {
         const messageType = effectiveMode === "auto" ? "auto_deliberation" : "council";
@@ -318,13 +335,16 @@ export function ConversationWorkspace() {
         setDiscussionMessage(""); setView("conversation");
       }
       const pollProgress = async () => {
-        try { setSnapshot(await getConversationWorkspace(id)); } catch { /* final request owns errors */ }
+        try { const polled = await getConversationWorkspace(id); if (conversationResponseMatches(id, activeConversationRef.current, polled)) setSnapshot(polled); } catch { /* final request owns errors */ }
         if (sendLockRef.current) progressTimer = window.setTimeout(pollProgress, 700);
       };
       progressTimer = window.setTimeout(pollProgress, 150);
       const interactionContext = selectedConstitutionWorkItemId ? { active_surface: "constitution_review", selected_constitution_work_item_id: selectedConstitutionWorkItemId } : undefined;
-      const nextSnapshot = effectiveMode === "council" ? await discussWithCouncil(id, content) : effectiveMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content, undefined, interactionContext);
+      if (uploadedAttachments.length && effectiveMode !== "sino") throw new Error("图片消息当前仅支持 Sino 模式");
+      const nextSnapshot = effectiveMode === "council" ? await discussWithCouncil(id, content) : effectiveMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content, undefined, interactionContext, uploadedAttachments.map((item) => item.attachment_id));
+      if (!conversationResponseMatches(id, activeConversationRef.current, nextSnapshot)) return;
       setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); setSinoHealthy(true); rememberConversation(id, founderConversationTitle(nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content, nextSnapshot.sino_brain?.goal_brief?.goal));
+      setPendingAttachments((items) => { items.forEach((item) => URL.revokeObjectURL(item.preview)); return []; });
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
         catch (projectError) {
@@ -429,6 +449,7 @@ export function ConversationWorkspace() {
       setBusy(true); setError("");
       try {
         const nextSnapshot = await ensureFounderGateProposal(sourceConversationId);
+        if (!conversationResponseMatches(sourceConversationId, activeConversationRef.current, nextSnapshot)) return;
         setSnapshot(nextSnapshot);
         setSelectedFounderGateProposal(nextSnapshot?.sino_brain?.discovery?.active_founder_gate_proposal || proposal);
       } catch (requestError) { setError(requestError.message); }
@@ -441,7 +462,9 @@ export function ConversationWorkspace() {
     if (!proposal?.proposal_id || busy) return;
     setBusy(true); setError("");
     try {
-      const nextSnapshot = await reviewFounderGateProposal(proposal.source_conversation_id || conversationId, proposal.proposal_id, action);
+      const sourceConversationId = proposal.source_conversation_id || conversationId;
+      const nextSnapshot = await reviewFounderGateProposal(sourceConversationId, proposal.proposal_id, action);
+      if (!conversationResponseMatches(sourceConversationId, activeConversationRef.current, nextSnapshot)) return;
       setSnapshot(nextSnapshot);
       const nextProposal = nextSnapshot?.sino_brain?.discovery?.active_founder_gate_proposal;
       setSelectedFounderGateProposal(action === "revise" ? null : nextProposal || proposal);
@@ -542,7 +565,7 @@ export function ConversationWorkspace() {
   function newConversation(preserveProject = false) {
     const keepProject = preserveProject === true || preserveProject?.type === "click";
     explicitNewConversationRef.current = keepProject;
-    setConversationId(null); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setResult(null); setExecutionId(null); setExecution(null); setApproved(false); setError("");
+    setConversationId(null); activeConversationRef.current = null; resetConversationProjection(); setError("");
     if (!keepProject) { setActiveProjectId(null); setProjectIntelligence(null); forgetProject(); }
     remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(WORKSPACE_VIEW_KEY, null); setCreationContext(null); setSelectedWorkspaceObject(null); setView("home");
   }
@@ -565,6 +588,7 @@ export function ConversationWorkspace() {
 
   async function selectConversation(id) {
     if (!id) return;
+    activeConversationRef.current = id; resetConversationProjection(); setConversationId(id); remember(CONVERSATION_KEY, id); setView("conversation");
     setBusy(true); setError("");
     try {
       const restored = await getConversationWorkspace(id);
@@ -576,6 +600,11 @@ export function ConversationWorkspace() {
       setError(requestError.message);
     } finally { setBusy(false); }
   }
+
+  function addPendingImages(files) {
+    setPendingAttachments((current) => [...current, ...files.slice(0, Math.max(0, 8 - current.length)).map((file) => ({ localId: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`, name: file.name, file, preview: URL.createObjectURL(file) }))]);
+  }
+  function removePendingImage(index) { setPendingAttachments((current) => { URL.revokeObjectURL(current[index]?.preview); return current.filter((_, itemIndex) => itemIndex !== index); }); }
 
   async function confirmDeleteConversation() {
     if (!deleteTarget || busy) return;
@@ -819,7 +848,7 @@ export function ConversationWorkspace() {
   let context = capabilityContext;
   const openDraft = (draft) => { setSelectedDraft(draft); setRepositorySection("drafts"); setView("capability-center"); };
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} drafts={drafts.filter((item) => item.project_id === activeProjectId)} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} onOpenDraft={openDraft} onOpenFounderGate={openFounderGateProposal} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
-  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = selectedFounderGateProposal ? <FounderGateProposalReview proposal={selectedFounderGateProposal} busy={busy} onReview={reviewCurrentFounderGateProposal} onReturnDiscussion={() => setSelectedFounderGateProposal(null)} /> : <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} drafts={drafts} onOpenDraft={openDraft} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} capabilityAction={capabilityAction} capabilityAsset={activeCapabilityAsset} capabilityError={capabilityLifecycleError} onCapabilityAction={handleCapabilityAction} reuseSuggestions={reuseSuggestions} onReuse={handleReuseAsset} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onReviewConstitution={reviewConstitution} onReviewProjectOutcome={reviewPlanningOutcome} onReviewImplementationPlan={reviewCurrentImplementationPlan} onContinueProjectAnalysis={continueProjectPlanning} onReviewFounderGate={openFounderGateProposal} selectedConstitutionWorkItemId={selectedConstitutionWorkItemId} onSelectConstitutionWorkItem={selectConstitutionWorkItem} onContinueDiscussion={continueBrainDiscussion} onViewAssets={() => setView("capability-center")} onNewGoal={newConversation} /></section>; context = capabilityContext; }
+  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = selectedFounderGateProposal ? <FounderGateProposalReview proposal={selectedFounderGateProposal} busy={busy} onReview={reviewCurrentFounderGateProposal} onReturnDiscussion={() => setSelectedFounderGateProposal(null)} /> : <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} drafts={drafts} onOpenDraft={openDraft} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} capabilityAction={capabilityAction} capabilityAsset={activeCapabilityAsset} capabilityError={capabilityLifecycleError} onCapabilityAction={handleCapabilityAction} reuseSuggestions={reuseSuggestions} onReuse={handleReuseAsset} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onReviewConstitution={reviewConstitution} onReviewProjectOutcome={reviewPlanningOutcome} onReviewImplementationPlan={reviewCurrentImplementationPlan} onContinueProjectAnalysis={continueProjectPlanning} onReviewFounderGate={openFounderGateProposal} selectedConstitutionWorkItemId={selectedConstitutionWorkItemId} onSelectConstitutionWorkItem={selectConstitutionWorkItem} onContinueDiscussion={continueBrainDiscussion} onViewAssets={() => setView("capability-center")} onNewGoal={newConversation} pendingAttachments={pendingAttachments} onAddImages={addPendingImages} onRemoveImage={removePendingImage} /></section>; context = capabilityContext; }
   if (view === "capability-center") { main = <CapabilityCenter selected={selectedCapabilityAsset} onSelect={setSelectedCapabilityAsset} section={repositorySection} onSectionChange={(next) => { setRepositorySection(next); if (next !== "drafts") setSelectedDraft(null); }} selectedDraft={selectedDraft} onSelectDraft={setSelectedDraft} />; context = repositorySection === "drafts" ? <DraftContext selected={selectedDraft} busy={busy} onApproveImplementation={approveDraftImplementation} onViewImplementationPlan={(draft) => selectConversation(draft.source_conversation_id)} onReviewFounderGate={openFounderGateProposal} onReturnConversation={selectConversation} /> : <CapabilityContext selected={selectedCapabilityAsset} onContinue={continueAsset} onChanged={setSelectedCapabilityAsset} conversationId={conversationId} />; }
   if (view === "object") { main = <CapabilityObjectWorkspace object={selectedWorkspaceObject} onContinue={continueObject} onOpenExecution={openObjectExecution} />; context = capabilityContext; }
   if (view === "execution") { main = executionId ? executionView : <LifecycleExecutionCenter selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} />; context = executionId ? executionContext : <ExecutionContext selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} onOpenExecution={openLifecycleExecution} />; }

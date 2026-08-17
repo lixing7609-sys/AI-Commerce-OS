@@ -66,4 +66,17 @@ describe("GlobalSecretaryComposer mode header", () => {
     expect(input.style.height).toBe("180px");
     expect(input.style.overflowY).toBe("auto");
   });
+
+  it("accepts pasted, dropped and selected images and removes previews", () => {
+    const onAddImages = vi.fn(); const onRemoveImage = vi.fn();
+    const image = new File(["png"], "shot.png", { type: "image/png" });
+    const { container } = render(<GlobalSecretaryComposer value="箭头这里" onChange={vi.fn()} onSubmit={vi.fn()} busy={false} attachments={[{ localId: "1", name: "shot.png", preview: "blob:shot" }]} onAddImages={onAddImages} onRemoveImage={onRemoveImage} />);
+    fireEvent.paste(screen.getByLabelText("讨论内容"), { clipboardData: { files: [image] } });
+    fireEvent.drop(container.querySelector("form"), { dataTransfer: { files: [image] } });
+    fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [image] } });
+    expect(onAddImages).toHaveBeenCalledTimes(3);
+    expect(screen.getByAltText("shot.png")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "删除图片 1" }));
+    expect(onRemoveImage).toHaveBeenCalledWith(0);
+  });
 });

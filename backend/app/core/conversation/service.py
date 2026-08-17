@@ -7,7 +7,7 @@ from app.core.artifact.model import ArtifactAssetDB
 from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
 from app.core.task_asset.model import TaskAssetDB
-from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB, SinoBrainSessionDB
+from app.core.conversation_first.model import CandidateGoalDB, ConversationAttachmentDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB, SinoBrainSessionDB
 from app.core.council.model import CouncilModelRunDB, CouncilRunDB
 from app.core.project.service import get_project
 from app.core.product_visibility.service import hidden_entity_ids
@@ -196,6 +196,8 @@ def delete_conversation(conversation_id: str) -> dict:
         council_ids = list(session.scalars(select(CouncilRunDB.id).where(CouncilRunDB.conversation_id == conversation_id)))
         if council_ids: session.query(CouncilModelRunDB).filter(CouncilModelRunDB.council_run_id.in_(council_ids)).delete(synchronize_session=False)
         session.query(CouncilRunDB).filter_by(conversation_id=conversation_id).delete(synchronize_session=False)
+        attachment_refs = list(session.scalars(select(ConversationAttachmentDB.storage_reference).where(ConversationAttachmentDB.conversation_id == conversation_id)))
+        session.query(ConversationAttachmentDB).filter_by(conversation_id=conversation_id).delete(synchronize_session=False)
         for model in (ConversationMessageDB, SecretaryDigestDB, CandidateGoalDB, PendingQuestionDB, GoalAssetDB, ExecutionDeltaDB, ConversationContextDB, ConversationObjectContextDB, ConversationCandidateContextDB):
             session.query(model).filter_by(conversation_id=conversation_id).delete(synchronize_session=False)
         # Pending/rejected candidates are conversation-local review state.
@@ -209,4 +211,6 @@ def delete_conversation(conversation_id: str) -> dict:
         session.query(FounderObjectDB).filter_by(source_conversation_id=conversation_id).update({"source_conversation_id": None}, synchronize_session=False)
         session.query(FounderObjectRevisionDB).filter_by(source_conversation_id=conversation_id).update({"source_conversation_id": None}, synchronize_session=False)
         session.delete(record); session.commit()
+        from app.founder_ai.attachments import delete_conversation_attachment_files
+        delete_conversation_attachment_files(attachment_refs)
         return {"conversation_id": conversation_id, "deleted": True}

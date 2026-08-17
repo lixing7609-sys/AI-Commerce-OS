@@ -14,7 +14,9 @@ class OpenAIProvider(LLMProvider):
         self._api_key, self._base_url, self._model, self._timeout_seconds = api_key, base_url.rstrip("/"), model, timeout_seconds
 
     def generate(self, request: LLMRequest) -> LLMResponse:
-        payload = {"model": self._model, "messages": [{"role": "system", "content": request.system_prompt}, {"role": "user", "content": request.user_prompt}], "temperature": request.temperature, "max_tokens": request.max_tokens}
+        images = list(request.metadata.get("images") or [])
+        user_content = [{"type": "text", "text": request.user_prompt}, *[{"type": "image_url", "image_url": {"url": item["data_url"]}} for item in images]] if images else request.user_prompt
+        payload = {"model": self._model, "messages": [{"role": "system", "content": request.system_prompt}, {"role": "user", "content": user_content}], "temperature": request.temperature, "max_tokens": request.max_tokens}
         if request.response_format == "json": payload["response_format"] = {"type": "json_object"}
         started = time.monotonic()
         try: response = httpx.post(f"{self._base_url}/chat/completions", json=payload, headers={"Authorization": f"Bearer {self._api_key}"}, timeout=self._timeout_seconds)

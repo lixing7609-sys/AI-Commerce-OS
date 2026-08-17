@@ -11,7 +11,9 @@ class AnthropicProvider(LLMProvider):
         self._api_key, self._base_url, self._model, self._timeout_seconds = api_key, base_url.rstrip("/"), model, timeout_seconds
 
     def generate(self, request: LLMRequest) -> LLMResponse:
-        payload = {"model": self._model, "system": request.system_prompt, "messages": [{"role": "user", "content": request.user_prompt}], "temperature": request.temperature, "max_tokens": request.max_tokens}
+        images = list(request.metadata.get("images") or [])
+        user_content = [{"type": "image", "source": {"type": "base64", "media_type": item["mime_type"], "data": item["base64"]}} for item in images] + [{"type": "text", "text": request.user_prompt}] if images else request.user_prompt
+        payload = {"model": self._model, "system": request.system_prompt, "messages": [{"role": "user", "content": user_content}], "temperature": request.temperature, "max_tokens": request.max_tokens}
         started = time.monotonic()
         try: response = httpx.post(f"{self._base_url}/messages", json=payload, headers={"x-api-key": self._api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}, timeout=self._timeout_seconds)
         except httpx.TimeoutException as error: raise LLMTimeoutError() from error

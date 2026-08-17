@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, JSON, String, Text, text
+from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base
@@ -20,6 +20,21 @@ class ConversationMessageDB(Base):
     message_type: Mapped[str] = mapped_column(String(30), nullable=False, default="discussion", server_default="discussion")
     intent: Mapped[str | None] = mapped_column(String(40), nullable=True)
     grounding: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+
+class ConversationAttachmentDB(Base):
+    __tablename__ = "conversation_attachments"
+    id: Mapped[str] = mapped_column(String(48), primary_key=True, default=lambda: _id("attachment"))
+    conversation_id: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    message_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    attachment_type: Mapped[str] = mapped_column(String(20), nullable=False, default="image", server_default="image")
+    mime_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_reference: Mapped[str] = mapped_column(String(500), nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
 
