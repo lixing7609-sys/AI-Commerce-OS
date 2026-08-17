@@ -284,6 +284,23 @@ class SinoBrainRuntime:
             if state is None:
                 state = SinoBrainSessionDB(conversation_id=conversation_id, project_id=conversation.project_id)
                 session.add(state); session.flush()
+            task_route = dict((interaction_context or {}).get("task_complexity_route") or {})
+            if task_route.get("classification") in {"QUICK_FIX", "CLARIFICATION_REQUIRED"}:
+                discovery = dict(state.discovery or {})
+                discovery["task_complexity_route"] = task_route
+                discovery["quick_fix_contract"] = task_route.get("quick_fix_contract")
+                discovery["image_understanding"] = (interaction_context or {}).get("image_understanding")
+                state.discovery = discovery
+                state.stage = "quick_fix" if task_route["classification"] == "QUICK_FIX" else "clarification_required"
+                state.updated_at = datetime.now(timezone.utc)
+                session.commit()
+                unavailable = task_route.get("evidence", {}).get("image_context_status") == "unavailable"
+                if task_route["classification"] == "CLARIFICATION_REQUIRED":
+                    reply = "我暂时无法读取这张图片，而文字还不足以定位问题。请补充具体页面、控件和期望行为。"
+                else:
+                    suffix = " 图片上下文当前不可用，但文字已足够明确；不会因此进入 Strategy Meeting。" if unavailable else ""
+                    reply = f"已识别为 Quick Fix：{task_route['quick_fix_contract']['target_area']}。将按问题 → 定位 → 修复 → 验证推进，不进入 Strategy Meeting 或 Architecture Proposal。{suffix}"
+                return {"handled": True, "intent": "quick_fix" if task_route["classification"] == "QUICK_FIX" else "clarification_required", "reply": reply, "message_type": "quick_fix" if task_route["classification"] == "QUICK_FIX" else "clarification_required", "brain": self._serialize(state)}
             message_intent = self.classify_message_intent(content, project_id=conversation.project_id)
             if message_intent == "project_context_update":
                 state.stage = "context_updated"
@@ -3330,6 +3347,13 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         payload["project_lifecycle"] = project_lifecycle_projection(payload["discovery"], conversation_stage=record.stage)
         payload["stage_workspaces"] = SinoBrainRuntime._stage_workspaces(payload)
         payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] == "active"), "asset_commit" if record.stage == "conversation_completed" else "package")
+        route = dict(payload["discovery"].get("task_complexity_route") or {})
+        if route.get("classification") == "QUICK_FIX":
+            payload["stage_workspaces"] = [
+                {"stage_key": key, "label": label, "status": "active" if key == "issue" else "pending", "message_refs": list(payload["source_message_refs"])}
+                for key, label in (("issue", "问题"), ("inspect", "定位"), ("fix", "修复"), ("verify", "验证"), ("complete", "完成"))
+            ]
+            payload["active_workspace_stage"] = "issue"
         payload["current_action"] = SinoBrainRuntime._current_action(payload)
         return payload
 

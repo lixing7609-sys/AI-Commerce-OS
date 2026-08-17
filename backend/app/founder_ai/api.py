@@ -473,13 +473,17 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
     conversation_id = resolve_conversation_id(conversation_id)
     try:
         interaction_context = dict(request.interaction_context or {})
+        from app.founder_ai.task_complexity_router import route_task_complexity
+        image_context_status = "not_present"
         if request.attachment_ids:
             from app.founder_ai.vision_routing import understand_images
             try:
                 interaction_context["image_understanding"] = understand_images(conversation_id, request.content, request.attachment_ids)
+                image_context_status = "available"
             except (ValueError, LLMGatewayError):
-                snapshot = secretary.append_message(conversation_id, request.content, intent=request.intent, message_type="discussion", reply_override="当前没有可用 Vision Model，图片已随消息安全保存，但 Sino 没有假装读取图片。", skip_object_recognition=True, attachment_ids=request.attachment_ids)
-                return _candidate_snapshot(snapshot, conversation_id)
+                image_context_status = "unavailable"
+        if interaction_context.get("active_surface") != "constitution_review":
+            interaction_context["task_complexity_route"] = route_task_complexity(request.content, image_understanding=interaction_context.get("image_understanding"), image_context_status=image_context_status)
         brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=interaction_context or None)
         snapshot = secretary.append_message(conversation_id, request.content, intent=brain_turn.get("intent") or request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"), attachment_ids=request.attachment_ids)
         brain_runtime.sync_message_refs(conversation_id)

@@ -12,6 +12,19 @@ def test_screenshot_and_text_route_to_quick_fix():
     result = route_task_complexity("箭头这里点击后应该折叠", image_understanding="Screenshot shows left sidebar AI Commerce OS project tree and collapse arrow")
     assert result["classification"] == QUICK_FIX and result["evidence"]["image_understanding_used"]
 
+def test_text_first_quick_fix_survives_unavailable_vision():
+    result = route_task_complexity("箭头这里，AI Commerce OS 点击后应该可以折叠，帮我修复。", image_context_status="unavailable")
+    assert result["classification"] == QUICK_FIX
+    assert result["evidence"]["image_context_status"] == "unavailable"
+    assert result["quick_fix_contract"]["issue_type"] == "UI_INTERACTION_BUG"
+    assert result["quick_fix_contract"]["target_area"] == "Left Sidebar / AI Commerce OS Project Tree"
+    assert result["quick_fix_contract"]["expected_behavior"] == "AI Commerce OS project node toggles collapse / expand"
+
+def test_ambiguous_text_requires_clarification_when_vision_is_unavailable():
+    result = route_task_complexity("这里不对。", image_context_status="unavailable")
+    assert result["classification"] == "CLARIFICATION_REQUIRED"
+    assert result["strategy_meeting_required"] is False
+
 def test_standard_strategic_and_gate_routes():
     assert route_task_complexity("增加一个明确的导出字段")["classification"] == STANDARD_TASK
     assert route_task_complexity("建立一个新系统并比较架构方案")["classification"] == STRATEGIC_TASK

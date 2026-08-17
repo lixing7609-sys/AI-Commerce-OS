@@ -7,6 +7,18 @@ const snapshot = (id, messages) => ({ conversation: { id }, messages });
 afterEach(() => cleanup());
 
 describe("ConversationThread layout", () => {
+  it("renders the bounded Quick Fix lane instead of the Strategy pipeline", () => {
+    const value = snapshot("quick-fix", [{ message_id: "m1", role: "founder", content: "修一下左边栏折叠" }]);
+    value.sino_brain = { ...(value.sino_brain || {}), active_workspace_stage: "issue", stage_workspaces: [
+      { stage_key: "issue", label: "问题", status: "active", message_refs: ["m1"] },
+      { stage_key: "inspect", label: "定位", status: "pending", message_refs: [] },
+    ], discovery: { task_complexity_route: { classification: "QUICK_FIX", evidence: { image_context_status: "unavailable" } } } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByLabelText("Quick Fix 流程")).toBeTruthy();
+    expect(screen.getByText("问题 → 定位 → 修复 → 验证 → 完成")).toBeTruthy();
+    expect(screen.getByText(/图片上下文当前不可用/)).toBeTruthy();
+    expect(screen.queryByText("Strategy Meeting")).toBeNull();
+  });
   it("links a Cognitive Outcome to its canonical Draft without replacing the source message", () => {
     const openDraft = vi.fn();
     const grounding = { cognitive_work: { cognitive_outcome_id: "cognitive-real" } };

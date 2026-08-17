@@ -186,7 +186,7 @@ def _model_metadata(model: str, provider_type: str) -> dict:
         tags.append("快速任务"); recommended.append("低成本调用"); cost, speed = "低", "快"
     if not recommended:
         tags, recommended = ["通用"], ["Sino 对话"]
-    return {"model_id": model, "display_name": _friendly_model_name(model, provider_type), "capability_tags": list(dict.fromkeys(tags)), "recommendation_score": 90 if recommended else 60, "recommended_for": list(dict.fromkeys(recommended)), "cost_class": cost, "speed_class": speed, "reasoning_class": reasoning, "context_class": context, "supports_reasoning": reasoning == "强", "supports_vision": any(term in name for term in ("vision", "image", "4o")), "supports_tools": not any(term in name for term in ("embedding", "tts", "image")), "context_window": None}
+    return {"model_id": model, "display_name": _friendly_model_name(model, provider_type), "capability_tags": list(dict.fromkeys(tags)), "recommendation_score": 90 if recommended else 60, "recommended_for": list(dict.fromkeys(recommended)), "cost_class": cost, "speed_class": speed, "reasoning_class": reasoning, "context_class": context, "supports_reasoning": reasoning == "强", "supports_vision": False, "supports_tools": not any(term in name for term in ("embedding", "tts", "image")), "context_window": None}
 
 
 def _sync_model_registry(session, row: ModelProviderConfigDB, model_ids: list[str]) -> None:
@@ -201,7 +201,10 @@ def _sync_model_registry(session, row: ModelProviderConfigDB, model_ids: list[st
         record.capability = metadata["capability_tags"]
         record.context_window = metadata["context_window"]
         record.supports_reasoning = metadata["supports_reasoning"]
-        record.supports_vision = metadata["supports_vision"]
+        # Image-input support is capability evidence, not a model-name heuristic.
+        # Preserve a successful runtime probe when provider model lists refresh.
+        if record.id is None:
+            record.supports_vision = False
         record.supports_tools = metadata["supports_tools"]
         record.selected = model_id in selected
         record.enabled = True
@@ -241,10 +244,11 @@ def get_model_center() -> dict:
         legacy = next((old for old, new in LEGACY_ROLE_ALIASES.items() if new == capability), None)
         config = (capability_configs.get(capability).configuration if capability_configs.get(capability) else {}) or {}
         capability_roles.append({"role_key": capability, "label": CAPABILITY_LABELS[capability], "provider_key": config.get("provider_key") or roles.get(capability) or roles.get(legacy), "model": config.get("model"), "fixed": False, "multiple": capability == "multi_model_discussion", "models": list(config.get("models", [])) if capability == "multi_model_discussion" else [], "execution_engine_id": config.get("execution_engine_id", "codex") if capability == "code_execution" else None})
+    vision_probes = dict(((capability_configs.get("vision_model_routing").configuration if capability_configs.get("vision_model_routing") else {}) or {}).get("model_probes") or {})
     return {
         "provider_catalog": [{"provider_type": key, "display_name": value["display_name"], "default_base_url": value["default_base_url"], "requires_base_url": not bool(value["default_base_url"])} for key, value in PROVIDER_CATALOG.items()],
         "providers": provider_items,
-        "models": [{"provider_id": item.provider_id, "model_id": item.model_id, "display_name": item.display_name, "capability": list(item.capability or []), "context_window": item.context_window, "supports_reasoning": item.supports_reasoning, "supports_vision": item.supports_vision, "supports_tools": item.supports_tools, "selected": item.selected, "enabled": item.enabled} for item in registry_rows],
+        "models": [{"provider_id": item.provider_id, "model_id": item.model_id, "display_name": item.display_name, "capability": list(item.capability or []), "context_window": item.context_window, "supports_text": bool(item.enabled and rows.get(item.provider_id) and rows[item.provider_id].health_status == "healthy"), "supports_reasoning": item.supports_reasoning, "supports_vision": bool(vision_probes.get(f"{item.provider_id}:{item.model_id}", {}).get("supports_image")), "supports_image": bool(vision_probes.get(f"{item.provider_id}:{item.model_id}", {}).get("supports_image")), "supports_structured_output": bool(vision_probes.get(f"{item.provider_id}:{item.model_id}", {}).get("status") == "passed"), "vision_capability_source": vision_probes.get(f"{item.provider_id}:{item.model_id}", {}).get("source"), "supports_tools": item.supports_tools, "selected": item.selected, "enabled": item.enabled} for item in registry_rows],
         "roles": capability_roles,
         "agents": [{"agent_id": agent_id, **definition} for agent_id, definition in AGENT_REGISTRY.items() if definition["application_system_id"] == "founder_ai"],
         "skills": _agent_skills("sino_founder_ai", capability_configs, roles),
