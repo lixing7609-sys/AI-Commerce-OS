@@ -55,5 +55,14 @@ describe("Draft Center", () => {
     expect(viewPlan).toHaveBeenCalledWith(draft);
     expect(screen.queryByRole("button", { name: "开发" })).toBeNull();
     expect(screen.getByRole("button", { name: "返回原讨论" })).toBeTruthy();
+    expect(document.querySelector(".sino-draft-detail")).toBeTruthy();
+  });
+
+  it("opens the same Founder Gate Proposal from the Draft Inspector", () => {
+    const open = vi.fn(); const proposal = { proposal_id: "proposal-runtime", status: "ready_for_review" };
+    const draft = { draft_id: "draft-1", title: "Definition", status: "confirmed", version: 1, project_name: "Cloud", source_conversation_id: "conv-cloud", implementation: { execution_approval: "approved", execution_package: { package_id: "package-cloud", preflight_status: "founder_gate_required", founder_gate_proposal: proposal } } };
+    render(<DraftContext selected={draft} onReviewFounderGate={open} />);
+    fireEvent.click(screen.getByRole("button", { name: "审核运行环境方案" }));
+    expect(open).toHaveBeenCalledWith(proposal);
   });
 });

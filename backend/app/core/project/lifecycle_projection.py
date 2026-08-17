@@ -64,9 +64,16 @@ def project_lifecycle_projection(discovery: dict | None, *, conversation_stage: 
         if preflight == "ready":
             action = {"action_id": "execution_package_ready", "title": "Execution Package Ready", "description": "执行准备完成。", "status_label": "Ready for Execution", "primary_label": None}
         elif preflight == "founder_gate_required" and runtime_binding.get("requires_runtime_binding") and runtime_binding.get("binding_status") != "passed":
-            action = {"action_id": "runtime_environment_binding_review", "title": "审核运行环境方案", "description": (runtime_binding.get("recommendation") or {}).get("summary") or "Runtime Environment 尚未绑定。", "status_label": "Founder Gate Required", "primary_label": None}
+            proposal = dict(package.get("founder_gate_proposal") or {})
+            if proposal and proposal.get("decision_ready") is not True:
+                blockers = list((proposal.get("decision_readiness") or {}).get("blocking_unknowns") or [])
+                action = {"action_id": "runtime_environment_discovery", "title": "Sino 正在完善运行环境建议", "description": f"仍有 {len(blockers)} 项关键执行事实待确认；Proposal 可查看，但尚不可批准。", "status_label": "Decision Readiness Pending", "primary_label": None}
+            else:
+                action = {"action_id": "runtime_environment_binding_review", "title": "审核运行环境方案", "description": (runtime_binding.get("recommendation") or {}).get("summary") or "Runtime Environment 尚未绑定。", "status_label": "Founder Gate Required", "primary_label": None}
         else:
-            action = {"action_id": "execution_package_preflight", "title": "Execution Package Preflight", "description": "；".join((package.get("preflight") or {}).get("blocking_reasons") or (package.get("preflight") or {}).get("founder_gate_reasons") or []), "status_label": preflight, "primary_label": None}
+            working_tree = dict(((package.get("preflight") or {}).get("working_tree_resolution") or {}))
+            checkpoint = dict(working_tree.get("checkpoint_proposal") or {})
+            action = {"action_id": "working_tree_resolution_ready", "title": "Working Tree Resolution Ready", "description": f"Sino 已完成只读审计，建议 {checkpoint.get('checkpoint_name') or '形成安全 checkpoint'}；clean 后 revalidate 同一 Package。", "status_label": "Preflight Resolution Ready", "primary_label": None} if working_tree.get("status") == "working_tree_resolution_ready" else {"action_id": "execution_package_preflight", "title": "Execution Package Preflight", "description": "；".join((package.get("preflight") or {}).get("blocking_reasons") or (package.get("preflight") or {}).get("founder_gate_reasons") or []), "status_label": preflight, "primary_label": None}
         return {"rank": 500, "lifecycle_stage": "execution_package", "stage_label": "Execution Package", "execution_status": execution_status, "preflight_status": preflight, "next_step": action["status_label"], "current_action": action}
 
     if plan:

@@ -61,6 +61,7 @@ def _implementation_projection(session, record: FounderDraftDB) -> dict | None:
         return None
     approval = plan.get("execution_approval") or "pending"
     package = dict(((state.discovery or {}).get("execution_package") or {}))
+    proposal = dict(((state.discovery or {}).get("active_founder_gate_proposal") or {}))
     if package.get("source_draft_id") != record.id:
         package = {}
     package_next = "ready_for_execution" if package.get("preflight_status") == "ready" else "resolve_preflight_blocker" if package.get("preflight_status") == "blocked" else "founder_execution_exception" if package else None
@@ -79,6 +80,7 @@ def _implementation_projection(session, record: FounderDraftDB) -> dict | None:
             "package_id": package.get("package_id"),
             "preflight_status": package.get("preflight_status"),
             "execution_status": package.get("execution_status"),
+            "founder_gate_proposal": proposal if proposal.get("execution_package_id") == package.get("package_id") else None,
         } if package else None,
     }
     if feedback:

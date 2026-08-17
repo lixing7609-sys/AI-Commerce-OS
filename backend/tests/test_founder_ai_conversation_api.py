@@ -87,6 +87,18 @@ def test_stage_action_api_advances_and_returns_fresh_workspace(monkeypatch):
     assert result["conversation"]["id"] == "conversation-1"
 
 
+def test_founder_gate_proposal_api_ensures_and_reviews_canonical_object(monkeypatch):
+    calls = []
+    monkeypatch.setattr(api, "resolve_conversation_id", lambda cid: cid)
+    monkeypatch.setattr(api.brain_runtime, "ensure_founder_gate_proposal", lambda cid: calls.append(("ensure", cid)))
+    monkeypatch.setattr(api.brain_runtime, "review_founder_gate_proposal", lambda cid, pid, action: calls.append(("review", cid, pid, action)))
+    monkeypatch.setattr(api.council_service, "snapshot", lambda cid: {"conversation": {"id": cid}})
+    monkeypatch.setattr(api, "_candidate_snapshot", lambda snapshot, _cid: snapshot)
+    assert api.ensure_founder_gate_proposal("conv-1")["conversation"]["id"] == "conv-1"
+    assert api.review_founder_gate_proposal("conv-1", "proposal-1", api.BrainReviewIn(action="approve"))["conversation"]["id"] == "conv-1"
+    assert calls == [("ensure", "conv-1"), ("review", "conv-1", "proposal-1", "approve")]
+
+
 def test_package_approval_api_runs_asset_commit_and_returns_completed_workspace(monkeypatch):
     calls = []
     monkeypatch.setattr(api.brain_runtime, "review_package", lambda cid, action: calls.append((cid, action)))

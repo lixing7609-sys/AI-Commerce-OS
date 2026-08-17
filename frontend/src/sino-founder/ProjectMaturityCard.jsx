@@ -6,6 +6,10 @@ function OutcomeContent({ value }) {
   return <dl>{Object.entries(value).map(([key, item]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{Array.isArray(item) ? item.join(" · ") : typeof item === "object" ? JSON.stringify(item) : String(item)}</dd></div>)}</dl>;
 }
 
+function PreflightFact({ label, children }) {
+  return <div><dt>{label}</dt><dd>{children}</dd></div>;
+}
+
 export function ProjectMaturityCard({ maturity, busy, onReview, reviewable = true }) {
   if (!maturity || maturity.maturity_status !== "ready_for_review") return null;
   return <section className="sino-project-maturity" aria-label="Discussion Maturity">
@@ -30,11 +34,13 @@ export function ImplementationPlanCard({ plan, busy, onReview }) {
   </section>;
 }
 
-export function ExecutionPackageCard({ pkg }) {
+export function ExecutionPackageCard({ pkg, onReviewFounderGate }) {
   if (!pkg) return null;
   const preflight = pkg.preflight || {};
   const runtimeBinding = pkg.runtime_binding || {};
   const recommendation = runtimeBinding.recommendation || {};
+  const workingTree = preflight.working_tree_resolution || {};
+  const checkpoint = workingTree.checkpoint_proposal || {};
   const statusLabel = { ready: "Ready", blocked: "Blocked", founder_gate_required: "Founder Gate Required" }[pkg.preflight_status] || pkg.preflight_status;
   return <section className="sino-project-maturity sino-execution-package" aria-label="Execution Package">
     <header><span>Execution Package</span><h2>{pkg.preflight_status === "ready" ? "执行准备完成" : "Preflight Validation"}</h2></header>
@@ -43,8 +49,9 @@ export function ExecutionPackageCard({ pkg }) {
       <OutcomeContent value={{ scope: pkg.scope, dependencies: pkg.dependencies, execution_order: pkg.execution_order, risk_summary: pkg.risk_summary, validation_plan: pkg.validation_plan, acceptance_criteria: pkg.acceptance_criteria, rollback_plan: pkg.rollback_plan, executor_requirements: pkg.executor_requirements }} />
       <article><small>Work Items</small>{pkg.work_items?.map((item) => <div key={item.work_item_id}><strong>{item.title}</strong><OutcomeContent value={item} /></div>)}</article>
       <article><small>Preflight Result</small>{preflight.checks?.map((item) => <div key={item.check}><strong>{item.check} · {item.status}</strong><p>{item.detail}</p></div>)}</article>
+      {workingTree.status && workingTree.status !== "clean" ? <article aria-label="Working Tree Resolution"><small>Preflight Resolution</small><strong>Working Tree Analysis</strong><p>{workingTree.status === "working_tree_resolution_ready" ? "Sino 已完成只读审计，当前变更可形成安全 checkpoint；Preflight 在 working tree clean 前继续保持 blocked。" : "Sino 已完成只读审计，但仍存在无法自动确认的工作区风险。"}</p><dl><PreflightFact label="Resolution Recommendation">{checkpoint.checkpoint_name || "保持 blocked 并继续技术审计"}</PreflightFact><PreflightFact label="Risk">{checkpoint.risk || "review_required"}</PreflightFact><PreflightFact label="Next Action">{workingTree.status === "working_tree_resolution_ready" ? "按建议 checkpoint scope 收口；完成后 revalidate 同一 Package" : "解决 Technical Details 中的阻塞项"}</PreflightFact></dl><details><summary>Technical Details / Evidence</summary><OutcomeContent value={{ branch: workingTree.branch, dirty_count: workingTree.dirty_count, eligibility_counts: workingTree.eligibility_counts, inventory: workingTree.inventory, included_files: checkpoint.included_files, excluded_files: checkpoint.excluded_files, verification_evidence: checkpoint.verification_evidence }} /></details></article> : null}
       {runtimeBinding.requires_runtime_binding ? <article aria-label="Runtime Environment Binding"><small>Runtime Environment Binding</small><strong>{runtimeBinding.binding_status === "passed" ? "运行环境已绑定" : "Runtime Environment 尚未绑定"}</strong><OutcomeContent value={{ provider: runtimeBinding.provider || "Unknown / Requires Confirmation", target_environment: runtimeBinding.target_environment || "Unknown / Requires Confirmation", resource_bindings: runtimeBinding.resource_bindings, credential_boundary: runtimeBinding.credential_source || "Unknown / Requires Confirmation", cost_boundary: runtimeBinding.cost_boundary || "Unknown / Requires Confirmation", external_side_effect_boundary: runtimeBinding.external_side_effect_boundary || "Unknown / Requires Confirmation", production_impact: runtimeBinding.production_impact ?? "Unknown / Requires Confirmation" }} />{recommendation.summary ? <><h3>Sino Runtime Binding Recommendation</h3><p>{recommendation.summary}</p><OutcomeContent value={{ existing_infrastructure: recommendation.existing_infrastructure, required_new_infrastructure: recommendation.required_new_infrastructure, new_credential: recommendation.new_credential, new_cost: recommendation.new_cost, production_impact: recommendation.production_impact, external_side_effect: recommendation.external_side_effect, reason: recommendation.reason }} /></> : null}</article> : null}
-      <footer><strong>{pkg.preflight_status === "ready" ? "Ready for Execution" : pkg.preflight_status === "blocked" ? "Blocked · 需先解决技术准备问题" : runtimeBinding.requires_runtime_binding ? "需要 Founder 审核运行环境方案" : "需要 Founder 判断异常"}</strong></footer>
+      <footer><strong>{pkg.preflight_status === "ready" ? "Ready for Execution" : pkg.preflight_status === "blocked" ? "Blocked · 需先解决技术准备问题" : runtimeBinding.requires_runtime_binding ? "需要 Founder 审核运行环境方案" : "需要 Founder 判断异常"}</strong>{pkg.preflight_status === "founder_gate_required" && pkg.founder_gate_proposal ? <button type="button" className="is-primary" onClick={() => onReviewFounderGate?.(pkg.founder_gate_proposal)}>审核运行环境方案</button> : null}</footer>
     </section>
   </section>;
 }

@@ -157,6 +157,10 @@ def get_project_intelligence(project_id: str) -> dict:
         conversation_ids = [item.id for item in conversations]
         all_conversation_ids = [item.id for item in all_conversations]
         brain_states = list(session.scalars(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id.in_(all_conversation_ids)))) if all_conversation_ids else []
+        active_founder_gate_proposal = next(
+            (dict((item.discovery or {}).get("active_founder_gate_proposal") or {}) for item in sorted(brain_states, key=lambda row: row.updated_at, reverse=True) if (item.discovery or {}).get("active_founder_gate_proposal")),
+            None,
+        )
         execution_feedback = next((dict((item.discovery or {}).get("execution_context_feedback") or {}) for item in sorted(brain_states, key=lambda row: row.updated_at, reverse=True) if (item.discovery or {}).get("execution_context_feedback")), None)
         lifecycle_candidates = [project_lifecycle_projection(item.discovery, conversation_stage=item.stage) for item in brain_states]
         project_lifecycle = max(lifecycle_candidates, key=lambda item: item.get("rank", 0), default=None)
@@ -278,6 +282,7 @@ def get_project_intelligence(project_id: str) -> dict:
             "execution_refs": execution_refs, "technical_evidence_refs": [item.id for item in artifacts if item.artifact_type in TECHNICAL_ASSET_TYPES],
             "implementation_result": execution_feedback,
             "project_lifecycle": project_lifecycle,
+            "active_founder_gate_proposal": active_founder_gate_proposal,
             "constitution": constitution,
             "initial_project_context": initial_project_context,
             "developer_debug": {

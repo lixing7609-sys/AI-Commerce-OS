@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -27,9 +28,10 @@ from app.core.dependency_outcome.service import dependency_evidence_for_target
 from app.core.memory.model import MemoryAssetDB
 from app.core.project.model import FounderProjectDB, ProjectIntelligenceDB
 from app.core.project.lifecycle_projection import project_lifecycle_projection
-from app.database.db import SessionLocal
+from app.database.db import SessionLocal, engine
 from app.llm.gateway import llm_gateway
 from app.llm.models import LLMRequest
+from app.founder_ai.working_tree_resolution import analyze_working_tree
 from core.founder_object.model import FounderObjectDB, FounderObjectRevisionDB
 
 
@@ -62,7 +64,7 @@ class SinoBrainRuntime:
 
     MAX_CLARIFICATION_ROUNDS = 3
 
-    def __init__(self, *, understanding_runner=None, lifecycle_intent_runner=None, work_item_routing_runner=None, work_item_semantic_runner=None, project_maturity_runner=None, autonomous_analysis_runner=None, implementation_planning_runner=None, initial_project_planning_runner=None):
+    def __init__(self, *, understanding_runner=None, lifecycle_intent_runner=None, work_item_routing_runner=None, work_item_semantic_runner=None, project_maturity_runner=None, autonomous_analysis_runner=None, implementation_planning_runner=None, initial_project_planning_runner=None, founder_gate_resolution_runner=None):
         self._understanding_runner = understanding_runner or self._provider_understanding
         self._lifecycle_intent_runner = lifecycle_intent_runner or self._provider_lifecycle_intent
         self._work_item_routing_runner = work_item_routing_runner or self._provider_work_item_routing
@@ -71,6 +73,7 @@ class SinoBrainRuntime:
         self._autonomous_analysis_runner = autonomous_analysis_runner or self._provider_autonomous_analysis
         self._implementation_planning_runner = implementation_planning_runner or self._provider_implementation_planning
         self._initial_project_planning_runner = initial_project_planning_runner or self._provider_initial_project_planning
+        self._founder_gate_resolution_runner = founder_gate_resolution_runner or self._provider_founder_gate_resolution
 
     def ensure_project_planning_conversation(self, project_id: str) -> dict[str, Any]:
         """Reconcile one canonical planning Conversation and its first Sino analysis."""
@@ -859,6 +862,17 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             }
             package["preflight"] = self._preflight_execution_package(package=package, plan=plan, draft=draft)
             package["preflight_status"] = package["preflight"]["status"]
+            proposal = self._materialize_founder_gate_proposal(
+                conversation=conversation,
+                discovery=discovery,
+                package=package,
+                plan=plan,
+                draft=draft,
+                context_evidence=self._founder_gate_context_evidence(session, draft),
+            )
+            if proposal:
+                package["founder_gate_proposal_id"] = proposal["proposal_id"]
+                package["founder_gate_proposal"] = proposal
             discovery["execution_package"] = package
             state.discovery = discovery
             state.stage = "execution_package"
@@ -888,11 +902,570 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             package["preflight"] = self._preflight_execution_package(package=package, plan=plan, draft=draft)
             package["preflight_status"] = package["preflight"]["status"]
             package["updated_at"] = datetime.now(timezone.utc).isoformat()
+            proposal = self._materialize_founder_gate_proposal(
+                conversation=conversation,
+                discovery=discovery,
+                package=package,
+                plan=plan,
+                draft=draft,
+                context_evidence=self._founder_gate_context_evidence(session, draft),
+            )
+            if proposal:
+                package["founder_gate_proposal_id"] = proposal["proposal_id"]
+                package["founder_gate_proposal"] = proposal
             discovery["execution_package"] = package
             state.discovery = discovery
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
             return package
+
+    def ensure_founder_gate_proposal(self, conversation_id: str) -> dict | None:
+        """Materialize one canonical review object for the current Founder Gate."""
+        from app.core.draft.model import FounderDraftDB
+        with SessionLocal() as session:
+            conversation = session.get(ConversationDB, conversation_id)
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+            if conversation is None or state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {})
+            package = dict(discovery.get("execution_package") or {})
+            plan = dict(discovery.get("implementation_planning") or {})
+            if not package.get("package_id"):
+                raise LookupError("Execution Package not found")
+            draft = session.get(FounderDraftDB, package.get("source_draft_id"))
+            if draft is None:
+                raise LookupError("Confirmed source Draft not found")
+            proposal = self._materialize_founder_gate_proposal(
+                conversation=conversation, discovery=discovery, package=package, plan=plan, draft=draft,
+                context_evidence=self._founder_gate_context_evidence(session, draft),
+            )
+            if proposal:
+                package["founder_gate_proposal_id"] = proposal["proposal_id"]
+                package["founder_gate_proposal"] = proposal
+                discovery["execution_package"] = package
+                state.discovery = discovery
+                state.updated_at = datetime.now(timezone.utc)
+                session.commit()
+            return proposal
+
+    @staticmethod
+    def _founder_gate_context_evidence(session, draft) -> list[dict]:
+        from app.core.dependency_outcome.service import dependency_evidence_for_target
+        return dependency_evidence_for_target(session, getattr(draft, "project_name", "")) if getattr(draft, "project_name", None) else []
+
+    @staticmethod
+    def _runtime_environment_discovery(package: dict) -> dict:
+        """Read non-secret local metadata; never provisions or mutates infrastructure."""
+        binding = dict(package.get("runtime_binding") or {})
+        recommended_binding = dict((binding.get("recommendation") or {}).get("runtime_binding") or {})
+        proposed = {**binding, **{key: value for key, value in recommended_binding.items() if value not in (None, [], {})}}
+        approved = binding.get("binding_status") in {"approved", "passed"}
+        required = list(binding.get("required_resource_bindings") or [])
+        supplied = {
+            str(item.get("logical_dependency")): item.get("concrete_target")
+            for item in proposed.get("resource_bindings") or []
+            if isinstance(item, dict) and item.get("logical_dependency")
+        }
+        database = engine.url
+        app_environment = os.environ.get("APP_ENV", "development")
+        configured_cloud = {
+            "storage": bool(os.environ.get("DATABASE_URL")),
+            "compute": bool(os.environ.get("AI_COMMERCE_CLOUD_COMPUTE_ENDPOINT")),
+            "iam": all(bool(os.environ.get(key)) for key in (
+                "AI_COMMERCE_CLOUD_IAM_ISSUER", "AI_COMMERCE_CLOUD_IAM_AUDIENCE", "AI_COMMERCE_CLOUD_IAM_PUBLIC_KEY",
+            )),
+            "network": bool(os.environ.get("AI_COMMERCE_CLOUD_NETWORK_ZONE")),
+        }
+        candidates = []
+        for logical_dependency in required:
+            name = str(logical_dependency)
+            concrete_target = supplied.get(name)
+            if concrete_target:
+                candidates.append({
+                    "logical_dependency": name,
+                    "candidate": concrete_target,
+                    "availability": "APPROVED_FOR_THIS_PACKAGE" if approved else "RECOMMENDED",
+                    "approved_for_package": approved,
+                    "evidence": "Current canonical Execution Package runtime binding.",
+                })
+            elif name in {"storage", "database"}:
+                candidates.append({
+                    "logical_dependency": name,
+                    "candidate": f"Current {database.get_backend_name()} development database",
+                    "availability": "ACTIVE",
+                    "approved_for_package": False,
+                    "evidence": "The application has an active development database connection; credentials and URI were not read or exposed.",
+                })
+            elif configured_cloud.get(name):
+                candidates.append({
+                    "logical_dependency": name,
+                    "candidate": f"Configured {name} runtime reference",
+                    "availability": "CONFIGURED",
+                    "approved_for_package": False,
+                    "evidence": "A non-empty runtime reference is present; its secret or endpoint value was not read or exposed.",
+                })
+            elif name == "compute":
+                candidates.append({
+                    "logical_dependency": name,
+                    "candidate": f"Current {app_environment} application process",
+                    "availability": "ACTIVE",
+                    "approved_for_package": False,
+                    "evidence": "The backend process is active in the current application environment, but is not an approved Cloud runtime binding.",
+                })
+        if database.username and database.password:
+            candidates.append({
+                "logical_dependency": "credential",
+                "candidate": "Current development database credential reference",
+                "availability": "CONFIGURED",
+                "approved_for_package": False,
+                "evidence": "A database credential reference is configured; its username, password and URI were not read, copied or exposed.",
+            })
+        approved_candidates = [item for item in candidates if item["approved_for_package"]]
+        candidate_options = []
+        if candidates:
+            candidate_options.append({
+                "option_id": "reuse-observed-infrastructure",
+                "name": "评估并隔离复用当前已观测开发基础设施",
+                "basis": [item["logical_dependency"] for item in candidates],
+                "status": "candidate_only",
+                "constraint": "必须先证明隔离性并由 Founder 批准绑定；当前观测不等于授权。",
+            })
+        if required and len({item["logical_dependency"] for item in candidates}) < len(set(map(str, required))):
+            candidate_options.append({
+                "option_id": "new-isolated-non-production-runtime",
+                "name": "建立新的隔离非生产 Runtime",
+                "basis": [name for name in map(str, required) if name not in {item["logical_dependency"] for item in candidates}],
+                "status": "requires_provider_and_cost_decision",
+                "constraint": "Provider、费用、凭据与外部副作用边界尚未确定。",
+            })
+        blockers = []
+        if not proposed.get("provider"):
+            blockers.append({"field": "provider", "label": "Runtime Provider / Type", "reason": "No runtime provider or provider-independent runtime type is approved for this Package."})
+        if not proposed.get("target_environment"):
+            blockers.append({"field": "target_environment", "label": "Target Environment", "reason": "The current development environment is observable, but is not approved as this Package's target."})
+        for name in required:
+            if not supplied.get(str(name)):
+                blockers.append({"field": f"resource:{name}", "label": str(name).upper(), "reason": "A candidate may exist, but no concrete target is approved for this Package."})
+        boundary_labels = {
+            "credential_source": "Credential Authorization",
+            "cost_boundary": "Cost Authorization",
+            "external_side_effect_boundary": "External Side Effect Authorization",
+            "production_impact": "Production Impact Authorization",
+        }
+        for field, label in boundary_labels.items():
+            if proposed.get(field) is None:
+                blockers.append({"field": field, "label": label, "reason": "No explicit approved boundary is recorded."})
+        return {
+            "status": "completed",
+            "mode": "read_only",
+            "observed_environment": app_environment,
+            "database_metadata": {"backend": database.get_backend_name(), "host_scope": "local" if database.host in {None, "localhost", "127.0.0.1"} else "remote", "configured": True},
+            "runtime_reference_presence": configured_cloud,
+            "candidate_infrastructure": candidates,
+            "candidate_options": candidate_options,
+            "approved_bindings": approved_candidates,
+            "blocking_unknowns": blockers,
+            "external_side_effects_performed": False,
+            "discovered_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    @staticmethod
+    def _provider_founder_gate_resolution(context: dict) -> dict:
+        from app.core.model_center.service import resolve_runtime_config
+        runtime = resolve_runtime_config(role="sino_conversation")
+        if runtime is None:
+            raise RuntimeError("sino_conversation_model_unavailable")
+        prompt = """你是 Sino Founder AI 的 Founder Gate Autonomous Resolution Worker。Founder 不是 Unknown Resolver。你必须只基于输入中的 canonical Project Definition、approved Implementation Plan、Execution Package、read-only discovery、候选基础设施、依赖证据和安全边界，对每个 blocking unknown 分类并尽可能自主解决。
+分类只能是 DISCOVERABLE、DESIGNABLE、FOUNDER_AUTHORIZATION、EXTERNAL_UNAVAILABLE、TECHNICAL_BLOCKER。DISCOVERABLE 使用已有只读证据；DESIGNABLE 必须形成 provider-independent、隔离、非生产、最小范围、可回滚的具体 architecture candidate；不得把代码、SDK、环境变量或 ACTIVE candidate 当成已批准 binding。费用、Credential、生产影响与外部副作用必须先分析成具体边界，只有最终业务/风险授权才转为 FOUNDER_AUTHORIZATION。禁止猜测商业 Provider、设备、endpoint、CIDR、Secret 或价格；无证据时明确 external/technical blocker。不得执行、配置、联网探测、创建资源或产生费用。
+如果 prior_resolution 中存在 validation_issues，必须逐项修正：没有 Credential/IAM/Network candidate 时可以设计新的 project-scoped boundary，但不得声称复用“现有”Credential/IAM/Network；费用只能在条件成立时表述为 conditional zero incremental external cost；未来会创建 schema、进程、配置或身份边界时不得宣称完全没有 side effect，而应明确 side-effect scope。FOUNDER_AUTHORIZATION 不是 blocker，不得放入 unresolved_blockers。
+不得凭空选择 local container、Docker、local volume、商业 Cloud 或设备。具体 Runtime/Storage/Compute 只能来自 candidate_infrastructure；没有候选时使用 provider-independent 的抽象 project-scoped boundary，或保留明确 blocker。
+若 candidate_infrastructure 已提供 ACTIVE Storage/Compute，必须评估“经 Founder 授权后的隔离复用”是否足以作为当前 Minimum Non-Production Runtime，而不是仅因尚未 approved 就判为 EXTERNAL_UNAVAILABLE。对于没有候选的 IAM/Network/Credential，可以设计新的 project-scoped application boundary；必须明确未来会发生的本地 schema/process/config/identity side effects。只有确实缺少无法设计或无法从候选推导的外部事实才使用 EXTERNAL_UNAVAILABLE。
+一个 decision-ready Candidate 必须能直接绑定当前 Package 所需的全部逻辑依赖；不得使用“未来再绑定 concrete provider/real resource”作为批准后的占位方案。若采用 observed Storage/Compute candidate，策略中必须明确引用该 candidate 并说明隔离复用边界。
+只返回 JSON：unknown_resolutions(array，每项 original_unknown,resolution_type,status,resolution result|founder_authorization|external_unavailable|technical_blocker,source_refs,reason,confidence,result), architecture_candidate(object或null，字段 name,runtime_type,target_environment_type,storage_strategy,compute_strategy,iam_strategy,network_strategy,credential_strategy,cost_model,external_side_effects,production_impact,isolation_strategy,rollback_strategy,why,risks,confidence,required_founder_authorizations), founder_decisions_required(array，每项 decision,label,scope,reason,risk), unresolved_blockers(array，每项 field,classification,reason,missing_external_fact), recommendation_status。所有结论必须带来源、理由和 confidence。"""
+        response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, LLMRequest(
+            system_prompt=prompt, user_prompt=json.dumps(context, ensure_ascii=False), temperature=0.1,
+            max_tokens=4200, response_format="json", metadata={"runtime_role": "sino_conversation", "brain_stage": "founder_gate_autonomous_resolution"},
+        ))
+        payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
+        payload["provider"], payload["model"] = response.provider, response.model
+        return payload
+
+    @staticmethod
+    def _validate_founder_gate_resolution(payload: dict, *, original_unknowns: list[dict]) -> dict:
+        classifications = {"DISCOVERABLE", "DESIGNABLE", "FOUNDER_AUTHORIZATION", "EXTERNAL_UNAVAILABLE", "TECHNICAL_BLOCKER"}
+        if not isinstance(payload, dict):
+            raise ValueError("founder_gate_resolution_required")
+        resolutions = []
+        for item in payload.get("unknown_resolutions") or []:
+            item = dict(item or {})
+            original = item.get("original_unknown")
+            if isinstance(original, dict):
+                original = original.get("field")
+            classification = str(item.get("resolution_type") or "").upper()
+            if classification not in classifications or not original or not item.get("reason"):
+                raise ValueError("invalid_founder_gate_unknown_resolution")
+            confidence = max(0.0, min(1.0, float(item.get("confidence") or 0)))
+            resolutions.append({**item, "original_unknown": str(original), "resolution_type": classification, "source_refs": list(item.get("source_refs") or []), "confidence": confidence})
+        resolved_fields = {str(item.get("original_unknown")) for item in resolutions}
+        for unknown in original_unknowns:
+            field = str(unknown.get("field"))
+            if field not in resolved_fields:
+                resolutions.append({
+                    "original_unknown": field, "resolution_type": "EXTERNAL_UNAVAILABLE", "status": "external_unavailable",
+                    "source_refs": [], "reason": "Autonomous analysis returned no supported resolution for this required fact.",
+                    "confidence": 1.0, "result": None,
+                })
+        candidate = payload.get("architecture_candidate")
+        if candidate is not None:
+            candidate = dict(candidate)
+            required = ("name", "runtime_type", "target_environment_type", "storage_strategy", "compute_strategy", "iam_strategy", "network_strategy", "credential_strategy", "cost_model", "external_side_effects", "production_impact", "isolation_strategy", "rollback_strategy", "why", "risks", "confidence", "required_founder_authorizations")
+            if any(candidate.get(key) in (None, "", []) for key in required):
+                raise ValueError("incomplete_founder_gate_architecture_candidate")
+            candidate["confidence"] = max(0.0, min(1.0, float(candidate.get("confidence") or 0)))
+            candidate["risks"] = list(candidate.get("risks") or [])
+            candidate["required_founder_authorizations"] = list(candidate.get("required_founder_authorizations") or [])
+        blockers = [dict(item) for item in payload.get("unresolved_blockers") or [] if str((item or {}).get("classification") or "").upper() in {"EXTERNAL_UNAVAILABLE", "TECHNICAL_BLOCKER"}]
+        decisions = [dict(item) for item in payload.get("founder_decisions_required") or []]
+        terminal = [item for item in resolutions if item["resolution_type"] in {"EXTERNAL_UNAVAILABLE", "TECHNICAL_BLOCKER"} or item.get("status") in {"external_unavailable", "technical_blocker"}]
+        for item in terminal:
+            if not any(str(blocker.get("field")) == str(item.get("original_unknown")) for blocker in blockers):
+                blockers.append({"field": item.get("original_unknown"), "classification": item["resolution_type"], "reason": item.get("reason"), "missing_external_fact": item.get("result")})
+        decision_ready = bool(candidate) and not blockers and bool(decisions)
+        return {
+            "unknown_resolutions": resolutions,
+            "architecture_candidate": candidate,
+            "founder_decisions_required": decisions,
+            "unresolved_blockers": blockers,
+            "decision_ready": decision_ready,
+            "recommendation_status": "decision_ready" if decision_ready else "blocked" if blockers else "analysis_incomplete",
+            "provider": payload.get("provider"), "model": payload.get("model"),
+        }
+
+    @staticmethod
+    def _founder_gate_resolution_validation_issues(result: dict, *, context: dict) -> list[dict]:
+        candidate = dict(result.get("architecture_candidate") or {})
+        discovery = dict(context.get("environment_discovery") or {})
+        observed = {str(item.get("logical_dependency")) for item in discovery.get("candidate_infrastructure") or []}
+        credential = str(candidate.get("credential_strategy") or "").casefold()
+        runtime_type = str(candidate.get("runtime_type") or "").casefold()
+        storage = str(candidate.get("storage_strategy") or "").casefold()
+        compute = str(candidate.get("compute_strategy") or "").casefold()
+        iam = str(candidate.get("iam_strategy") or "").casefold()
+        network = str(candidate.get("network_strategy") or "").casefold()
+        cost = str(candidate.get("cost_model") or "").casefold()
+        side_effects = str(candidate.get("external_side_effects") or "").casefold().strip()
+        why = str(candidate.get("why") or "").casefold()
+        decisions_text = " ".join(json.dumps(item, ensure_ascii=False).casefold() for item in result.get("founder_decisions_required") or [])
+        issues = []
+        observed_text = " ".join(str(item.get("candidate") or "").casefold() for item in discovery.get("candidate_infrastructure") or [])
+        if any(term in runtime_type for term in ("container", "docker")) and not any(term in observed_text for term in ("container", "docker")):
+            issues.append({"field": "provider", "reason": "No container runtime was discovered; use an observed compute candidate or a provider-independent abstract runtime boundary."})
+        if any(term in storage for term in ("local_volume", "local volume", "filesystem", "文件卷")) and not any(term in observed_text for term in ("volume", "filesystem")):
+            issues.append({"field": "resource:storage", "reason": "No local volume/filesystem candidate was discovered; evaluate the observed storage candidate or retain a blocker."})
+        if any(term in f"{why} {decisions_text}" for term in ("future binding", "eventually provide real", "without concrete provider binding", "未来绑定", "后续绑定")):
+            issues.append({"field": "provider", "reason": "The recommendation defers an execution-required concrete binding to a future decision; it is not decision-ready for this Package."})
+        storage_candidates = [str(item.get("candidate") or "").casefold() for item in discovery.get("candidate_infrastructure") or [] if str(item.get("logical_dependency")) in {"storage", "database"}]
+        if storage_candidates and not any(any(token in storage for token in candidate.replace("-", " ").split() if len(token) >= 6) for candidate in storage_candidates):
+            issues.append({"field": "resource:storage", "reason": "A Storage candidate was discovered, but the recommendation does not evaluate or bind that observed candidate."})
+        compute_candidates = [str(item.get("candidate") or "").casefold() for item in discovery.get("candidate_infrastructure") or [] if str(item.get("logical_dependency")) == "compute"]
+        if compute_candidates and not any(any(token in compute for token in candidate.replace("-", " ").split() if len(token) >= 6) for candidate in compute_candidates):
+            issues.append({"field": "resource:compute", "reason": "A Compute candidate was discovered, but the recommendation does not evaluate or bind that observed candidate."})
+        if "credential" not in observed and any(term in credential for term in ("reuse existing", "reuses existing", "existing credential", "复用现有", "已有凭据")):
+            issues.append({"field": "credential_source", "reason": "No Credential candidate was discovered; design a new scoped credential boundary or retain an explicit blocker instead of claiming reuse."})
+        if "iam" not in observed and any(term in iam for term in ("existing", "现有", "已有")):
+            issues.append({"field": "resource:iam", "reason": "No IAM candidate was discovered; describe a designed project-scoped identity boundary, not an existing IAM binding."})
+        if "network" not in observed and any(term in network for term in ("existing network", "现有网络", "已有网络")):
+            issues.append({"field": "resource:network", "reason": "No Network candidate was discovered; describe a designed private/local boundary, not an existing Network binding."})
+        if any(term in cost for term in ("zero incremental", "zero cost", "零增量", "零成本")) and not any(term in cost for term in ("if ", "conditional", "subject to", "若", "前提", "条件")):
+            issues.append({"field": "cost_boundary", "reason": "Zero incremental cost is only conditional on authorized reuse; express the condition and prohibit unapproved paid resources."})
+        if side_effects in {"none", "none.", "无"} and candidate:
+            issues.append({"field": "external_side_effect_boundary", "reason": "Architecture implementation changes local resources or configuration; state the bounded future side effects even though none were performed during analysis."})
+        return issues
+
+    def _resolve_founder_gate_unknowns(self, *, context: dict, original_unknowns: list[dict], prior: dict | None = None) -> dict:
+        max_rounds = 3
+        attempts = []
+        previous_fingerprint = None
+        result = dict(prior or {})
+        prompt_prior = dict(prior or {})
+        status = "pending"
+        for round_number in range(1, max_rounds + 1):
+            raw = self._founder_gate_resolution_runner({**context, "original_blocking_unknowns": original_unknowns, "prior_resolution": prompt_prior or None, "autonomous_round": round_number, "max_autonomous_rounds": max_rounds})
+            next_result = self._validate_founder_gate_resolution(raw, original_unknowns=original_unknowns)
+            validation_issues = self._founder_gate_resolution_validation_issues(next_result, context=context)
+            if validation_issues:
+                next_result["decision_ready"] = False
+                next_result["recommendation_status"] = "evidence_revision_required"
+                next_result["validation_issues"] = validation_issues
+            fingerprint = hashlib.sha256(json.dumps(next_result, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+            progress = fingerprint != previous_fingerprint
+            attempts.append({"round": round_number, "progress": progress, "decision_ready": next_result["decision_ready"], "blocking_count": len(next_result["unresolved_blockers"])})
+            result = next_result
+            if result["decision_ready"]:
+                status = "decision_ready"
+                break
+            if result.get("validation_issues"):
+                previous_fingerprint = fingerprint
+                prompt_prior = {"validation_issues": result["validation_issues"], "rejected_candidate": (result.get("architecture_candidate") or {}).get("name")}
+                status = "analysis_in_progress"
+                continue
+            if result["unresolved_blockers"]:
+                status = "blocked"
+                break
+            if not progress:
+                status = "autonomous_resolution_stalled"
+                break
+            previous_fingerprint = fingerprint
+            prompt_prior = result
+        else:
+            status = "autonomous_resolution_stalled"
+        if status == "autonomous_resolution_stalled" and result.get("validation_issues"):
+            result["unresolved_blockers"] = [
+                {"field": item.get("field"), "classification": "TECHNICAL_BLOCKER", "reason": item.get("reason"), "missing_external_fact": None}
+                for item in result["validation_issues"]
+            ]
+            result["decision_ready"] = False
+            result["recommendation_status"] = "evidence_validation_blocked"
+        return {**result, "resolution_status": status, "resolution_attempts": attempts, "resolution_rounds": len(attempts), "max_autonomous_rounds": max_rounds, "last_resolution_reason": "Founder authorization is ready." if status == "decision_ready" else "External or technical facts remain unavailable." if status == "blocked" else "No additional supported resolution was produced.", "resolved_at": datetime.now(timezone.utc).isoformat()}
+
+    def _materialize_founder_gate_proposal(self, *, conversation, discovery: dict, package: dict, plan: dict, draft, context_evidence: list[dict] | None = None) -> dict | None:
+        preflight = dict(package.get("preflight") or {})
+        if package.get("preflight_status") != "founder_gate_required" or not preflight.get("founder_gate_reasons"):
+            return None
+        runtime_binding = dict(package.get("runtime_binding") or {})
+        gate_type = "runtime_environment_binding" if runtime_binding.get("requires_runtime_binding") else "execution_exception"
+        gate_reasons = list(preflight.get("founder_gate_reasons") or [])
+        occurrence_seed = json.dumps({"package_id": package.get("package_id"), "gate_type": gate_type, "reasons": gate_reasons}, ensure_ascii=False, sort_keys=True)
+        occurrence_id = hashlib.sha256(occurrence_seed.encode()).hexdigest()[:16]
+        proposal_seed = f"{package.get('package_id')}:{gate_type}:{occurrence_id}"
+        proposal_id = f"founder-gate-proposal-{hashlib.sha256(proposal_seed.encode()).hexdigest()[:20]}"
+        proposals = [dict(item) for item in discovery.get("founder_gate_proposals") or []]
+        existing = next((item for item in proposals if item.get("proposal_id") == proposal_id), None)
+        evidence = list(context_evidence or [])
+        environment_discovery = SinoBrainRuntime._runtime_environment_discovery(package) if gate_type == "runtime_environment_binding" else {
+            "status": "not_applicable", "mode": "read_only", "candidate_infrastructure": [], "approved_bindings": [],
+            "blocking_unknowns": [], "external_side_effects_performed": False,
+        }
+        recommendation = dict(runtime_binding.get("recommendation") or {})
+        original_unknowns = list(environment_discovery.get("blocking_unknowns") or [])
+        resolution_input = {
+            "resolution_schema_version": 7,
+            "gate_type": gate_type,
+            "project": {"project_id": conversation.project_id, "name": getattr(draft, "project_name", None)},
+            "confirmed_definition": {"draft_id": package.get("source_draft_id"), "version": package.get("source_draft_version"), "content": getattr(draft, "structured_content", None)},
+            "implementation_plan": plan,
+            "execution_package": {key: package.get(key) for key in ("package_id", "scope", "work_items", "execution_order", "risk_summary", "acceptance_criteria", "rollback_plan", "executor_requirements")},
+            "dependency_evidence": evidence,
+            "environment_discovery": environment_discovery,
+            "architecture_synthesis_guidance": {
+                "observed_candidates_to_evaluate": [
+                    {"logical_dependency": item.get("logical_dependency"), "candidate": item.get("candidate"), "availability": item.get("availability"), "approved_for_package": item.get("approved_for_package")}
+                    for item in environment_discovery.get("candidate_infrastructure") or []
+                ],
+                "resources_without_observed_candidate": [
+                    str(name) for name in runtime_binding.get("required_resource_bindings") or []
+                    if str(name) not in {str(item.get("logical_dependency")) for item in environment_discovery.get("candidate_infrastructure") or []}
+                ],
+                "allowed_design_scope": "project-scoped application boundaries only; no concrete external provider or device may be invented",
+                "authorization_rule": "ACTIVE/CONFIGURED candidates remain unapproved until Founder approves the recommendation",
+            },
+            "safety_constraints": ["read_only_analysis", "no_external_resource_creation", "no_secret_generation", "no_cost", "no_production_change", "isolated", "non_production", "reversible", "minimum_scope"],
+        }
+        fingerprint_payload = json.loads(json.dumps(resolution_input, ensure_ascii=False, default=str))
+        (fingerprint_payload.get("environment_discovery") or {}).pop("discovered_at", None)
+        resolution_input_fingerprint = hashlib.sha256(json.dumps(fingerprint_payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        prior_resolution = dict((existing or {}).get("autonomous_resolution") or {})
+        if prior_resolution.get("input_fingerprint") == resolution_input_fingerprint and prior_resolution.get("resolution_status") in {"decision_ready", "blocked", "autonomous_resolution_stalled"}:
+            autonomous_resolution = prior_resolution
+        else:
+            autonomous_resolution = self._resolve_founder_gate_unknowns(context=resolution_input, original_unknowns=original_unknowns, prior=prior_resolution or None)
+            autonomous_resolution["input_fingerprint"] = resolution_input_fingerprint
+        architecture_candidate = dict(autonomous_resolution.get("architecture_candidate") or {})
+        synthesized_binding = {}
+        if architecture_candidate:
+            strategy_keys = {"storage": "storage_strategy", "compute": "compute_strategy", "iam": "iam_strategy", "network": "network_strategy"}
+            synthesized_binding = {
+                "provider": architecture_candidate.get("runtime_type"),
+                "target_environment": architecture_candidate.get("target_environment_type"),
+                "resource_bindings": [
+                    {"logical_dependency": name, "concrete_target": architecture_candidate.get(strategy_keys.get(str(name), f"{name}_strategy")), "status": "recommended"}
+                    for name in runtime_binding.get("required_resource_bindings") or []
+                    if architecture_candidate.get(strategy_keys.get(str(name), f"{name}_strategy"))
+                ],
+                "credential_source": architecture_candidate.get("credential_strategy"),
+                "cost_boundary": architecture_candidate.get("cost_model"),
+                "external_side_effect_boundary": architecture_candidate.get("external_side_effects"),
+                "production_impact": architecture_candidate.get("production_impact"),
+            }
+        candidates = list(environment_discovery.get("candidate_infrastructure") or [])
+        candidate_by_resource = {item.get("logical_dependency"): item for item in candidates}
+        resource_recommendations = []
+        recommendation_binding = dict(recommendation.get("runtime_binding") or synthesized_binding)
+        for item in recommendation_binding.get("resource_bindings") or runtime_binding.get("resource_bindings") or []:
+            name = item.get("logical_dependency")
+            candidate = candidate_by_resource.get(name) or {}
+            resource_recommendations.append({
+                "logical_dependency": name,
+                "recommended_target": item.get("concrete_target") or candidate.get("candidate") or "Unknown",
+                "classification": candidate.get("availability") or "UNKNOWN",
+                "approved_for_package": bool(candidate.get("approved_for_package")),
+                "reason": candidate.get("evidence") or "Read-only discovery found no concrete candidate.",
+            })
+        known = [
+            {"label": "Project", "value": getattr(draft, "project_name", None) or conversation.project_id},
+            {"label": "Approved Implementation Plan", "value": package.get("implementation_plan_id")},
+            {"label": "Canonical Execution Package", "value": package.get("package_id")},
+            {"label": "Founder Approval", "value": (package.get("approval_ref") or {}).get("status")},
+            {"label": "Required Resources", "value": list(runtime_binding.get("required_resource_bindings") or [])},
+        ]
+        if evidence:
+            known.append({"label": "Real Dependency Evidence", "value": evidence})
+        recommended_binding = recommendation_binding
+        proposed_binding = {
+            "provider": recommended_binding.get("provider") or runtime_binding.get("provider"),
+            "target_environment": recommended_binding.get("target_environment") or runtime_binding.get("target_environment"),
+            "resource_bindings": list(recommended_binding.get("resource_bindings") or runtime_binding.get("resource_bindings") or []),
+            "credential_source": recommended_binding.get("credential_source") or runtime_binding.get("credential_source"),
+            "cost_boundary": recommended_binding.get("cost_boundary") or runtime_binding.get("cost_boundary"),
+            "external_side_effect_boundary": recommended_binding.get("external_side_effect_boundary") or runtime_binding.get("external_side_effect_boundary"),
+            "production_impact": recommended_binding.get("production_impact") if "production_impact" in recommended_binding else runtime_binding.get("production_impact"),
+        }
+        blocking_unknowns = list(autonomous_resolution.get("unresolved_blockers") or [])
+        founder_decisions_required = list(autonomous_resolution.get("founder_decisions_required") or [])
+        decision_ready = not blocking_unknowns and bool(resource_recommendations)
+        decision_ready = bool(autonomous_resolution.get("decision_ready")) and decision_ready
+        recommendation_status = autonomous_resolution.get("recommendation_status") or ("concrete" if decision_ready else "requires_discovery_resolution")
+        target = proposed_binding.get("target_environment") or "Unknown — no approved target environment"
+        provider = proposed_binding.get("provider") or "Unknown — no approved runtime provider/type"
+        proposal_content = {
+            "known": known,
+            "recommended": {
+                "name": architecture_candidate.get("name") or recommendation.get("summary") or "隔离的非生产 Runtime Binding（待具体目标确认）",
+                "target_environment": target,
+                "provider": provider,
+                "why": architecture_candidate.get("why") or recommendation.get("reason") or gate_reasons[0],
+                "existing_infrastructure": candidates,
+                "resource_recommendations": resource_recommendations,
+                "new_credential": proposed_binding.get("credential_source") or "Unknown — credential type and authorization are unresolved",
+                "new_cost": proposed_binding.get("cost_boundary") or "Unknown — no approved cost boundary",
+                "production_impact": proposed_binding.get("production_impact") if proposed_binding.get("production_impact") is not None else "Unknown — production impact is not authorized",
+                "external_side_effect": proposed_binding.get("external_side_effect_boundary") or "Unknown — external resource creation boundary is unresolved",
+                "rollback_isolation": architecture_candidate.get("rollback_strategy") or "仅推荐隔离、非生产、可回滚的目标；具体回滚方案随 concrete binding 一并确认。",
+                "isolation": architecture_candidate.get("isolation_strategy"),
+                "risks": list(architecture_candidate.get("risks") or []),
+                "confidence": architecture_candidate.get("confidence") if architecture_candidate else "low",
+                "unresolved_facts": blocking_unknowns,
+                "runtime_binding": proposed_binding,
+            },
+            "requires_founder_confirmation": founder_decisions_required,
+            "unknown_items": [item.get("field") for item in blocking_unknowns],
+            "founder_decision_required": "Sino 完成具体目标调查后再提交 Founder 决策。" if blocking_unknowns else "批准推荐方案，或返回当前 canonical Project Conversation 继续修改。",
+            "environment_discovery": environment_discovery,
+            "architecture_candidate": architecture_candidate or None,
+            "resolution_evidence": list(autonomous_resolution.get("unknown_resolutions") or []),
+        }
+        now = datetime.now(timezone.utc).isoformat()
+        readiness = {
+            "decision_ready": decision_ready,
+            "blocking_unknowns": blocking_unknowns,
+            "discovery_status": environment_discovery.get("status"),
+            "recommendation_status": recommendation_status,
+            "founder_decisions_required": founder_decisions_required,
+            "resolution_status": autonomous_resolution.get("resolution_status"),
+            "resolution_attempts": list(autonomous_resolution.get("resolution_attempts") or []),
+            "last_resolution_reason": autonomous_resolution.get("last_resolution_reason"),
+        }
+        if existing:
+            comparable_before = {"content": existing.get("content"), "readiness": existing.get("decision_readiness")}
+            comparable_after = {"content": proposal_content, "readiness": readiness}
+            # Discovery timestamps are observational metadata, not a semantic revision.
+            for comparable in (comparable_before, comparable_after):
+                ((comparable.get("content") or {}).get("environment_discovery") or {}).pop("discovered_at", None)
+            if comparable_before != comparable_after:
+                history = list(discovery.get("founder_gate_proposal_history") or [])
+                history.append(dict(existing))
+                existing["version"] = int(existing.get("version") or 1) + 1
+                existing["content"] = proposal_content
+                existing["decision_readiness"] = readiness
+                existing["decision_ready"] = decision_ready
+                existing["autonomous_resolution"] = autonomous_resolution
+                existing["updated_at"] = now
+                discovery["founder_gate_proposal_history"] = history
+            proposals = [existing if item.get("proposal_id") == proposal_id else item for item in proposals]
+            discovery["founder_gate_proposals"] = proposals
+            discovery["active_founder_gate_proposal"] = existing
+            return existing
+
+        proposal = {
+            "proposal_id": proposal_id,
+            "proposal_type": "founder_gate_proposal",
+            "gate_type": gate_type,
+            "gate_occurrence_id": occurrence_id,
+            "title": "Runtime Environment Recommendation" if gate_type == "runtime_environment_binding" else "Founder Execution Exception Recommendation",
+            "status": "ready_for_review",
+            "version": 1,
+            "project_id": conversation.project_id,
+            "source_conversation_id": conversation.id,
+            "source_draft_id": package.get("source_draft_id"),
+            "source_draft_version": package.get("source_draft_version"),
+            "implementation_plan_id": package.get("implementation_plan_id"),
+            "execution_package_id": package.get("package_id"),
+            "founder_gate_reasons": gate_reasons,
+            "content": proposal_content,
+            "decision_readiness": readiness,
+            "decision_ready": decision_ready,
+            "autonomous_resolution": autonomous_resolution,
+            "created_at": now,
+            "updated_at": now,
+        }
+        proposals.append(proposal)
+        discovery["founder_gate_proposals"] = proposals
+        discovery["active_founder_gate_proposal"] = proposal
+        return proposal
+
+    def review_founder_gate_proposal(self, conversation_id: str, proposal_id: str, action: str) -> dict:
+        """Record one Founder decision without creating a Package or Execution Session."""
+        if action not in {"approve", "revise"}:
+            raise ValueError("Unsupported Founder Gate Proposal action")
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {})
+            proposals = [dict(item) for item in discovery.get("founder_gate_proposals") or []]
+            index = next((index for index, item in enumerate(proposals) if item.get("proposal_id") == proposal_id), None)
+            if index is None:
+                raise LookupError("Founder Gate Proposal not found")
+            proposal = proposals[index]
+            if proposal.get("status") == "approved" and action == "approve":
+                return proposal
+            if action == "approve" and proposal.get("decision_ready") is not True:
+                raise ValueError("Founder Gate Proposal is not decision-ready")
+            history = list(discovery.get("founder_gate_proposal_history") or [])
+            history.append(dict(proposal))
+            proposal["status"] = "approved" if action == "approve" else "needs_revision"
+            proposal["founder_reviewed_at"] = datetime.now(timezone.utc).isoformat()
+            proposal["updated_at"] = proposal["founder_reviewed_at"]
+            proposals[index] = proposal
+            discovery["founder_gate_proposals"] = proposals
+            discovery["founder_gate_proposal_history"] = history
+            discovery["active_founder_gate_proposal"] = proposal
+            if action == "approve":
+                package = dict(discovery.get("execution_package") or {})
+                if package.get("package_id") != proposal.get("execution_package_id"):
+                    raise ValueError("Founder Gate Proposal does not match current Execution Package")
+                runtime_binding = dict(package.get("runtime_binding") or {})
+                proposed_binding = dict(((proposal.get("content") or {}).get("recommended") or {}).get("runtime_binding") or {})
+                runtime_binding.update({key: value for key, value in proposed_binding.items() if value not in (None, [], {})})
+                runtime_binding["binding_status"] = "approved"
+                package["runtime_binding"] = runtime_binding
+                discovery["execution_package"] = package
+            state.discovery = discovery
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+        if action == "approve":
+            self.revalidate_execution_package(conversation_id)
+        return proposal
 
     @staticmethod
     def _derive_rollback_plan(plan: dict) -> list[dict]:
@@ -1053,6 +1626,22 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
         except (OSError, subprocess.SubprocessError):
             repository_ok, repository_detail = False, "无法读取 Git repository 状态。"
         check("repository_state", "passed" if repository_ok else "failed", repository_detail)
+        if repository_ok:
+            working_tree_resolution = {
+                "resolution_type": "autonomous_working_tree_resolution", "mode": "read_only", "status": "clean",
+                "branch": branch, "dirty_count": 0, "inventory": [], "checkpoint_proposal": None,
+                "founder_decision_required": False, "external_side_effects_performed": False,
+            }
+        else:
+            try:
+                working_tree_resolution = analyze_working_tree(repo_root)
+            except (OSError, subprocess.SubprocessError):
+                working_tree_resolution = {
+                    "resolution_type": "autonomous_working_tree_resolution", "mode": "read_only", "status": "working_tree_blocked",
+                    "branch": branch, "dirty_count": len(dirty_lines), "inventory": [], "checkpoint_proposal": None,
+                    "founder_decision_required": False, "external_side_effects_performed": False,
+                    "blocking_reason": "Git evidence could not be read safely.",
+                }
         validation_ok = all(item.get("validation") for item in package["work_items"]) and bool(package["validation_plan"]["integration"]) and bool(package["acceptance_criteria"])
         check("validation_readiness", "passed" if validation_ok else "failed", "每个 Work Item、集成与最终验收均有验证定义。" if validation_ok else "存在缺失的验证定义。")
         rollback_ok = bool(package["rollback_plan"])
@@ -1060,7 +1649,7 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
         founder_gate = any(item["status"] == "founder_gate_required" for item in checks)
         blocked = any(item["status"] == "failed" for item in checks)
         status = "founder_gate_required" if founder_gate else "blocked" if blocked else "ready"
-        return {"status": status, "checks": checks, "blocking_reasons": [item["detail"] for item in checks if item["status"] == "failed"], "founder_gate_reasons": [item["detail"] for item in checks if item["status"] == "founder_gate_required"], "validated_at": datetime.now(timezone.utc).isoformat()}
+        return {"status": status, "checks": checks, "blocking_reasons": [item["detail"] for item in checks if item["status"] == "failed"], "founder_gate_reasons": [item["detail"] for item in checks if item["status"] == "founder_gate_required"], "working_tree_resolution": working_tree_resolution, "validated_at": datetime.now(timezone.utc).isoformat()}
 
     @staticmethod
     def _validate_implementation_plan(payload: dict, *, context: dict | None = None) -> dict:
@@ -2347,6 +2936,10 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
                     recommendation = runtime_binding.get("recommendation") or {}
                     return {"action_id": "runtime_environment_binding_review", "title": "审核运行环境方案", "description": recommendation.get("summary") or "Runtime Environment 尚未绑定。", "status_label": "Founder Gate Required", "primary_label": None}
                 return {"action_id": "execution_package_founder_gate", "title": "Execution Package 需要 Founder 判断", "description": "；".join(preflight.get("founder_gate_reasons") or []), "status_label": "Founder Gate Required", "primary_label": None}
+            working_tree = dict(preflight.get("working_tree_resolution") or {})
+            if working_tree.get("status") == "working_tree_resolution_ready":
+                checkpoint = dict(working_tree.get("checkpoint_proposal") or {})
+                return {"action_id": "working_tree_resolution_ready", "title": "Working Tree Resolution Ready", "description": f"Sino 已完成只读审计，建议 {checkpoint.get('checkpoint_name') or '形成安全 checkpoint'}；完成 clean baseline 后重新验证同一 Package。", "status_label": "Preflight Resolution Ready", "primary_label": None}
             return {"action_id": "execution_package_blocked", "title": "Execution Package Preflight Blocked", "description": "；".join(preflight.get("blocking_reasons") or []), "status_label": "Blocked", "primary_label": None}
         if stage == "implementation_planning":
             planning = dict((brain.get("discovery") or {}).get("implementation_planning") or {})

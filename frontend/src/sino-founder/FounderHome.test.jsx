@@ -49,4 +49,11 @@ describe("System Project workspace context", () => {
     expect(screen.getByText("Validation / Execution Result")).toBeTruthy();
     expect(screen.queryByText("正在判断讨论成熟度")).toBeNull();
   });
+
+  it("opens the canonical Founder Gate Proposal from the Project homepage", () => {
+    const open = vi.fn(); const proposal = { proposal_id: "proposal-runtime", status: "ready_for_review" };
+    render(<ProjectWorkspace intelligence={{ project_name: "Cloud Foundation", conversation_refs: [], project_lifecycle: { rank: 500, stage_label: "Execution Package", current_action: { status_label: "Founder Gate Required", description: "Runtime binding required" } }, active_founder_gate_proposal: proposal }} drafts={[]} onOpenFounderGate={open} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "审核运行环境方案" }));
+    expect(open).toHaveBeenCalledWith(proposal);
+  });
 });

@@ -16,6 +16,7 @@ from app.core.draft.model import FounderDraftDB
 from core.conversation_first.model import CandidateGoalDB, ConversationMessageDB
 from core.founder_object.model import FounderObjectDB
 from app.founder_ai import brain_runtime as module
+from app.founder_ai.working_tree_resolution import analyze_working_tree
 
 
 def _result(*, readiness="reviewable", critical=None, non_blocking=None, question=None, confidence=.82):
@@ -568,6 +569,7 @@ def test_execution_package_revalidation_reuses_identity_and_only_refreshes_prefl
 
 def test_execution_package_revalidation_can_raise_founder_gate_without_execution(monkeypatch):
     runtime, conversation_id, _ = _execution_package_state(monkeypatch)
+    runtime._founder_gate_resolution_runner = _blocked_gate_resolution
     with module.SessionLocal() as session:
         state = session.scalar(select(module.SinoBrainSessionDB).where(module.SinoBrainSessionDB.conversation_id == conversation_id))
         discovery = dict(state.discovery); package = dict(discovery["execution_package"])
@@ -582,6 +584,7 @@ def test_execution_package_revalidation_can_raise_founder_gate_without_execution
 
 def test_runtime_binding_revalidation_preserves_package_identity_and_work_items(monkeypatch):
     runtime, conversation_id, original = _execution_package_state(monkeypatch)
+    runtime._founder_gate_resolution_runner = _blocked_gate_resolution
     with module.SessionLocal() as session:
         state = session.scalar(select(module.SinoBrainSessionDB).where(module.SinoBrainSessionDB.conversation_id == conversation_id))
         discovery = dict(state.discovery); package = dict(discovery["execution_package"]); plan = dict(discovery["implementation_planning"])
@@ -596,6 +599,143 @@ def test_runtime_binding_revalidation_preserves_package_identity_and_work_items(
     assert result["implementation_plan_id"] == original["implementation_plan_id"]
     assert result["work_items"] == [{"work_item_id": "work-1", "title": "Configure database runtime", "dependencies": [], "validation": ["connect"]}]
     assert result["preflight_status"] == "founder_gate_required"
+
+
+def _blocked_gate_resolution(context):
+    unknowns = context["original_blocking_unknowns"]
+    return {
+        "unknown_resolutions": [{"original_unknown": item["field"], "resolution_type": "EXTERNAL_UNAVAILABLE", "status": "external_unavailable", "source_refs": [], "reason": "No supported external fact is available.", "confidence": 1, "result": None} for item in unknowns],
+        "architecture_candidate": None, "founder_decisions_required": [],
+        "unresolved_blockers": [{"field": item["field"], "classification": "EXTERNAL_UNAVAILABLE", "reason": "No supported external fact is available.", "missing_external_fact": item["field"]} for item in unknowns],
+        "recommendation_status": "blocked",
+    }
+
+
+def _decision_ready_gate_resolution(context):
+    classifications = {"provider": "DESIGNABLE", "target_environment": "DESIGNABLE", "resource:storage": "DISCOVERABLE", "credential_source": "FOUNDER_AUTHORIZATION", "cost_boundary": "FOUNDER_AUTHORIZATION", "external_side_effect_boundary": "FOUNDER_AUTHORIZATION", "production_impact": "FOUNDER_AUTHORIZATION"}
+    return {
+        "unknown_resolutions": [{"original_unknown": item["field"], "resolution_type": classifications.get(item["field"], "DESIGNABLE"), "status": "founder_authorization" if classifications.get(item["field"]) == "FOUNDER_AUTHORIZATION" else "resolved", "source_refs": ["environment_discovery"], "reason": "Resolved from approved scope and read-only candidates.", "confidence": .8, "result": "isolated recommendation"} for item in context["original_blocking_unknowns"]],
+        "architecture_candidate": {"name": "Minimum Non-Production Runtime V1", "runtime_type": "provider-independent", "target_environment_type": "isolated non-production", "storage_strategy": "project-scoped PostgreSQL storage boundary", "compute_strategy": "isolated development application process", "iam_strategy": "project-scoped service identity", "network_strategy": "private application boundary", "credential_strategy": "new project-scoped service identity; no secret generated during review", "cost_model": "reuse evaluation first; any incremental external cost requires approval", "external_side_effects": "future creation limited to isolated runtime resources", "production_impact": "none when isolation constraints are maintained", "isolation_strategy": "project-scoped resources separated from production", "rollback_strategy": "remove only project-scoped runtime bindings and restore prior configuration", "why": "Minimum reversible scope resolves the approved dependencies.", "risks": ["isolation must be validated before execution"], "confidence": .8, "required_founder_authorizations": ["authorize isolated resource creation boundary"]},
+        "founder_decisions_required": [{"decision": "approve_runtime_boundary", "label": "Approve Minimum Non-Production Runtime V1", "scope": "isolated runtime only", "reason": "Authorizes resource and credential boundaries.", "risk": "external resource changes"}],
+        "unresolved_blockers": [], "recommendation_status": "decision_ready",
+    }
+
+
+def _runtime_gate_proposal_state(monkeypatch, resolution_runner=_blocked_gate_resolution):
+    runtime, conversation_id, original = _execution_package_state(monkeypatch)
+    runtime._founder_gate_resolution_runner = resolution_runner
+    with module.SessionLocal() as session:
+        state = session.scalar(select(module.SinoBrainSessionDB).where(module.SinoBrainSessionDB.conversation_id == conversation_id))
+        discovery = dict(state.discovery); package = dict(discovery["execution_package"]); plan = dict(discovery["implementation_planning"])
+        plan["scope"] = ["Provision external runtime infrastructure"]
+        plan["work_items"] = [{"work_item_id": "work-runtime", "title": "Configure storage runtime", "dependencies": [], "validation": ["connect"]}]
+        package.update({"scope": list(plan["scope"]), "work_items": copy.deepcopy(plan["work_items"]), "execution_order": ["work-runtime"]})
+        discovery.update({"implementation_planning": plan, "execution_package": package}); state.discovery = discovery; session.commit()
+    monkeypatch.setattr(module.subprocess, "run", lambda args, **kwargs: SimpleNamespace(stdout="main\n" if "branch" in args else ""))
+    runtime.revalidate_execution_package(conversation_id)
+    return runtime, conversation_id, original
+
+
+def test_founder_gate_materializes_one_canonical_reviewable_proposal(monkeypatch):
+    runtime, conversation_id, original = _runtime_gate_proposal_state(monkeypatch)
+    first = runtime.ensure_founder_gate_proposal(conversation_id)
+    second = runtime.ensure_founder_gate_proposal(conversation_id)
+    assert first["proposal_id"] == second["proposal_id"]
+    assert first["gate_type"] == "runtime_environment_binding"
+    assert first["status"] == "ready_for_review"
+    assert first["execution_package_id"] == original["package_id"]
+    assert first["content"]["known"]
+    assert first["content"]["recommended"]["resource_recommendations"]
+    assert first["content"]["unknown_items"]
+    assert first["decision_ready"] is False
+    assert first["decision_readiness"]["discovery_status"] == "completed"
+    assert first["content"]["environment_discovery"]["mode"] == "read_only"
+    assert first["content"]["environment_discovery"]["external_side_effects_performed"] is False
+    assert all(not item["approved_for_package"] for item in first["content"]["environment_discovery"]["candidate_infrastructure"])
+    with module.SessionLocal() as session:
+        state = session.scalar(select(module.SinoBrainSessionDB).where(module.SinoBrainSessionDB.conversation_id == conversation_id))
+        assert len(state.discovery["founder_gate_proposals"]) == 1
+
+
+def test_founder_gate_return_discussion_retains_revision_history(monkeypatch):
+    runtime, conversation_id, _ = _runtime_gate_proposal_state(monkeypatch)
+    proposal = runtime.ensure_founder_gate_proposal(conversation_id)
+    revised = runtime.review_founder_gate_proposal(conversation_id, proposal["proposal_id"], "revise")
+    assert revised["status"] == "needs_revision"
+    with module.SessionLocal() as session:
+        state = session.scalar(select(module.SinoBrainSessionDB).where(module.SinoBrainSessionDB.conversation_id == conversation_id))
+        assert state.discovery["founder_gate_proposal_history"][0]["status"] == "ready_for_review"
+        assert len(state.discovery["founder_gate_proposals"]) == 1
+
+
+def test_founder_gate_approval_binds_and_revalidates_same_package_without_executor(monkeypatch):
+    runtime, conversation_id, original = _runtime_gate_proposal_state(monkeypatch)
+    proposal = runtime.ensure_founder_gate_proposal(conversation_id)
+    with module.SessionLocal() as session:
+        state = session.scalar(select(module.SinoBrainSessionDB).where(module.SinoBrainSessionDB.conversation_id == conversation_id))
+        discovery = dict(state.discovery); proposals = [dict(item) for item in discovery["founder_gate_proposals"]]
+        binding = {"provider": "approved-provider", "target_environment": "isolated-non-production", "resource_bindings": [{"logical_dependency": "storage", "concrete_target": "approved-storage-ref"}], "credential_source": "approved-credential-ref", "cost_boundary": "approved-budget-ref", "external_side_effect_boundary": "approved-create-only", "production_impact": "none"}
+        proposals[0]["content"]["recommended"]["runtime_binding"] = binding
+        proposals[0]["decision_ready"] = True
+        discovery["founder_gate_proposals"] = proposals; discovery["active_founder_gate_proposal"] = proposals[0]; state.discovery = discovery; session.commit()
+    monkeypatch.setattr(module, "create_execution_session", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Executor must not run")), raising=False)
+    runtime.review_founder_gate_proposal(conversation_id, proposal["proposal_id"], "approve")
+    with module.SessionLocal() as session:
+        state = session.scalar(select(module.SinoBrainSessionDB).where(module.SinoBrainSessionDB.conversation_id == conversation_id))
+        package = state.discovery["execution_package"]
+        assert package["package_id"] == original["package_id"]
+        assert package["preflight_status"] == "ready"
+        assert package["execution_status"] == "not_started" if "execution_status" in package else True
+
+
+def test_founder_gate_rejects_approval_while_blocking_unknowns_remain(monkeypatch):
+    runtime, conversation_id, _ = _runtime_gate_proposal_state(monkeypatch)
+    proposal = runtime.ensure_founder_gate_proposal(conversation_id)
+    assert proposal["decision_readiness"]["blocking_unknowns"]
+    with pytest.raises(ValueError, match="not decision-ready"):
+        runtime.review_founder_gate_proposal(conversation_id, proposal["proposal_id"], "approve")
+
+
+def test_founder_gate_becomes_decision_ready_when_concrete_recommendation_only_needs_authorization(monkeypatch):
+    runtime, conversation_id, _ = _runtime_gate_proposal_state(monkeypatch)
+    runtime._founder_gate_resolution_runner = _decision_ready_gate_resolution
+    with module.SessionLocal() as session:
+        state = session.scalar(select(module.SinoBrainSessionDB).where(module.SinoBrainSessionDB.conversation_id == conversation_id))
+        discovery = dict(state.discovery); package = dict(discovery["execution_package"]); binding = dict(package["runtime_binding"])
+        binding["recommendation"] = {**dict(binding.get("recommendation") or {}), "runtime_binding": {"provider": "provider-independent-runtime", "target_environment": "isolated-non-production", "resource_bindings": [{"logical_dependency": "storage", "concrete_target": "recommended-storage-ref"}], "credential_source": "new isolated credential required", "cost_boundary": "Founder-approved capped budget", "external_side_effect_boundary": "create isolated resources only", "production_impact": "none"}}
+        package["runtime_binding"] = binding; discovery["execution_package"] = package; state.discovery = discovery; session.commit()
+    proposal = runtime.ensure_founder_gate_proposal(conversation_id)
+    assert proposal["decision_ready"] is True
+    assert proposal["decision_readiness"]["blocking_unknowns"] == []
+    assert proposal["decision_readiness"]["founder_decisions_required"][0]["decision"] == "approve_runtime_boundary"
+    assert proposal["content"]["environment_discovery"]["approved_bindings"] == []
+
+
+def test_founder_gate_resolution_classifies_design_discovery_and_authorization_without_side_effects(monkeypatch):
+    runtime, conversation_id, original = _runtime_gate_proposal_state(monkeypatch, _decision_ready_gate_resolution)
+    proposal = runtime.ensure_founder_gate_proposal(conversation_id)
+    classifications = {item["resolution_type"] for item in proposal["content"]["resolution_evidence"]}
+    assert {"DISCOVERABLE", "DESIGNABLE", "FOUNDER_AUTHORIZATION"} <= classifications
+    assert proposal["content"]["architecture_candidate"]["name"] == "Minimum Non-Production Runtime V1"
+    assert proposal["decision_ready"] is True
+    assert proposal["decision_readiness"]["blocking_unknowns"] == []
+    assert proposal["content"]["environment_discovery"]["external_side_effects_performed"] is False
+    assert proposal["execution_package_id"] == original["package_id"]
+
+
+def test_founder_gate_resolution_stops_on_no_progress(monkeypatch):
+    runtime = module.SinoBrainRuntime(founder_gate_resolution_runner=lambda _: {"unknown_resolutions": [], "architecture_candidate": None, "founder_decisions_required": [], "unresolved_blockers": [], "recommendation_status": "analysis_incomplete"})
+    result = runtime._resolve_founder_gate_unknowns(context={}, original_unknowns=[])
+    assert result["resolution_status"] == "autonomous_resolution_stalled"
+    assert result["resolution_rounds"] == 2
+    assert result["max_autonomous_rounds"] == 3
+
+
+def test_non_gate_package_does_not_materialize_founder_gate_proposal(monkeypatch):
+    runtime, conversation_id, _ = _execution_package_state(monkeypatch)
+    monkeypatch.setattr(module.subprocess, "run", lambda args, **kwargs: SimpleNamespace(stdout="main\n" if "branch" in args else ""))
+    runtime.revalidate_execution_package(conversation_id)
+    assert runtime.ensure_founder_gate_proposal(conversation_id) is None
 
 
 def test_snapshot_projects_execution_feedback_without_restarting_planning(monkeypatch):

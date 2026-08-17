@@ -169,7 +169,7 @@ function ReuseSuggestions({ items, busy, onReuse, onDevelop }) {
   return <section className="sino-reuse-suggestions" aria-label="可复用能力"><span>Capability Repository</span><h2>检测到已有相关能力</h2>{items.map((item) => <article key={item.asset_id}><div><strong>{item.name} · V{item.version}</strong><p>{item.reuse_reason}</p><small>{item.domain_id} · {statusLabel(item.status)}</small></div>{item.can_reuse ? <button type="button" disabled={busy} onClick={() => onReuse?.(item)}>引用</button> : <button type="button" disabled={busy} onClick={() => onDevelop?.({ action_id: "candidates_saved", asset_id: item.asset_id })}>开发</button>}</article>)}</section>;
 }
 
-export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onReviewConstitution, onReviewProjectOutcome, onReviewImplementationPlan, onContinueProjectAnalysis, selectedConstitutionWorkItemId, onSelectConstitutionWorkItem, onContinueDiscussion, onViewAssets, onNewGoal, capabilityAction, capabilityAsset, capabilityError, onCapabilityAction, reuseSuggestions, onReuse }) {
+export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onReviewConstitution, onReviewProjectOutcome, onReviewImplementationPlan, onContinueProjectAnalysis, onReviewFounderGate, selectedConstitutionWorkItemId, onSelectConstitutionWorkItem, onContinueDiscussion, onViewAssets, onNewGoal, capabilityAction, capabilityAsset, capabilityError, onCapabilityAction, reuseSuggestions, onReuse }) {
   const logRef = useRef(null);
   const conversationRef = useRef(null);
   const scrollAfterSendRef = useRef(false);
@@ -267,7 +267,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const timelineAction = activeStage !== currentStage ? null : capabilityAction
     ? <CapabilityLifecycleCard asset={capabilityAsset} action={capabilityAction} candidates={snapshot?.sino_brain?.discussion_package?.asset_commit?.items || []} error={capabilityError} busy={busy} onAction={onCapabilityAction} onContinue={onContinueDiscussion} onOpenRepository={onViewAssets} />
     : isExecutionPackage
-      ? <ExecutionPackageCard pkg={executionPackage} />
+      ? <ExecutionPackageCard pkg={executionPackage} onReviewFounderGate={onReviewFounderGate} />
     : isImplementationPlanning
       ? <><ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} reviewable={reviewableProjectDraft} /><ImplementationPlanCard plan={implementationPlan} busy={busy} onReview={onReviewImplementationPlan} /></>
     : isOutcomeReview

@@ -44,10 +44,23 @@ describe("ProjectMaturityCard", () => {
   });
 
   it("projects the runtime environment Founder gate and Sino recommendation", () => {
-    render(<ExecutionPackageCard pkg={{ package_id: "package-infra", preflight_status: "founder_gate_required", execution_status: "not_started", work_items: [{ work_item_id: "work-1", title: "Provision external runtime" }], preflight: { checks: [{ check: "runtime_environment_binding", status: "founder_gate_required", detail: "Runtime Environment Binding Required" }] }, runtime_binding: { requires_runtime_binding: true, binding_status: "founder_review_required", provider: null, target_environment: null, resource_bindings: [{ logical_dependency: "object_store", concrete_target: null, status: "unresolved" }], recommendation: { summary: "Use an isolated non-production environment", existing_infrastructure: "No approved binding", required_new_infrastructure: ["object_store"], new_credential: "Unknown", new_cost: "Unknown", production_impact: "Unknown", external_side_effect: "Creates external resources", reason: "Runtime authorization is separate from plan approval" } } }} />);
+    const open = vi.fn(); const proposal = { proposal_id: "proposal-1", status: "ready_for_review" };
+    render(<ExecutionPackageCard onReviewFounderGate={open} pkg={{ package_id: "package-infra", preflight_status: "founder_gate_required", execution_status: "not_started", work_items: [{ work_item_id: "work-1", title: "Provision external runtime" }], founder_gate_proposal: proposal, preflight: { checks: [{ check: "runtime_environment_binding", status: "founder_gate_required", detail: "Runtime Environment Binding Required" }] }, runtime_binding: { requires_runtime_binding: true, binding_status: "founder_review_required", provider: null, target_environment: null, resource_bindings: [{ logical_dependency: "object_store", concrete_target: null, status: "unresolved" }], recommendation: { summary: "Use an isolated non-production environment", existing_infrastructure: "No approved binding", required_new_infrastructure: ["object_store"], new_credential: "Unknown", new_cost: "Unknown", production_impact: "Unknown", external_side_effect: "Creates external resources", reason: "Runtime authorization is separate from plan approval" } } }} />);
     expect(screen.getByText("Runtime Environment 尚未绑定")).toBeTruthy();
     expect(screen.getByText("Sino Runtime Binding Recommendation")).toBeTruthy();
     expect(screen.getByText("需要 Founder 审核运行环境方案")).toBeTruthy();
     expect(screen.queryByText("Ready for Execution")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "审核运行环境方案" }));
+    expect(open).toHaveBeenCalledWith(proposal);
+  });
+
+  it("projects an autonomous working tree resolution without exposing files by default", () => {
+    render(<ExecutionPackageCard pkg={{ package_id: "package-dirty", preflight_status: "blocked", execution_status: "not_started", work_items: [], preflight: { checks: [{ check: "repository_state", status: "failed", detail: "working tree dirty" }], working_tree_resolution: { status: "working_tree_resolution_ready", branch: "feature/test", dirty_count: 19, eligibility_counts: { SAFE_TO_CHECKPOINT: 19 }, inventory: [{ file: "backend/example.py", commit_eligibility: "SAFE_TO_CHECKPOINT" }], checkpoint_proposal: { checkpoint_name: "checkpoint: founder gate autonomous resolution lifecycle", risk: "low", included_files: ["backend/example.py"], excluded_files: [], verification_evidence: ["tests passed"] } } } }} />);
+    expect(screen.getByLabelText("Working Tree Resolution")).toBeTruthy();
+    expect(screen.getByText(/可形成安全 checkpoint/)).toBeTruthy();
+    expect(screen.getByText("checkpoint: founder gate autonomous resolution lifecycle")).toBeTruthy();
+    const details = screen.getByText("Technical Details / Evidence").closest("details");
+    expect(details.open).toBe(false);
+    expect(screen.getByText(/需先解决技术准备问题/)).toBeTruthy();
   });
 });

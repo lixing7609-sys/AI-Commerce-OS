@@ -577,6 +577,30 @@ def revalidate_execution_package(conversation_id: str):
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+@router.post("/conversations/{conversation_id}/brain/founder-gate-proposal/ensure", response_model=dict[str, Any])
+def ensure_founder_gate_proposal(conversation_id: str):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        brain_runtime.ensure_founder_gate_proposal(conversation_id)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/founder-gate-proposals/{proposal_id}/review", response_model=dict[str, Any])
+def review_founder_gate_proposal(conversation_id: str, proposal_id: str, request: BrainReviewIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        brain_runtime.review_founder_gate_proposal(conversation_id, proposal_id, request.action)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
 @router.post("/conversations/{conversation_id}/brain/project-planning/continue", response_model=dict[str, Any])
 def continue_project_planning_analysis(conversation_id: str):
     conversation_id = resolve_conversation_id(conversation_id)
