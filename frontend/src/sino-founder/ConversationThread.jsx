@@ -189,8 +189,15 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   });
   const quickFixRoute = snapshot?.sino_brain?.discovery?.task_complexity_route;
   const isQuickFix = quickFixRoute?.classification === "QUICK_FIX";
-  const stages = snapshot?.sino_brain?.stage_workspaces || FALLBACK_STAGES;
-  const currentStage = snapshot?.sino_brain?.active_workspace_stage || "goal";
+  const quickFixCompleted = isQuickFix && quickFixRoute?.execution_status === "completed";
+  const stages = quickFixCompleted ? [
+    { stage_key: "issue", label: "问题", status: "completed", message_refs: snapshot?.sino_brain?.source_message_refs || [] },
+    { stage_key: "inspect", label: "定位", status: "completed", message_refs: [] },
+    { stage_key: "fix", label: "修复", status: "completed", message_refs: [] },
+    { stage_key: "verify", label: "验证", status: "completed", message_refs: [] },
+    { stage_key: "complete", label: "完成", status: "active", message_refs: [] },
+  ] : snapshot?.sino_brain?.stage_workspaces || FALLBACK_STAGES;
+  const currentStage = quickFixCompleted ? "complete" : snapshot?.sino_brain?.active_workspace_stage || "goal";
   const [selection, setSelection] = useState({ conversationId, currentStage, stage: currentStage });
   const [longMessageExpansion, setLongMessageExpansion] = useState({});
   const activeStage = selection.conversationId === conversationId && selection.currentStage === currentStage ? selection.stage : currentStage;

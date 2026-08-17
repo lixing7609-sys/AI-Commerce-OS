@@ -19,6 +19,13 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText(/图片上下文当前不可用/)).toBeTruthy();
     expect(screen.queryByText("Strategy Meeting")).toBeNull();
   });
+  it("projects an autonomously completed Quick Fix at the Completed step", () => {
+    const value = snapshot("quick-complete", [{ message_id: "m1", role: "founder", content: "修复折叠" }]);
+    value.sino_brain = { source_message_refs: ["m1"], active_workspace_stage: "issue", discovery: { task_complexity_route: { classification: "QUICK_FIX", execution_status: "completed", evidence: {} } } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByLabelText("讨论记录").dataset.stageWorkspace).toBe("完成");
+    expect(screen.queryByText("Strategy Meeting")).toBeNull();
+  });
   it("links a Cognitive Outcome to its canonical Draft without replacing the source message", () => {
     const openDraft = vi.fn();
     const grounding = { cognitive_work: { cognitive_outcome_id: "cognitive-real" } };
