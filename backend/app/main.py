@@ -36,6 +36,7 @@ from app.core.model_center.api import router as model_center_router
 from app.core.intelligence_evolution.api import router as intelligence_evolution_router
 from app.core.runtime_environment.api import router as runtime_environment_router
 from app.founder_ai.api import router as founder_ai_router
+from app.studio_ai.api import router as studio_ai_router
 from app.founder_ai.execution_worker import execution_worker
 from app.services.database_readiness_service import (
     DatabaseReadinessError,
@@ -333,6 +334,7 @@ app.include_router(
     founder_ai_router,
     prefix="/api/v1",
 )
+app.include_router(studio_ai_router, prefix="/api/v1")
 
 @app.get("/health", tags=["System"])
 def health():

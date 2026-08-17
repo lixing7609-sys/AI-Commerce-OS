@@ -841,3 +841,56 @@
 .stp-table tr:first-child th { border-top: none; }
 
 .stp-pill { padding: 7px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); font-size: 12px; color: var(--text-secondary); }
+
+/* ---- Studio minimal runnable flow ---- */
+
+.st-minimal-flow {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 270px;
+  min-height: 620px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.st-minimal-flow__left,
+.st-minimal-flow__right { padding: 18px; background: var(--bg); }
+.st-minimal-flow__left { border-right: 1px solid var(--border); }
+.st-minimal-flow__right { border-left: 1px solid var(--border); }
+.st-minimal-flow__left > span,
+.st-minimal-flow__left > small { display: block; color: var(--text-secondary); font-size: 11px; }
+.st-minimal-flow__left > strong { display: block; margin: 5px 0; font-size: 13px; }
+.st-minimal-flow__left h3,
+.st-minimal-flow__right h3 { margin: 22px 0 10px; font-size: 12px; }
+.st-minimal-flow__left button {
+  width: 100%; margin-bottom: 6px; padding: 9px; overflow: hidden; border: 1px solid transparent;
+  border-radius: 9px; background: transparent; color: var(--text); text-align: left; text-overflow: ellipsis;
+  white-space: nowrap; cursor: pointer;
+}
+.st-minimal-flow__left button:hover,
+.st-minimal-flow__left button.is-active { border-color: var(--border); background: var(--surface); }
+.st-minimal-flow__main { min-width: 0; padding: 24px; }
+.st-minimal-flow__main header span { color: #129b8d; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.st-minimal-flow__main header h2 { margin: 7px 0; font-size: 22px; }
+.st-minimal-flow__main header p { margin: 0 0 24px; color: var(--text-secondary); font-size: 12px; }
+.st-minimal-flow__main form label { display: block; margin-bottom: 7px; font-size: 11px; font-weight: 700; }
+.st-minimal-flow__main textarea {
+  width: 100%; min-height: 110px; padding: 12px; resize: vertical; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; box-sizing: border-box;
+}
+.st-minimal-flow__main form button { margin-top: 10px; }
+.st-minimal-result { margin-top: 25px; padding-top: 18px; border-top: 1px solid var(--border); }
+.st-minimal-result h3 { margin: 0 0 12px; font-size: 13px; }
+.st-minimal-result article { margin-bottom: 8px; padding: 11px; border-radius: 10px; background: var(--bg); }
+.st-minimal-result article strong { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; }
+.st-minimal-result article p { margin: 5px 0 0; font-size: 12px; }
+.st-minimal-flow__right dl { margin: 0; }
+.st-minimal-flow__right dl div { padding: 9px 0; border-bottom: 1px solid var(--border); }
+.st-minimal-flow__right dt { color: var(--text-secondary); font-size: 10px; }
+.st-minimal-flow__right dd { margin: 4px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.st-minimal-flow__right p { color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+@media (max-width: 1050px) {
+  .st-minimal-flow { grid-template-columns: 180px minmax(0, 1fr); }
+  .st-minimal-flow__right { grid-column: 1 / -1; border-top: 1px solid var(--border); border-left: 0; }
+}

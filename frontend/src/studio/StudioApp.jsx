@@ -54,7 +54,7 @@ function StudioShell() {
             <h1>{activeItem?.label ?? "Studio"}</h1>
             <p className="st-topbar-subtitle">AI Commerce OS Studio —— AI Content Company Operating System · AI内容公司操作系统</p>
           </div>
-          <span className="st-demo-badge">演示数据</span>
+          <span className="st-demo-badge">{activePage === "workspace" ? "LOCAL · Shared Foundation" : "演示数据"}</span>
         </div>
         <div className="st-content">
           <div className="st-content__inner">

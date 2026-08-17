@@ -11,4 +11,10 @@ describe("Founder AI V2 route ownership", () => {
     expect(isFounderAIRoute("/legacy")).toBe(false);
     expect(isFounderAIRoute("/legacy/dashboard")).toBe(false);
   });
+  it("keeps standalone product editions outside the Founder shell", () => {
+    expect(isFounderAIRoute("/studio")).toBe(false);
+    expect(isFounderAIRoute("/studio/")).toBe(false);
+    expect(isFounderAIRoute("/operator")).toBe(false);
+    expect(isFounderAIRoute("/cloud")).toBe(false);
+  });
 });
