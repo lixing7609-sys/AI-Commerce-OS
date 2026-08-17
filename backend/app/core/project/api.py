@@ -63,6 +63,10 @@ def remove_founder_project(project_id: str):
 @router.get("/{project_id}/intelligence", response_model=dict)
 def read_project_intelligence(project_id: str):
     try:
+        from app.founder_ai.brain_runtime import brain_runtime
+        project = next((item for item in list_projects() if item.id == project_id), None)
+        if project and project.project_type == "system_project" and project.source_proposal_id:
+            brain_runtime.ensure_project_planning_conversation(project_id)
         return get_project_intelligence(project_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error

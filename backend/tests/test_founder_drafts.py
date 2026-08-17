@@ -63,6 +63,41 @@ def test_plain_assistant_content_is_not_a_draft_source(monkeypatch):
         assert session.query(FounderDraftDB).count() == 0
 
 
+def test_ready_project_planning_outcomes_materialize_one_reviewable_project_definition(monkeypatch):
+    factory = _factory(monkeypatch)
+    import app.core.project.service as project_service
+    monkeypatch.setattr(project_service, "SessionLocal", factory)
+    maturity = {
+        "maturity_status": "ready_for_review", "review_status": "awaiting_founder_review",
+        "reason": "The immediate definition is coherent and reviewable.",
+        "outcomes": [
+            {"outcome_id": "outcome-definition", "outcome_type": "project_definition", "title": "Cloud Project Definition", "content": {"positioning": "Foundation"}, "source_message_refs": ["message-initial"]},
+            {"outcome_id": "outcome-constraint", "outcome_type": "constraint", "title": "Immediate Scope", "content": "Minimum blocking scope", "source_message_refs": ["message-initial"]},
+            {"outcome_id": "outcome-question", "outcome_type": "pending_question", "title": "Long-term Scope", "content": "Evolves later", "source_message_refs": ["message-initial"]},
+        ],
+    }
+    with factory() as session:
+        project = FounderProjectDB(id="project-cloud", system_id="founder_ai", name="Cloud", project_type="system_project", source_proposal_id="proposal-cloud")
+        conversation = ConversationDB(id="conv-cloud", system_id="founder_ai", project_id=project.id, title="Cloud · 项目规划")
+        brain = SinoBrainSessionDB(conversation_id=conversation.id, project_id=project.id, stage="project_planning", discovery={"discussion_maturity": maturity})
+        message = ConversationMessageDB(id="message-initial", conversation_id=conversation.id, role="assistant", content="initial planning", message_type="project_planning")
+        session.add_all([project, conversation, brain, message]); session.commit()
+
+    first = draft_service.ensure_project_definition_draft(conversation_id="conv-cloud", session_factory=factory)
+    second = draft_service.ensure_project_definition_draft(conversation_id="conv-cloud", session_factory=factory)
+    assert first["created"] is True
+    assert second["created"] is False
+    assert second["draft"]["draft_id"] == first["draft"]["draft_id"]
+    assert second["draft"]["draft_type"] == "project_definition"
+    assert second["draft"]["status"] == "ready_for_review"
+    assert second["draft"]["version"] == 1
+    assert second["draft"]["remaining_questions"] == ["Evolves later"]
+    assert second["draft"]["structured_content"]["sections"]["project_definition"] == {"positioning": "Foundation"}
+    assert second["draft"]["structured_content"]["_draft_meta"]["source_cognitive_outcome_refs"] == ["outcome-definition", "outcome-constraint", "outcome-question"]
+    with factory() as session:
+        assert session.query(FounderDraftDB).filter(FounderDraftDB.status != "archived").count() == 1
+
+
 def test_later_outcome_updates_the_canonical_project_draft(monkeypatch):
     factory = _factory(monkeypatch)
     base = {"completion_status": "completed", "work_target": "形成系统定义", "new_findings": [], "resolved_questions": [], "new_questions": [], "proposed_outcomes": [{"type": "document", "title": "System Definition"}]}

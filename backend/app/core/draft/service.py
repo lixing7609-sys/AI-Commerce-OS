@@ -299,6 +299,108 @@ def sync_project_draft_status(*, conversation_id: str, maturity: dict, session_f
         return canonical_result
 
 
+def ensure_project_definition_draft(*, conversation_id: str, session_factory=SessionLocal) -> dict | None:
+    """Materialize one canonical review target from persisted planning outcomes."""
+    with session_factory() as session:
+        conversation = session.get(ConversationDB, conversation_id)
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+        if conversation is None or state is None or not conversation.project_id:
+            return None
+        maturity = dict((state.discovery or {}).get("discussion_maturity") or {})
+        if maturity.get("maturity_status") != "ready_for_review":
+            return None
+        outcomes = [dict(item) for item in maturity.get("outcomes") or []]
+        definition = next((item for item in outcomes if item.get("outcome_type") == "project_definition"), None)
+        if definition is None:
+            return None
+        project = session.get(FounderProjectDB, conversation.project_id)
+        if project is None:
+            return None
+        active = list(session.scalars(select(FounderDraftDB).where(
+            FounderDraftDB.project_id == project.id,
+            FounderDraftDB.source_conversation_id == conversation_id,
+            FounderDraftDB.draft_type.in_(["project_definition", "system_definition"]),
+            FounderDraftDB.status != "archived",
+        ).order_by(FounderDraftDB.created_at, FounderDraftDB.id)))
+        record = active[0] if active else None
+        created = record is None
+        canonical_source_ref = "planning-outcome-" + hashlib.sha256(f"{conversation_id}:{definition.get('outcome_id')}".encode()).hexdigest()[:20]
+        if record is None:
+            record = FounderDraftDB(
+                title=definition.get("title") or f"{project.name} Project Definition",
+                draft_type="project_definition", status="ready_for_review",
+                project_id=project.id, project_name=project.name,
+                source_conversation_id=conversation_id,
+                source_cognitive_outcome_ref=canonical_source_ref,
+            )
+            session.add(record)
+        source_message_refs = list(dict.fromkeys(ref for item in outcomes for ref in (item.get("source_message_refs") or [])))
+        sections = {
+            "project_definition": definition.get("content"),
+            "constraints": [item.get("content") for item in outcomes if item.get("outcome_type") == "constraint"],
+            "knowledge": [item.get("content") for item in outcomes if item.get("outcome_type") == "knowledge"],
+            "pending_questions": [item.get("content") for item in outcomes if item.get("outcome_type") == "pending_question"],
+            "proposals": [item.get("content") for item in outcomes if item.get("outcome_type") == "new_project_proposal"],
+        }
+        from app.core.project.service import assemble_project_context
+        project_context = assemble_project_context(project.id)
+        child_context = dict(project_context.get("child_project_context") or {})
+        evidence = list(child_context.get("real_dependency_evidence") or [])
+        provenance = {
+            "source_conversation_id": conversation_id,
+            "source_message_refs": source_message_refs,
+            "source_outcome_refs": [item.get("outcome_id") for item in outcomes if item.get("outcome_id")],
+            "source_constitution_id": ((project_context.get("parent_confirmed_context") or {}).get("constitution") or {}).get("source_conversation_id"),
+            "source_work_item_id": child_context.get("source_work_item_id"),
+            "source_proposal_id": child_context.get("source_proposal_id"),
+            "source_dependency_ids": [item.get("dependency_id") for item in evidence],
+            "source_dependency_projects": [item.get("source_project_id") for item in evidence],
+            "source_execution_sessions": [item.get("source_execution_session_id") for item in evidence],
+            "source_execution_packages": [item.get("source_execution_package_id") for item in evidence],
+        }
+        fingerprint = hashlib.sha256(json.dumps({"sections": sections, "provenance": provenance}, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+        metadata = dict((record.structured_content or {}).get("_draft_meta") or {})
+        previous_fingerprint = metadata.get("content_fingerprint")
+        record.title = definition.get("title") or f"{project.name} Project Definition"
+        record.status = "ready_for_review" if record.status != "confirmed" else "confirmed"
+        record.source_message_refs = source_message_refs
+        record.summary = str(maturity.get("reason") or "")
+        record.structured_content = {
+            "sections": sections,
+            "project_context": {
+                "project_id": project.id, "project_name": project.name,
+                "parent_project_id": child_context.get("parent_project_id"),
+                "architecture_role": child_context.get("architecture_role"),
+                "initial_positioning": child_context.get("initial_positioning"),
+                "initial_scope": child_context.get("initial_scope"),
+            },
+            "provenance": provenance,
+            "_draft_meta": {
+                "semantic_id": f"{project.id}:{record.draft_type}",
+                "source_cognitive_outcome_refs": provenance["source_outcome_refs"],
+                "content_fingerprint": fingerprint,
+            },
+        }
+        record.remaining_questions = sections["pending_questions"]
+        record.current_next_step = "Founder Review"
+        if not created and previous_fingerprint and previous_fingerprint != fingerprint:
+            record.version += 1
+        record.updated_at = datetime.now(timezone.utc)
+        for duplicate in active[1:]:
+            duplicate.status = "archived"
+            duplicate.updated_at = datetime.now(timezone.utc)
+        # Repair only the legacy impossible state left by a failed confirmation:
+        # review was marked confirmed although no reviewable Draft existed.
+        if created and maturity.get("review_status") == "founder_confirmed" and state.stage == "project_planning":
+            discovery = dict(state.discovery or {})
+            maturity["review_status"] = "awaiting_founder_review"
+            maturity.pop("founder_reviewed_at", None)
+            discovery["discussion_maturity"] = maturity
+            state.discovery = discovery
+        session.commit(); session.refresh(record)
+        return {"draft": serialize_draft(record), "created": created}
+
+
 def list_drafts(*, project_id: str | None = None, include_archived: bool = False) -> list[dict]:
     with SessionLocal() as session:
         query = select(FounderDraftDB)

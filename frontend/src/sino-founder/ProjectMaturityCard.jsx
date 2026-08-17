@@ -6,11 +6,11 @@ function OutcomeContent({ value }) {
   return <dl>{Object.entries(value).map(([key, item]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{Array.isArray(item) ? item.join(" · ") : typeof item === "object" ? JSON.stringify(item) : String(item)}</dd></div>)}</dl>;
 }
 
-export function ProjectMaturityCard({ maturity, busy, onReview }) {
+export function ProjectMaturityCard({ maturity, busy, onReview, reviewable = true }) {
   if (!maturity || maturity.maturity_status !== "ready_for_review") return null;
   return <section className="sino-project-maturity" aria-label="Discussion Maturity">
     <header><span>Current Action</span><h2>审核本轮成果</h2></header><p>{maturity.reason}</p>
-    <section className="sino-outcome-review" aria-label="Outcome Review"><span>Outcome Review</span><h3>本轮成果</h3>{maturity.outcomes?.map((item) => <article key={item.outcome_id}><small>{OUTCOME_LABELS[item.outcome_type] || item.outcome_type}</small><strong>{item.title}</strong><OutcomeContent value={item.content} /></article>)}<footer>{maturity.review_status === "founder_confirmed" ? <strong>✓ Founder 已确认成果</strong> : <><button type="button" className="is-primary" disabled={busy} onClick={() => onReview?.("confirm")}>确认成果</button><button type="button" disabled={busy} onClick={() => onReview?.("discuss")}>返回讨论</button></>}</footer></section>
+    <section className="sino-outcome-review" aria-label="Outcome Review"><span>Outcome Review</span><h3>本轮成果</h3>{maturity.outcomes?.map((item) => <article key={item.outcome_id}><small>{OUTCOME_LABELS[item.outcome_type] || item.outcome_type}</small><strong>{item.title}</strong><OutcomeContent value={item.content} /></article>)}<footer>{maturity.review_status === "founder_confirmed" ? <strong>✓ Founder 已确认成果</strong> : <><button type="button" className="is-primary" disabled={busy || !reviewable} onClick={() => onReview?.("confirm")}>确认成果</button><button type="button" disabled={busy} onClick={() => onReview?.("discuss")}>返回讨论</button>{!reviewable ? <span role="status">正在准备可审核草案</span> : null}</>}</footer></section>
   </section>;
 }
 

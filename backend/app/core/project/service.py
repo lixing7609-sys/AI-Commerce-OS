@@ -11,6 +11,7 @@ from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB, SinoBrainSessionDB
 from app.core.decision.model import DecisionAssetDB
 from app.core.product_visibility.service import hidden_entity_ids
+from app.core.dependency_outcome.service import dependency_evidence_for_target
 from app.database.db import SessionLocal
 
 FOUNDER_SYSTEM_KEY = "founder_ai"
@@ -177,8 +178,11 @@ def get_project_intelligence(project_id: str) -> dict:
         if project.source_conversation_id and project.source_work_item_id:
             source_brain = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == project.source_conversation_id))
             source_routing = dict((source_brain.discovery or {}).get("proposed_work_item_routing") or {}) if source_brain else {}
-            source_proposal = dict((source_routing.get(project.source_work_item_id) or {}).get("formal_object_proposal") or {})
+            source_recommendation = dict(source_routing.get(project.source_work_item_id) or {})
+            source_proposal = dict(source_recommendation.get("formal_object_proposal") or {})
             source_constitution = source_proposal.get("source_constitution") or source_constitution
+        else:
+            source_brain, source_recommendation, source_proposal = None, {}, {}
         inherited_constitution = _confirmed_constitution_from_session(session, project.parent_project_id)
         initial_project_context = None
         if project.project_type == "system_project":
@@ -194,6 +198,16 @@ def get_project_intelligence(project_id: str) -> dict:
                 "source_conversation_title": source_constitution,
                 "source_work_item_id": project.source_work_item_id,
                 "source_proposal_id": project.source_proposal_id,
+                "source_work_item": source_proposal.get("source_work_item"),
+                "founder_decision": dict((source_brain.discovery or {}).get("proposed_work_item_decisions") or {}).get(project.source_work_item_id) if source_brain else None,
+                "routing_recommendation": {
+                    "recommended_route": source_recommendation.get("recommended_route"),
+                    "routing_status": source_recommendation.get("routing_status"),
+                    "reason": source_recommendation.get("reason"),
+                    "next_action": source_recommendation.get("next_action"),
+                } if source_recommendation else None,
+                "formal_object_proposal": source_proposal or None,
+                "real_dependency_evidence": dependency_evidence_for_target(session, project.name),
                 "inherited_constitution": {
                     "title": inherited_constitution.get("title"),
                     "status": inherited_constitution.get("status"),
@@ -300,6 +314,11 @@ def assemble_project_context(project_id: str) -> dict:
         "source_conversation_title": initial.get("source_conversation_title"),
         "source_work_item_id": initial.get("source_work_item_id"),
         "source_proposal_id": initial.get("source_proposal_id"),
+        "source_work_item": initial.get("source_work_item"),
+        "founder_decision": initial.get("founder_decision"),
+        "routing_recommendation": initial.get("routing_recommendation"),
+        "formal_object_proposal": initial.get("formal_object_proposal"),
+        "real_dependency_evidence": list(initial.get("real_dependency_evidence") or []),
         "confirmed_project_intelligence": {
             "decisions": [item for item in intelligence["decisions"] if item["confirmed"]][-12:],
         },
@@ -323,7 +342,8 @@ def assemble_project_context(project_id: str) -> dict:
             "parent_constitution": (parent_confirmed_context or {}).get("constitution", {}).get("source_conversation_id") if (parent_confirmed_context or {}).get("constitution") else None,
             "child_project": intelligence["project_id"],
             "initial_project_context": initial.get("source_proposal_id"),
-            "execution_result": next((item.get("source_execution_session_id") for item in (intelligence.get("implementation_result") or {}).get("external_dependencies") or []), None),
+            "execution_result": next((item.get("source_execution_session_id") for item in (intelligence.get("implementation_result") or {}).get("external_dependencies") or []), None)
+            or next((item.get("source_execution_session_id") for item in initial.get("real_dependency_evidence") or []), None),
         },
     }
 

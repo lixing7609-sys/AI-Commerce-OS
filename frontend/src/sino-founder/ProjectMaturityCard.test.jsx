@@ -19,6 +19,12 @@ describe("ProjectMaturityCard", () => {
     expect(review).toHaveBeenCalledWith("confirm");
   });
 
+  it("does not enable confirmation until the canonical reviewable Draft exists", () => {
+    render(<ProjectMaturityCard maturity={{ maturity_status: "ready_for_review", reason: "定义已成熟", outcomes: [{ outcome_id: "outcome-1", outcome_type: "project_definition", title: "Project Definition", content: "ready" }] }} reviewable={false} onReview={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "确认成果" }).disabled).toBe(true);
+    expect(screen.getByRole("status").textContent).toContain("正在准备可审核草案");
+  });
+
   it("shows a clearly enabled execution approval gate without executing", () => {
     const review = vi.fn();
     render(<ImplementationPlanCard plan={{ status: "ready_for_execution_review", execution_approval: "pending", implementation_goal: "Implement confirmed definition", scope: ["core"], out_of_scope: ["rollout"], work_items: [{ work_item_id: "work-1", title: "Core module" }], dependencies: ["cloud"], execution_order: ["work-1"], risk: ["compatibility"], validation_criteria: ["tests"], acceptance_criteria: ["definition covered"], affected_system_objects: ["Foundation"], execution_requirements: ["Founder approval"] }} onReview={review} />);

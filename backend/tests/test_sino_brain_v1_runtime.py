@@ -2,7 +2,7 @@ import copy
 import pytest
 from types import SimpleNamespace
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -132,6 +132,8 @@ Capability Asset 可以共享和复用，Business Asset 必须隔离。Founder �
 
 def test_proposed_work_items_are_derived_read_only_and_decisions_do_not_create_objects(monkeypatch):
     runtime, conversation_id = _runtime(monkeypatch, routing_runner=lambda context: {"recommended_route": "system_project", "reason": "该对象是 Constitution 定义的长期基础系统，不是一次性结果或单项能力。", "proposed_object": context["work_item"]["title"], "next_action": "建议进入正式对象创建前的 Founder Review。", "confidence": .93})
+    import app.core.project.service as project_service
+    monkeypatch.setattr(project_service, "SessionLocal", module.SessionLocal)
     constitution = """AI Commerce OS Constitution V1
 将以下内容写入 Project Context，作为最高层长期基线。
 Intelligence Evolution Layer
@@ -185,6 +187,15 @@ Idea → Discussion → Project Intelligence → Candidate → Founder Approval 
     repeated_proposal = next(item for item in repeated["proposed_work_items"] if item["work_item_id"] == target["work_item_id"])["routing_recommendation"]["formal_object_proposal"]
     assert repeated_proposal["proposal_id"] == proposal["proposal_id"]
     assert repeated_proposal["created_at"] == proposal["created_at"]
+    runtime._initial_project_planning_runner = lambda _context: {
+        "current_understanding": "Foundation system", "current_gap": "Definition gap",
+        "priority_reason": "Constitution priority", "recommended_next_step": "Define boundaries",
+        "sino_can_complete": "Draft the definition", "founder_question": None,
+    }
+    runtime._project_maturity_runner = lambda _context: {
+        "maturity_status": "continue_analysis", "reason": "Definition can be developed autonomously.",
+        "confidence": .8, "autonomous_next_analysis": "Draft the system definition.", "outcomes": [],
+    }
     created = runtime.confirm_formal_object_proposal(conversation_id, target["work_item_id"])
     created_proposal = next(item for item in created["proposed_work_items"] if item["work_item_id"] == target["work_item_id"])["routing_recommendation"]["formal_object_proposal"]
     assert created_proposal["status"] == "created"
@@ -320,6 +331,55 @@ def test_short_instruction_in_system_project_stays_project_aware_discussion(monk
     assert result["brain"]["discovery"]["current_project"]["project_name"] == "Intelligence Evolution Layer"
     with module.SessionLocal() as session:
         assert session.scalar(select(CandidateGoalDB).where(CandidateGoalDB.conversation_id == conversation_id)) is None
+
+
+def test_formally_created_system_project_gets_one_canonical_initial_planning_conversation(monkeypatch):
+    runtime, source_conversation_id = _runtime(monkeypatch)
+    import app.core.project.service as project_service
+    monkeypatch.setattr(project_service, "SessionLocal", module.SessionLocal)
+    seen = {}
+    runtime._initial_project_planning_runner = lambda context: seen.update(context) or {
+        "current_understanding": "A complete Foundation system inherited from the Constitution.",
+        "long_term_system_scope": ["platform responsibilities"],
+        "immediate_blocking_scope": ["validated downstream runtime dependency"],
+        "current_gap": "The required runtime boundary is not available.",
+        "priority_reason": "A downstream validation is blocked.",
+        "recommended_next_step": "Define the minimum runtime boundary without narrowing the full system.",
+        "sino_can_complete": "Draft the system boundary and dependency contract.",
+        "founder_question": None,
+    }
+    runtime._project_maturity_runner = lambda _context: {
+        "maturity_status": "continue_analysis", "reason": "The inherited Context supports further definition work.",
+        "confidence": .86, "autonomous_next_analysis": "Define the minimum runtime boundary and its relationship to the complete system scope.", "outcomes": [],
+    }
+    with module.SessionLocal() as session:
+        parent = FounderProjectDB(id="parent-project", system_id="founder_ai", name="Parent OS", status="active")
+        child = FounderProjectDB(
+            id="new-system-project", system_id="founder_ai", name="Cloud Foundation", status="active",
+            parent_project_id=parent.id, project_type="system_project", architecture_role="Foundation Layer",
+            source_conversation_id=source_conversation_id, source_work_item_id="work-cloud", source_proposal_id="proposal-cloud",
+            initial_positioning="Complete cloud foundation.", initial_scope=["platform boundary"], creation_reason="Confirmed Constitution object.",
+        )
+        session.add_all([parent, child]); session.commit()
+
+    first = runtime.ensure_project_planning_conversation("new-system-project")
+    second = runtime.ensure_project_planning_conversation("new-system-project")
+
+    assert first["created"] is True and first["initialized"] is True
+    assert second["conversation_id"] == first["conversation_id"]
+    assert second["created"] is False and second["initialized"] is False
+    assert seen["project_definition"]["architecture_role"] == "Foundation Layer"
+    assert seen["creation_provenance"]["source_work_item_id"] == "work-cloud"
+    with module.SessionLocal() as session:
+        conversations = list(session.scalars(select(ConversationDB).where(ConversationDB.project_id == "new-system-project")))
+        messages = list(session.scalars(select(ConversationMessageDB).where(ConversationMessageDB.conversation_id == first["conversation_id"])))
+        assert len(conversations) == 1
+        assert conversations[0].topic_key == "project:new-system-project:planning"
+        assert conversations[0].title == "Cloud Foundation · 项目规划"
+        assert len(messages) == 1
+        assert messages[0].role == "assistant"
+        assert messages[0].grounding["initial_project_planning"] is True
+        assert session.scalar(select(func.count()).select_from(CandidateGoalDB)) == 0
 
 
 def test_project_maturity_uses_context_and_gates_outcomes_without_creating_objects(monkeypatch):

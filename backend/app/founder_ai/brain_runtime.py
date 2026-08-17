@@ -17,6 +17,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
+from app.core.context.model import ConversationContextDB
 from app.core.conversation_first.model import ConversationMessageDB, PendingQuestionDB, SinoBrainSessionDB
 from app.core.asset_lifecycle.model import AssetCatalogDB
 from app.core.product_visibility.service import is_product_hidden
@@ -60,7 +61,7 @@ class SinoBrainRuntime:
 
     MAX_CLARIFICATION_ROUNDS = 3
 
-    def __init__(self, *, understanding_runner=None, lifecycle_intent_runner=None, work_item_routing_runner=None, work_item_semantic_runner=None, project_maturity_runner=None, autonomous_analysis_runner=None, implementation_planning_runner=None):
+    def __init__(self, *, understanding_runner=None, lifecycle_intent_runner=None, work_item_routing_runner=None, work_item_semantic_runner=None, project_maturity_runner=None, autonomous_analysis_runner=None, implementation_planning_runner=None, initial_project_planning_runner=None):
         self._understanding_runner = understanding_runner or self._provider_understanding
         self._lifecycle_intent_runner = lifecycle_intent_runner or self._provider_lifecycle_intent
         self._work_item_routing_runner = work_item_routing_runner or self._provider_work_item_routing
@@ -68,6 +69,149 @@ class SinoBrainRuntime:
         self._project_maturity_runner = project_maturity_runner or self._provider_project_maturity
         self._autonomous_analysis_runner = autonomous_analysis_runner or self._provider_autonomous_analysis
         self._implementation_planning_runner = implementation_planning_runner or self._provider_implementation_planning
+        self._initial_project_planning_runner = initial_project_planning_runner or self._provider_initial_project_planning
+
+    def ensure_project_planning_conversation(self, project_id: str) -> dict[str, Any]:
+        """Reconcile one canonical planning Conversation and its first Sino analysis."""
+        with SessionLocal() as session:
+            project = session.scalar(select(FounderProjectDB).where(
+                FounderProjectDB.id == project_id,
+                FounderProjectDB.system_id == "founder_ai",
+            ).with_for_update())
+            if project is None:
+                raise LookupError("Founder project not found")
+            if project.project_type != "system_project" or not project.source_proposal_id:
+                raise ValueError("Canonical planning reconciliation requires a formally created System Project")
+            conversation = session.scalar(select(ConversationDB).where(
+                ConversationDB.project_id == project.id,
+                ConversationDB.system_id == "founder_ai",
+                ConversationDB.status == "active",
+                ConversationDB.conversation_kind == "founder_discussion",
+            ).order_by(ConversationDB.created_at.asc()))
+            created = conversation is None
+            if conversation is None:
+                conversation = ConversationDB(
+                    system_id="founder_ai", project_id=project.id,
+                    title=f"{project.name} · 项目规划", status="active",
+                    conversation_kind="founder_discussion",
+                    topic_key=f"project:{project.id}:planning",
+                    conversation_state="active",
+                )
+                session.add(conversation); session.flush()
+                session.add(ConversationContextDB(conversation_id=conversation.id, system_id="founder_ai"))
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation.id))
+            if state is None:
+                state = SinoBrainSessionDB(
+                    conversation_id=conversation.id, project_id=project.id, stage="project_planning",
+                    discovery={"project_aware": True, "initial_project_planning": {"status": "pending"}},
+                )
+                session.add(state)
+            planning = dict((state.discovery or {}).get("initial_project_planning") or {})
+            already_completed = planning.get("status") == "completed"
+            already_running = planning.get("status") == "running"
+            if not already_completed and not already_running:
+                discovery = dict(state.discovery or {})
+                discovery["initial_project_planning"] = {"status": "running", "started_at": datetime.now(timezone.utc).isoformat()}
+                state.discovery = discovery
+            conversation_id = conversation.id
+            project_id_value = project.id
+            session.commit()
+        if already_completed or already_running:
+            return {"conversation_id": conversation_id, "created": created, "initialized": False, "brain": self.snapshot(conversation_id)}
+
+        from app.core.project.service import assemble_project_context
+        project_context = assemble_project_context(project_id_value)
+        initial = dict(project_context.get("child_project_context") or {})
+        context = {
+            "project": {"project_id": project_id_value, "project_name": project_context.get("project_name")},
+            "project_definition": {
+                "architecture_role": initial.get("architecture_role"),
+                "initial_positioning": initial.get("initial_positioning"),
+                "initial_scope": initial.get("initial_scope"),
+            },
+            "inherited_constitution": (project_context.get("parent_confirmed_context") or {}).get("constitution"),
+            "creation_provenance": {
+                key: initial.get(key) for key in (
+                    "source_conversation_id", "source_work_item_id", "source_work_item",
+                    "source_proposal_id", "founder_decision", "routing_recommendation",
+                    "formal_object_proposal", "real_dependency_evidence",
+                )
+            },
+            "existing_state": project_context,
+        }
+        try:
+            analysis = self._validate_initial_project_planning(self._initial_project_planning_runner(context))
+        except Exception:
+            with SessionLocal() as session:
+                state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+                discovery = dict(state.discovery or {})
+                discovery["initial_project_planning"] = {"status": "failed", "context_sources": project_context.get("context_sources") or {}}
+                state.discovery = discovery; session.commit()
+            raise
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            discovery = dict(state.discovery or {})
+            current = dict(discovery.get("initial_project_planning") or {})
+            existing_message = session.scalar(select(ConversationMessageDB).where(
+                ConversationMessageDB.conversation_id == conversation_id,
+                ConversationMessageDB.message_type == "project_planning",
+            ).order_by(ConversationMessageDB.created_at.asc()))
+            if current.get("status") != "completed":
+                message = existing_message or ConversationMessageDB(
+                    conversation_id=conversation_id, role="assistant",
+                    content=analysis["narrative"], message_type="project_planning",
+                    grounding={"initial_project_planning": True, "source_proposal_id": initial.get("source_proposal_id")},
+                )
+                if existing_message is None:
+                    session.add(message); session.flush()
+                discovery.update({
+                    "project_aware": True,
+                    "current_project": {"project_id": project_id_value, "project_name": project_context.get("project_name")},
+                    "current_understanding": analysis,
+                    "initial_project_planning": {
+                        "status": "completed", "source_message_id": message.id,
+                        "context_sources": project_context.get("context_sources") or {},
+                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    "context_sources": project_context.get("context_sources") or {},
+                    "discussion_maturity": {"maturity_status": "evaluating", "reason": "首轮 Project Planning 已完成，正在判断下一步。", "outcomes": []},
+                })
+                state.stage = "project_planning"; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc)
+                conversation = session.get(ConversationDB, conversation_id)
+                conversation.updated_at = datetime.now(timezone.utc)
+                session.commit()
+        self.judge_project_maturity(conversation_id)
+        return {"conversation_id": conversation_id, "created": created, "initialized": True, "brain": self.snapshot(conversation_id)}
+
+    @staticmethod
+    def _validate_initial_project_planning(payload: dict) -> dict:
+        required = ("current_understanding", "current_gap", "priority_reason", "recommended_next_step")
+        if not isinstance(payload, dict) or any(not payload.get(key) for key in required) or "sino_can_complete" not in payload:
+            raise ValueError("initial_project_planning_incomplete")
+        return {
+            **payload,
+            "founder_question": str(payload.get("founder_question") or "").strip() or None,
+            "narrative": str(payload.get("narrative") or "").strip() or "\n\n".join([
+                f"我目前如何理解\n{payload['current_understanding']}",
+                f"当前最重要的缺口\n{payload['current_gap']}",
+                f"为什么优先处理\n{payload['priority_reason']}",
+                f"建议下一步\n{payload['recommended_next_step']}",
+                f"Sino 可以先完成\n{payload['sino_can_complete']}",
+                f"真正需要 Founder 判断\n{payload.get('founder_question') or '暂无'}",
+            ]),
+        }
+
+    @staticmethod
+    def _provider_initial_project_planning(context: dict) -> dict:
+        from app.core.model_center.service import resolve_runtime_config
+        runtime = resolve_runtime_config(role="sino_conversation")
+        if runtime is None:
+            raise RuntimeError("sino_conversation_model_unavailable")
+        prompt = """你是 Sino Founder AI 的 Initial Project Planning 分析器。一个正式 System Project 已经由 Founder 确认创建，请基于 confirmed Constitution、Formal Object Proposal、Parent/Project Context、Existing State 与真实 Dependency Evidence，直接完成第一轮规划分析。不得创建 Goal、Draft、Implementation Plan、Execution Package 或执行任务。必须区分长期完整 System Scope 与当前被真实证据证明的 Immediate Blocking Scope，不能把后者误当作完整产品定义。只有真正改变核心定义、边界或架构且 Context 无法决定的问题才列为 founder_question；否则为空。只返回 JSON：current_understanding, long_term_system_scope, immediate_blocking_scope, current_gap, priority_reason, recommended_next_step, sino_can_complete, founder_question, narrative。narrative 必须完整呈现这些判断。"""
+        response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, LLMRequest(system_prompt=prompt, user_prompt=json.dumps(context, ensure_ascii=False), temperature=0.2, max_tokens=2200, response_format="json", metadata={"runtime_role": "sino_conversation", "brain_stage": "initial_project_planning"}))
+        payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
+        payload["provider"], payload["model"] = response.provider, response.model
+        return payload
 
     def snapshot(self, conversation_id: str) -> dict[str, Any] | None:
         with SessionLocal() as session:
@@ -470,7 +614,8 @@ work_result 必须是可审核的实质内容；proposed_outcomes 只是认知�
             state.discovery = discovery
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
-        from app.core.draft.service import sync_project_draft_status
+        from app.core.draft.service import ensure_project_definition_draft, sync_project_draft_status
+        ensure_project_definition_draft(conversation_id=conversation_id, session_factory=SessionLocal)
         sync_project_draft_status(conversation_id=conversation_id, maturity=result, session_factory=SessionLocal)
         return result
 
@@ -540,6 +685,9 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
     def review_project_outcome(self, conversation_id: str, action: str) -> dict:
         if action not in {"confirm", "discuss"}:
             raise ValueError("Unsupported outcome review action")
+        if action == "confirm":
+            from app.core.draft.service import confirm_project_draft
+            confirm_project_draft(conversation_id=conversation_id, session_factory=SessionLocal)
         with SessionLocal() as session:
             state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
             if state is None:
@@ -554,8 +702,6 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
         if action == "confirm":
-            from app.core.draft.service import confirm_project_draft
-            confirm_project_draft(conversation_id=conversation_id, session_factory=SessionLocal)
             self.start_implementation_planning(conversation_id)
         return maturity
 
@@ -1493,7 +1639,9 @@ Reason 必须解释该对象的系统角色、与上层或相关对象的关系�
             )
             state.discovery = discovery
             state.updated_at = datetime.now(timezone.utc)
+            project_id = project.id
             session.commit()
+        self.ensure_project_planning_conversation(project_id)
         return self.snapshot(conversation_id)
 
     @staticmethod

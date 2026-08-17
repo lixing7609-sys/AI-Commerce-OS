@@ -180,6 +180,11 @@ def test_system_project_intelligence_projects_persisted_creation_context(monkeyp
         "source_conversation_title": "AI Commerce OS Constitution V1",
         "source_work_item_id": "work-intelligence-layer",
         "source_proposal_id": "proposal-intelligence-layer",
+        "source_work_item": None,
+        "founder_decision": None,
+        "routing_recommendation": None,
+        "formal_object_proposal": None,
+        "real_dependency_evidence": [],
         "inherited_constitution": None,
     }
 

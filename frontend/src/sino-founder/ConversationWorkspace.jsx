@@ -254,13 +254,17 @@ export function ConversationWorkspace() {
     if (!activeProjectId) { setProjectIntelligence(null); setProjectLoading(false); setProjectLoadError(""); return undefined; }
     let active = true;
     setProjectLoading(true); setProjectLoadError("");
-    getProjectIntelligence(activeProjectId).then((value) => { if (active) { setProjectIntelligence(value); setProjectLoading(false); } }).catch((requestError) => {
+    getProjectIntelligence(activeProjectId).then((value) => { if (active) {
+      setProjectIntelligence(value); setProjectLoading(false); refreshProjects().catch(() => {});
+      getFounderConversations().then((items) => { if (!active) return; const valid = items.map((item) => ({ id: item.id, title: item.title, state: item.state, project_id: item.project_id || null, updatedAt: new Date(item.updated_at || item.created_at || 0).getTime() || Date.now() })); setConversations(valid); remember(CONVERSATION_HISTORY_KEY, JSON.stringify(valid)); }).catch(() => {});
+      getFounderDrafts().then((data) => { if (active) setDrafts(data.drafts || []); }).catch(() => {});
+    } }).catch((requestError) => {
       if (!active) return;
       if (requestError.status === 404 || requestError.code === "project_not_found" || /project not found/i.test(requestError.message || "")) { recoverMissingProject(); return; }
       setProjectIntelligence(null); setProjectLoading(false); setProjectLoadError(requestError.message || "项目加载失败"); setError(requestError.message);
     });
     return () => { active = false; };
-  }, [activeProjectId, projectReloadKey, recoverMissingProject]);
+  }, [activeProjectId, projectReloadKey, recoverMissingProject, refreshProjects]);
   useEffect(() => {
     if (!executionId || execution) return;
     getFounderExecution(executionId).then((item) => { setExecution(item); setApproved(Boolean(item.execution_allowed)); }).catch(() => { remember(EXECUTION_KEY, null); setExecutionId(null); });
@@ -468,7 +472,7 @@ export function ConversationWorkspace() {
   async function confirmConstitutionFormalObject(workItemId) {
     if (!conversationId || busy) return;
     setBusy(true); setError("");
-    try { setSnapshot(await confirmFormalObjectProposal(conversationId, workItemId)); await refreshProjects(); }
+    try { setSnapshot(await confirmFormalObjectProposal(conversationId, workItemId)); const [, draftList] = await Promise.all([refreshProjects(), getFounderDrafts()]); setDrafts(draftList.drafts || []); }
     catch (requestError) { setError(requestError.message); }
     finally { setBusy(false); }
   }

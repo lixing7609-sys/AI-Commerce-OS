@@ -254,6 +254,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const isProjectPlanning = snapshot?.sino_brain?.stage === "project_planning";
   const cognitiveWorkRunning = ["pending", "running"].includes(snapshot?.sino_brain?.discovery?.cognitive_work_run?.run_status);
   const isOutcomeReview = isProjectPlanning && maturity.maturity_status === "ready_for_review";
+  const reviewableProjectDraft = drafts?.some((item) => item.source_conversation_id === snapshot?.conversation?.id && item.status === "ready_for_review" && item.draft_type === "project_definition");
   const implementationPlan = snapshot?.sino_brain?.discovery?.implementation_planning;
   const isImplementationPlanning = snapshot?.sino_brain?.stage === "implementation_planning";
   const executionPackage = snapshot?.sino_brain?.discovery?.execution_package;
@@ -268,9 +269,9 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
     : isExecutionPackage
       ? <ExecutionPackageCard pkg={executionPackage} />
     : isImplementationPlanning
-      ? <><ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} /><ImplementationPlanCard plan={implementationPlan} busy={busy} onReview={onReviewImplementationPlan} /></>
+      ? <><ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} reviewable={reviewableProjectDraft} /><ImplementationPlanCard plan={implementationPlan} busy={busy} onReview={onReviewImplementationPlan} /></>
     : isOutcomeReview
-      ? <ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} />
+      ? <ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} reviewable={reviewableProjectDraft} />
       : <FounderActionCard action={workspaceAction} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onReviseGoal} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueProjectAnalysis={onContinueProjectAnalysis} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} />;
   return <section className="sino-conversation-thread" aria-label="Conversation">
     <header className="sino-conversation-header"><div><h1>{founderConversationTitle(snapshot?.conversation?.title, snapshot?.sino_brain?.goal_brief?.goal)}</h1><p>{selectedStage?.label || activeStage}</p></div><dl><div><dt>Status</dt><dd>{snapshot?.sino_brain?.current_action?.title || "讨论中"}</dd></div><div><dt>Confidence</dt><dd>{snapshot?.sino_brain?.decision?.confidence ? `${Math.round(snapshot.sino_brain.decision.confidence * 100)}%` : "—"}</dd></div></dl></header>
