@@ -10,10 +10,11 @@ FOUNDER_GATE_TASK = "FOUNDER_GATE_TASK"
 def route_task_complexity(text: str, *, image_understanding: str | dict | None = None, image_context_status: str = "not_present") -> dict:
     image_text = image_understanding if isinstance(image_understanding, str) else " ".join(str(value) for value in (image_understanding or {}).values())
     combined = f"{text}\n{image_text}".strip()
-    gate = re.search(r"credential|secret|新增费用|付费|生产|production|外部写|external side effect|不可逆|architecture boundary", combined, re.I)
-    strategic = re.search(r"新系统|新 capability|架构变更|architecture change|跨模块|重大改造|方案比较", combined, re.I)
-    quick = re.search(r"折叠|滚动|去掉|删除|移除|REMOVE_UI_ELEMENT|按钮.*(?:点不了|无效)|卡片错位|文案错误|状态展示|返回定位|样式|局部.*(?:ui|页面)|sidebar|scroll|click|layout", combined, re.I)
     grounded = image_understanding if isinstance(image_understanding, dict) and image_understanding.get("merged_intent") else {}
+    decision_text = f"{text}\n{grounded.get('merged_intent', '')}".strip() if grounded else text
+    gate = re.search(r"credential|secret|新增费用|付费|生产|production|外部写|external side effect|不可逆|architecture boundary", decision_text, re.I)
+    strategic = re.search(r"新系统|新 capability|架构变更|architecture change|跨模块|重大改造|方案比较", decision_text, re.I)
+    quick = re.search(r"折叠|滚动|去掉|删除|移除|REMOVE_UI_ELEMENT|按钮.*(?:点不了|无效)|卡片错位|文案错误|状态展示|返回定位|样式|局部.*(?:ui|页面)|sidebar|scroll|click|layout", combined, re.I)
     clarification_required = bool(grounded.get("clarification_required")) or bool(image_context_status == "unavailable" and not quick and len(text.strip()) <= 12)
     classification = FOUNDER_GATE_TASK if gate else STRATEGIC_TASK if strategic else QUICK_FIX if quick or grounded or clarification_required else STANDARD_TASK
     result = {"classification": classification, "founder_gate_required": classification == FOUNDER_GATE_TASK,

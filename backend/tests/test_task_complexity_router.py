@@ -43,6 +43,20 @@ def test_grounded_removal_intent_is_a_quick_fix_without_clarification():
     assert result["quick_fix_contract"]["operation"] == "REMOVE_UI_ELEMENT"
     assert result["quick_fix_contract"]["visual_target"] == grounded["annotation_target"]
 
+def test_unrelated_production_label_in_screenshot_does_not_trigger_founder_gate():
+    grounded = {
+        "merged_intent": 'remove the chevron left of "+" in Projects header',
+        "annotation_target": 'chevron left of "+"',
+        "visual_location": "Left Sidebar / Projects Header",
+        "surrounding_context": ["AI Commerce OS", "AI短剧生产系统"],
+        "text_intent": {"operation": "REMOVE_UI_ELEMENT"},
+        "grounding_confidence": 0.98,
+        "clarification_required": False,
+    }
+    result = route_task_complexity("左边栏红色箭头所指向的向下箭头去掉", image_understanding=grounded)
+    assert result["classification"] == QUICK_FIX
+    assert result["founder_gate_required"] is False
+
 def test_standard_strategic_and_gate_routes():
     assert route_task_complexity("增加一个明确的导出字段")["classification"] == STANDARD_TASK
     assert route_task_complexity("建立一个新系统并比较架构方案")["classification"] == STRATEGIC_TASK
