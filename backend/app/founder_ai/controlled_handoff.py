@@ -98,6 +98,11 @@ def _v2_fingerprint_payload(package: dict, readiness: dict, action_contract: dic
     }
 
 
+def scope_fingerprint_v2(package: dict, readiness: dict, action_contract: dict) -> str:
+    payload = _v2_fingerprint_payload(package, readiness, action_contract)
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def create_controlled_handoff_v2(*, package: dict, expected: dict) -> tuple[dict, object]:
     """Freeze the existing ready machine actions into an inert second attempt."""
     readiness = dict(package.get("execution_readiness_contract") or {})
@@ -122,7 +127,7 @@ def create_controlled_handoff_v2(*, package: dict, expected: dict) -> tuple[dict
     if not all(checks.values()):
         raise ValueError("controlled_handoff_v2_preconditions_failed")
     payload = _v2_fingerprint_payload(package, readiness, action_contract)
-    fingerprint = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    fingerprint = scope_fingerprint_v2(package, readiness, action_contract)
     seed = f"{expected['package_id']}:{action_contract['action_contract_id']}:{fingerprint}:2"
     handoff_id = f"executor-handoff-{hashlib.sha256(seed.encode()).hexdigest()[:20]}"
     session_id = f"execution-session-{hashlib.sha256((handoff_id + ':session:v2').encode()).hexdigest()[:20]}"

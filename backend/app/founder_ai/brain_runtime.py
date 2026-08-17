@@ -39,6 +39,7 @@ from app.founder_ai.controlled_handoff import create_controlled_handoff_v2
 from app.founder_ai.controlled_execution import blocked_execution_result, scope_guard, start_precondition_checks
 from app.founder_ai.action_contract import compile_action_contract
 from app.founder_ai.evidence_resolution import discover_iam_network_evidence
+from app.founder_ai.controlled_execution_v2 import execute_frozen_actions, session_start_guard
 from core.founder_object.model import FounderObjectDB, FounderObjectRevisionDB
 
 
@@ -1213,6 +1214,45 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
             return handoff
+
+    def start_controlled_execution_v2(self, conversation_id: str, *, expected: dict) -> dict:
+        """Run the existing v2 session through bounded read-only adapters only."""
+        from app.founder_ai.execution_registry import get_execution_session, save_execution_session
+        repo_root = Path(__file__).resolve().parents[3]
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {})
+            package = dict(discovery.get("execution_package") or {})
+            handoff = dict(package.get("active_executor_handoff_v2") or {})
+            registered = get_execution_session(expected["execution_session_id"])
+            if registered is None:
+                raise LookupError("Execution Session v2 not found")
+            execution_session, typed_package = registered
+            guard = session_start_guard(package=package, handoff=handoff, session=execution_session, expected=expected, repo_root=repo_root)
+            if not guard["allowed"]:
+                package["controlled_execution_v2_blocker"] = {"status": "start_blocked", "guard": guard, "recorded_at": datetime.now(timezone.utc).isoformat()}
+                discovery["execution_package"] = package; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); session.commit()
+                return package["controlled_execution_v2_blocker"]
+            started_at = datetime.now(timezone.utc).isoformat()
+            execution_session.status = "executing"; execution_session.started_at = started_at; execution_session.execution_started_at = started_at
+            package["execution_status"] = "executing"
+            discovery["execution_package"] = package; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); session.commit()
+            save_execution_session(execution_session, typed_package)
+
+        action_results, verification = execute_frozen_actions(handoff=handoff, action_contract=package["active_machine_action_contract"], repo_root=repo_root)
+        completed_at = datetime.now(timezone.utc).isoformat()
+        final_status = "completed" if verification["result"] == "PASS" else "failed" if verification["result"] == "FAIL" else "blocked"
+        result = {"execution_session_id": execution_session.id, "package_id": package.get("package_id"), "handoff_id": handoff.get("handoff_id"), "action_contract_id": handoff.get("action_contract_id"), "action_contract_fingerprint": handoff.get("action_contract_fingerprint"), "scope_fingerprint_v2": handoff.get("scope_fingerprint"), "started_at": started_at, "completed_at": completed_at, "action_results": action_results, "pass_count": verification["counts"]["PASS"], "fail_count": verification["counts"]["FAIL"], "blocked_count": verification["counts"]["BLOCKED"], "verification_result": verification["result"], "founder_gate_reentry": False, "side_effects": {"READ_ONLY": [item["action_id"] for item in action_results], "LOCAL_REPOSITORY_SIDE_EFFECT": [], "LOCAL_RUNTIME_MUTATION": [], "EXTERNAL_SERVICE_WRITE": [], "CLOUD_INFRASTRUCTURE_WRITE": [], "PRODUCTION_WRITE": []}, "working_tree_status": "clean" if not subprocess.run(["git", "status", "--porcelain=v1"], cwd=repo_root, text=True, capture_output=True, check=True).stdout.strip() else "dirty", "scope_drift": verification["scope_drift"], "execution_status": final_status}
+        execution_session.status = final_status; execution_session.completed_at = completed_at; execution_session.result = result
+        save_execution_session(execution_session, typed_package)
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            discovery = dict(state.discovery or {}); package = dict(discovery.get("execution_package") or {})
+            package["execution_status"] = final_status; package["execution_result_v2"] = result
+            discovery["execution_package"] = package; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); session.commit()
+        return result
 
     def ensure_founder_gate_proposal(self, conversation_id: str) -> dict | None:
         """Materialize one canonical review object for the current Founder Gate."""
