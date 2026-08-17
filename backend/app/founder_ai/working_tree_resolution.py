@@ -47,6 +47,7 @@ def _classify(path: str, content: str) -> tuple[list[str], str, bool]:
         ("machine_action_contract", ("action_contract", "machine action contract", "action_compilation")),
         ("autonomous_evidence_resolution", ("evidence_resolution", "autonomous evidence", "evidence-bound")),
         ("autonomous_task_closure", ("task_closure", "closure contract", "closure_ready")),
+        ("runtime_environment_registry", ("runtime_environment_registry", "runtime_environment_router", "runtimeenvironmentregistry", "runtime environment registry", "runtime-environments", "sino-runtime")),
     )
     for capability, terms in markers:
         if any(term in text for term in terms):

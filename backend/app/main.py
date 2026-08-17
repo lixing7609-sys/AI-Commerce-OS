@@ -34,6 +34,7 @@ from app.core.artifact.api import router as artifact_router
 from app.core.memory.api import router as memory_router
 from app.core.model_center.api import router as model_center_router
 from app.core.intelligence_evolution.api import router as intelligence_evolution_router
+from app.core.runtime_environment.api import router as runtime_environment_router
 from app.founder_ai.api import router as founder_ai_router
 from app.founder_ai.execution_worker import execution_worker
 from app.services.database_readiness_service import (
@@ -201,6 +202,7 @@ app.include_router(
 
 app.include_router(model_center_router, prefix="/api/v1")
 app.include_router(intelligence_evolution_router, prefix="/api")
+app.include_router(runtime_environment_router, prefix="/api/v1")
 
 app.include_router(
     products_router,

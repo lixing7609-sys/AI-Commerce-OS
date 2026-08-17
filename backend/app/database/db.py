@@ -37,6 +37,7 @@ from app.core.intelligence_evolution.model import CapabilityVersionDB, Evolution
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
 from app.core.council.model import CouncilModelRunDB, CouncilRunDB
 from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
+from app.core.runtime_environment.model import RuntimeEnvironmentRegistryDB
 from core.founder_object.model import ConversationObjectContextDB, FounderObjectDB, FounderObjectRevisionDB
 from core.founder_intent.model import ConversationCandidateContextDB, FounderIntentRunDB, FounderObjectCandidateDB
 

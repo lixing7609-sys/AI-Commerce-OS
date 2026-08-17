@@ -660,6 +660,17 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-tabs button:hover { color: var(--text-primary); }
 .sino-settings-tabs button.is-active { border-bottom-color: var(--accent); color: var(--text-primary); }
 .sino-settings-content { min-width: 0; width: 100%; }
+.sino-runtime-stage-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0 24px; }
+.sino-runtime-stage-grid article, .sino-runtime-binding-list article { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-raised); padding: 16px; }
+.sino-runtime-stage-grid small, .sino-runtime-stage-grid strong, .sino-runtime-stage-grid span { display: block; }
+.sino-runtime-stage-grid strong { margin: 6px 0; font-size: 18px; }
+.sino-runtime-stage-grid span, .sino-runtime-binding-list span, .sino-runtime-binding-list dt { color: var(--text-secondary); font-size: 12px; }
+.sino-runtime-binding-list { display: grid; gap: 10px; }
+.sino-runtime-binding-list article > div { display: flex; justify-content: space-between; gap: 16px; }
+.sino-runtime-binding-list dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 14px 0 0; }
+.sino-runtime-binding-list dl div { min-width: 0; }
+.sino-runtime-binding-list dt, .sino-runtime-binding-list dd { margin: 0; }
+.sino-runtime-binding-list dd { margin-top: 4px; overflow-wrap: anywhere; }
 .sino-settings-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0 0 28px; }
 .sino-settings-summary div { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; }
 .sino-settings-summary dt { color: var(--text-label); font-size: 12px; }

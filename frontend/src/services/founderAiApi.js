@@ -229,6 +229,10 @@ export function getModelCenter() {
   return request("/founder-ai/model-center", undefined, "获取模型中心失败");
 }
 
+export function getRuntimeEnvironmentRegistry() {
+  return request("/founder-ai/runtime-environments", undefined, "获取运行环境注册表失败");
+}
+
 export function saveModelProvider(providerKey, payload) {
   return request(`/founder-ai/model-center/providers/${encodeURIComponent(providerKey)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, "保存模型配置失败");
 }

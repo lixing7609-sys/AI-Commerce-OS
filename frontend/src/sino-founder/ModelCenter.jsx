@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { checkModelProvider, deleteModelProvider, discoverProviderModels, getModelCenter, installModelProvider, saveCapabilityAssignment, saveExecutionEngine, saveMultiModelAssignment, selectProviderModels, setModelProviderEnabled, updateModelProviderCredentials } from "../services/founderAiApi.js";
+import { checkModelProvider, deleteModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveExecutionEngine, saveMultiModelAssignment, selectProviderModels, setModelProviderEnabled, updateModelProviderCredentials } from "../services/founderAiApi.js";
 
 const empty = { provider_catalog: [], providers: [], roles: [], agents: [], health_cost: [], execution_engines: [] };
 const MODEL_TASK_LABELS = { sino_conversation: "默认对话模型", deep_thinking: "深度思考模型", goal_reasoning: "目标推理模型", project_analysis: "项目分析模型", system_builder: "系统构建模型", solution_review: "方案评审模型" };
@@ -21,10 +21,11 @@ export function ModelCenter({ onContextChange }) {
   const [message, setMessage] = useState("");
   const [providerActionState, setProviderActionState] = useState({});
   const [pendingRemoval, setPendingRemoval] = useState(null);
+  const [runtimeRegistry, setRuntimeRegistry] = useState(null);
   const installed = useMemo(() => center.providers.filter((item) => item.installed), [center.providers]);
 
   async function reload() { const value = await getModelCenter(); setCenter(value); return value; }
-  useEffect(() => { reload().catch((error) => setMessage(error.message)); onContextChange?.({ section: "models" }); }, []);
+  useEffect(() => { reload().catch((error) => setMessage(error.message)); getRuntimeEnvironmentRegistry().then(setRuntimeRegistry).catch((error) => setMessage(error.message)); onContextChange?.({ section: "models" }); }, []);
 
   function providerState(providerKey) { return providerActionState[providerKey] || {}; }
   function updateProviderState(providerKey, patch) { setProviderActionState((current) => ({ ...current, [providerKey]: { ...(current[providerKey] || {}), ...patch } })); }
@@ -80,7 +81,7 @@ export function ModelCenter({ onContextChange }) {
   }, [section, editing, selectedModel, center, providerActionState]);
   return <section className="sino-model-center sino-settings" aria-label="设置">
     <header><div><span className="sino-kicker">Settings</span><h2>设置</h2></div></header>
-    <nav className="sino-settings-tabs" aria-label="设置分类">{[["models", "模型与 API"], ["sino", "Sino AI"], ["executor", "执行器"], ["discussion", "讨论配置"]].map(([key, label]) => <button type="button" key={key} className={section === key ? "is-active" : ""} onClick={() => { setSection(key); setEditing(null); setSelectedModel(null); }}>{label}</button>)}</nav>
+    <nav className="sino-settings-tabs" aria-label="设置分类">{[["models", "模型与 API"], ["sino", "Sino AI"], ["executor", "执行器"], ["discussion", "讨论配置"], ["runtime", "Runtime Environment"]].map(([key, label]) => <button type="button" key={key} className={section === key ? "is-active" : ""} onClick={() => { setSection(key); setEditing(null); setSelectedModel(null); }}>{label}</button>)}</nav>
     <div className="sino-settings-content">
     {message && <p className="sino-model-center-message" role="status">{message}</p>}
     {section === "models" && <section className="sino-capability-section" aria-label="模型与 API">
@@ -93,8 +94,19 @@ export function ModelCenter({ onContextChange }) {
     {section === "sino" && <SinoSettings roles={center.roles || []} onSelect={(role) => onContextChange?.({ section: "sino", role, options: modelOptions, busy, onAssign: assignCapability })} />}
     {section === "executor" && <ExecutorSettings roles={center.roles || []} engines={center.execution_engines || []} onSelect={() => onContextChange?.({ section: "executor", roles: center.roles || [], engines: center.execution_engines || [], options: modelOptions, busy, onAssign: assignCapability, onEngineAssign: assignExecutionEngine })} />}
     {section === "discussion" && <DiscussionSettings roles={center.roles || []} onSelect={() => onContextChange?.({ section: "discussion", roles: center.roles || [], options: modelOptions, onSave: saveCouncil })} />}
+    {section === "runtime" && <RuntimeEnvironmentSettings registry={runtimeRegistry} />}
     </div>
   </section>;
+}
+
+function RuntimeEnvironmentSettings({ registry }) {
+  if (!registry) return <section className="sino-capability-section" aria-label="Runtime Environment"><h3>Runtime Environment</h3><p>正在读取运行环境注册表…</p></section>;
+  const local = registry.environments.find((item) => item.environment_type === "LOCAL") || {};
+  const nas = registry.environments.find((item) => item.environment_type === "NAS") || {};
+  const cloud = registry.environments.find((item) => item.environment_type === "COMMERCIAL_CLOUD") || {};
+  const service = (id) => local.services?.find((item) => item.service_id === id) || {};
+  const frontend = service("founder_frontend"); const backend = service("founder_backend");
+  return <section className="sino-capability-section" aria-label="Runtime Environment"><div className="sino-capability-section-heading"><div><h3>Runtime Environment</h3><p>统一管理 Sino Founder AI 当前依赖的运行环境事实。</p></div></div><div className="sino-runtime-stage-grid"><article><small>Current Environment</small><strong>LOCAL</strong><span>{local.status}</span></article><article><small>Next Planned</small><strong>NAS</strong><span>{nas.status}</span></article><article><small>Commercial Cloud</small><strong>Not Configured</strong><span>{cloud.status}</span></article></div><div className="sino-runtime-binding-list">{[["Frontend", `${frontend.protocol}://${frontend.host}:${frontend.port}`, frontend], ["Backend", `${backend.protocol}://${backend.host}:${backend.port}`, backend], ["Database", `${local.database?.type} / LOCAL`, local.database], ["IAM", local.iam?.type, local.iam], ["Network", local.network?.boundary, local.network]].map(([label, binding, item]) => <article key={label}><div><strong>{label}</strong><span>{binding}</span></div><dl><div><dt>Status</dt><dd>{item?.status || item?.verification_status || item?.connectivity_status}</dd></div><div><dt>Health</dt><dd>{item?.health || item?.health_status || "verified"}</dd></div><div><dt>Last Verified</dt><dd>{item?.last_verified_at || "—"}</dd></div>{label === "Database" ? <div><dt>Credential</dt><dd>{item?.credential_reference_exists ? "Configured / Reference Exists" : "Not Configured"}</dd></div> : null}</dl></article>)}</div></section>;
 }
 
 export function SettingsContext({ detail, onClose }) {
