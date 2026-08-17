@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveExecutionEngine, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
 import { ModelCenter, SettingsContext } from "./ModelCenter.jsx";
+import "./sino-founder-ai.css";
 
 vi.mock("../services/founderAiApi.js", () => ({ checkModelProvider: vi.fn(), deleteModelProvider: vi.fn(), discoverProviderModels: vi.fn(), getModelCenter: vi.fn(), getRuntimeEnvironmentRegistry: vi.fn(), installModelProvider: vi.fn(), saveCapabilityAssignment: vi.fn(), saveExecutionEngine: vi.fn(), saveMultiModelAssignment: vi.fn(), selectProviderModels: vi.fn(), setModelProviderEnabled: vi.fn(), updateModelProviderCredentials: vi.fn() }));
 
@@ -76,6 +77,17 @@ describe("Founder Settings", () => {
     expect(screen.getByText("PLANNED")).toBeTruthy();
     expect(screen.getAllByText("NOT_CONFIGURED").length).toBeGreaterThanOrEqual(1);
     expect(document.body.textContent).not.toContain("credential-reference://");
+  });
+
+  it("uses the middle Settings panel as the sole scroll container and keeps the last runtime card reachable", async () => {
+    render(<div className="sino-founder-shell"><main className="sino-founder-main sino-founder-main--fixed-workspace"><ModelCenter /></main><aside className="sino-founder-context" aria-label="Settings Context">Settings Context</aside></div>);
+    await screen.findByRole("heading", { name: "设置" });
+    fireEvent.click(screen.getByRole("button", { name: "Runtime Environment" }));
+    const settings = screen.getByRole("region", { name: "设置" });
+    expect(settings.matches(".sino-founder-main--fixed-workspace > .sino-settings")).toBe(true);
+    expect(settings.contains(screen.getByText("Network"))).toBe(true);
+    expect(screen.getByLabelText("Settings Context")).toBeTruthy();
+    expect(screen.getByRole("main").classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
   });
 
   it("selects and persists the execution engine independently", async () => {

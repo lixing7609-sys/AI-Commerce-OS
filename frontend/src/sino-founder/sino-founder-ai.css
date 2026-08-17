@@ -653,6 +653,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-model-center > header p, .sino-model-center-message { margin: 0; color: #7e877b; font-size: 12px; }
 .sino-model-center-message { margin-bottom: 14px; }
 .sino-settings { position: relative; box-sizing: border-box; width: 100%; min-height: 100%; padding: 30px clamp(24px, 4vw, 56px); }
+.sino-founder-main--fixed-workspace > .sino-settings { flex: 1 1 0; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.sino-founder-main--fixed-workspace > .sino-settings::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-settings > header { align-items: flex-start; }
 .sino-settings > header > div { display: grid; gap: 5px; }
 .sino-settings-tabs { display: flex; gap: 22px; margin: 8px 0 24px; border-bottom: 1px solid var(--line); }
