@@ -1138,11 +1138,12 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             if handoff.get("handoff_id") != handoff_id or result.get("execution_session_id") != blocked_session_id or result.get("execution_status") != "blocked" or handoff.get("scope_fingerprint") != scope_fingerprint:
                 raise ValueError("action_contract_source_mismatch")
             contracts = [dict(item) for item in package.get("machine_action_contracts") or []]
-            existing = next((item for item in contracts if item.get("source_handoff_id") == handoff_id and item.get("source_blocked_session_id") == blocked_session_id and item.get("contract_version") == 1), None)
-            if existing:
+            existing = contracts[-1] if contracts else None
+            if existing and len(existing.get("actions") or []) == len(package.get("work_items") or []):
                 return existing
             proposal = dict(discovery.get("active_founder_gate_proposal") or package.get("founder_gate_proposal") or {})
-            contract = compile_action_contract(package=package, proposal=proposal, source_handoff_id=handoff_id, source_session_id=blocked_session_id, source_scope_fingerprint=scope_fingerprint)
+            next_version = max((int(item.get("contract_version") or 0) for item in contracts), default=0) + 1
+            contract = compile_action_contract(package=package, proposal=proposal, source_handoff_id=handoff_id, source_session_id=blocked_session_id, source_scope_fingerprint=scope_fingerprint, contract_version=next_version)
             contracts.append(contract)
             package["machine_action_contracts"] = contracts
             package["active_machine_action_contract"] = contract

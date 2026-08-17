@@ -26,7 +26,7 @@ def _action(*, work_item: dict, capability: str, operation_type: str, target_typ
     }
 
 
-def compile_action_contract(*, package: dict, proposal: dict, source_handoff_id: str, source_session_id: str, source_scope_fingerprint: str) -> dict:
+def compile_action_contract(*, package: dict, proposal: dict, source_handoff_id: str, source_session_id: str, source_scope_fingerprint: str, contract_version: int = 1) -> dict:
     content = dict(proposal.get("content") or {})
     discovery = dict(content.get("environment_discovery") or {})
     candidates = {item.get("logical_dependency"): dict(item) for item in discovery.get("candidate_infrastructure") or []}
@@ -34,10 +34,12 @@ def compile_action_contract(*, package: dict, proposal: dict, source_handoff_id:
     by_capability = {}
     for item in work_items:
         text = " ".join(str(item.get(key) or "") for key in ("title", "purpose", "scope")).casefold()
-        capability = next((name for name in ("storage", "compute", "iam", "network") if name in text), None)
+        mentioned = [name for name in ("storage", "compute", "iam", "network") if name in text]
+        aggregate = len(mentioned) > 1 and any(term in text for term in ("validation", "validate", "验证", "整体", "overall"))
+        capability = None if aggregate else (mentioned[0] if len(mentioned) == 1 else None)
         if capability and capability not in by_capability:
             by_capability[capability] = item
-        elif not capability:
+        elif aggregate or not mentioned:
             by_capability["overall_runtime_validation"] = item
     actions = []
     storage = candidates.get("storage")
@@ -85,12 +87,12 @@ def compile_action_contract(*, package: dict, proposal: dict, source_handoff_id:
     status = "action_founder_gate_required" if founder_gate else "action_compilation_blocked" if blocked or not all(scope_checks.values()) else "action_compilation_ready"
     fingerprint_payload = {"package_id": package.get("package_id"), "source_scope_fingerprint": source_scope_fingerprint, "actions": actions, "scope_validation": scope_checks}
     fingerprint = hashlib.sha256(json.dumps(fingerprint_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    seed = f"{package.get('package_id')}:{source_handoff_id}:{source_session_id}:1"
+    seed = f"{package.get('package_id')}:{source_handoff_id}:{source_session_id}:{contract_version}"
     return {
         "action_contract_id": f"machine-action-contract-{hashlib.sha256(seed.encode()).hexdigest()[:20]}",
         "package_id": package.get("package_id"), "source_readiness_contract_id": (package.get("execution_readiness_contract") or {}).get("contract_id"),
         "source_handoff_id": source_handoff_id, "source_blocked_session_id": source_session_id, "source_scope_fingerprint": source_scope_fingerprint,
-        "contract_version": 1, "compilation_status": status, "actions": actions,
+        "contract_version": contract_version, "compilation_status": status, "actions": actions,
         "executable_action_count": sum(item["action_status"] == "executable" for item in actions), "blocked_action_count": len(blocked), "founder_gate_action_count": len(founder_gate),
         "evidence_validation": {"observed_targets": sorted(candidates), "all_executable_targets_evidence_bound": all(item.get("target") and item.get("evidence_refs") for item in actions if item["action_status"] == "executable")},
         "scope_validation": {"status": "passed" if all(scope_checks.values()) else "failed", "checks": scope_checks},
