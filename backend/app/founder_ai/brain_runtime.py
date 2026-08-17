@@ -41,6 +41,7 @@ from app.founder_ai.action_contract import compile_action_contract
 from app.founder_ai.evidence_resolution import discover_iam_network_evidence
 from app.founder_ai.controlled_execution_v2 import execute_frozen_actions, session_start_guard
 from app.founder_ai.post_execution_commit import build_post_execution_records, persist_post_execution_records
+from app.founder_ai.task_closure import build_closure_contract, close_task_if_ready
 from core.founder_object.model import FounderObjectDB, FounderObjectRevisionDB
 
 
@@ -1277,6 +1278,32 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             discovery["execution_package"] = package; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc)
             session.commit()
             return result
+
+    def autonomously_close_task(self, conversation_id: str, *, package_id: str) -> dict:
+        """Close only when the completion claim is machine-supported; otherwise request semantic Founder closure."""
+        repo_root = Path(__file__).resolve().parents[3]
+        clean = not subprocess.run(["git", "status", "--porcelain=v1"], cwd=repo_root, text=True, capture_output=True, check=True).stdout.strip()
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {}); package = dict(discovery.get("execution_package") or {})
+            if package.get("package_id") != package_id:
+                raise ValueError("closure_package_mismatch")
+            post = dict(package.get("post_execution_commit") or {})
+            if not post:
+                raise ValueError("post_execution_commit_required")
+            old_handoff = dict(package.get("executor_handoff") or {}); old_result = dict((package.get("execution_attempt_history") or [{}])[0])
+            historical_integrity = bool(old_handoff.get("handoff_id") and old_result.get("execution_session_id")) and old_result.get("handoff_id") == old_handoff.get("handoff_id") and old_result.get("execution_status") == "blocked" and old_result.get("commands_executed") == [] and old_result.get("files_changed") == []
+            contract = build_closure_contract(package=package, post_execution=post, working_tree_clean=clean, historical_integrity=historical_integrity)
+            updated, closure_record = close_task_if_ready(package=package, contract=contract, post_execution=post)
+            package["post_execution_commit"] = updated
+            package["task_status"] = updated.get("task_status")
+            package["task_closed"] = updated.get("task_closed")
+            package["current_action"] = "等待 Founder 判断配置目标是否已由只读验证充分证明" if contract.get("founder_decision_required") else "Task completed; wait for new Founder input"
+            discovery["execution_package"] = package; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return {"closure_contract": contract, "task_closure_record": closure_record, "task_status": package["task_status"], "task_closed": package["task_closed"]}
 
     def ensure_founder_gate_proposal(self, conversation_id: str) -> dict | None:
         """Materialize one canonical review object for the current Founder Gate."""
