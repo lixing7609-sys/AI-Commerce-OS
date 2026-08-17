@@ -241,7 +241,7 @@ class SinoBrainRuntime:
                 key = self._message_stage(message, payload["active_workspace_stage"])
                 refs[key].append(message.id)
             for workspace in payload["stage_workspaces"]:
-                workspace["message_refs"] = refs[workspace["stage_key"]]
+                workspace["message_refs"] = refs.get(workspace["stage_key"], list(payload["source_message_refs"]) if workspace["stage_key"] == "issue" else [])
             latest_founder = next((item for item in reversed(messages) if item.role == "founder"), None)
             discovery = dict(record.discovery or {})
             constitution_active = discovery.get("message_intent") == "project_context_update" and (discovery.get("constitution_understanding") or {}).get("system_objects")
