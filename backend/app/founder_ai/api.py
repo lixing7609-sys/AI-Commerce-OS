@@ -577,6 +577,18 @@ def revalidate_execution_package(conversation_id: str):
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+@router.post("/conversations/{conversation_id}/brain/execution-package/readiness", response_model=dict[str, Any])
+def ensure_execution_readiness_contract(conversation_id: str):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        brain_runtime.ensure_execution_readiness_contract(conversation_id)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
 @router.post("/conversations/{conversation_id}/brain/founder-gate-proposal/ensure", response_model=dict[str, Any])
 def ensure_founder_gate_proposal(conversation_id: str):
     conversation_id = resolve_conversation_id(conversation_id)

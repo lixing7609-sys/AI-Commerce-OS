@@ -41,6 +41,8 @@ def _classify(path: str, content: str) -> tuple[list[str], str, bool]:
         ("founder_gate_review_ui", ("sino-founder-gate", "founder-gate-proposal", "founder gate proposal")),
         ("project_lifecycle_projection", ("project_lifecycle", "lifecycle_projection", "active_founder_gate_proposal")),
         ("preflight_projection", ("preflight", "executionpackagecard", "current action")),
+        ("execution_readiness", ("execution_readiness", "execution readiness", "readiness_contract")),
+        ("autonomous_checkpoint", ("autonomous_checkpoint", "self_healing", "working tree resolution")),
     )
     for capability, terms in markers:
         if any(term in text for term in terms):

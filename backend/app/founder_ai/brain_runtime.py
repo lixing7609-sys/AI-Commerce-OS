@@ -32,6 +32,8 @@ from app.database.db import SessionLocal, engine
 from app.llm.gateway import llm_gateway
 from app.llm.models import LLMRequest
 from app.founder_ai.working_tree_resolution import analyze_working_tree
+from app.founder_ai.execution_readiness import build_execution_readiness_contract
+from app.founder_ai.autonomous_checkpoint import execute_autonomous_checkpoint
 from core.founder_object.model import FounderObjectDB, FounderObjectRevisionDB
 
 
@@ -902,6 +904,11 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             package["preflight"] = self._preflight_execution_package(package=package, plan=plan, draft=draft)
             package["preflight_status"] = package["preflight"]["status"]
             package["updated_at"] = datetime.now(timezone.utc).isoformat()
+            package["execution_readiness_contract"] = build_execution_readiness_contract(
+                package=package,
+                project={"project_id": conversation.project_id, "name": getattr(draft, "project_name", None)},
+                repo_root=Path(__file__).resolve().parents[3],
+            )
             proposal = self._materialize_founder_gate_proposal(
                 conversation=conversation,
                 discovery=discovery,
@@ -918,6 +925,110 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
             return package
+
+    def ensure_execution_readiness_contract(self, conversation_id: str) -> dict:
+        """Materialize the machine-verifiable handoff boundary without starting execution."""
+        from app.core.draft.model import FounderDraftDB
+        with SessionLocal() as session:
+            conversation = session.get(ConversationDB, conversation_id)
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+            if conversation is None or state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {})
+            package = dict(discovery.get("execution_package") or {})
+            if not package.get("package_id"):
+                raise LookupError("Execution Package not found")
+            draft = session.get(FounderDraftDB, package.get("source_draft_id"))
+            if draft is None:
+                raise LookupError("Confirmed source Draft not found")
+            contract = build_execution_readiness_contract(
+                package=package,
+                project={"project_id": conversation.project_id, "name": draft.project_name},
+                repo_root=Path(__file__).resolve().parents[3],
+            )
+            package["execution_readiness_contract"] = contract
+            package["updated_at"] = datetime.now(timezone.utc).isoformat()
+            discovery["execution_package"] = package
+            state.discovery = discovery
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return contract
+
+    def run_self_healing_preflight(self, conversation_id: str, *, verification_evidence: list[str], max_cycles: int = 2) -> dict:
+        """Resolve a sole dirty-tree readiness blocker, then stop before execution."""
+        repo_root = Path(__file__).resolve().parents[3]
+        cycles = []
+        trigger_reason = "execution_readiness_blocked:working_tree_clean=false"
+        for cycle in range(1, max_cycles + 1):
+            contract = self.ensure_execution_readiness_contract(conversation_id)
+            failed = [name for name, passed in (contract.get("readiness_checks") or {}).items() if not passed]
+            if not failed:
+                final_status = "self_healing_completed"
+                break
+            if failed != ["working_tree_clean"] or contract.get("founder_decision_required"):
+                final_status = "self_healing_founder_gate_required" if contract.get("founder_decision_required") else "self_healing_blocked"
+                break
+            resolution = analyze_working_tree(repo_root, verification_evidence=verification_evidence)
+            counts = dict(resolution.get("eligibility_counts") or {})
+            if resolution.get("status") != "working_tree_resolution_ready" or resolution.get("founder_decision_required") or any(counts.get(key) for key in ("UNKNOWN", "SENSITIVE", "UNRELATED", "NEEDS_SEPARATION", "GENERATED")):
+                final_status = "self_healing_founder_gate_required" if resolution.get("founder_decision_required") else "self_healing_blocked"
+                cycles.append({"cycle": cycle, "working_tree_resolution": resolution, "checkpoint_result": None})
+                break
+            checkpoint = execute_autonomous_checkpoint(
+                repo_root=repo_root, resolution=resolution,
+                commit_message="founder: checkpoint execution readiness contract",
+                verification_evidence=verification_evidence,
+            )
+            with SessionLocal() as session:
+                state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+                if state is None:
+                    raise LookupError("Sino Brain state not found")
+                discovery = dict(state.discovery or {})
+                package = dict(discovery.get("execution_package") or {})
+                package["autonomous_checkpoint"] = {**checkpoint, "package_revalidated": False}
+                discovery["execution_package"] = package
+                state.discovery = discovery
+                state.updated_at = datetime.now(timezone.utc)
+                session.commit()
+            package = self.revalidate_execution_package(conversation_id)
+            readiness = dict(package.get("execution_readiness_contract") or {})
+            cycles.append({
+                "cycle": cycle, "working_tree_resolution": resolution, "checkpoint_result": checkpoint,
+                "package_revalidation": {"package_id": package.get("package_id"), "preflight_status": package.get("preflight_status")},
+                "readiness_revalidation": {"contract_id": readiness.get("contract_id"), "status": readiness.get("readiness_status")},
+            })
+            if package.get("preflight_status") == "ready" and readiness.get("readiness_status") == "execution_readiness_ready" and package.get("execution_status") == "not_started":
+                final_status = "self_healing_completed"
+                break
+        else:
+            final_status = "self_healing_stalled"
+
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {})
+            package = dict(discovery.get("execution_package") or {})
+            final_contract = dict(package.get("execution_readiness_contract") or {})
+            result = {
+                "self_healing_status": final_status, "trigger_reason": trigger_reason, "cycle_count": len(cycles),
+                "max_self_healing_cycles": max_cycles, "cycles": cycles,
+                "working_tree_resolution": (cycles[-1].get("working_tree_resolution") if cycles else None),
+                "checkpoint_result": (cycles[-1].get("checkpoint_result") if cycles else None),
+                "package_revalidation": (cycles[-1].get("package_revalidation") if cycles else None),
+                "readiness_revalidation": (cycles[-1].get("readiness_revalidation") if cycles else None),
+                "final_status": final_contract.get("readiness_status"), "executor_started": False,
+                "external_side_effects": {"local_repository_commit": bool(cycles and cycles[-1].get("checkpoint_result")), "external_cloud_runtime": False},
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            package["self_healing_preflight"] = result
+            if cycles and cycles[-1].get("checkpoint_result"):
+                package["autonomous_checkpoint"] = {**cycles[-1]["checkpoint_result"], "package_revalidated": True}
+            discovery["execution_package"] = package
+            state.discovery = discovery
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return result
 
     def ensure_founder_gate_proposal(self, conversation_id: str) -> dict | None:
         """Materialize one canonical review object for the current Founder Gate."""

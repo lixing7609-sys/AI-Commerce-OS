@@ -63,4 +63,14 @@ describe("ProjectMaturityCard", () => {
     expect(details.open).toBe(false);
     expect(screen.getByText(/需先解决技术准备问题/)).toBeTruthy();
   });
+
+  it("shows a concise execution readiness contract with technical details collapsed", () => {
+    render(<ExecutionPackageCard pkg={{ package_id: "package-ready", preflight_status: "ready", execution_status: "not_started", work_items: [], preflight: { checks: [] }, execution_readiness_contract: { contract_id: "readiness-1", readiness_status: "execution_readiness_ready", validation_result: "PASS", execution_scope: { execution_goal: "Configure isolated runtime", included_capabilities: ["storage", "compute"], allowed_files_or_paths: { repository_paths: [], runtime_targets: ["runtime://storage"] }, allowed_operations: [], excluded_operations: [] }, executor: { executor_provider: "codex" }, rollback_contract: { rollback_anchor: "abc123" }, automatic_stop_conditions: [{ condition: "scope" }], verification_contract: {}, side_effect_contract: {}, readiness_checks: {} } }} />);
+    expect(screen.getByLabelText("Execution Readiness Contract")).toBeTruthy();
+    expect(screen.getByText("执行边界已验证")).toBeTruthy();
+    expect(screen.getByText("Configure isolated runtime")).toBeTruthy();
+    expect(screen.getByText("等待独立 Executor 启动动作")).toBeTruthy();
+    expect(screen.getByText("Technical Details").closest("details").open).toBe(false);
+    expect(screen.queryByRole("button", { name: /执行/ })).toBeNull();
+  });
 });
