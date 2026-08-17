@@ -26,6 +26,18 @@ describe("ConversationThread layout", () => {
     expect(screen.getByLabelText("讨论记录").dataset.stageWorkspace).toBe("完成");
     expect(screen.queryByText("Strategy Meeting")).toBeNull();
   });
+  it("never exposes Continue while a clear Quick Fix is progressing autonomously", () => {
+    const value = snapshot("quick-inspect", [{ message_id: "m1", role: "founder", content: "隐藏滚动条，保留滚动" }]);
+    value.sino_brain = { active_workspace_stage: "inspect", current_action: { action_id: "quick_fix_inspecting", title: "正在定位问题", description: "自动检查目标容器", primary_label: null }, stage_workspaces: [
+      { stage_key: "issue", label: "问题", status: "completed", message_refs: ["m1"] },
+      { stage_key: "inspect", label: "定位", status: "active", message_refs: ["m1"] },
+    ], discovery: { task_complexity_route: { classification: "QUICK_FIX", clarification_required: false, founder_gate_required: false, current_step: "inspect", execution_status: "inspecting", manual_continue_count: 0, evidence: {} } } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getAllByText("正在定位问题")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
+    expect(screen.queryByText("继续理解目标")).toBeNull();
+    expect(screen.queryByText("Strategy Meeting")).toBeNull();
+  });
   it("keeps ambiguous visual grounding in the Quick Fix clarification lane", () => {
     const value = snapshot("quick-clarify", [{ message_id: "m1", role: "founder", content: "这里不对" }]);
     value.sino_brain = { active_workspace_stage: "issue", discovery: { task_complexity_route: { classification: "QUICK_FIX", clarification_required: true, quick_fix_contract: { target_area: "截图标注区域" }, evidence: {} } } };

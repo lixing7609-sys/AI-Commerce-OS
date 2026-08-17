@@ -1181,7 +1181,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 @media (max-width: 900px) { .sino-lifecycle-center { padding: 20px 16px; } .sino-lifecycle-grid { grid-template-columns: 1fr; } .sino-asset-detail { border-left: 0; border-top: 1px solid var(--line); padding: 18px 0; } }
 
 .sino-repository-tabs { order: -1; border-bottom: 1px solid var(--line); }
-.sino-draft-detail { min-height: 0; overflow: auto; padding-right: 12px; }
+.sino-draft-detail { min-height: 0; overflow: auto; padding-right: 12px; scrollbar-width: none; -ms-overflow-style: none; }
+.sino-draft-detail::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-draft-detail > h2 { margin: 8px 0; font-size: 25px; }
 .sino-draft-detail > p { color: var(--text-secondary); line-height: 1.65; }
 .sino-draft-back { margin-bottom: 22px; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }

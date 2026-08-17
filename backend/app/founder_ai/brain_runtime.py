@@ -286,6 +286,8 @@ class SinoBrainRuntime:
                 session.add(state); session.flush()
             task_route = dict((interaction_context or {}).get("task_complexity_route") or {})
             if task_route.get("classification") == "QUICK_FIX":
+                from app.founder_ai.quick_fix_progression import begin_quick_fix
+                task_route = begin_quick_fix(task_route)
                 discovery = dict(state.discovery or {})
                 discovery["task_complexity_route"] = task_route
                 discovery["quick_fix_contract"] = task_route.get("quick_fix_contract")
@@ -3350,16 +3352,31 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] == "active"), "asset_commit" if record.stage == "conversation_completed" else "package")
         route = dict(payload["discovery"].get("task_complexity_route") or {})
         if route.get("classification") == "QUICK_FIX":
+            current_step = route.get("current_step") or ("issue" if route.get("clarification_required") else "inspect")
+            current_index = ("issue", "inspect", "fix", "verify", "complete").index(current_step)
             payload["stage_workspaces"] = [
-                {"stage_key": key, "label": label, "status": "active" if key == "issue" else "pending", "message_refs": list(payload["source_message_refs"])}
-                for key, label in (("issue", "问题"), ("inspect", "定位"), ("fix", "修复"), ("verify", "验证"), ("complete", "完成"))
+                {"stage_key": key, "label": label, "status": "completed" if index < current_index else "active" if index == current_index else "pending", "message_refs": list(payload["source_message_refs"]) if index <= current_index else []}
+                for index, (key, label) in enumerate((("issue", "问题"), ("inspect", "定位"), ("fix", "修复"), ("verify", "验证"), ("complete", "完成")))
             ]
-            payload["active_workspace_stage"] = "issue"
+            payload["active_workspace_stage"] = current_step
         payload["current_action"] = SinoBrainRuntime._current_action(payload)
         return payload
 
     @staticmethod
     def _current_action(brain):
+        route = dict((brain.get("discovery") or {}).get("task_complexity_route") or {})
+        if route.get("classification") == "QUICK_FIX":
+            if route.get("clarification_required"):
+                return {"action_id": "quick_fix_clarification", "title": "需要确认目标位置", "description": "截图标注不足以唯一定位目标；保持 Quick Fix，不进入 Strategy Meeting。", "primary_label": None}
+            status = route.get("execution_status") or "inspecting"
+            actions = {
+                "inspecting": ("quick_fix_inspecting", "正在定位问题", "Sino 正在检查截图标注对应的真实 UI 容器。"),
+                "fixing": ("quick_fix_fixing", "正在修复", "Sino 正在已冻结的局部 UI 范围内实施修复。"),
+                "verifying": ("quick_fix_verifying", "正在验证", "Sino 正在运行定向测试、构建与页面验收。"),
+                "completed": ("quick_fix_completed", "已完成，等待 Founder 验收", "Quick Fix 已完成并通过验证。"),
+            }
+            action_id, title, description = actions.get(status, actions["inspecting"])
+            return {"action_id": action_id, "title": title, "description": description, "primary_label": None}
         lifecycle = brain.get("project_lifecycle") or {}
         if lifecycle.get("rank", 0) >= 300 and lifecycle.get("current_action"):
             return dict(lifecycle["current_action"])
