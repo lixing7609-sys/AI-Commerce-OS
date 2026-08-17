@@ -26,6 +26,13 @@ describe("ConversationThread layout", () => {
     expect(screen.getByLabelText("讨论记录").dataset.stageWorkspace).toBe("完成");
     expect(screen.queryByText("Strategy Meeting")).toBeNull();
   });
+  it("keeps ambiguous visual grounding in the Quick Fix clarification lane", () => {
+    const value = snapshot("quick-clarify", [{ message_id: "m1", role: "founder", content: "这里不对" }]);
+    value.sino_brain = { active_workspace_stage: "issue", discovery: { task_complexity_route: { classification: "QUICK_FIX", clarification_required: true, quick_fix_contract: { target_area: "截图标注区域" }, evidence: {} } } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText(/需要确认目标位置；仍保持 Quick Fix/)).toBeTruthy();
+    expect(screen.queryByText("Strategy Meeting")).toBeNull();
+  });
   it("links a Cognitive Outcome to its canonical Draft without replacing the source message", () => {
     const openDraft = vi.fn();
     const grounding = { cognitive_work: { cognitive_outcome_id: "cognitive-real" } };

@@ -22,8 +22,26 @@ def test_text_first_quick_fix_survives_unavailable_vision():
 
 def test_ambiguous_text_requires_clarification_when_vision_is_unavailable():
     result = route_task_complexity("这里不对。", image_context_status="unavailable")
-    assert result["classification"] == "CLARIFICATION_REQUIRED"
+    assert result["classification"] == QUICK_FIX
+    assert result["clarification_required"] is True
     assert result["strategy_meeting_required"] is False
+
+def test_grounded_removal_intent_is_a_quick_fix_without_clarification():
+    grounded = {
+        "merged_intent": 'remove the collapse/expand chevron immediately left of the "+" control in the Projects header',
+        "annotation_target": 'collapse/expand chevron immediately left of the "+" control',
+        "visual_location": "Left Sidebar / Projects Header",
+        "text_intent": {"operation": "REMOVE_UI_ELEMENT"},
+        "grounding_confidence": 0.95,
+        "clarification_required": False,
+    }
+    result = route_task_complexity("去掉图中 + 号左边的箭头", image_understanding=grounded)
+    assert result["classification"] == QUICK_FIX
+    assert result["clarification_required"] is False
+    assert result["strategy_meeting_required"] is False
+    assert result["quick_fix_contract"]["issue_type"] == "UI_CLEANUP"
+    assert result["quick_fix_contract"]["operation"] == "REMOVE_UI_ELEMENT"
+    assert result["quick_fix_contract"]["visual_target"] == grounded["annotation_target"]
 
 def test_standard_strategic_and_gate_routes():
     assert route_task_complexity("增加一个明确的导出字段")["classification"] == STANDARD_TASK

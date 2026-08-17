@@ -103,6 +103,19 @@ describe("Founder sidebar information architecture", () => {
     expect(screen.getByText("Sino Operator AI")).toBeTruthy();
   });
 
+  it("removes the Projects heading chevron, preserves plus, and keeps section toggling", () => {
+    render(<SecretarySidebar conversations={[]} projects={[{ id: "commerce", name: "AI Commerce OS" }]} />);
+    const heading = document.querySelector(".sino-project-heading");
+    const toggle = heading.querySelector("button:first-child");
+    expect(toggle.querySelector("i")).toBeNull();
+    expect(screen.getByRole("button", { name: "新建 Project" })).toBeTruthy();
+    expect(document.querySelector(".sino-project-list")).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(document.querySelector(".sino-project-list")).toBeNull();
+    fireEvent.click(toggle);
+    expect(document.querySelector(".sino-project-list")).toBeTruthy();
+  });
+
   it("creates, renames, expands and moves Conversations through the Project workspace", async () => {
     createFounderProject.mockResolvedValue({ id: "project-commerce", name: "AI电商", status: "active", updated_at: new Date().toISOString() });
     updateFounderProject.mockResolvedValue({ id: "project-commerce", name: "AI电商系统", status: "active" });

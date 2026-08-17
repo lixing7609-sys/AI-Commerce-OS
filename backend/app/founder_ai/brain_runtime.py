@@ -285,22 +285,23 @@ class SinoBrainRuntime:
                 state = SinoBrainSessionDB(conversation_id=conversation_id, project_id=conversation.project_id)
                 session.add(state); session.flush()
             task_route = dict((interaction_context or {}).get("task_complexity_route") or {})
-            if task_route.get("classification") in {"QUICK_FIX", "CLARIFICATION_REQUIRED"}:
+            if task_route.get("classification") == "QUICK_FIX":
                 discovery = dict(state.discovery or {})
                 discovery["task_complexity_route"] = task_route
                 discovery["quick_fix_contract"] = task_route.get("quick_fix_contract")
                 discovery["image_understanding"] = (interaction_context or {}).get("image_understanding")
+                discovery["grounded_multimodal_context"] = (interaction_context or {}).get("grounded_multimodal_context")
                 state.discovery = discovery
-                state.stage = "quick_fix" if task_route["classification"] == "QUICK_FIX" else "clarification_required"
+                state.stage = "quick_fix"
                 state.updated_at = datetime.now(timezone.utc)
                 session.commit()
                 unavailable = task_route.get("evidence", {}).get("image_context_status") == "unavailable"
-                if task_route["classification"] == "CLARIFICATION_REQUIRED":
-                    reply = "我暂时无法读取这张图片，而文字还不足以定位问题。请补充具体页面、控件和期望行为。"
+                if task_route.get("clarification_required"):
+                    reply = "已进入 Quick Fix，但当前图片标注还不足以唯一定位目标。请只补充需要确认的目标位置；不会进入 Strategy Meeting。"
                 else:
                     suffix = " 图片上下文当前不可用，但文字已足够明确；不会因此进入 Strategy Meeting。" if unavailable else ""
                     reply = f"已识别为 Quick Fix：{task_route['quick_fix_contract']['target_area']}。将按问题 → 定位 → 修复 → 验证推进，不进入 Strategy Meeting 或 Architecture Proposal。{suffix}"
-                return {"handled": True, "intent": "quick_fix" if task_route["classification"] == "QUICK_FIX" else "clarification_required", "reply": reply, "message_type": "quick_fix" if task_route["classification"] == "QUICK_FIX" else "clarification_required", "brain": self._serialize(state)}
+                return {"handled": True, "intent": "quick_fix_clarification" if task_route.get("clarification_required") else "quick_fix", "reply": reply, "message_type": "quick_fix", "brain": self._serialize(state)}
             message_intent = self.classify_message_intent(content, project_id=conversation.project_id)
             if message_intent == "project_context_update":
                 state.stage = "context_updated"

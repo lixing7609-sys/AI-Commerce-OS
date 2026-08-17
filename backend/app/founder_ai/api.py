@@ -479,11 +479,13 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
             from app.founder_ai.vision_routing import understand_images
             try:
                 interaction_context["image_understanding"] = understand_images(conversation_id, request.content, request.attachment_ids)
+                from app.founder_ai.visual_grounding import merge_visual_grounding
+                interaction_context["grounded_multimodal_context"] = merge_visual_grounding(request.content, interaction_context["image_understanding"])
                 image_context_status = "available"
             except (ValueError, LLMGatewayError):
                 image_context_status = "unavailable"
         if interaction_context.get("active_surface") != "constitution_review":
-            interaction_context["task_complexity_route"] = route_task_complexity(request.content, image_understanding=interaction_context.get("image_understanding"), image_context_status=image_context_status)
+            interaction_context["task_complexity_route"] = route_task_complexity(request.content, image_understanding=interaction_context.get("grounded_multimodal_context") or interaction_context.get("image_understanding"), image_context_status=image_context_status)
         brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=interaction_context or None)
         snapshot = secretary.append_message(conversation_id, request.content, intent=brain_turn.get("intent") or request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"), attachment_ids=request.attachment_ids)
         brain_runtime.sync_message_refs(conversation_id)
