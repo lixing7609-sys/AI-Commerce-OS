@@ -36,6 +36,7 @@ from app.founder_ai.execution_readiness import build_execution_readiness_contrac
 from app.founder_ai.autonomous_checkpoint import execute_autonomous_checkpoint
 from app.founder_ai.controlled_handoff import create_controlled_handoff
 from app.founder_ai.controlled_execution import blocked_execution_result, scope_guard, start_precondition_checks
+from app.founder_ai.action_contract import compile_action_contract
 from core.founder_object.model import FounderObjectDB, FounderObjectRevisionDB
 
 
@@ -1123,6 +1124,33 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
                     result_session.commit()
                 return result
             raise RuntimeError("controlled_executor_adapter_not_invoked_without_explicit_action_descriptors")
+
+    def compile_machine_action_contract(self, conversation_id: str, *, handoff_id: str, blocked_session_id: str, scope_fingerprint: str) -> dict:
+        """Compile one versioned contract without mutating the historical handoff/session."""
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {})
+            package = dict(discovery.get("execution_package") or {})
+            handoff = dict(package.get("executor_handoff") or {})
+            result = dict(package.get("execution_result") or {})
+            if handoff.get("handoff_id") != handoff_id or result.get("execution_session_id") != blocked_session_id or result.get("execution_status") != "blocked" or handoff.get("scope_fingerprint") != scope_fingerprint:
+                raise ValueError("action_contract_source_mismatch")
+            contracts = [dict(item) for item in package.get("machine_action_contracts") or []]
+            existing = next((item for item in contracts if item.get("source_handoff_id") == handoff_id and item.get("source_blocked_session_id") == blocked_session_id and item.get("contract_version") == 1), None)
+            if existing:
+                return existing
+            proposal = dict(discovery.get("active_founder_gate_proposal") or package.get("founder_gate_proposal") or {})
+            contract = compile_action_contract(package=package, proposal=proposal, source_handoff_id=handoff_id, source_session_id=blocked_session_id, source_scope_fingerprint=scope_fingerprint)
+            contracts.append(contract)
+            package["machine_action_contracts"] = contracts
+            package["active_machine_action_contract"] = contract
+            discovery["execution_package"] = package
+            state.discovery = discovery
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return contract
 
     def ensure_founder_gate_proposal(self, conversation_id: str) -> dict | None:
         """Materialize one canonical review object for the current Founder Gate."""

@@ -82,4 +82,13 @@ describe("ProjectMaturityCard", () => {
     expect(screen.getByText("not_started")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /执行|启动/ })).toBeNull();
   });
+
+  it("projects a machine action contract without mutating the old handoff", () => {
+    render(<ExecutionPackageCard pkg={{ package_id: "package-1", preflight_status: "ready", execution_status: "blocked", work_items: [], preflight: { checks: [] }, active_machine_action_contract: { action_contract_id: "actions-1", compilation_status: "action_compilation_blocked", executable_action_count: 2, blocked_action_count: 3, founder_decision_required: false, evidence_validation: { all_executable_targets_evidence_bound: true }, actions: [{ work_item_id: "wi-1", side_effect_class: ["READ_ONLY"] }] } }} />);
+    expect(screen.getByLabelText("Machine Action Contract")).toBeTruthy();
+    expect(screen.getByText("action_compilation_blocked")).toBeTruthy();
+    expect(screen.getByText("返回 Sino Brain 补齐缺失的 observed targets")).toBeTruthy();
+    expect(screen.getByText("Technical Details / Evidence").closest("details").open).toBe(false);
+    expect(screen.queryByRole("button", { name: /执行|启动/ })).toBeNull();
+  });
 });
