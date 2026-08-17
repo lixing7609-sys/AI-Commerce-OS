@@ -10,7 +10,7 @@ from .execution_events import append_event
 from .orchestrator import ExecutionPackage, MemoryAssetDraft, build_memory_asset_draft
 
 
-EXECUTION_STATES = {"created", "draft", "approved", "queued", "executing", "testing", "paused", "completed", "failed"}
+EXECUTION_STATES = {"created", "draft", "approved", "queued", "executing", "testing", "paused", "blocked", "completed", "failed"}
 
 
 @dataclass

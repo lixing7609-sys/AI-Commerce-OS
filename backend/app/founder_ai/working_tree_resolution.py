@@ -43,10 +43,13 @@ def _classify(path: str, content: str) -> tuple[list[str], str, bool]:
         ("preflight_projection", ("preflight", "executionpackagecard", "current action")),
         ("execution_readiness", ("execution_readiness", "execution readiness", "readiness_contract")),
         ("autonomous_checkpoint", ("autonomous_checkpoint", "self_healing", "working tree resolution")),
+        ("controlled_execution", ("controlled_execution", "scope_guard", "execution_started_at", "controlled executor")),
     )
     for capability, terms in markers:
         if any(term in text for term in terms):
             capabilities.append(capability)
+    if path.endswith("app/founder_ai/execution_loop.py") and "execution_states" in text and '"blocked"' in text:
+        capabilities.append("controlled_execution")
     is_test = "/test" in path.casefold() or path.casefold().endswith((".test.jsx", ".test.js", "_test.py")) or "/tests/" in path.casefold()
     if is_test and capabilities:
         capabilities.append("targeted_tests")

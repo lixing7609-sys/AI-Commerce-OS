@@ -35,6 +35,7 @@ from app.founder_ai.working_tree_resolution import analyze_working_tree
 from app.founder_ai.execution_readiness import build_execution_readiness_contract
 from app.founder_ai.autonomous_checkpoint import execute_autonomous_checkpoint
 from app.founder_ai.controlled_handoff import create_controlled_handoff
+from app.founder_ai.controlled_execution import blocked_execution_result, scope_guard, start_precondition_checks
 from core.founder_object.model import FounderObjectDB, FounderObjectRevisionDB
 
 
@@ -1066,6 +1067,62 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
             return handoff
+
+    def start_controlled_execution(self, conversation_id: str, *, expected: dict) -> dict:
+        """Start the existing inert session, then enforce scope before every side effect."""
+        from app.founder_ai.execution_registry import get_execution_session, save_execution_session
+        repo_root = Path(__file__).resolve().parents[3]
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {})
+            package = dict(discovery.get("execution_package") or {})
+            handoff = dict(package.get("executor_handoff") or {})
+            registered = get_execution_session(expected["execution_session_id"])
+            if registered is None:
+                raise LookupError("Execution Session not found")
+            execution_session, _typed_package = registered
+            checks = start_precondition_checks(package=package, session=execution_session, expected=expected, repo_root=repo_root)
+            if not all(checks.values()):
+                package["controlled_execution_blocker"] = {"status": "start_blocked", "checks": checks, "recorded_at": datetime.now(timezone.utc).isoformat()}
+                discovery["execution_package"] = package
+                state.discovery = discovery
+                state.updated_at = datetime.now(timezone.utc)
+                session.commit()
+                return package["controlled_execution_blocker"]
+
+            started_at = datetime.now(timezone.utc).isoformat()
+            execution_session.status = "executing"
+            execution_session.started_at = started_at
+            execution_session.execution_started_at = started_at
+            package["execution_status"] = "running"
+            discovery["execution_package"] = package
+            state.discovery = discovery
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            save_execution_session(execution_session)
+
+            guard = scope_guard(handoff)
+            if not guard["allowed"]:
+                result = blocked_execution_result(package=package, session=execution_session, handoff=handoff, guard=guard, started_at=started_at)
+                execution_session.status = "blocked"
+                execution_session.completed_at = result["completed_at"]
+                execution_session.failure_reason = guard["reason"]
+                execution_session.result = result
+                save_execution_session(execution_session)
+                with SessionLocal() as result_session:
+                    state = result_session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+                    discovery = dict(state.discovery or {})
+                    package = dict(discovery.get("execution_package") or {})
+                    package["execution_status"] = "blocked"
+                    package["execution_result"] = result
+                    discovery["execution_package"] = package
+                    state.discovery = discovery
+                    state.updated_at = datetime.now(timezone.utc)
+                    result_session.commit()
+                return result
+            raise RuntimeError("controlled_executor_adapter_not_invoked_without_explicit_action_descriptors")
 
     def ensure_founder_gate_proposal(self, conversation_id: str) -> dict | None:
         """Materialize one canonical review object for the current Founder Gate."""

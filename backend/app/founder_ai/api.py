@@ -294,6 +294,17 @@ class ControlledHandoffIn(BaseModel):
     checkpoint_commit: str
 
 
+class ControlledExecutionStartIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    package_id: str
+    readiness_contract_id: str
+    handoff_id: str
+    execution_session_id: str
+    scope_fingerprint: str
+    checkpoint_commit: str
+    branch: str
+
+
 class ExecutionSessionOut(BaseModel):
     id: str
     task_asset_id: str
@@ -604,6 +615,18 @@ def create_controlled_executor_handoff(conversation_id: str, request: Controlled
             conversation_id, package_id=request.package_id,
             readiness_contract_id=request.readiness_contract_id, checkpoint_commit=request.checkpoint_commit,
         )
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/execution-package/controlled-start", response_model=dict[str, Any])
+def start_controlled_execution(conversation_id: str, request: ControlledExecutionStartIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        brain_runtime.start_controlled_execution(conversation_id, expected=request.model_dump())
         return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
