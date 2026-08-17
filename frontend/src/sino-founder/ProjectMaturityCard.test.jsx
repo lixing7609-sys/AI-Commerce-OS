@@ -42,4 +42,12 @@ describe("ProjectMaturityCard", () => {
     expect(screen.getByText("Ready for Execution")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /批准/ })).toBeNull();
   });
+
+  it("projects the runtime environment Founder gate and Sino recommendation", () => {
+    render(<ExecutionPackageCard pkg={{ package_id: "package-infra", preflight_status: "founder_gate_required", execution_status: "not_started", work_items: [{ work_item_id: "work-1", title: "Provision external runtime" }], preflight: { checks: [{ check: "runtime_environment_binding", status: "founder_gate_required", detail: "Runtime Environment Binding Required" }] }, runtime_binding: { requires_runtime_binding: true, binding_status: "founder_review_required", provider: null, target_environment: null, resource_bindings: [{ logical_dependency: "object_store", concrete_target: null, status: "unresolved" }], recommendation: { summary: "Use an isolated non-production environment", existing_infrastructure: "No approved binding", required_new_infrastructure: ["object_store"], new_credential: "Unknown", new_cost: "Unknown", production_impact: "Unknown", external_side_effect: "Creates external resources", reason: "Runtime authorization is separate from plan approval" } } }} />);
+    expect(screen.getByText("Runtime Environment 尚未绑定")).toBeTruthy();
+    expect(screen.getByText("Sino Runtime Binding Recommendation")).toBeTruthy();
+    expect(screen.getByText("需要 Founder 审核运行环境方案")).toBeTruthy();
+    expect(screen.queryByText("Ready for Execution")).toBeNull();
+  });
 });

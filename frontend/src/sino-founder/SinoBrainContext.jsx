@@ -79,7 +79,8 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
       <div><dt>Preflight Status</dt><dd>{executionPackage?.preflight_status}</dd></div>
       <div><dt>Executor</dt><dd>{executionPackage?.executor_requirements?.executor_provider || "—"}</dd></div>
       <div><dt>Execution Status</dt><dd>{executionPackage?.execution_status === "not_started" ? "Not Started" : executionPackage?.execution_status}</dd></div>
-      <div><dt>Next Step</dt><dd>{executionPackage?.preflight_status === "ready" ? "Ready for Execution" : executionPackage?.preflight_status === "blocked" ? executionPackage?.preflight?.blocking_reasons?.join(" · ") : executionPackage?.preflight?.founder_gate_reasons?.join(" · ")}</dd></div>
+      {executionPackage?.runtime_binding?.requires_runtime_binding ? <div><dt>Runtime Binding</dt><dd>{executionPackage.runtime_binding.binding_status === "passed" ? "Passed" : "Founder Gate Required"}</dd></div> : null}
+      <div><dt>Next Step</dt><dd>{executionPackage?.preflight_status === "ready" ? "Ready for Execution" : executionPackage?.preflight_status === "blocked" ? executionPackage?.preflight?.blocking_reasons?.join(" · ") : executionPackage?.runtime_binding?.requires_runtime_binding && executionPackage.runtime_binding.binding_status !== "passed" ? "Founder 审核 Runtime Environment Recommendation" : executionPackage?.preflight?.founder_gate_reasons?.join(" · ")}</dd></div>
     </dl> : projectAware ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Current Project</dt><dd>{brain.discovery?.current_project?.project_name || brain.project_id}</dd></div>
       <div><dt>Current Stage</dt><dd>{brain.stage === "implementation_planning" ? "Implementation Planning" : "Project Planning"}</dd></div>

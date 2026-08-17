@@ -906,6 +906,115 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
         return rollback
 
     @staticmethod
+    def _runtime_binding_assessment(*, package: dict, plan: dict) -> dict:
+        """Evaluate concrete environment authorization separately from plan approval."""
+        work_items = [dict(item) for item in package.get("work_items") or []]
+        plan_requirements = list((package.get("executor_requirements") or {}).get("plan_requirements") or plan.get("execution_requirements") or [])
+        semantic_text = json.dumps(
+            {
+                "scope": package.get("scope") or [],
+                "work_items": work_items,
+                "requirements": plan_requirements,
+                "affected_system_objects": package.get("affected_system_objects") or [],
+            },
+            ensure_ascii=False,
+        ).lower()
+        side_effect_signals = (
+            "provision", "deploy", "create resource", "configure infrastructure", "cloud runtime",
+            "storage", "compute", "iam", "network", "database provisioning", "dns", "credential",
+            "production", "external api", "external system", "创建资源", "配置资源", "配置基础设施",
+            "部署服务", "运行时依赖", "生产环境", "外部系统", "真实凭据", "产生费用",
+        )
+        action_signals = ("create", "configure", "provision", "deploy", "创建", "配置", "部署", "开通")
+        requires_runtime_binding = any(signal in semantic_text for signal in side_effect_signals) and any(signal in semantic_text for signal in action_signals)
+
+        existing = dict(package.get("runtime_binding") or {})
+        explicit_requirements = list(existing.get("required_resource_bindings") or [])
+        if not explicit_requirements and requires_runtime_binding:
+            resource_terms = (
+                "storage", "compute", "iam", "network", "database", "dns", "queue", "cache",
+                "object_store", "container", "cluster", "external_api",
+            )
+            discovered = []
+            for item in work_items:
+                item_text = json.dumps(item, ensure_ascii=False).lower()
+                for term in resource_terms:
+                    if term in item_text and term not in discovered:
+                        discovered.append(term)
+            explicit_requirements = discovered or [item.get("work_item_id") or item.get("title") for item in work_items]
+
+        supplied_bindings = existing.get("resource_bindings") or []
+        if isinstance(supplied_bindings, dict):
+            supplied_bindings = [
+                {"logical_dependency": key, "concrete_target": value}
+                for key, value in supplied_bindings.items()
+            ]
+        binding_by_name = {
+            str(item.get("logical_dependency")): item
+            for item in supplied_bindings
+            if isinstance(item, dict) and item.get("logical_dependency")
+        }
+        resource_bindings = []
+        for requirement in explicit_requirements:
+            current = dict(binding_by_name.get(str(requirement)) or {})
+            concrete_target = current.get("concrete_target")
+            resource_bindings.append({
+                "logical_dependency": requirement,
+                "concrete_target": concrete_target,
+                "status": "resolved" if concrete_target else "unresolved",
+            })
+
+        provider = existing.get("provider")
+        target_environment = existing.get("target_environment")
+        credential_source = existing.get("credential_source")
+        cost_boundary = existing.get("cost_boundary")
+        external_boundary = existing.get("external_side_effect_boundary")
+        production_impact = existing.get("production_impact")
+        approved = existing.get("binding_status") in {"approved", "passed"}
+        statuses = {
+            "provider_resolved": bool(provider),
+            "target_environment_resolved": bool(target_environment),
+            "required_resource_bindings_resolved": bool(resource_bindings) and all(item["status"] == "resolved" for item in resource_bindings),
+            "credential_boundary_resolved": bool(credential_source),
+            "cost_boundary_resolved": bool(cost_boundary),
+            "external_side_effect_boundary_resolved": bool(external_boundary),
+            "production_impact_resolved": production_impact is not None,
+        }
+        fully_resolved = not requires_runtime_binding or (approved and all(statuses.values()))
+        recommendation = dict(existing.get("recommendation") or {})
+        if requires_runtime_binding and not recommendation:
+            recommendation = {
+                "summary": "先绑定一个隔离的非生产运行环境，再由 Executor 消费当前 Package；不得直接落到生产环境。",
+                "target_environment": target_environment or "建议使用隔离的非生产环境；具体环境尚待 Founder 确认",
+                "resource_bindings": [
+                    {"logical_dependency": item["logical_dependency"], "recommendation": "绑定到所选 Provider 中隔离、可回滚的对应资源", "status": item["status"]}
+                    for item in resource_bindings
+                ],
+                "existing_infrastructure": "未发现已明确批准并绑定到本 Package 的 active runtime environment。",
+                "required_new_infrastructure": [item["logical_dependency"] for item in resource_bindings],
+                "new_credential": "Unknown · 选择 Provider 与 Target Environment 后才能确认",
+                "new_cost": "Unknown · 尚无已批准的成本边界",
+                "production_impact": "Unknown · 当前不得假定生产影响已获授权",
+                "external_side_effect": "将创建或配置真实基础设施资源，必须先获得 Runtime Binding 授权",
+                "reason": "approved Implementation Plan 只批准了实施范围，没有指定真实 Provider、环境、资源目标及凭据、费用和外部副作用边界。",
+            }
+        return {
+            **existing,
+            "requires_runtime_binding": requires_runtime_binding,
+            "provider": provider,
+            "target_environment": target_environment,
+            "required_resource_bindings": explicit_requirements,
+            "resource_bindings": resource_bindings,
+            "credential_source": credential_source,
+            "cost_boundary": cost_boundary,
+            "external_side_effect_boundary": external_boundary,
+            "production_impact": production_impact,
+            "binding_status": "passed" if fully_resolved else "founder_review_required" if requires_runtime_binding else "not_required",
+            "recommendation": recommendation,
+            **statuses,
+        }
+
+    @staticmethod
     def _preflight_execution_package(*, package: dict, plan: dict, draft) -> dict:
         checks = []
         def check(name, status, detail):
@@ -920,7 +1029,20 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
         order_ok = ids == approved_ids and len(set(ids)) == len(ids) and not missing_dependencies and set(package["execution_order"]) == set(ids)
         check("work_item_integrity", "passed" if order_ok else "failed", f"继承 {len(ids)} 个 Work Items；依赖与执行顺序完整。" if order_ok else f"Work Item/依赖不完整：{missing_dependencies}")
         check("risk_integrity", "passed", "Risk Summary 完整继承 approved Plan；未检测到新增风险或破坏性动作。")
-        check("permission_integrity", "passed", "权限与 Cloud/IAM 要求均来自 approved Plan；未增加新权限。")
+        check("permission_integrity", "passed", "Package 权限要求来自 approved Plan；该检查不代表真实 Runtime Environment 已授权。")
+        runtime_binding = SinoBrainRuntime._runtime_binding_assessment(package=package, plan=plan)
+        package["runtime_binding"] = runtime_binding
+        if not runtime_binding["requires_runtime_binding"]:
+            runtime_status = "passed"
+            runtime_detail = "当前 Package 不创建或配置外部基础设施资源，无需 Runtime Environment Binding。"
+        elif runtime_binding["binding_status"] == "passed":
+            runtime_status = "passed"
+            runtime_detail = "Runtime Provider、Target Environment、资源绑定及凭据、费用、外部副作用与生产影响边界均已明确批准。"
+        else:
+            runtime_status = "founder_gate_required"
+            unresolved = [key.replace("_resolved", "") for key, value in runtime_binding.items() if key.endswith("_resolved") and not value]
+            runtime_detail = "Runtime Environment Binding Required：" + "、".join(unresolved)
+        check("runtime_environment_binding", runtime_status, runtime_detail)
         repo_root = Path(__file__).resolve().parents[3]
         try:
             branch = subprocess.run(["git", "branch", "--show-current"], cwd=repo_root, text=True, capture_output=True, check=True).stdout.strip()
@@ -2215,6 +2337,10 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             if status == "ready":
                 return {"action_id": "execution_package_ready", "title": "Execution Package Ready", "description": "执行准备完成。等待下一阶段接入 Executor。", "status_label": "Ready for Execution", "primary_label": None}
             if status == "founder_gate_required":
+                runtime_binding = package.get("runtime_binding") or {}
+                if runtime_binding.get("requires_runtime_binding") and runtime_binding.get("binding_status") != "passed":
+                    recommendation = runtime_binding.get("recommendation") or {}
+                    return {"action_id": "runtime_environment_binding_review", "title": "审核运行环境方案", "description": recommendation.get("summary") or "Runtime Environment 尚未绑定。", "status_label": "Founder Gate Required", "primary_label": None}
                 return {"action_id": "execution_package_founder_gate", "title": "Execution Package 需要 Founder 判断", "description": "；".join(preflight.get("founder_gate_reasons") or []), "status_label": "Founder Gate Required", "primary_label": None}
             return {"action_id": "execution_package_blocked", "title": "Execution Package Preflight Blocked", "description": "；".join(preflight.get("blocking_reasons") or []), "status_label": "Blocked", "primary_label": None}
         if stage == "implementation_planning":

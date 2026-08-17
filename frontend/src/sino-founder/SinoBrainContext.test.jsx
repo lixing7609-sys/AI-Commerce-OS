@@ -162,4 +162,12 @@ describe("SinoBrainContext", () => {
     fireEvent.click(screen.getByRole("button", { name: "开始新目标" }));
     expect(viewAssets).toHaveBeenCalled(); expect(newGoal).toHaveBeenCalled();
   });
+
+  it("projects runtime binding as the current Founder gate instead of ready for execution", () => {
+    render(<SinoBrainContext brain={{ project_id: "project-infra", stage: "execution_package", discovery: { current_project: { project_name: "Infrastructure Project" }, execution_package: { package_id: "package-runtime", source_draft_id: "draft-1", source_draft_version: 1, implementation_plan_id: "plan-1", approval_ref: { status: "approved" }, work_items: [{ work_item_id: "work-1" }], preflight_status: "founder_gate_required", execution_status: "not_started", runtime_binding: { requires_runtime_binding: true, binding_status: "founder_review_required" }, preflight: { founder_gate_reasons: ["Runtime Environment Binding Required"] } } } }} />);
+    expect(screen.getByText("Founder Gate Required")).toBeTruthy();
+    expect(screen.getByText("Founder 审核 Runtime Environment Recommendation")).toBeTruthy();
+    expect(screen.queryByText("Ready for Execution")).toBeNull();
+  });
+
 });

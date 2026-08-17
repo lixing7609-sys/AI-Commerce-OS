@@ -472,6 +472,49 @@ def test_execution_package_preflight_distinguishes_ready_blocked_and_founder_gat
     assert broken["status"] == "blocked"
 
 
+def test_infrastructure_package_requires_approved_runtime_environment_binding(monkeypatch):
+    plan = {
+        "execution_approval": "approved", "scope": ["Provision an external object store and deploy a worker"],
+        "work_items": [{"work_item_id": "work-storage", "title": "Configure object_store runtime", "dependencies": [], "validation": ["connectivity"]}],
+        "execution_requirements": ["Requires credentials to create external resources"],
+    }
+    package = {
+        "package_id": "execution-package-runtime", "source_draft_version": 3, "scope": list(plan["scope"]),
+        "work_items": copy.deepcopy(plan["work_items"]), "execution_order": ["work-storage"],
+        "validation_plan": {"integration": ["integration"]}, "acceptance_criteria": ["accepted"],
+        "rollback_plan": [{"area": "external_resource"}],
+        "executor_requirements": {"plan_requirements": list(plan["execution_requirements"])},
+    }
+    monkeypatch.setattr(module.subprocess, "run", lambda args, **kwargs: SimpleNamespace(stdout="main\n" if "branch" in args else ""))
+    missing = module.SinoBrainRuntime._preflight_execution_package(package=package, plan=plan, draft=SimpleNamespace(status="confirmed", version=3))
+    binding = package["runtime_binding"]
+    assert missing["status"] == "founder_gate_required"
+    assert binding["requires_runtime_binding"] is True
+    for field in ("provider_resolved", "credential_boundary_resolved", "cost_boundary_resolved", "external_side_effect_boundary_resolved"):
+        assert binding[field] is False
+    assert missing["founder_gate_reasons"][0].startswith("Runtime Environment Binding Required")
+
+    package["runtime_binding"] = {
+        **binding, "provider": "approved-provider", "target_environment": "isolated-non-production",
+        "resource_bindings": [{"logical_dependency": requirement, "concrete_target": f"approved-{requirement}-ref"} for requirement in binding["required_resource_bindings"]],
+        "credential_source": "approved-credential-ref", "cost_boundary": "approved-budget-ref",
+        "external_side_effect_boundary": "approved-create-and-configure", "production_impact": "none",
+        "binding_status": "approved",
+    }
+    ready = module.SinoBrainRuntime._preflight_execution_package(package=package, plan=plan, draft=SimpleNamespace(status="confirmed", version=3))
+    assert ready["status"] == "ready"
+    assert package["runtime_binding"]["binding_status"] == "passed"
+
+
+def test_runtime_binding_gate_does_not_apply_to_local_code_package(monkeypatch):
+    plan = {"execution_approval": "approved", "scope": ["Update local parsing logic"], "work_items": [{"work_item_id": "work-code", "title": "Implement parser", "dependencies": [], "validation": ["unit tests"]}]}
+    package = {"source_draft_version": 1, "scope": list(plan["scope"]), "work_items": copy.deepcopy(plan["work_items"]), "execution_order": ["work-code"], "validation_plan": {"integration": ["tests"]}, "acceptance_criteria": ["passed"], "rollback_plan": [{"area": "repository"}]}
+    monkeypatch.setattr(module.subprocess, "run", lambda args, **kwargs: SimpleNamespace(stdout="main\n" if "branch" in args else ""))
+    result = module.SinoBrainRuntime._preflight_execution_package(package=package, plan=plan, draft=SimpleNamespace(status="confirmed", version=1))
+    assert result["status"] == "ready"
+    assert package["runtime_binding"]["requires_runtime_binding"] is False
+
+
 def _execution_package_state(monkeypatch):
     runtime, conversation_id = _runtime(monkeypatch)
     plan = {
@@ -534,6 +577,24 @@ def test_execution_package_revalidation_can_raise_founder_gate_without_execution
     monkeypatch.setattr(module, "create_execution_session", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Executor must not run")), raising=False)
     result = runtime.revalidate_execution_package(conversation_id)
     assert result["package_id"] == "execution-package-1"
+    assert result["preflight_status"] == "founder_gate_required"
+
+
+def test_runtime_binding_revalidation_preserves_package_identity_and_work_items(monkeypatch):
+    runtime, conversation_id, original = _execution_package_state(monkeypatch)
+    with module.SessionLocal() as session:
+        state = session.scalar(select(module.SinoBrainSessionDB).where(module.SinoBrainSessionDB.conversation_id == conversation_id))
+        discovery = dict(state.discovery); package = dict(discovery["execution_package"]); plan = dict(discovery["implementation_planning"])
+        plan["scope"] = ["Provision external database infrastructure"]
+        plan["work_items"] = [{"work_item_id": "work-1", "title": "Configure database runtime", "dependencies": [], "validation": ["connect"]}]
+        package["scope"] = list(plan["scope"]); package["work_items"] = copy.deepcopy(plan["work_items"])
+        discovery.update({"implementation_planning": plan, "execution_package": package}); state.discovery = discovery; session.commit()
+    monkeypatch.setattr(module.subprocess, "run", lambda args, **kwargs: SimpleNamespace(stdout="main\n" if "branch" in args else ""))
+    monkeypatch.setattr(module, "create_execution_session", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Executor must not run")), raising=False)
+    result = runtime.revalidate_execution_package(conversation_id)
+    assert result["package_id"] == original["package_id"]
+    assert result["implementation_plan_id"] == original["implementation_plan_id"]
+    assert result["work_items"] == [{"work_item_id": "work-1", "title": "Configure database runtime", "dependencies": [], "validation": ["connect"]}]
     assert result["preflight_status"] == "founder_gate_required"
 
 
