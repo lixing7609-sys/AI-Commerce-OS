@@ -49,6 +49,7 @@ def _classify(path: str, content: str) -> tuple[list[str], str, bool]:
         ("autonomous_task_closure", ("task_closure", "closure contract", "closure_ready")),
         ("runtime_environment_registry", ("runtime_environment_registry", "runtime_environment_router", "runtimeenvironmentregistry", "runtime environment registry", "runtime-environments", "sino-runtime")),
         ("capability_reuse", ("capability_reuse", "reuse-first", "reused_action_template", "reuse validation")),
+        ("autonomous_main_loop", ("autonomous_main_loop", "autonomous main loop", "manual_continue_count", "main_loop_stalled")),
     )
     for capability, terms in markers:
         if any(term in text for term in terms):
