@@ -128,6 +128,23 @@ def test_execution_registry_restores_session_from_stable_runtime_file(monkeypatc
         registry._packages.update(packages_before)
 
 
+def test_execution_registry_restores_reuse_prefixed_session(monkeypatch, tmp_path):
+    registry_path = tmp_path / "runtime" / "registry.json"
+    monkeypatch.setenv("FOUNDER_EXECUTION_REGISTRY_PATH", str(registry_path))
+    sessions_before, packages_before = dict(registry._sessions), dict(registry._packages)
+    try:
+        registry._sessions.clear(); registry._packages.clear()
+        session = ExecutionSession("reuse-execution-session-restored", "task-reuse", "package-reuse", status="completed")
+        registry.save_execution_session(session, _package())
+        registry._sessions.clear(); registry._packages.clear()
+        registry.load_execution_sessions()
+        restored = registry.get_execution_session(session.id)
+        assert restored is not None and restored[0].status == "completed"
+    finally:
+        registry._sessions.clear(); registry._sessions.update(sessions_before)
+        registry._packages.clear(); registry._packages.update(packages_before)
+
+
 def test_registry_migrates_legacy_backend_restart_failure_to_paused(monkeypatch, tmp_path):
     registry_path = tmp_path / "runtime" / "registry.json"
     monkeypatch.setenv("FOUNDER_EXECUTION_REGISTRY_PATH", str(registry_path))

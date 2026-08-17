@@ -53,7 +53,7 @@ def load_execution_sessions() -> None:
             packages.update({key: _package_from_dict(value) for key, value in payload.get("packages", {}).items()})
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             pass
-    for item in sorted((path.parent / "sessions").glob("execution-*.json")):
+    for item in sorted((path.parent / "sessions").glob("*.json")):
         try:
             payload = json.loads(item.read_text(encoding="utf-8"))
             session = ExecutionSession(**payload["session"])
