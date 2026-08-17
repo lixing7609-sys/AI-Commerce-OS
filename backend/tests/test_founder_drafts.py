@@ -160,4 +160,7 @@ def test_confirmed_draft_projects_its_existing_implementation_plan(monkeypatch):
         brain = SinoBrainSessionDB(conversation_id=conversation.id, project_id=project.id, stage="implementation_planning", discovery={"implementation_planning": {"plan_id": "plan-existing", "status": "ready_for_execution_review", "source_draft_id": draft.id, "source_draft_version": 3, "work_items": [{"work_item_id": "work-1"}, {"work_item_id": "work-2"}], "execution_approval": "pending"}})
         session.add_all([project, conversation, draft, brain]); session.commit()
     projected = draft_service.get_draft("draft-canonical")
-    assert projected["implementation"] == {"plan_id": "plan-existing", "status": "ready_for_execution_review", "source_draft_id": "draft-canonical", "source_draft_version": 3, "work_item_count": 2, "execution_approval": "pending", "next_step": "founder_execution_approval", "execution_package": None}
+    implementation = projected["implementation"]
+    assert {key: implementation[key] for key in ("plan_id", "status", "source_draft_id", "source_draft_version", "work_item_count", "execution_approval", "execution_package")} == {"plan_id": "plan-existing", "status": "ready_for_execution_review", "source_draft_id": "draft-canonical", "source_draft_version": 3, "work_item_count": 2, "execution_approval": "pending", "execution_package": None}
+    assert implementation["next_step"] == "审核实施方案"
+    assert implementation["project_lifecycle"]["lifecycle_stage"] == "implementation_planning"

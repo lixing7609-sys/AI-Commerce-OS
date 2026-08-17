@@ -41,4 +41,12 @@ describe("System Project workspace context", () => {
     expect(screen.getByText("Blocked by External Dependency")).toBeTruthy();
     expect(screen.getByText("Runtime Platform")).toBeTruthy();
   });
+
+  it("shows the highest Project lifecycle without reopening planning", () => {
+    const lifecycle = { rank: 700, stage_label: "Validation / Execution Result", resume_point: "wi-007", current_action: { title: "等待外部依赖解除后恢复真实环境验证", status_label: "Validation Blocked", description: "Implementation 已完成；等待 Runtime Platform。" } };
+    render(<ProjectWorkspace intelligence={{ project_name: "Evolution System", conversation_refs: [{ conversation_id: "conv-1", title: "Evolution · 项目规划" }], project_lifecycle: lifecycle }} drafts={[]} onOpenConversation={vi.fn()} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
+    expect(screen.getByRole("region", { name: "项目生命周期" })).toBeTruthy();
+    expect(screen.getByText("Validation / Execution Result")).toBeTruthy();
+    expect(screen.queryByText("正在判断讨论成熟度")).toBeNull();
+  });
 });

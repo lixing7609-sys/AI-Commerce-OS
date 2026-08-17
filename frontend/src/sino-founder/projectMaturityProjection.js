@@ -14,6 +14,8 @@ export function projectMaturityProjection(brain) {
 }
 
 export function projectCurrentAction(brain, maturity = projectMaturityProjection(brain)) {
+  const lifecycle = brain?.project_lifecycle;
+  if (lifecycle?.rank >= 300 && lifecycle.current_action) return lifecycle.current_action;
   if (brain?.stage !== "project_planning") return brain?.current_action || null;
   const run = brain?.discovery?.cognitive_work_run;
   if (["pending", "running"].includes(run?.run_status)) return { action_id: "cognitive_work_running", title: "Sino 正在执行", description: run.work_target, status_label: "分析中", primary_label: null };

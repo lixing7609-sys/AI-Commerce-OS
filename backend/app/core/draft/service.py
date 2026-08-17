@@ -9,6 +9,7 @@ from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
 from app.core.draft.model import FounderDraftDB
 from app.core.project.model import FounderProjectDB
+from app.core.project.lifecycle_projection import project_lifecycle_projection
 from app.database.db import SessionLocal
 
 
@@ -64,6 +65,7 @@ def _implementation_projection(session, record: FounderDraftDB) -> dict | None:
         package = {}
     package_next = "ready_for_execution" if package.get("preflight_status") == "ready" else "resolve_preflight_blocker" if package.get("preflight_status") == "blocked" else "founder_execution_exception" if package else None
     feedback = dict(((state.discovery or {}).get("execution_context_feedback") or {}))
+    lifecycle = project_lifecycle_projection(state.discovery, conversation_stage=state.stage)
     projection = {
         "plan_id": plan.get("plan_id"),
         "status": plan.get("status"),
@@ -71,7 +73,8 @@ def _implementation_projection(session, record: FounderDraftDB) -> dict | None:
         "source_draft_version": plan.get("source_draft_version"),
         "work_item_count": len(plan.get("work_items") or []),
         "execution_approval": approval,
-        "next_step": package_next or ("generate_execution_package" if approval == "approved" else "founder_execution_approval"),
+        "next_step": lifecycle.get("next_step") or package_next or ("generate_execution_package" if approval == "approved" else "founder_execution_approval"),
+        "project_lifecycle": lifecycle,
         "execution_package": {
             "package_id": package.get("package_id"),
             "preflight_status": package.get("preflight_status"),

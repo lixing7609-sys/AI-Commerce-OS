@@ -170,4 +170,13 @@ describe("SinoBrainContext", () => {
     expect(screen.queryByText("Ready for Execution")).toBeNull();
   });
 
+  it("projects an external-dependency Execution Result above stale Project Planning state", () => {
+    render(<SinoBrainContext brain={{ project_id: "project-evolution", stage: "project_planning", discovery: { project_aware: true, current_project: { project_name: "Evolution System" }, discussion_maturity: { maturity_status: "evaluating", reason: "old planning" } }, project_lifecycle: { rank: 700, lifecycle_stage: "validation_result", stage_label: "Validation / Execution Result", implementation_status: "completed", validation_status: "blocked_by_external_dependency", current_dependency: { dependency_target: "Runtime Foundation" }, blocking_reason: "runtime unavailable", resume_point: "work-7", current_action: { title: "等待外部依赖解除后恢复真实环境验证" } } }} />);
+    expect(screen.getAllByText("Validation / Execution Result").length).toBeGreaterThan(0);
+    expect(screen.getByText("✓ Completed")).toBeTruthy();
+    expect(screen.getByText("Blocked by External Dependency")).toBeTruthy();
+    expect(screen.getByText("Runtime Foundation")).toBeTruthy();
+    expect(screen.getByText("WORK-7 Real Environment Validation")).toBeTruthy();
+    expect(screen.queryByText("正在判断讨论成熟度")).toBeNull();
+  });
 });

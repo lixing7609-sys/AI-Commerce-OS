@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from app.core.artifact.model import ArtifactAssetDB
 from app.core.memory.model import MemoryAssetDB
 from app.core.project.model import FounderProjectDB, ProjectIntelligenceDB
+from app.core.project.lifecycle_projection import project_lifecycle_projection
 from app.core.asset_lifecycle.model import AssetCatalogDB
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB, SinoBrainSessionDB
@@ -157,6 +158,8 @@ def get_project_intelligence(project_id: str) -> dict:
         all_conversation_ids = [item.id for item in all_conversations]
         brain_states = list(session.scalars(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id.in_(all_conversation_ids)))) if all_conversation_ids else []
         execution_feedback = next((dict((item.discovery or {}).get("execution_context_feedback") or {}) for item in sorted(brain_states, key=lambda row: row.updated_at, reverse=True) if (item.discovery or {}).get("execution_context_feedback")), None)
+        lifecycle_candidates = [project_lifecycle_projection(item.discovery, conversation_stage=item.stage) for item in brain_states]
+        project_lifecycle = max(lifecycle_candidates, key=lambda item: item.get("rank", 0), default=None)
         decisions = list(session.scalars(select(DecisionAssetDB).where(DecisionAssetDB.conversation_id.in_(conversation_ids)).order_by(DecisionAssetDB.created_at.desc()))) if conversation_ids else []
         questions = list(session.scalars(select(PendingQuestionDB).where(PendingQuestionDB.conversation_id.in_(conversation_ids), PendingQuestionDB.status == "open").order_by(PendingQuestionDB.created_at.desc()))) if conversation_ids else []
         candidates = list(session.scalars(select(CandidateGoalDB).where(CandidateGoalDB.conversation_id.in_(conversation_ids), CandidateGoalDB.status == "candidate").order_by(CandidateGoalDB.created_at.desc()))) if conversation_ids else []
@@ -274,6 +277,7 @@ def get_project_intelligence(project_id: str) -> dict:
             "conversation_refs": [{"conversation_id": item.id, "title": item.title, "updated_at": _iso(item.updated_at), "summary": next((digest.summary for digest in digests if digest.conversation_id == item.id), "")} for item in conversations],
             "execution_refs": execution_refs, "technical_evidence_refs": [item.id for item in artifacts if item.artifact_type in TECHNICAL_ASSET_TYPES],
             "implementation_result": execution_feedback,
+            "project_lifecycle": project_lifecycle,
             "constitution": constitution,
             "initial_project_context": initial_project_context,
             "developer_debug": {

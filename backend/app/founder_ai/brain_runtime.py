@@ -26,6 +26,7 @@ from app.core.decision.model import DecisionAssetDB
 from app.core.dependency_outcome.service import dependency_evidence_for_target
 from app.core.memory.model import MemoryAssetDB
 from app.core.project.model import FounderProjectDB, ProjectIntelligenceDB
+from app.core.project.lifecycle_projection import project_lifecycle_projection
 from app.database.db import SessionLocal
 from app.llm.gateway import llm_gateway
 from app.llm.models import LLMRequest
@@ -2322,6 +2323,7 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
                 package["objects"] = [{**item, "lifecycle_status": assets[item["asset_id"]].status, "available_actions": capability_available_actions(assets[item["asset_id"]])} if item.get("asset_id") in assets else item for item in package.get("objects") or []]
             except Exception:
                 pass
+        payload["project_lifecycle"] = project_lifecycle_projection(payload["discovery"], conversation_stage=record.stage)
         payload["stage_workspaces"] = SinoBrainRuntime._stage_workspaces(payload)
         payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] == "active"), "asset_commit" if record.stage == "conversation_completed" else "package")
         payload["current_action"] = SinoBrainRuntime._current_action(payload)
@@ -2329,6 +2331,9 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
 
     @staticmethod
     def _current_action(brain):
+        lifecycle = brain.get("project_lifecycle") or {}
+        if lifecycle.get("rank", 0) >= 300 and lifecycle.get("current_action"):
+            return dict(lifecycle["current_action"])
         stage = brain.get("stage") or "goal_discovery"
         if stage == "execution_package":
             package = dict((brain.get("discovery") or {}).get("execution_package") or {})
@@ -2406,7 +2411,12 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
     @staticmethod
     def _stage_workspaces(brain):
         internal = brain.get("stage") or "goal_discovery"
+        lifecycle = brain.get("project_lifecycle") or {}
+        lifecycle_stage = lifecycle.get("lifecycle_stage")
         current = (
+            "validation" if lifecycle_stage in {"execution", "execution_result", "validation_result", "validated_result"} else
+            "package" if lifecycle_stage == "execution_package" else
+            "strategy" if lifecycle_stage == "implementation_planning" else
             "goal" if internal in {"project_planning", "goal_discovery", "goal_review"} else
             "strategy" if internal in {"implementation_planning", "goal_confirmed", "strategy_meeting"} else
             "validation" if internal == "conflict_validation" else
@@ -2417,7 +2427,7 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         summaries = {
             "goal": "Project Context 分析进行中" if internal == "project_planning" else (brain.get("goal_brief") or {}).get("summary") or (brain.get("goal_brief") or {}).get("goal") or "目标理解进行中",
             "strategy": "Implementation Plan 制定中" if internal == "implementation_planning" else f"已记录 {len(brain.get('strategy_proposals') or [])} 个策略提案",
-            "validation": f"已记录 {len(brain.get('conflicts') or [])} 个冲突与 {len(brain.get('validations') or [])} 个验证结果",
+            "validation": (lifecycle.get("current_action") or {}).get("description") or f"已记录 {len(brain.get('conflicts') or [])} 个冲突与 {len(brain.get('validations') or [])} 个验证结果",
             "decision": (brain.get("decision") or {}).get("final_recommendation") or "等待形成唯一推荐方案",
             "package": (brain.get("discussion_package") or {}).get("title") or "等待形成 Discussion Package",
             "asset_commit": f"已提交 {len(((brain.get('discussion_package') or {}).get('asset_commit') or {}).get('items') or [])} 项资产",
@@ -2430,7 +2440,7 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             if internal == "conversation_completed" and key == "asset_commit":
                 status = "completed"
             result.append({
-                "stage_id": f"{brain.get('brain_id')}:{key}", "stage_key": key, "label": "Project Planning" if internal == "project_planning" and key == "goal" else "Implementation Planning" if internal == "implementation_planning" and key == "strategy" else "Execution Package" if internal == "execution_package" and key == "package" else STAGE_LABELS[key],
+                "stage_id": f"{brain.get('brain_id')}:{key}", "stage_key": key, "label": lifecycle.get("stage_label") if key == current and lifecycle.get("rank", 0) >= 300 else "Project Planning" if internal == "project_planning" and key == "goal" else "Implementation Planning" if internal == "implementation_planning" and key == "strategy" else "Execution Package" if internal == "execution_package" and key == "package" else STAGE_LABELS[key],
                 "status": status, "summary": summaries[key], "message_refs": [],
             })
         return result

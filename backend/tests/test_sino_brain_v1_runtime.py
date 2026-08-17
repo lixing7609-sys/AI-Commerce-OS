@@ -598,6 +598,25 @@ def test_runtime_binding_revalidation_preserves_package_identity_and_work_items(
     assert result["preflight_status"] == "founder_gate_required"
 
 
+def test_snapshot_projects_execution_feedback_without_restarting_planning(monkeypatch):
+    runtime, conversation_id = _runtime(monkeypatch)
+    feedback = {"implementation_status": "completed", "validation_status": "blocked_by_external_dependency", "overall_execution_status": "blocked", "external_dependencies": [{"dependency_target": "Runtime Foundation", "blocking_scope": "work-7", "reason": "runtime unavailable"}], "next_step": "resolve_external_dependency_then_resume_validation"}
+    with module.SessionLocal() as session:
+        state = module.SinoBrainSessionDB(conversation_id=conversation_id, project_id="project-lifecycle", stage="project_planning", discovery={"project_aware": True, "discussion_maturity": {"maturity_status": "evaluating"}, "execution_context_feedback": feedback})
+        session.add(state); session.commit()
+        message_count = session.scalar(select(func.count()).select_from(ConversationMessageDB).where(ConversationMessageDB.conversation_id == conversation_id))
+    first = runtime.snapshot(conversation_id); second = runtime.snapshot(conversation_id)
+    assert first["stage"] == "project_planning"
+    assert first["project_lifecycle"]["lifecycle_stage"] == "validation_result"
+    assert first["current_action"]["action_id"] == "resume_validation_after_dependency"
+    assert second["project_lifecycle"] == first["project_lifecycle"]
+    with module.SessionLocal() as session:
+        assert session.scalar(select(func.count()).select_from(ConversationMessageDB).where(ConversationMessageDB.conversation_id == conversation_id)) == message_count
+        stored = session.scalar(select(module.SinoBrainSessionDB).where(module.SinoBrainSessionDB.conversation_id == conversation_id))
+        assert stored.stage == "project_planning"
+        assert stored.discovery["discussion_maturity"]["maturity_status"] == "evaluating"
+
+
 def test_project_maturity_context_exposes_latest_analysis_for_semantic_blocking_judgment(monkeypatch):
     seen = {}
     def maturity_runner(context):

@@ -59,10 +59,11 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
   const maturity = projectAware ? projectMaturityProjection(brain) : {};
   const implementationPlan = brain.discovery?.implementation_planning;
   const executionPackage = brain.discovery?.execution_package;
+  const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
   return <section className="sino-brain-context sino-brain-dashboard" aria-label="Brain Dashboard">
     {!projectAware ? <FounderActionCard compact action={action} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} /> : null}
-    <header><h2>{constitution ? "Constitution Review Status" : "Brain Dashboard"}</h2><span>{STAGE_LABELS[brain.stage] || brain.stage}</span></header>
+    <header><h2>{constitution ? "Constitution Review Status" : "Brain Dashboard"}</h2><span>{projectLifecycle?.rank >= 300 ? projectLifecycle.stage_label : STAGE_LABELS[brain.stage] || brain.stage}</span></header>
     {constitution ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Understanding Status</dt><dd>{constitution.status === "founder_approved" ? "Confirmed" : constitution.status === "revision_requested" ? "继续讨论" : "Founder Review"}</dd></div>
       <div><dt>System Objects</dt><dd>{constitution.system_objects?.length || 0}</dd></div>
@@ -81,6 +82,15 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
       <div><dt>Execution Status</dt><dd>{executionPackage?.execution_status === "not_started" ? "Not Started" : executionPackage?.execution_status}</dd></div>
       {executionPackage?.runtime_binding?.requires_runtime_binding ? <div><dt>Runtime Binding</dt><dd>{executionPackage.runtime_binding.binding_status === "passed" ? "Passed" : "Founder Gate Required"}</dd></div> : null}
       <div><dt>Next Step</dt><dd>{executionPackage?.preflight_status === "ready" ? "Ready for Execution" : executionPackage?.preflight_status === "blocked" ? executionPackage?.preflight?.blocking_reasons?.join(" · ") : executionPackage?.runtime_binding?.requires_runtime_binding && executionPackage.runtime_binding.binding_status !== "passed" ? "Founder 审核 Runtime Environment Recommendation" : executionPackage?.preflight?.founder_gate_reasons?.join(" · ")}</dd></div>
+    </dl> : projectLifecycle?.rank >= 300 ? <dl className="sino-brain-dashboard__grid">
+      <div><dt>Current Project</dt><dd>{brain.discovery?.current_project?.project_name || brain.project_id}</dd></div>
+      <div><dt>Current Stage</dt><dd>{projectLifecycle.stage_label}</dd></div>
+      {projectLifecycle.implementation_status ? <div><dt>Implementation</dt><dd>{projectLifecycle.implementation_status === "completed" ? "✓ Completed" : projectLifecycle.implementation_status}</dd></div> : null}
+      {projectLifecycle.validation_status ? <div><dt>Validation</dt><dd>{projectLifecycle.validation_status === "blocked_by_external_dependency" ? "Blocked by External Dependency" : projectLifecycle.validation_status}</dd></div> : null}
+      {projectLifecycle.current_dependency ? <div><dt>Dependency</dt><dd>{projectLifecycle.current_dependency.dependency_target}</dd></div> : null}
+      {projectLifecycle.blocking_reason ? <div><dt>Blocking Reason</dt><dd>{projectLifecycle.blocking_reason}</dd></div> : null}
+      {projectLifecycle.resume_point ? <div><dt>Resume Point</dt><dd>{String(projectLifecycle.resume_point).toUpperCase()} Real Environment Validation</dd></div> : null}
+      <div><dt>Next Step</dt><dd>{projectLifecycle.current_action?.title || projectLifecycle.next_step}</dd></div>
     </dl> : projectAware ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Current Project</dt><dd>{brain.discovery?.current_project?.project_name || brain.project_id}</dd></div>
       <div><dt>Current Stage</dt><dd>{brain.stage === "implementation_planning" ? "Implementation Planning" : "Project Planning"}</dd></div>
