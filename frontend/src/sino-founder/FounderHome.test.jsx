@@ -13,6 +13,15 @@ describe("Founder AI capability factory home", () => {
       expect(onQuickCreate).toHaveBeenLastCalledWith(type);
     }
   });
+
+  it("mounts the real home Composer with pending image paste callbacks", () => {
+    const onAddImages = vi.fn(); const image = new File(["png"], "Screenshot.png", { type: "image/png" });
+    const { container } = render(<FounderHome message="定位这里" onMessage={vi.fn()} onSend={vi.fn()} onQuickCreate={vi.fn()} healthy projects={[]} onSelectProject={vi.fn()} onCreateProject={vi.fn()} onFiles={vi.fn()} mode="sino" onModeChange={vi.fn()} pendingAttachments={[{ localId: "pending", name: "Screenshot.png", preview: "blob:shot" }]} onAddImages={onAddImages} onRemoveImage={vi.fn()} />);
+    const input = container.querySelector('textarea[aria-label="讨论内容"]');
+    fireEvent.paste(input, { clipboardData: { items: [{ type: "image/png", getAsFile: () => image }], getData: () => "" } });
+    expect(onAddImages).toHaveBeenCalledWith([image]);
+    expect(container.querySelector('img[alt="Screenshot.png"]')).toBeTruthy();
+  });
 });
 
 describe("System Project workspace context", () => {

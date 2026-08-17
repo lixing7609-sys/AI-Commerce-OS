@@ -16,7 +16,7 @@ const formatTime = (value) => value ? new Intl.DateTimeFormat(undefined, { month
 
 const QUICK_CREATION = [["agent", "创建 Agent"], ["skill", "创建 Skill"], ["workflow", "创建 Workflow"], ["prompt", "创建 Prompt"], ["capability", "创建 Capability"], ["project", "创建 Project"]];
 
-export function FounderHome({ intelligence, message, onMessage, onSend, busy, onNavigate, onQuickCreate, healthy, projects, activeProjectId, onSelectProject, onCreateProject, onFiles, mode, onModeChange }) {
+export function FounderHome({ intelligence, message, onMessage, onSend, busy, onNavigate, onQuickCreate, healthy, projects, activeProjectId, onSelectProject, onCreateProject, onFiles, mode, onModeChange, pendingAttachments, onAddImages, onRemoveImage }) {
   const resumeItems = (intelligence?.execution_refs || []).filter((item) => ["draft", "approved", "queued", "executing", "testing", "paused", "failed"].includes(item.status)).slice(0, 3);
   return <section className="sino-home" aria-labelledby="sino-home-title">
     <div className="sino-home__center">
@@ -33,6 +33,9 @@ export function FounderHome({ intelligence, message, onMessage, onSend, busy, on
         onModeChange={onModeChange}
         toolbar={<ComposerContextControls healthy={healthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={onSelectProject} onCreateProject={onCreateProject} onFiles={onFiles} />}
         toolbarIncludesStatus
+        attachments={pendingAttachments}
+        onAddImages={onAddImages}
+        onRemoveImage={onRemoveImage}
       />
       <nav className="sino-quick-create" aria-label="快速创建能力">{QUICK_CREATION.map(([type, label]) => <button type="button" key={type} onClick={() => onQuickCreate(type)}>{label}</button>)}</nav>
       {resumeItems.length > 0 && <section className="sino-home-resume" aria-label="继续工作"><header><h2>继续工作</h2></header>{resumeItems.map((item) => <article key={item.execution_id}><div><strong>{item.goal}</strong><small>{executionStatusLabel(item.status)}</small></div><button type="button" onClick={() => onNavigate(item.status === "draft" ? "builder" : "execution")}>继续处理</button></article>)}</section>}
