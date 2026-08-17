@@ -30,6 +30,7 @@ def session_start_guard(*, package: dict, handoff: dict, session, expected: dict
         "founder_approval": (package.get("approval_ref") or {}).get("status") == "approved",
         "runtime_binding": (package.get("runtime_binding") or {}).get("binding_status") == "passed",
         "preflight": package.get("preflight_status") == "ready",
+        "execution_not_started": package.get("execution_status") == "not_started",
         "working_tree_clean": clean, "branch": branch == expected["branch"], "repository_anchor": anchor_available,
         "action_compilation": action_contract.get("compilation_status") == "action_compilation_ready",
         "blocked_actions": action_contract.get("blocked_action_count") == 0,
