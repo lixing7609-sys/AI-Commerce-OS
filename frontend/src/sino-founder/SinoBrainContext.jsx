@@ -52,6 +52,7 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
   const reviewedWorkItems = workItems.filter((item) => item.founder_decision && item.founder_decision !== "pending").length;
   const selectedWorkItem = workItems.find((item) => item.work_item_id === selectedConstitutionWorkItemId) || null;
   const selectedDecision = selectedWorkItem?.founder_decision || "pending";
+  const dependencyEvidence = selectedWorkItem?.real_dependency_evidence || [];
   const routing = selectedWorkItem?.routing_recommendation || null;
   const formalProposal = routing?.formal_object_proposal || null;
   const projectAware = brain.stage === "project_planning" || brain.discovery?.project_aware;
@@ -112,6 +113,7 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
         <div><dt>Decision Status</dt><dd>{selectedDecision === "pending" ? "Pending" : "Recorded"}</dd></div>
         <div><dt>Next Step</dt><dd>{WORK_ITEM_NEXT_STEPS[selectedDecision]}</dd></div>
       </dl>
+      {dependencyEvidence.length ? <section aria-label="Real Dependency Evidence"><span className="sino-kicker">Real Dependency Evidence</span>{dependencyEvidence.map((item) => <dl key={item.dependency_id}><div><dt>Source Project</dt><dd>{item.source_project_name}</dd></div><div><dt>Execution</dt><dd>Implementation Completed</dd></div><div><dt>Validation</dt><dd>Blocked by External Dependency</dd></div><div><dt>Required Runtime</dt><dd>{item.required_capabilities?.join(" · ")}</dd></div><div><dt>Evidence</dt><dd>{item.reason}</dd></div><div><dt>Source Session</dt><dd>{item.source_execution_session_id}</dd></div><div><dt>Source Package</dt><dd>{item.source_execution_package_id}</dd></div></dl>)}</section> : null}
       <footer>{selectedDecision === "pending" ? <><button type="button" className="is-primary" disabled={busy || constitution.status !== "founder_approved"} onClick={() => onReviewConstitutionWorkItem?.(selectedWorkItem.work_item_id, "approved")}>同意推进</button><button type="button" disabled={busy || constitution.status !== "founder_approved"} onClick={() => onReviewConstitutionWorkItem?.(selectedWorkItem.work_item_id, "discuss")}>继续讨论</button><button type="button" disabled={busy || constitution.status !== "founder_approved"} onClick={() => onReviewConstitutionWorkItem?.(selectedWorkItem.work_item_id, "deferred")}>暂不处理</button></> : <strong className={`sino-work-item-decision is-${selectedDecision}`}>{selectedDecision === "approved" ? "✓ 已同意推进" : WORK_ITEM_DECISION_LABELS[selectedDecision] || selectedDecision}</strong>}</footer>
       {routing ? <section className="sino-routing-recommendation" aria-label="Sino Routing Recommendation">
         <header><span>Sino Recommendation</span><h3>{ROUTE_LABELS[routing.recommended_route] || routing.recommended_route}</h3></header>

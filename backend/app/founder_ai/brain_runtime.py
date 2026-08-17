@@ -22,6 +22,7 @@ from app.core.asset_lifecycle.model import AssetCatalogDB
 from app.core.product_visibility.service import is_product_hidden
 from app.core.asset_lifecycle.service import LifecycleConflict, capability_available_actions, perform_capability_action, suggest_reuse, upsert_catalog_record
 from app.core.decision.model import DecisionAssetDB
+from app.core.dependency_outcome.service import dependency_evidence_for_target
 from app.core.memory.model import MemoryAssetDB
 from app.core.project.model import FounderProjectDB, ProjectIntelligenceDB
 from app.database.db import SessionLocal
@@ -84,15 +85,39 @@ class SinoBrainRuntime:
             for workspace in payload["stage_workspaces"]:
                 workspace["message_refs"] = refs[workspace["stage_key"]]
             latest_founder = next((item for item in reversed(messages) if item.role == "founder"), None)
-            if latest_founder and self.classify_message_intent(latest_founder.content, project_id=record.project_id) == "project_context_update":
-                understanding = dict((record.discovery or {}).get("constitution_understanding") or self.extract_constitution_understanding(latest_founder.content))
-                discovery = dict(record.discovery or {})
+            discovery = dict(record.discovery or {})
+            constitution_active = discovery.get("message_intent") == "project_context_update" and (discovery.get("constitution_understanding") or {}).get("system_objects")
+            source_founder = (next((item for item in messages if item.role == "founder" and self.extract_constitution_understanding(item.content).get("system_objects")), None) or next((item for item in messages if item.role == "founder"), None)) if constitution_active else latest_founder
+            if source_founder and (constitution_active or self.classify_message_intent(source_founder.content, project_id=record.project_id) == "project_context_update"):
+                understanding = dict(discovery.get("constitution_understanding") or self.extract_constitution_understanding(source_founder.content))
                 work_items = self._propose_constitution_work_items(session, understanding, dict(discovery.get("proposed_work_item_decisions") or {}), dict(discovery.get("proposed_work_item_routing") or {}))
-                payload = self._context_update_projection(payload, latest_founder.id, latest_founder.content, work_items=work_items)
+                payload = self._context_update_projection(payload, source_founder.id, source_founder.content, work_items=work_items)
             return payload
 
-    def process_message(self, conversation_id: str, content: str) -> dict[str, Any]:
+    @staticmethod
+    def _is_work_item_semantic_refresh(content: str, interaction_context: dict | None) -> bool:
+        context = interaction_context or {}
+        if context.get("active_surface") != "constitution_review" or not context.get("selected_constitution_work_item_id"):
+            return False
+        text = " ".join(str(content or "").casefold().split())
+        refresh_actions = ("重新判断", "重新分析", "重新评估", "更新判断", "更新理解", "重新理解", "refresh", "reassess", "re-evaluate", "reanalyze", "re-analyze")
+        evidence_context = ("新证据", "新增证据", "real dependency evidence", "dependency evidence", "最新证据", "current evidence")
+        return any(action in text for action in refresh_actions) or (any(term in text for term in evidence_context) and any(term in text for term in ("判断", "分析", "评估", "理解", "understanding")))
+
+    def process_message(self, conversation_id: str, content: str, *, interaction_context: dict | None = None) -> dict[str, Any]:
         """Use Sino's configured model to understand a goal; rules only validate."""
+        if self._is_work_item_semantic_refresh(content, interaction_context):
+            work_item_id = str((interaction_context or {}).get("selected_constitution_work_item_id"))
+            snapshot = self.ensure_constitution_work_item_semantics(conversation_id, work_item_id, refresh=True)
+            work_item = next((item for item in (snapshot.get("constitution_understanding") or {}).get("proposed_work_items") or [] if item.get("work_item_id") == work_item_id), {})
+            semantic = work_item.get("semantic_understanding") or {}
+            return {
+                "handled": True,
+                "intent": "work_item_semantic_refresh",
+                "reply": f"已基于当前 Constitution、Existing State 与最新 Real Dependency Evidence 更新 {work_item.get('title') or '当前 Work Item'} 的语义判断。Founder Decision 保持不变。\n\nSystem Role：{semantic.get('system_role')}\n\nCurrent Gap：{semantic.get('current_gap')}\n\nRecommended Action：{semantic.get('recommended_action')}",
+                "message_type": "work_item_semantic_refresh",
+                "brain": snapshot,
+            }
         with SessionLocal() as session:
             conversation = session.get(ConversationDB, conversation_id)
             if conversation is None or conversation.system_id != "founder_ai":
@@ -931,6 +956,7 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
                 "status": "proposed", "founder_decision": decision,
                 "existing_state": existing_state,
                 "semantic_understanding": semantic or None,
+                "real_dependency_evidence": dependency_evidence_for_target(session, title),
                 "routing_recommendation": routing.get(work_item_id),
             })
 
@@ -1114,7 +1140,7 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
         runtime = resolve_runtime_config(role="sino_conversation")
         if runtime is None:
             raise RuntimeError("sino_conversation_model_unavailable")
-        prompt = """你是 Sino Founder AI 的 Work Item 语义理解器。根据提供的 Source Document、相关原文片段、Confirmed Understanding、Parent Project Context、当前 Work Item 和 Existing State，形成对象特异性的专业判断。
+        prompt = """你是 Sino Founder AI 的 Work Item 语义理解器。根据提供的 Source Document、相关原文片段、Confirmed Understanding、Parent Project Context、当前 Work Item、Existing State 与可追踪的 Real Dependency Evidence，形成对象特异性的专业判断。
 Reason 必须解释该对象的系统角色、与上层或相关对象的关系、当前真实缺口，以及为什么值得处理。Recommended Action 必须结合 Existing State 给出下一步，不能把所有对象统一建议为创建 Project。不要替 Founder 做决定，不创建任何对象，不进行路由审批。
 只返回 JSON：system_role(string), current_gap(string), reason(string), recommended_action(string), source_context_refs(array of string), confidence(0..1)。不得补写 Source Context 没有支持的职责。"""
         response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, LLMRequest(
@@ -1132,7 +1158,7 @@ Reason 必须解释该对象的系统角色、与上层或相关对象的关系�
         matched = [item for item in chunks if title_folded and title_folded in item.casefold()]
         return matched[:6]
 
-    def ensure_constitution_work_item_semantics(self, conversation_id: str, work_item_id: str) -> dict[str, Any]:
+    def ensure_constitution_work_item_semantics(self, conversation_id: str, work_item_id: str, *, refresh: bool = False) -> dict[str, Any]:
         """Persist one model-derived semantic judgment without changing Founder or lifecycle state."""
         with SessionLocal() as session:
             state = self._get(session, conversation_id)
@@ -1145,7 +1171,7 @@ Reason 必须解释该对象的系统角色、与上层或相关对象的关系�
             if not work_item:
                 raise ValueError("建议工作项不存在")
             semantics = dict(understanding.get("work_item_semantics") or {})
-            if work_item_id not in semantics:
+            if refresh or work_item_id not in semantics:
                 source_message = session.scalar(select(ConversationMessageDB).where(
                     ConversationMessageDB.conversation_id == conversation_id,
                     ConversationMessageDB.role == "founder",
@@ -1174,8 +1200,9 @@ Reason 必须解释该对象的系统角色、与上层或相关对象的关系�
                     "relevant_source_sections": self._relevant_source_sections(source_text, work_item["title"]),
                     "confirmed_understanding": {key: understanding.get(key) for key in ("core_definition", "foundation_layer", "application_layer", "system_objects", "founder_boundary", "sino_boundary", "capability_lifecycle", "capability_rules", "shared_vs_isolated_principle", "execution_principle", "validation_principle")},
                     "parent_project_context": {"project_id": project.id, "name": project.name, "description": project.description, "project_summary": intelligence.project_summary if intelligence else "", "current_positioning": intelligence.current_positioning if intelligence else ""} if project else None,
-                    "work_item": {key: work_item.get(key) for key in ("work_item_id", "title", "source", "object_type", "existing_state")},
+                    "work_item": {key: work_item.get(key) for key in ("work_item_id", "title", "source", "object_type", "existing_state", "founder_decision", "semantic_understanding")},
                     "existing_state_evidence": existing_matches,
+                    "real_dependency_evidence": list(work_item.get("real_dependency_evidence") or []),
                 }
                 semantic = dict(self._work_item_semantic_runner(context) or {})
                 required = ("system_role", "current_gap", "reason", "recommended_action")
@@ -1187,6 +1214,7 @@ Reason 必须解释该对象的系统角色、与上层或相关对象的关系�
                     "relevant_sections": context["relevant_source_sections"],
                     "parent_project_id": project.id if project else None,
                     "existing_state_evidence": existing_matches,
+                    "real_dependency_evidence": [item.get("dependency_id") for item in context["real_dependency_evidence"]],
                 }, "generated_at": datetime.now(timezone.utc).isoformat()})
                 semantics[work_item_id] = semantic
                 understanding["work_item_semantics"] = semantics
@@ -1258,6 +1286,57 @@ Reason 必须解释该对象的系统角色、与上层或相关对象的关系�
             state.decision = {}
             state.discussion_package = {}
             conversation.conversation_state = "active"
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+        return self.snapshot(conversation_id)
+
+    def restore_constitution_review_after_invalid_goal(self, conversation_id: str) -> dict[str, Any]:
+        """Restore a confirmed Constitution surface after a context-routing error.
+
+        Formal Founder decisions are reconstructed only from durable child-project
+        source references; no Goal or Project is created or deleted.
+        """
+        with SessionLocal() as session:
+            state = self._get(session, conversation_id)
+            conversation = session.get(ConversationDB, conversation_id)
+            messages = list(session.scalars(select(ConversationMessageDB).where(
+                ConversationMessageDB.conversation_id == conversation_id,
+            ).order_by(ConversationMessageDB.created_at)))
+            source_message = next((item for item in messages if item.role == "founder" and self.extract_constitution_understanding(item.content).get("system_objects")), None)
+            if source_message is None:
+                raise ValueError("Constitution source message not found")
+            understanding = self.extract_constitution_understanding(source_message.content)
+            understanding.update({"status": "founder_approved", "reviewed_at": datetime.now(timezone.utc).isoformat()})
+            decisions, routing = {}, {}
+            projects = session.scalars(select(FounderProjectDB).where(FounderProjectDB.source_conversation_id == conversation_id))
+            for project in projects:
+                if not project.source_work_item_id:
+                    continue
+                decisions[project.source_work_item_id] = "approved"
+                routing[project.source_work_item_id] = {
+                    "recommended_route": "system_project", "reason": project.creation_reason,
+                    "proposed_object": project.name, "existing_state": "existing",
+                    "next_action": "进入已创建 Project", "confidence": 1,
+                    "routing_status": "approved", "routing_decision": "approved",
+                    "formal_object_proposal": {
+                        "proposal_id": project.source_proposal_id, "proposed_object": project.name,
+                        "object_type": "system_project", "parent_project": session.get(FounderProjectDB, project.parent_project_id).name if project.parent_project_id and session.get(FounderProjectDB, project.parent_project_id) else None,
+                        "architecture_role": project.architecture_role, "source_constitution": understanding.get("constitution_title"),
+                        "source_work_item": project.name, "initial_positioning": project.initial_positioning,
+                        "reason": project.creation_reason, "initial_scope": list(project.initial_scope or []),
+                        "status": "created", "created_project_id": project.id,
+                    },
+                }
+            discovery = {"message_intent": "project_context_update", "constitution_understanding": understanding, "proposed_work_item_decisions": decisions, "proposed_work_item_routing": routing}
+            discovery["proposed_work_items"] = self._propose_constitution_work_items(session, understanding, decisions, routing)
+            state.stage, state.goal_readiness, state.goal_brief = "context_updated", "unclear", {}
+            state.strategy_proposals, state.conflicts, state.validations, state.decision, state.discussion_package = [], [], [], {}, {}
+            state.discovery = discovery
+            conversation.title = understanding.get("constitution_title") or conversation.title
+            conversation.conversation_state = "active"
+            for message in messages[-2:]:
+                if message.message_type == "goal_brief":
+                    message.grounding = {**(message.grounding or {}), "invalid_routing": True, "discarded": True}
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
         return self.snapshot(conversation_id)

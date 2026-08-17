@@ -108,3 +108,16 @@ def test_execution_package_revalidation_api_reuses_resolved_conversation(monkeyp
     assert calls == ["canonical-conversation"]
     assert result["conversation"]["id"] == "canonical-conversation"
     assert result["execution_package"]["package_id"] == "execution-package-1"
+
+
+def test_discuss_route_accepts_and_forwards_constitution_interaction_context(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(api, "resolve_conversation_id", lambda value: value)
+    monkeypatch.setattr(api.brain_runtime, "process_message", lambda cid, content, interaction_context=None: captured.update({"conversation_id": cid, "content": content, "interaction_context": interaction_context}) or {"handled": True, "intent": "work_item_semantic_refresh", "message_type": "work_item_semantic_refresh", "reply": "updated", "brain": {"active_workspace_stage": "goal"}})
+    monkeypatch.setattr(api.secretary, "append_message", lambda *args, **kwargs: {"conversation": {"id": args[0]}})
+    monkeypatch.setattr(api.brain_runtime, "sync_message_refs", lambda _cid: None)
+    monkeypatch.setattr(api, "_candidate_snapshot", lambda snapshot, _cid: snapshot)
+    request = api.DiscussionMessageIn(content="基于新证据重新判断", interaction_context={"active_surface": "constitution_review", "selected_constitution_work_item_id": "work-1"})
+    result = api.discuss_with_sino("conv-1", request)
+    assert result["conversation"]["id"] == "conv-1"
+    assert captured["interaction_context"] == {"active_surface": "constitution_review", "selected_constitution_work_item_id": "work-1"}

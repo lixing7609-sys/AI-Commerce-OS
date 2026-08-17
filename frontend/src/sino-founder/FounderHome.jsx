@@ -69,6 +69,8 @@ export function ProjectIntelligenceContext({ intelligence, onNavigate, onOpenCon
   const statusLabel = confirmed ? "Confirmed" : "Founder Review";
   const recognitionLabel = confirmed ? "已确认" : "已识别 · 待确认";
   const pendingQuestions = intelligence?.pending_questions || [];
+  const implementationResult = intelligence?.implementation_result;
+  const externalDependency = implementationResult?.external_dependencies?.[0];
   return <section className="sino-project-context" aria-label="当前项目智能">
     <header><span className="sino-kicker">Project Intelligence</span><small>当前项目</small><strong>{intelligence?.project_name || "未选择"}</strong></header>
     <article><span>Project Summary</span><p>{intelligence?.project_summary || "—"}</p></article>
@@ -90,6 +92,7 @@ export function ProjectIntelligenceContext({ intelligence, onNavigate, onOpenCon
       <article><span>Sino Boundary</span><strong>{constitution.sino_boundary_status === "confirmed" ? "已确认" : "已识别"}</strong></article>
       <article><span>Proposed Work Items</span><strong>{constitution.proposed_work_items_count}</strong><small>Founder Decisions · {constitution.founder_decisions_count} / {constitution.proposed_work_items_count}</small></article>
     </> : <article><span>Constitution</span><small>尚未形成结构化 Constitution Understanding</small></article>}
+    {implementationResult ? <article><span>Implementation Result</span><dl><div><dt>Implementation</dt><dd>✓ Completed</dd></div><div><dt>Validation</dt><dd>Blocked by External Dependency</dd></div>{externalDependency ? <div><dt>Dependency</dt><dd>{externalDependency.dependency_target}</dd></div> : null}</dl></article> : null}
     <article className={changed.includes("questions") ? "is-intelligence-updated" : ""}><span>待确认问题</span><strong>{pendingQuestions.length}</strong></article>
     <footer><span>最近更新</span><time>{constitution?.updated_at || intelligence?.updated_at ? formatTime(constitution?.updated_at || intelligence.updated_at) : "—"}</time></footer>
     {intelligence?.developer_debug && <details className="sino-intelligence-debug"><summary>Developer Debug</summary><pre>{JSON.stringify(intelligence.developer_debug, null, 2)}</pre></details>}

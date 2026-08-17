@@ -316,7 +316,8 @@ export function ConversationWorkspace() {
         if (sendLockRef.current) progressTimer = window.setTimeout(pollProgress, 700);
       };
       progressTimer = window.setTimeout(pollProgress, 150);
-      const nextSnapshot = effectiveMode === "council" ? await discussWithCouncil(id, content) : effectiveMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content);
+      const interactionContext = selectedConstitutionWorkItemId ? { active_surface: "constitution_review", selected_constitution_work_item_id: selectedConstitutionWorkItemId } : undefined;
+      const nextSnapshot = effectiveMode === "council" ? await discussWithCouncil(id, content) : effectiveMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content, undefined, interactionContext);
       setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); setSinoHealthy(true); rememberConversation(id, founderConversationTitle(nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content, nextSnapshot.sino_brain?.goal_brief?.goal));
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }

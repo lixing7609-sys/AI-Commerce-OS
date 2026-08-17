@@ -63,7 +63,8 @@ def _implementation_projection(session, record: FounderDraftDB) -> dict | None:
     if package.get("source_draft_id") != record.id:
         package = {}
     package_next = "ready_for_execution" if package.get("preflight_status") == "ready" else "resolve_preflight_blocker" if package.get("preflight_status") == "blocked" else "founder_execution_exception" if package else None
-    return {
+    feedback = dict(((state.discovery or {}).get("execution_context_feedback") or {}))
+    projection = {
         "plan_id": plan.get("plan_id"),
         "status": plan.get("status"),
         "source_draft_id": plan.get("source_draft_id"),
@@ -77,6 +78,9 @@ def _implementation_projection(session, record: FounderDraftDB) -> dict | None:
             "execution_status": package.get("execution_status"),
         } if package else None,
     }
+    if feedback:
+        projection["implementation_result"] = feedback
+    return projection
 
 
 def _draft_type(outcome: dict) -> str:

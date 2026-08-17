@@ -67,6 +67,12 @@ describe("Founder AI conversation API", () => {
     expect(fetchMock.mock.calls[1][0]).toContain("/founder-ai/conversations/conv%2F1/workspace");
   });
 
+  it("sends selected Constitution Work Item context with a semantic refresh message", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({}) });
+    await discussWithSino("conv-1", "基于新证据重新判断", undefined, { active_surface: "constitution_review", selected_constitution_work_item_id: "work-1" });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ content: "基于新证据重新判断", interaction_context: { active_surface: "constitution_review", selected_constitution_work_item_id: "work-1" } });
+  });
+
   it("uses the persisted Capability Repository lifecycle and reuse contracts", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({}) });
     await getCapabilityDomains();

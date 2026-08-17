@@ -34,4 +34,11 @@ describe("System Project workspace context", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看原文" }));
     expect(openConversation).toHaveBeenCalledWith("conv-constitution");
   });
+
+  it("separates completed implementation from externally blocked validation", () => {
+    render(<ProjectIntelligenceContext intelligence={{ project_name: "System A", pending_questions: [], implementation_result: { implementation_status: "completed", validation_status: "blocked_by_external_dependency", external_dependencies: [{ dependency_target: "Runtime Platform" }] } }} />);
+    expect(screen.getByText("✓ Completed")).toBeTruthy();
+    expect(screen.getByText("Blocked by External Dependency")).toBeTruthy();
+    expect(screen.getByText("Runtime Platform")).toBeTruthy();
+  });
 });

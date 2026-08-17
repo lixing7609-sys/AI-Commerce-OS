@@ -242,12 +242,33 @@ Beta Workspace 负责面向业务人员组织应用工作流，并遵守基础�
     assert len(captured) == 2
     assert captured[0]["relevant_source_sections"] != captured[1]["relevant_source_sections"]
     assert all(context["parent_project_context"]["project_id"] == "project-baseline" for context in captured)
+    assert all(context["work_item"]["founder_decision"] == "pending" for context in captured)
     assert enriched["Alpha Runtime"]["semantic_understanding"]["context_sources"]["source_message_id"] == "semantic-source"
     assert enriched["Beta Workspace"]["semantic_understanding"]["context_sources"]["work_item_source"].startswith("system_objects:")
     assert enriched["Alpha Runtime"]["reason"] != enriched["Beta Workspace"]["reason"]
     assert all(item["founder_decision"] == "pending" for item in enriched.values())
     with module.SessionLocal() as session:
         assert (session.query(FounderProjectDB).count(), session.query(AssetCatalogDB).count(), session.query(CandidateGoalDB).count()) == counts_before
+
+
+def test_selected_constitution_work_item_refresh_preempts_goal_routing(monkeypatch):
+    runtime = module.SinoBrainRuntime()
+    snapshot = {"constitution_understanding": {"proposed_work_items": [{"work_item_id": "work-runtime", "title": "Runtime Platform", "founder_decision": "pending", "semantic_understanding": {"system_role": "runtime", "current_gap": "missing dependency", "recommended_action": "resolve runtime"}}]}}
+    calls = []
+    monkeypatch.setattr(runtime, "ensure_constitution_work_item_semantics", lambda cid, wid, refresh=False: calls.append((cid, wid, refresh)) or snapshot)
+    result = runtime.process_message("conv-constitution", "基于新增证据重新判断当前系统角色和真实缺口", interaction_context={"active_surface": "constitution_review", "selected_constitution_work_item_id": "work-runtime"})
+    assert result["intent"] == "work_item_semantic_refresh"
+    assert result["message_type"] == "work_item_semantic_refresh"
+    assert len(result["intent"]) <= 30
+    assert len(result["message_type"]) <= 30
+    assert calls == [("conv-constitution", "work-runtime", True)]
+    assert snapshot["constitution_understanding"]["proposed_work_items"][0]["founder_decision"] == "pending"
+
+
+def test_semantic_refresh_requires_selected_constitution_context():
+    assert module.SinoBrainRuntime._is_work_item_semantic_refresh("基于新证据重新判断", {"active_surface": "constitution_review"}) is False
+    assert module.SinoBrainRuntime._is_work_item_semantic_refresh("我要建立一个 Runtime Platform 项目", {"active_surface": "conversation", "selected_constitution_work_item_id": "work-runtime"}) is False
+    assert module.SinoBrainRuntime.classify_message_intent("我要建立一个 Runtime Platform 项目") == "goal_creation"
 
 
 def test_model_cannot_turn_production_steps_into_blocking_question(monkeypatch):

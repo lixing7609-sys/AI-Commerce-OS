@@ -11,7 +11,7 @@ const date = (value) => value ? new Date(value).toLocaleDateString("zh-CN") : "�
 
 const DRAFT_STATUS = { refining: "完善中", ready_for_review: "待 Founder 审核", confirmed: "已确认", parked: "暂存", archived: "已归档" };
 const DRAFT_TYPE = { system_definition: "System Definition", project_definition: "Project Definition", cognitive_outcome: "Cognitive Outcome", document: "Document" };
-const implementationStatus = (implementation) => implementation?.execution_approval === "approved" ? "实施方案已批准" : implementation?.status === "ready_for_execution_review" ? "实施方案已生成 · 待批准" : implementation ? "正在制定实施方案" : null;
+const implementationStatus = (implementation) => implementation?.implementation_result ? "Implementation Completed · Real Environment Validation Blocked" : implementation?.execution_approval === "approved" ? "实施方案已批准" : implementation?.status === "ready_for_execution_review" ? "实施方案已生成 · 待批准" : implementation ? "正在制定实施方案" : null;
 
 function DraftCenter({ selected, onSelect }) {
   const [drafts, setDrafts] = useState([]); const [error, setError] = useState("");

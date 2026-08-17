@@ -79,9 +79,9 @@ export function archiveFounderObject(objectId) { return request(`/founder-ai/obj
 export function reviewFounderCandidate(candidateId, action) { return request(`/founder-ai/candidates/${encodeURIComponent(candidateId)}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "审核候选变更失败"); }
 export function continueFounderCandidateDiscussion(candidateId, conversationId) { return request(`/founder-ai/candidates/${encodeURIComponent(candidateId)}/continue-discussion`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversation_id: conversationId }) }, "继续讨论候选变更失败"); }
 
-export function discussWithSino(conversationId, content, intent) {
+export function discussWithSino(conversationId, content, intent, interactionContext) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/messages`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, intent }),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, intent, interaction_context: interactionContext }),
   }, "发送讨论消息失败");
 }
 
@@ -125,8 +125,8 @@ export function reviewConstitutionWorkItem(conversationId, workItemId, decision)
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/constitution/work-items/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ work_item_id: workItemId, decision }) }, "记录建议工作项决定失败");
 }
 
-export function understandConstitutionWorkItem(conversationId, workItemId) {
-  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/constitution/work-items/understand`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ work_item_id: workItemId }) }, "理解建议工作项失败");
+export function understandConstitutionWorkItem(conversationId, workItemId, refresh = false) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/constitution/work-items/understand`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ work_item_id: workItemId, refresh }) }, "理解建议工作项失败");
 }
 
 export function reviewConstitutionWorkItemRouting(conversationId, workItemId, decision) {

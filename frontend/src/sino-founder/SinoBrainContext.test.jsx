@@ -57,6 +57,14 @@ describe("SinoBrainContext", () => {
     expect(screen.queryByRole("button", { name: "同意推进" })).toBeNull();
     expect(screen.getByText("等待 Sino 判断该 Work Item 应进入哪一种正式工作流程")).toBeTruthy();
   });
+  it("projects traceable dependency evidence while keeping Founder decision pending", () => {
+    const item = { work_item_id: "work-1", title: "Runtime Platform", existing_state: "not_found", source: "system_objects:runtime", reason: "system role", recommended_action: "review", founder_decision: "pending", real_dependency_evidence: [{ dependency_id: "dependency-1", source_project_name: "Downstream System", source_execution_session_id: "session-1", source_execution_package_id: "package-1", required_capabilities: ["runtime"], reason: "runtime unavailable" }] };
+    render(<SinoBrainContext brain={{ message_intent: "project_context_update", stage: "context_updated", constitution_understanding: { status: "founder_approved", system_objects: [{}], proposed_work_items: [item] } }} selectedConstitutionWorkItemId="work-1" />);
+    expect(screen.getByText("Real Dependency Evidence")).toBeTruthy();
+    expect(screen.getByText("Downstream System")).toBeTruthy();
+    expect(screen.getByText("session-1")).toBeTruthy();
+    expect(screen.getByText("待判断")).toBeTruthy();
+  });
   it("projects discuss and deferred Founder decisions as static right-context states", () => {
     const item = { work_item_id: "work-1", title: "AI Commerce OS Cloud", existing_state: "not_found", source: "system_objects:cloud", reason: "基础层对象", recommended_action: "继续核对", founder_decision: "discuss" };
     const brain = { message_intent: "project_context_update", stage: "context_updated", constitution_understanding: { status: "founder_approved", system_objects: [{}], proposed_work_items: [item] } };

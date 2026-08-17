@@ -154,6 +154,8 @@ def get_project_intelligence(project_id: str) -> dict:
         conversations = [item for item in all_conversations if item.id not in hidden_conversations]
         conversation_ids = [item.id for item in conversations]
         all_conversation_ids = [item.id for item in all_conversations]
+        brain_states = list(session.scalars(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id.in_(all_conversation_ids)))) if all_conversation_ids else []
+        execution_feedback = next((dict((item.discovery or {}).get("execution_context_feedback") or {}) for item in sorted(brain_states, key=lambda row: row.updated_at, reverse=True) if (item.discovery or {}).get("execution_context_feedback")), None)
         decisions = list(session.scalars(select(DecisionAssetDB).where(DecisionAssetDB.conversation_id.in_(conversation_ids)).order_by(DecisionAssetDB.created_at.desc()))) if conversation_ids else []
         questions = list(session.scalars(select(PendingQuestionDB).where(PendingQuestionDB.conversation_id.in_(conversation_ids), PendingQuestionDB.status == "open").order_by(PendingQuestionDB.created_at.desc()))) if conversation_ids else []
         candidates = list(session.scalars(select(CandidateGoalDB).where(CandidateGoalDB.conversation_id.in_(conversation_ids), CandidateGoalDB.status == "candidate").order_by(CandidateGoalDB.created_at.desc()))) if conversation_ids else []
@@ -257,6 +259,7 @@ def get_project_intelligence(project_id: str) -> dict:
             "memory_refs": [item.id for item in memories], "skill_refs": list(intelligence.skill_refs or []) if intelligence else [], "workflow_refs": list(intelligence.workflow_refs or []) if intelligence else [],
             "conversation_refs": [{"conversation_id": item.id, "title": item.title, "updated_at": _iso(item.updated_at), "summary": next((digest.summary for digest in digests if digest.conversation_id == item.id), "")} for item in conversations],
             "execution_refs": execution_refs, "technical_evidence_refs": [item.id for item in artifacts if item.artifact_type in TECHNICAL_ASSET_TYPES],
+            "implementation_result": execution_feedback,
             "constitution": constitution,
             "initial_project_context": initial_project_context,
             "developer_debug": {
@@ -311,6 +314,7 @@ def assemble_project_context(project_id: str) -> dict:
         "constraints": [] if is_system_project else intelligence["constraints"][-20:],
         "terminology": [] if is_system_project else intelligence["terminology"][-20:],
         "relevant_knowledge": [] if is_system_project else intelligence["knowledge"][-12:],
+        "execution_result_knowledge": intelligence.get("implementation_result"),
         "memory_refs": [] if is_system_project else intelligence["memory_refs"][-20:],
         "parent_confirmed_context": parent_confirmed_context,
         "child_project_context": child_project_context,
@@ -319,6 +323,7 @@ def assemble_project_context(project_id: str) -> dict:
             "parent_constitution": (parent_confirmed_context or {}).get("constitution", {}).get("source_conversation_id") if (parent_confirmed_context or {}).get("constitution") else None,
             "child_project": intelligence["project_id"],
             "initial_project_context": initial.get("source_proposal_id"),
+            "execution_result": next((item.get("source_execution_session_id") for item in (intelligence.get("implementation_result") or {}).get("external_dependencies") or []), None),
         },
     }
 

@@ -41,6 +41,7 @@ from app.founder_ai.execution_delta import ExecutionDeltaService
 from app.core.conversation_first.model import GoalAssetDB
 from app.database.db import SessionLocal
 from app.core.task_asset.service import get_founder_task_asset
+from app.core.dependency_outcome.service import feedback_execution_dependencies
 from app.core.founder_object.service import approve_object, archive_object, attach_object_context, detach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
 from app.core.founder_intent.service import attach_candidate_context, get_conversation_candidate_context, list_candidates, review_candidate
 from app.founder_ai.brain_runtime import brain_runtime
@@ -202,6 +203,7 @@ class DiscussionMessageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     content: str = Field(min_length=1, max_length=10000)
     intent: str | None = None
+    interaction_context: dict[str, Any] | None = None
 
 
 class CouncilDiscussionIn(BaseModel):
@@ -225,6 +227,7 @@ class ConstitutionWorkItemReviewIn(BaseModel):
 
 class ConstitutionWorkItemSemanticIn(BaseModel):
     work_item_id: str
+    refresh: bool = False
 
 class ConstitutionWorkItemRoutingReviewIn(BaseModel):
     work_item_id: str
@@ -448,7 +451,7 @@ def archive_founder_object(object_id: str):
 def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
     conversation_id = resolve_conversation_id(conversation_id)
     try:
-        brain_turn = brain_runtime.process_message(conversation_id, request.content)
+        brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=request.interaction_context)
         snapshot = secretary.append_message(conversation_id, request.content, intent=brain_turn.get("intent") or request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"))
         brain_runtime.sync_message_refs(conversation_id)
         return _candidate_snapshot(snapshot, conversation_id)
@@ -600,8 +603,30 @@ def review_brain_constitution_work_item(conversation_id: str, request: Constitut
 @router.post("/conversations/{conversation_id}/brain/constitution/work-items/understand", response_model=dict[str, Any])
 def understand_brain_constitution_work_item(conversation_id: str, request: ConstitutionWorkItemSemanticIn):
     try:
-        brain_runtime.ensure_constitution_work_item_semantics(conversation_id, request.work_item_id)
+        brain_runtime.ensure_constitution_work_item_semantics(conversation_id, request.work_item_id, refresh=request.refresh)
         return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/constitution/restore-invalid-goal", response_model=dict[str, Any])
+def restore_brain_constitution_review(conversation_id: str):
+    try:
+        brain_runtime.restore_constitution_review_after_invalid_goal(conversation_id)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/execution-result/context-feedback", response_model=dict[str, Any])
+def feedback_brain_execution_result(conversation_id: str):
+    try:
+        feedback = feedback_execution_dependencies(conversation_id)
+        return {"feedback": feedback, "brain": brain_runtime.snapshot(conversation_id)}
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
