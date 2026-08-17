@@ -11,7 +11,7 @@ def _git(repo_root: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=repo_root, text=True, capture_output=True, check=True).stdout.strip()
 
 
-def build_execution_readiness_contract(*, package: dict, project: dict, repo_root: Path) -> dict:
+def build_execution_readiness_contract(*, package: dict, project: dict, repo_root: Path, baseline_checkpoint: str | None = None) -> dict:
     package_id = package.get("package_id")
     checkpoint = dict(package.get("autonomous_checkpoint") or {})
     runtime = dict(package.get("runtime_binding") or {})
@@ -20,10 +20,11 @@ def build_execution_readiness_contract(*, package: dict, project: dict, repo_roo
     branch = _git(repo_root, "branch", "--show-current")
     head = _git(repo_root, "rev-parse", "HEAD")
     dirty = [line for line in _git(repo_root, "status", "--porcelain=v1", "--untracked-files=all").splitlines() if line]
-    checkpoint_commit = checkpoint.get("commit_hash")
+    checkpoint_commit = baseline_checkpoint or checkpoint.get("commit_hash")
     anchor_available = False
     if checkpoint_commit:
         anchor_available = subprocess.run(["git", "cat-file", "-e", f"{checkpoint_commit}^{{commit}}"], cwd=repo_root, capture_output=True).returncode == 0
+    anchor_on_branch = bool(checkpoint_commit and anchor_available and subprocess.run(["git", "merge-base", "--is-ancestor", checkpoint_commit, head], cwd=repo_root, capture_output=True).returncode == 0)
 
     work_items = [dict(item) for item in package.get("work_items") or []]
     resource_bindings = [dict(item) for item in runtime.get("resource_bindings") or []]
@@ -54,7 +55,7 @@ def build_execution_readiness_contract(*, package: dict, project: dict, repo_roo
         "preflight": package.get("preflight_status") == "ready",
         "execution_not_started": package.get("execution_status") == "not_started",
         "working_tree_clean": not dirty,
-        "branch_matches_checkpoint": bool(branch) and head == checkpoint_commit,
+        "branch_matches_checkpoint": bool(branch) and anchor_on_branch,
         "rollback_anchor_available": anchor_available,
         "bounded_runtime_targets": bool(runtime_targets) and all(item.get("target") and item.get("status") == "resolved" for item in runtime_targets),
     }

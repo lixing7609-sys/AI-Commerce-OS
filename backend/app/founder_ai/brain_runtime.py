@@ -34,6 +34,7 @@ from app.llm.models import LLMRequest
 from app.founder_ai.working_tree_resolution import analyze_working_tree
 from app.founder_ai.execution_readiness import build_execution_readiness_contract
 from app.founder_ai.autonomous_checkpoint import execute_autonomous_checkpoint
+from app.founder_ai.controlled_handoff import create_controlled_handoff
 from core.founder_object.model import FounderObjectDB, FounderObjectRevisionDB
 
 
@@ -904,11 +905,16 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             package["preflight"] = self._preflight_execution_package(package=package, plan=plan, draft=draft)
             package["preflight_status"] = package["preflight"]["status"]
             package["updated_at"] = datetime.now(timezone.utc).isoformat()
+            existing_readiness = dict(package.get("execution_readiness_contract") or {})
+            existing_readiness_id = existing_readiness.get("contract_id")
             package["execution_readiness_contract"] = build_execution_readiness_contract(
                 package=package,
                 project={"project_id": conversation.project_id, "name": getattr(draft, "project_name", None)},
                 repo_root=Path(__file__).resolve().parents[3],
+                baseline_checkpoint=existing_readiness.get("checkpoint_commit"),
             )
+            if existing_readiness_id:
+                package["execution_readiness_contract"]["contract_id"] = existing_readiness_id
             proposal = self._materialize_founder_gate_proposal(
                 conversation=conversation,
                 discovery=discovery,
@@ -941,11 +947,16 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             draft = session.get(FounderDraftDB, package.get("source_draft_id"))
             if draft is None:
                 raise LookupError("Confirmed source Draft not found")
+            existing_readiness = dict(package.get("execution_readiness_contract") or {})
+            existing_readiness_id = existing_readiness.get("contract_id")
             contract = build_execution_readiness_contract(
                 package=package,
                 project={"project_id": conversation.project_id, "name": draft.project_name},
                 repo_root=Path(__file__).resolve().parents[3],
+                baseline_checkpoint=existing_readiness.get("checkpoint_commit"),
             )
+            if existing_readiness_id:
+                contract["contract_id"] = existing_readiness_id
             package["execution_readiness_contract"] = contract
             package["updated_at"] = datetime.now(timezone.utc).isoformat()
             discovery["execution_package"] = package
@@ -954,7 +965,7 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             session.commit()
             return contract
 
-    def run_self_healing_preflight(self, conversation_id: str, *, verification_evidence: list[str], max_cycles: int = 2) -> dict:
+    def run_self_healing_preflight(self, conversation_id: str, *, verification_evidence: list[str], max_cycles: int = 2, checkpoint_name: str = "founder: checkpoint execution readiness contract") -> dict:
         """Resolve a sole dirty-tree readiness blocker, then stop before execution."""
         repo_root = Path(__file__).resolve().parents[3]
         cycles = []
@@ -976,7 +987,7 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
                 break
             checkpoint = execute_autonomous_checkpoint(
                 repo_root=repo_root, resolution=resolution,
-                commit_message="founder: checkpoint execution readiness contract",
+                commit_message=checkpoint_name,
                 verification_evidence=verification_evidence,
             )
             with SessionLocal() as session:
@@ -1029,6 +1040,32 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             state.updated_at = datetime.now(timezone.utc)
             session.commit()
             return result
+
+    def create_controlled_executor_handoff(self, conversation_id: str, *, package_id: str, readiness_contract_id: str, checkpoint_commit: str) -> dict:
+        """Create one inert executor session from the frozen contract; never queue or execute it."""
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {})
+            package = dict(discovery.get("execution_package") or {})
+            existing = dict(package.get("executor_handoff") or {})
+            if existing:
+                if existing.get("package_id") != package_id or existing.get("readiness_contract_id") != readiness_contract_id or existing.get("checkpoint_commit") != checkpoint_commit:
+                    raise ValueError("handoff_scope_mismatch")
+                return existing
+            handoff, _execution_session = create_controlled_handoff(
+                package=package, expected_package_id=package_id,
+                expected_readiness_contract_id=readiness_contract_id, expected_checkpoint=checkpoint_commit,
+            )
+            package["executor_handoff"] = handoff
+            package["execution_status"] = "not_started"
+            package["updated_at"] = datetime.now(timezone.utc).isoformat()
+            discovery["execution_package"] = package
+            state.discovery = discovery
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return handoff
 
     def ensure_founder_gate_proposal(self, conversation_id: str) -> dict | None:
         """Materialize one canonical review object for the current Founder Gate."""

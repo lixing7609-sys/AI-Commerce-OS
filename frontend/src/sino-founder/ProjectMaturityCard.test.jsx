@@ -73,4 +73,13 @@ describe("ProjectMaturityCard", () => {
     expect(screen.getByText("Technical Details").closest("details").open).toBe(false);
     expect(screen.queryByRole("button", { name: /执行/ })).toBeNull();
   });
+
+  it("shows a created controlled handoff without an execution trigger", () => {
+    render(<ExecutionPackageCard pkg={{ package_id: "package-1", preflight_status: "ready", execution_status: "not_started", work_items: [], preflight: { checks: [] }, executor_handoff: { handoff_id: "handoff-1", executor_provider: "codex", scope_fingerprint: "fingerprint", package_id: "package-1", readiness_contract_id: "readiness-1", checkpoint_commit: "abc", automatic_stop_conditions: [], execution_session: { execution_session_id: "session-1", session_status: "created" } } }} />);
+    expect(screen.getByLabelText("Executor Handoff")).toBeTruthy();
+    expect(screen.getByText("Execution Session Created")).toBeTruthy();
+    expect(screen.getByText("session-1")).toBeTruthy();
+    expect(screen.getByText("not_started")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /执行|启动/ })).toBeNull();
+  });
 });

@@ -93,6 +93,25 @@ def create_execution_session(task_asset_id: str, package: ExecutionPackage) -> E
     return session
 
 
+def create_controlled_handoff_session(*, session_id: str, handoff_id: str, package_id: str, readiness_contract_id: str, scope_fingerprint: str, executor_provider: str, package: ExecutionPackage) -> ExecutionSession:
+    """Persist one inert session; no approval, queue, worker, or adapter is invoked."""
+    with _lock:
+        existing = next((item for item in _sessions.values() if item.handoff_id == handoff_id), None)
+        if existing:
+            if existing.scope_fingerprint != scope_fingerprint or existing.execution_package_id != package_id:
+                raise ValueError("handoff_scope_mismatch")
+            return existing
+        session = ExecutionSession(
+            id=session_id, task_asset_id=package_id, execution_package_id=package_id,
+            executor=executor_provider, status="created", handoff_id=handoff_id,
+            readiness_contract_id=readiness_contract_id, scope_fingerprint=scope_fingerprint,
+        )
+        _sessions[session.id] = session
+        _packages[session.id] = package
+        _persist(session.id)
+        return session
+
+
 def approve_execution_session(execution_id: str) -> tuple[ExecutionSession, ExecutionPackage] | None:
     session = _sessions.get(execution_id)
     package = _packages.get(execution_id)

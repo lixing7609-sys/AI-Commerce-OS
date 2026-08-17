@@ -10,7 +10,7 @@ from .execution_events import append_event
 from .orchestrator import ExecutionPackage, MemoryAssetDraft, build_memory_asset_draft
 
 
-EXECUTION_STATES = {"draft", "approved", "queued", "executing", "testing", "paused", "completed", "failed"}
+EXECUTION_STATES = {"created", "draft", "approved", "queued", "executing", "testing", "paused", "completed", "failed"}
 
 
 @dataclass
@@ -38,6 +38,10 @@ class ExecutionSession:
     pause_reason: str | None = None
     recoverable: bool = False
     deltas: list[dict[str, Any]] = field(default_factory=list)
+    handoff_id: str | None = None
+    readiness_contract_id: str | None = None
+    scope_fingerprint: str | None = None
+    execution_started_at: str | None = None
 
     def log(self, stage: str, message: str, *, timestamp: str | None = None) -> None:
         self.execution_logs.append({"timestamp": timestamp or datetime.now(timezone.utc).isoformat(), "stage": stage, "message": message})
