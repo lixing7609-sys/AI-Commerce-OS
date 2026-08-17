@@ -1,4 +1,5 @@
 from app.founder_ai import capability_build_loop as loop_module
+from app.founder_ai import capability_compatibility as compatibility_module
 from app.founder_ai.capability_compatibility import classify_image_generation_asset
 from app.founder_ai.task_complexity_router import route_task_complexity
 
@@ -15,6 +16,15 @@ def test_storyboard_is_related_but_incompatible():
 def test_ready_image_asset_capability_is_exact_reuse():
     result = classify_image_generation_asset({"asset_id": "image", "name": "Image Generation", "content": {"capability_type": "image_generation", "output_modality": "image", "consumer": "studio_ai"}, "status": "ready"})
     assert result["classification"] == "EXACT_REUSE"
+
+
+def test_lookup_excludes_non_capability_repository_records(monkeypatch):
+    monkeypatch.setattr(compatibility_module, "list_assets", lambda **_: [
+        {"asset_id": "decision", "asset_type": "decision", "name": "Image decision", "content": {}, "status": "ready"},
+        {"asset_id": "storyboard", "asset_type": "skill", "name": "商品分镜生成 Skill", "content": {}, "status": "ready"},
+    ])
+    result = compatibility_module.lookup_image_generation_compatibility()
+    assert [item["asset_id"] for item in result["assessments"]] == ["storyboard"]
 
 
 def test_explicit_capability_build_goal_needs_no_clarification_or_strategy():

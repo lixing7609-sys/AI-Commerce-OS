@@ -44,7 +44,8 @@ def classify_image_generation_asset(asset: dict) -> dict:
 
 
 def lookup_image_generation_compatibility() -> dict:
-    assessments = [classify_image_generation_asset(item) for item in list_assets(include_legacy=False)]
+    capability_assets = [item for item in list_assets(include_legacy=False) if item.get("asset_type") in {"agent", "skill", "workflow", "prompt", "capability", "connector"}]
+    assessments = [classify_image_generation_asset(item) for item in capability_assets]
     reusable = [item for item in assessments if item["classification"] in {"EXACT_REUSE", "COMPATIBLE_REUSE"}]
     related = [item for item in assessments if item["classification"] == "RELATED_BUT_INCOMPATIBLE"]
     return {
