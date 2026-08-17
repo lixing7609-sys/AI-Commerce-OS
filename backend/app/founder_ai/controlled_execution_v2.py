@@ -48,8 +48,10 @@ def _listener(port: int) -> bool:
 
 def _execute_adapter(action: dict, repo_root: Path, previous: list[dict]) -> tuple[list[str], dict, str, str | None]:
     operation = action["operation_type"]
-    target_id = (action.get("target") or {}).get("target_id")
-    if operation == "VERIFY_CONNECTIVITY" and target_id == "observed-runtime/storage/current-postgresql-development-database":
+    target = action.get("target") or {}
+    target_id = target.get("target_id")
+    target_type = action.get("target_type")
+    if operation == "VERIFY_CONNECTIVITY" and (target_id == "observed-runtime/storage/current-postgresql-development-database" or target_type == "postgresql_database"):
         try:
             with engine.connect() as connection:
                 value = connection.execute(text("SELECT 1")).scalar_one()
@@ -57,32 +59,36 @@ def _execute_adapter(action: dict, repo_root: Path, previous: list[dict]) -> tup
             return ["sqlalchemy.read_only_select_constant"], observed, "PASS" if value == 1 else "FAIL", None
         except Exception as error:
             return ["sqlalchemy.read_only_select_constant"], {"connection_attempt_succeeded": False, "error_type": type(error).__name__, "secret_value_observed": False}, "BLOCKED", "storage target unavailable"
-    if operation == "VERIFY_CAPABILITY" and target_id == "observed-runtime/compute/current-development-application-process":
-        listener = _listener(8000)
+    if operation == "VERIFY_CAPABILITY" and (target_id == "observed-runtime/compute/current-development-application-process" or target_type == "application_process"):
+        port = int(target.get("port") or 8000)
+        listener = _listener(port)
         health = False
         if listener:
             try:
-                with urlopen("http://127.0.0.1:8000/health", timeout=3) as response:
+                with urlopen(f"{target.get('protocol', 'http')}://{target.get('host', '127.0.0.1')}:{port}/health", timeout=3) as response:
                     health = response.status == 200
             except Exception:
                 health = False
         observed = {"process_listener_running": listener, "health_probe_passed": health}
-        return ["local_listener_probe:8000", "http_read_only_health_probe"], observed, "PASS" if listener and health else "FAIL", None
-    if operation == "VERIFY_CONFIGURATION" and target_id == "application-identity/intelligence-evolution-http-bearer-rbac":
+        return [f"local_listener_probe:{port}", "http_read_only_health_probe"], observed, "PASS" if listener and health else "FAIL", None
+    if operation == "VERIFY_CONFIGURATION" and (target_id == "application-identity/intelligence-evolution-http-bearer-rbac" or target_type == "application_rbac_configuration"):
         auth = (repo_root / "backend/app/core/intelligence_evolution/auth.py").read_text(errors="replace")
         api = (repo_root / "backend/app/core/intelligence_evolution/api.py").read_text(errors="replace")
         checks = {"http_bearer": "HTTPBearer" in auth, "role_claims": 'claims.get("roles")' in auth, "protected_routes": "Depends(require_roles" in api, "secret_value_observed": False}
         passed = checks["http_bearer"] and checks["role_claims"] and checks["protected_routes"] and not checks["secret_value_observed"]
         return ["source_metadata_probe:application_rbac"], checks, "PASS" if passed else "FAIL", None
-    if operation == "VERIFY_CONFIGURATION" and target_id == "development-network/loopback/backend-8000-frontend-5173":
+    if operation == "VERIFY_CONFIGURATION" and (target_id == "development-network/loopback/backend-8000-frontend-5173" or target_type == "development_loopback_boundary"):
         backend = (repo_root / "scripts/backend-server").read_text(errors="replace")
         frontend = (repo_root / "scripts/frontend-server").read_text(errors="replace")
-        checks = {"backend_loopback_configured": "--host 127.0.0.1 --port 8000" in backend, "frontend_loopback_configured": "--host 127.0.0.1 --port 5173" in frontend, "backend_listener": _listener(8000), "frontend_listener": _listener(5173)}
-        return ["source_metadata_probe:loopback_boundary", "local_listener_probe:8000,5173"], checks, "PASS" if all(checks.values()) else "FAIL", None
-    if operation == "READ_ONLY_VALIDATE" and target_id == "dependency-check/intelligence-evolution-layer/wi-007":
-        prerequisites = [item for item in previous if item["work_item_id"] in {"wi-cloud-001", "wi-cloud-002", "wi-cloud-003", "wi-cloud-004"}]
-        passed = len(prerequisites) == 4 and all(item["status"] == "PASS" for item in prerequisites)
-        observed = {"prerequisite_pass_count": sum(item["status"] == "PASS" for item in prerequisites), "required_count": 4, "wi_007_resumable_preconditions": passed}
+        backend_target = target.get("backend") or {"host": "127.0.0.1", "port": 8000}
+        frontend_target = target.get("frontend") or {"host": "127.0.0.1", "port": 5173}
+        checks = {"backend_loopback_configured": f"--host {backend_target['host']} --port {backend_target['port']}" in backend, "frontend_loopback_configured": f"--host {frontend_target['host']} --port {frontend_target['port']}" in frontend, "backend_listener": _listener(int(backend_target["port"])), "frontend_listener": _listener(int(frontend_target["port"]))}
+        return ["source_metadata_probe:loopback_boundary", f"local_listener_probe:{backend_target['port']},{frontend_target['port']}"], checks, "PASS" if all(checks.values()) else "FAIL", None
+    if operation == "READ_ONLY_VALIDATE" and (target_id == "dependency-check/intelligence-evolution-layer/wi-007" or target_type == "runtime_readiness_dependencies"):
+        required = list((action.get("inputs") or {}).get("depends_on") or ["wi-cloud-001", "wi-cloud-002", "wi-cloud-003", "wi-cloud-004"])
+        prerequisites = [item for item in previous if item["work_item_id"] in set(required)]
+        passed = len(prerequisites) == len(required) and all(item["status"] == "PASS" for item in prerequisites)
+        observed = {"prerequisite_pass_count": sum(item["status"] == "PASS" for item in prerequisites), "required_count": len(required), "runtime_readiness_preconditions": passed}
         return ["in_memory_dependency_result_validation"], observed, "PASS" if passed else "BLOCKED", None if passed else "prerequisite action not PASS"
     return [], {"target_id": target_id}, "BLOCKED", "unsupported operation or target"
 
@@ -95,7 +101,8 @@ def execute_frozen_actions(*, handoff: dict, action_contract: dict, repo_root: P
         started_at = datetime.now(timezone.utc).isoformat()
         source = canonical.get(action.get("action_id"))
         guard = bool(source and json.dumps(source, ensure_ascii=False, sort_keys=True) == json.dumps(action, ensure_ascii=False, sort_keys=True) and action.get("action_status") == "executable")
-        dependencies_pass = action.get("work_item_id") != "wi-cloud-005" or all(item["status"] == "PASS" for item in results)
+        dependencies = list((action.get("inputs") or {}).get("depends_on") or [])
+        dependencies_pass = (not dependencies and action.get("work_item_id") != "wi-cloud-005") or all(item["status"] == "PASS" for item in results if item["work_item_id"] in set(dependencies or ["wi-cloud-001", "wi-cloud-002", "wi-cloud-003", "wi-cloud-004"]))
         if not guard:
             calls, observed, status, blocker = [], {}, "BLOCKED", "scope_guard_blocked"
         elif not dependencies_pass:
