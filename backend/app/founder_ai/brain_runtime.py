@@ -40,6 +40,7 @@ from app.founder_ai.controlled_execution import blocked_execution_result, scope_
 from app.founder_ai.action_contract import compile_action_contract
 from app.founder_ai.evidence_resolution import discover_iam_network_evidence
 from app.founder_ai.controlled_execution_v2 import execute_frozen_actions, session_start_guard
+from app.founder_ai.post_execution_commit import build_post_execution_records, persist_post_execution_records
 from core.founder_object.model import FounderObjectDB, FounderObjectRevisionDB
 
 
@@ -1253,6 +1254,29 @@ Definition of Done：当 Project/System Definition 已经 coherent、reviewable�
             package["execution_status"] = final_status; package["execution_result_v2"] = result
             discovery["execution_package"] = package; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); session.commit()
         return result
+
+    def materialize_post_execution_commit(self, conversation_id: str, *, execution_session_id: str, repository_head: str) -> dict:
+        """Persist post-execution records without changing immutable execution history or closing the task."""
+        from app.founder_ai.execution_registry import get_execution_session
+        registered = get_execution_session(execution_session_id)
+        if registered is None:
+            raise LookupError("completed Execution Session not found")
+        execution_session, _typed_package = registered
+        with SessionLocal() as session:
+            state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            if state is None:
+                raise LookupError("Sino Brain state not found")
+            discovery = dict(state.discovery or {}); package = dict(discovery.get("execution_package") or {})
+            existing = dict(package.get("post_execution_commit") or {})
+            if existing:
+                return existing
+            records = build_post_execution_records(package=package, session=execution_session, repository_head=repository_head)
+            closure = persist_post_execution_records(session, records=records, conversation_id=conversation_id)
+            result = {**records, "task_closure_readiness": closure, "task_status": "completed_pending_closure", "created_at": datetime.now(timezone.utc).isoformat()}
+            package["post_execution_commit"] = result
+            discovery["execution_package"] = package; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            return result
 
     def ensure_founder_gate_proposal(self, conversation_id: str) -> dict | None:
         """Materialize one canonical review object for the current Founder Gate."""
