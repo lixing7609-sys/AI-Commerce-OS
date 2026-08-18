@@ -1,0 +1,194 @@
+"""Thin QUICK_FIX orchestration over the existing task, queue, Codex and checkpoint chain."""
+from __future__ import annotations
+
+from dataclasses import replace
+from datetime import datetime, timezone
+from pathlib import Path
+import subprocess
+from threading import Thread
+import time
+from uuid import uuid4
+
+from sqlalchemy import select
+
+from app.core.task_asset.model import TaskAssetDB
+from app.core.task_asset.service import create_task_asset
+from app.database.db import SessionLocal
+from app.founder_ai.execution_registry import create_execution_session, get_execution_session, save_execution_session
+from app.founder_ai.execution_worker import enqueue_execution
+from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
+from app.founder_ai.quick_fix_progression import build_quick_fix_contract, project_quick_fix_execution
+from core.conversation_first.model import SinoBrainSessionDB
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _update_projection(conversation_id: str, *, step: str | None = None, execution: dict | None = None, blocker: dict | None = None) -> dict:
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {})
+        route = dict(discovery.get("task_complexity_route") or {})
+        if step and route.get("current_step") != step:
+            route = project_quick_fix_execution(route, {"fix": "queued", "verify": "testing", "complete": "completed"}[step])
+        if execution:
+            route["autonomous_execution"] = {**dict(route.get("autonomous_execution") or {}), **execution}
+        if blocker:
+            route["execution_status"] = "blocked"
+            route["technical_blocker"] = blocker
+        discovery["task_complexity_route"] = route
+        discovery["quick_fix_contract"] = route.get("quick_fix_contract")
+        state.discovery = discovery
+        state.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return route
+
+
+def _update_task(task_id: str, *, status: str, execution_status: str, result: dict | None = None) -> None:
+    with SessionLocal() as db:
+        task = db.get(TaskAssetDB, task_id)
+        if task is None:
+            return
+        task.status = status
+        task.execution_status = execution_status
+        if result is not None:
+            task.result = result
+        db.commit()
+
+
+def _build_package(goal: str, conversation_id: str, contract: dict) -> ExecutionPackage:
+    draft = TaskAssetDraft(
+        title=goal[:200], description=goal, conversation_id=conversation_id,
+        scope={"goal_type": "development", "context": {
+            "quick_fix_contract": contract,
+            "evidence": [{"source": "quick_fix_inspect", "fact": contract["observed_problem"], "relevance": contract["target_area"]}],
+            "relevant_files": [{"path": path, "reason": "Frozen Quick Fix scope"} for path in contract["allowed_files_or_paths"]],
+        }},
+        constraints=[
+            f"Only modify paths allowed by the Quick Fix Contract: {contract['allowed_files_or_paths']}",
+            f"Never perform prohibited operations: {contract['prohibited_operations']}",
+            "Stop and report a scope blocker instead of expanding the task.",
+        ],
+        risk="low", approval_required=False,
+    )
+    return ExecutionPackage(
+        goal=goal, context=dict(draft.scope["context"]), task_asset=draft,
+        constraints=list(draft.constraints), verification=list(contract["verification"]),
+        commit_requirement=(
+            "After all verification passes, use the existing Autonomous Working Tree Resolution and "
+            "Autonomous Checkpoint with exact-file staging; do not use git add . or git add -A, and do not push."
+        ),
+        approval_required=False, execution_allowed=True,
+    )
+
+
+def dispatch_quick_fix(*, conversation_id: str, goal: str, enqueue=enqueue_execution) -> dict:
+    """Create real execution lineage once inspect is evidence-bound, then enqueue Codex."""
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {})
+        route = dict(discovery.get("task_complexity_route") or {})
+        if route.get("classification") != "QUICK_FIX" or route.get("clarification_required") or route.get("founder_gate_required"):
+            return route
+        existing = dict(route.get("autonomous_execution") or {})
+        if existing.get("execution_session_id"):
+            return route
+
+    task = create_task_asset(
+        title=goal[:200], description=goal, conversation_id=conversation_id,
+        scope={"lane": "QUICK_FIX", "functional_verification": False}, status="in_progress",
+        approval_status="not_required", execution_status="inspecting",
+    )
+    contract = build_quick_fix_contract(route, conversation_id=conversation_id, task_id=task.id)
+    if contract["inspect_status"] != "ready_for_fix":
+        _update_task(task.id, status="blocked", execution_status="clarification_required")
+        return _update_projection(conversation_id, blocker={"type": "quick_fix_inspect_incomplete", "founder_gate_required": False})
+
+    package = _build_package(goal, conversation_id, contract)
+    execution_session = create_execution_session(task.id, package)
+    package = replace(package, execution_allowed=True)
+    execution_session.status = "queued"
+    execution_session.queued_at = _now()
+    execution_session.handoff_id = f"quick-fix-handoff-{uuid4().hex[:20]}"
+    execution_session.readiness_contract_id = f"quick-fix-readiness-{uuid4().hex[:20]}"
+    save_execution_session(execution_session, package)
+    route["quick_fix_contract"] = contract
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        discovery = dict(state.discovery or {})
+        route = dict(discovery.get("task_complexity_route") or route)
+        route["quick_fix_contract"] = contract
+        discovery["quick_fix_contract"] = contract
+        discovery["task_complexity_route"] = route
+        state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+    route = _update_projection(conversation_id, step="fix", execution={
+        "task_id": task.id, "execution_package_id": execution_session.execution_package_id,
+        "readiness_contract_id": execution_session.readiness_contract_id, "handoff_id": execution_session.handoff_id,
+        "execution_session_id": execution_session.id, "executor": execution_session.executor,
+        "dispatch_status": "queued", "dispatched_at": _now(), "manual_codex_instruction_count": 0,
+    })
+    _update_task(task.id, status="in_progress", execution_status="queued")
+    enqueue(execution_session.id)
+    Thread(target=_monitor_execution, args=(conversation_id, task.id, execution_session.id), daemon=True, name=f"quick-fix-{execution_session.id}").start()
+    return route
+
+
+def _monitor_execution(conversation_id: str, task_id: str, execution_id: str) -> None:
+    terminal = {"completed", "failed", "blocked", "cancelled"}
+    while True:
+        record = get_execution_session(execution_id)
+        if record is None:
+            return
+        session, _package = record
+        if session.status == "testing":
+            try:
+                _update_projection(conversation_id, step="verify", execution={"dispatch_status": "verifying"})
+                _update_task(task_id, status="in_progress", execution_status="verifying")
+            except ValueError:
+                pass
+        if session.status in terminal:
+            break
+        time.sleep(0.25)
+    reconcile_quick_fix_execution(conversation_id=conversation_id, task_id=task_id, execution_id=execution_id)
+
+
+def reconcile_quick_fix_execution(*, conversation_id: str, task_id: str, execution_id: str, repo_root: Path = REPO_ROOT) -> dict:
+    """Translate durable worker completion into verification/checkpoint/result projection."""
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise LookupError("Quick Fix execution session not found")
+    session, _package = record
+    if session.status != "completed":
+        blocker = {"type": "quick_fix_execution_failed", "reason": session.failure_reason or session.error_message, "founder_gate_required": False}
+        _update_task(task_id, status="blocked", execution_status=session.status, result=blocker)
+        return _update_projection(conversation_id, blocker=blocker, execution={"dispatch_status": session.status})
+
+    diff_check = subprocess.run(["git", "diff", "--check"], cwd=repo_root, capture_output=True, text=True, check=False)
+    dirty = subprocess.run(["git", "status", "--porcelain=v1"], cwd=repo_root, capture_output=True, text=True, check=False).stdout.strip()
+    checkpoint_ok = not dirty and bool(session.commit_hash)
+    verification = {
+        "status": "PASS" if diff_check.returncode == 0 and checkpoint_ok else "FAIL",
+        "targeted_tests": list((session.result or {}).get("tests") or []),
+        "git_diff_check": "PASS" if diff_check.returncode == 0 else "FAIL",
+        "checkpoint": "PASS" if checkpoint_ok else "FAIL",
+        "working_tree": "clean" if not dirty else "dirty",
+    }
+    if verification["status"] != "PASS":
+        blocker = {"type": "quick_fix_verification_failed", "evidence": verification, "founder_gate_required": False}
+        _update_task(task_id, status="blocked", execution_status="verification_failed", result=blocker)
+        return _update_projection(conversation_id, blocker=blocker, execution={"dispatch_status": "verification_failed", "verification": verification})
+
+    result = {"status": "completed", "verification": verification, "checkpoint_commit": session.commit_hash, "completed_at": session.completed_at}
+    _update_task(task_id, status="completed", execution_status="completed", result=result)
+    try:
+        _update_projection(conversation_id, step="verify", execution={"dispatch_status": "verifying", "verification": verification})
+    except ValueError:
+        pass
+    return _update_projection(conversation_id, step="complete", execution={"dispatch_status": "completed", "verification": verification, "result": result})

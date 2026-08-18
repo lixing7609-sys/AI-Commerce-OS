@@ -493,6 +493,9 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
             interaction_context["task_complexity_route"] = route_task_complexity(request.content, image_understanding=interaction_context.get("grounded_multimodal_context") or interaction_context.get("image_understanding"), image_context_status=image_context_status)
         brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=interaction_context or None)
         route = dict(interaction_context.get("task_complexity_route") or {})
+        if route.get("classification") == "QUICK_FIX" and not route.get("clarification_required") and not route.get("founder_gate_required"):
+            from app.founder_ai.quick_fix_execution import dispatch_quick_fix
+            dispatch_quick_fix(conversation_id=conversation_id, goal=request.content)
         if route.get("task_type") == "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required"):
             from app.founder_ai.capability_build_loop import run_capability_build_loop
             loop = run_capability_build_loop(conversation_id=conversation_id, goal=request.content)

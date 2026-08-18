@@ -37,6 +37,7 @@ class TaskPackage:
     constraints: list[str]
     acceptance_criteria: list[str]
     commit_requirement: str
+    approval_required: bool
 
     def render(self) -> str:
         return (
@@ -46,7 +47,9 @@ class TaskPackage:
             f"## Relevant Files\n{json.dumps(self.relevant_files, ensure_ascii=False, indent=2, default=str)}\n\n"
             f"## Constraints\n{json.dumps(self.constraints, ensure_ascii=False, indent=2)}\n\n"
             f"## Acceptance Criteria\n{json.dumps(self.acceptance_criteria, ensure_ascii=False, indent=2)}\n\n"
-            "## Approval\nFounder approval is granted. Execute the bounded task and run the acceptance criteria.\n\n"
+            "## Authorization\n"
+            + ("Founder approval is granted. " if self.approval_required else "This bounded technical lane does not require a Founder decision. ")
+            + "Execute only the frozen scope and run the acceptance criteria.\n\n"
             f"## Commit Requirement\n{self.commit_requirement}\n"
         )
 
@@ -91,6 +94,7 @@ class TaskPackageBuilder:
             constraints=[str(item) for item in package.constraints],
             acceptance_criteria=[str(item) for item in package.verification],
             commit_requirement=package.commit_requirement,
+            approval_required=package.approval_required,
         )
 
     @staticmethod
