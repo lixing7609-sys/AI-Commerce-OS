@@ -9,13 +9,34 @@ STANDARD_TASK = "STANDARD_TASK"
 STRATEGIC_TASK = "STRATEGIC_TASK"
 FOUNDER_GATE_TASK = "FOUNDER_GATE_TASK"
 
+
+def _architecture_signals(text: str) -> dict:
+    """Classify architecture intent from a combination of meaning-bearing signals.
+
+    A cosmetic redesign is deliberately excluded: architecture requires a change
+    intent plus a system boundary and either a cross-module relationship or an
+    authority/responsibility contract.
+    """
+    change_intent = bool(re.search(r"重新设计|重新划分|重构|演进|变更|redesign|redefine|re-?architect|restructure", text, re.I))
+    system_boundary = bool(re.search(r"Sino\s+(?:Founder|Studio|Operator|Industrial|Quant)\s+AI|系统|顶层模块|product boundary|system boundary", text, re.I))
+    cross_module = bool(re.search(r"之间|跨(?:系统|模块|产品)|供给关系|上下游|between|cross[- ]module|supply relationship", text, re.I))
+    authority = bool(re.search(r"职责|负责|权限|授权|所有权|创造.*验证|发现.*引用.*执行|authority|responsibilit|ownership|execution contract", text, re.I))
+    bounded_ui = bool(re.search(r"按钮|图标|卡片|排版|布局|间距|颜色|样式|button|icon|card|layout|spacing", text, re.I)) and not cross_module
+    architecture = change_intent and system_boundary and (cross_module or authority) and not bounded_ui
+    return {
+        "change_intent": change_intent, "system_boundary": system_boundary,
+        "cross_module_relation": cross_module, "authority_or_responsibility": authority,
+        "bounded_ui_surface": bounded_ui, "architecture_semantic_match": architecture,
+    }
+
 def route_task_complexity(text: str, *, image_understanding: str | dict | None = None, image_context_status: str = "not_present") -> dict:
     image_text = image_understanding if isinstance(image_understanding, str) else " ".join(str(value) for value in (image_understanding or {}).values())
     combined = f"{text}\n{image_text}".strip()
     grounded = image_understanding if isinstance(image_understanding, dict) and image_understanding.get("merged_intent") else {}
     decision_text = f"{text}\n{grounded.get('merged_intent', '')}".strip() if grounded else text
     gate = re.search(r"credential|secret|新增费用|付费|生产|production|外部写|external side effect|不可逆|architecture boundary", decision_text, re.I)
-    strategic = re.search(r"新系统|新 capability|架构变更|architecture change|跨模块|重大改造|方案比较", decision_text, re.I)
+    architecture_signals = _architecture_signals(decision_text)
+    strategic = architecture_signals["architecture_semantic_match"] or bool(re.search(r"新系统|新 capability|架构变更|architecture change|跨模块|重大改造|方案比较", decision_text, re.I))
     quick = re.search(r"折叠|滚动|去掉|删除|移除|REMOVE_UI_ELEMENT|按钮.*(?:点不了|无效)|卡片错位|卡片.*(?:排版|布局|对齐|间距)|(?:梳理|整理|优化).*(?:排版|布局|对齐|间距)|文案错误|状态展示|返回定位|样式|局部.*(?:ui|页面)|sidebar|scroll|click|layout", combined, re.I)
     grounding_confidence = float(grounded.get("grounding_confidence") or 0)
     grounded_target = grounded.get("visual_target") or grounded.get("annotation_target")
@@ -35,7 +56,12 @@ def route_task_complexity(text: str, *, image_understanding: str | dict | None =
         clarification_required = False
     result = {"classification": classification, "founder_gate_required": classification == FOUNDER_GATE_TASK,
               "strategy_meeting_required": classification == STRATEGIC_TASK, "architecture_proposal_required": classification == STRATEGIC_TASK,
-              "clarification_required": clarification_required, "evidence": {"text": text, "image_understanding_used": bool(image_understanding), "image_context_status": image_context_status}}
+              "clarification_required": clarification_required, "evidence": {"text": text, "image_understanding_used": bool(image_understanding), "image_context_status": image_context_status,
+              "architecture_signals": architecture_signals}}
+    if classification == STRATEGIC_TASK:
+        result.update({"task_type": "ARCHITECTURE_TASK" if architecture_signals["architecture_semantic_match"] else STRATEGIC_TASK,
+                       "execution_allowed": False, "codex_dispatch_allowed": False, "implementation_package_allowed": False,
+                       "manual_continue_required": False, "manual_continue_count": 0, "manual_codex_instruction_count": 0})
     if capability_build:
         result["task_type"] = "CAPABILITY_BUILD_TASK"
         result["required_capability_type"] = "image_generation"

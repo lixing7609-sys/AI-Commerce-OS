@@ -4,6 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SinoBrainContext } from "./SinoBrainContext.jsx";
 
 describe("SinoBrainContext", () => {
+  it("projects Architecture Tasks at Decision Readiness without execution", () => {
+    render(<SinoBrainContext brain={{ stage: "decision_ready", execution_progress: { current_phase: "decision_readiness", founder_action_required: true }, discovery: { task_complexity_route: { classification: "STRATEGIC_TASK", task_type: "ARCHITECTURE_TASK", current_step: "decision_readiness", architecture_analysis: { status: "completed" }, architecture_proposal: { status: "ready_for_founder_decision" } } } }} />);
+    expect(screen.getAllByText("Architecture Task")).toHaveLength(2);
+    expect(screen.getByText("Not Allowed Before Approval")).toBeTruthy();
+    expect(screen.getByText("Required")).toBeTruthy();
+    expect(screen.queryByText("Standard Task")).toBeNull();
+  });
   it("projects an auto-started capability build without Continue or Strategy", () => {
     render(<SinoBrainContext brain={{ stage: "autonomous_execution", current_action: { action_id: "image_model_probe_gate", title: "Image Model Probe 需要授权边界", description: "已自动推进到 Probe。", primary_label: null }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", task_type: "CAPABILITY_BUILD_TASK" }, autonomous_main_loop: { task_type: "CAPABILITY_BUILD_TASK", status: "founder_gate_required", manual_continue_count: 0, manual_codex_instruction_count: 0, founder_gate_required: true, capability_compatibility: { status: "CAPABILITY_MISSING" }, model_candidates: [{ model_id: "image-model" }] } } }} />);
     expect(screen.getByText("Autonomous Capability Build")).toBeTruthy();

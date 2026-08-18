@@ -145,6 +145,16 @@ function GoalBriefConfirmationCard({ brain, busy, onConfirm, onRevise, onReviseG
   </article>;
 }
 
+function ArchitectureProposalCard({ proposal }) {
+  if (!proposal) return null;
+  const list = (items) => <ul>{(items || []).map((item) => <li key={item}>{item}</li>)}</ul>;
+  return <article className="sino-conversation-goal-brief" aria-label="Architecture Proposal">
+    <span>Architecture Proposal</span><h3>Founder → Studio Capability Supply Boundary</h3>
+    <dl><div><dt>Current Problem</dt><dd>{proposal.current_problem}</dd></div><div><dt>Proposed Boundary</dt><dd>{proposal.proposed_boundary}</dd></div><div><dt>Founder Responsibilities</dt><dd>{list(proposal.founder_responsibilities)}</dd></div><div><dt>Studio Responsibilities</dt><dd>{list(proposal.studio_responsibilities)}</dd></div><div><dt>Capability Lifecycle</dt><dd>{(proposal.capability_lifecycle || []).join(" → ")}</dd></div><div><dt>Binding Contract</dt><dd>{proposal.binding_contract?.reference} · {proposal.binding_contract?.consumer_rule}</dd></div><div><dt>Data / Asset Ownership</dt><dd>Capability: Founder · Studio Task/Asset: Studio · Evidence: shared lineage</dd></div><div><dt>Execution Authority</dt><dd>Founder validates/promotes; Studio executes Ready bindings; implementation before approval is forbidden.</dd></div><div><dt>Learning Feedback</dt><dd>{proposal.learning_feedback}</dd></div><div><dt>Migration Impact</dt><dd>{list(proposal.migration_impact)}</dd></div><div><dt>Risks</dt><dd>{list(proposal.risks)}</dd></div><div><dt>Recommended Decision</dt><dd>{proposal.recommended_decision}</dd></div></dl>
+    <p><strong>Founder Decision Required</strong> · 批准方案 / 修改方案 / 驳回。批准前不会进入实施。</p>
+  </article>;
+}
+
 const FALLBACK_STAGES = [
   ["goal", "Goal Understanding"], ["strategy", "Strategy Meeting"], ["validation", "Validation"],
   ["decision", "Decision"], ["package", "Discussion Package"], ["asset_commit", "Asset Commit"],
@@ -191,6 +201,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const quickFixRoute = snapshot?.sino_brain?.discovery?.task_complexity_route;
   const isQuickFix = quickFixRoute?.classification === "QUICK_FIX";
   const isStandardTask = quickFixRoute?.classification === "STANDARD_TASK" && Boolean(quickFixRoute?.standard_task_contract);
+  const isStrategicTask = quickFixRoute?.classification === "STRATEGIC_TASK";
   const quickFixCompleted = isQuickFix && quickFixRoute?.execution_status === "completed";
   const stages = quickFixCompleted ? [
     { stage_key: "issue", label: "问题", status: "completed", message_refs: snapshot?.sino_brain?.source_message_refs || [] },
@@ -280,6 +291,8 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const imageProbeDecisionVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
   const timelineAction = activeStage !== currentStage ? null : imageProbeDecisionVisible
     ? <ImageModelProbeDecisionCard loop={autonomousLoop} busy={busy} onDecision={onImageProbeDecision} />
+    : isStrategicTask
+    ? <ArchitectureProposalCard proposal={quickFixRoute?.architecture_proposal} />
     : capabilityAction
     ? <CapabilityLifecycleCard asset={capabilityAsset} action={capabilityAction} candidates={snapshot?.sino_brain?.discussion_package?.asset_commit?.items || []} error={capabilityError} busy={busy} onAction={onCapabilityAction} onContinue={onContinueDiscussion} onOpenRepository={onViewAssets} />
     : isExecutionPackage
@@ -291,7 +304,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
       : <FounderActionCard action={workspaceAction} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onReviseGoal} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueProjectAnalysis={onContinueProjectAnalysis} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} />;
   return <section className="sino-conversation-thread" aria-label="Conversation">
     <header className="sino-conversation-header"><div><h1>{founderConversationTitle(snapshot?.conversation?.title, snapshot?.sino_brain?.goal_brief?.goal)}</h1><p>{selectedStage?.label || activeStage}</p></div><dl><div><dt>Status</dt><dd>{snapshot?.sino_brain?.current_action?.title || "讨论中"}</dd></div><div><dt>Confidence</dt><dd>{snapshot?.sino_brain?.decision?.confidence ? `${Math.round(snapshot.sino_brain.decision.confidence * 100)}%` : "—"}</dd></div></dl></header>
-    {isQuickFix ? <section className="sino-quick-fix-route" aria-label="Quick Fix 流程"><strong>Quick Fix</strong><span>问题 → 定位 → 修复 → 验证 → 完成</span>{quickFixRoute?.clarification_required ? <small>需要确认目标位置；仍保持 Quick Fix，不进入 Strategy Meeting。</small> : quickFixRoute?.evidence?.image_context_status === "unavailable" ? <small>图片上下文当前不可用；已按明确文字继续 Quick Fix。</small> : null}</section> : isStandardTask ? <section className="sino-quick-fix-route" aria-label="Standard Task 流程"><strong>Standard Task</strong><span>Inspect → Plan → Execution → Verification → Learning → Closure</span></section> : <StageNavigator stages={stages} activeStage={activeStage} onSelect={selectStage} />}
+    {isQuickFix ? <section className="sino-quick-fix-route" aria-label="Quick Fix 流程"><strong>Quick Fix</strong><span>问题 → 定位 → 修复 → 验证 → 完成</span>{quickFixRoute?.clarification_required ? <small>需要确认目标位置；仍保持 Quick Fix，不进入 Strategy Meeting。</small> : quickFixRoute?.evidence?.image_context_status === "unavailable" ? <small>图片上下文当前不可用；已按明确文字继续 Quick Fix。</small> : null}</section> : isStandardTask ? <section className="sino-quick-fix-route" aria-label="Standard Task 流程"><strong>Standard Task</strong><span>Inspect → Plan → Execution → Verification → Learning → Closure</span></section> : isStrategicTask ? <section className="sino-quick-fix-route" aria-label="Architecture Task 流程"><strong>Architecture Task</strong><span>Analysis → Alternatives → Proposal → Impact → Founder Decision</span><small>批准前禁止创建实施包或 Dispatch Codex。</small></section> : <StageNavigator stages={stages} activeStage={activeStage} onSelect={selectStage} />}
     <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" data-stage-workspace={selectedStage?.label || activeStage} tabIndex={0}><div className="sino-conversation-reading-column"><ReuseSuggestions items={reuseSuggestions} busy={busy} onReuse={onReuse} onDevelop={onCapabilityAction} />{activeStage === "asset_commit" ? <AssetCommitWorkspace commit={snapshot?.sino_brain?.discussion_package?.asset_commit} onViewAssets={onViewAssets} onReturnDiscussion={() => selectStage("package")} onNewGoal={onNewGoal} /> : null}{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}{activeStage === "goal" && !snapshot?.sino_brain?.current_action && !snapshot?.sino_brain?.constitution_understanding ? <GoalBriefConfirmationCard brain={snapshot?.sino_brain} busy={busy} onConfirm={onConfirmGoal} onReviseGoal={onReviseGoal} /> : null}<StageSummary stage={selectedStage} brain={snapshot?.sino_brain} currentStage={currentStage} onSelect={selectStage} />{visibleMessages.length ? visibleMessages.map((item) => {
       if (item.role === "assistant" && ["council", "auto_deliberation"].includes(item.message_type)) return null;
       if (item.role === "assistant" && ["goal_brief", "decision", "discussion_package"].includes(item.message_type)) return null;

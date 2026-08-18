@@ -18,6 +18,7 @@ EXECUTION_EVENT_NAMES = {
     "memory_saved",
     "completed",
     "failed",
+    "cancelled_due_to_route_misclassification",
     "backend_restarted",
     "founder_delta_received",
     "delta_classified",

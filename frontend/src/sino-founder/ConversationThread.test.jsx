@@ -7,6 +7,15 @@ const snapshot = (id, messages) => ({ conversation: { id }, messages });
 afterEach(() => cleanup());
 
 describe("ConversationThread layout", () => {
+  it("shows Architecture Proposal and never the Standard execution lane", () => {
+    const route = { classification: "STRATEGIC_TASK", task_type: "ARCHITECTURE_TASK", current_step: "decision_readiness", architecture_proposal: { status: "ready_for_founder_decision", current_problem: "Boundary unclear", proposed_boundary: "Founder owns definitions; Studio consumes Ready references.", founder_responsibilities: ["Validate"], studio_responsibilities: ["Execute Ready"], capability_lifecycle: ["candidate", "ready"], binding_contract: { reference: "id + version", consumer_rule: "ready_only" }, learning_feedback: "Return evidence", migration_impact: ["Preserve IDs"], risks: ["Drift"], recommended_decision: "Approve boundary" } };
+    const value = { ...snapshot("conv-architecture", [{ message_id: "m1", role: "founder", content: "重新设计 Founder 与 Studio Capability 供给关系" }]), sino_brain: { stage: "decision_ready", active_workspace_stage: "decision_readiness", source_message_refs: ["m1"], stage_workspaces: [{ stage_key: "decision_readiness", label: "Decision Readiness", status: "active", message_refs: ["m1"] }], discovery: { task_complexity_route: route }, current_action: { title: "等待 Founder 决策", primary_label: null } } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByRole("region", { name: "Architecture Task 流程" })).toBeTruthy();
+    expect(screen.getByRole("article", { name: "Architecture Proposal" })).toBeTruthy();
+    expect(screen.getByText(/批准前禁止创建实施包/)).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Standard Task 流程" })).toBeNull();
+  });
   it("renders the Standard Task lane instead of the Strategy pipeline", () => {
     const value = snapshot("standard-task", [{ message_id: "m1", role: "founder", content: "给能力仓库增加搜索" }]);
     value.sino_brain = { active_workspace_stage: "execution", stage_workspaces: [{ stage_key: "execution", label: "Execution", status: "active", message_refs: ["m1"] }], discovery: { task_complexity_route: { classification: "STANDARD_TASK", standard_task_contract: { target_surface: "Capability Repository" }, current_step: "execution", execution_status: "execution" } } };

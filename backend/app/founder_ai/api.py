@@ -493,8 +493,15 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         if interaction_context.get("active_surface") != "constitution_review":
             interaction_context["task_complexity_route"] = route_task_complexity(request.content, image_understanding=interaction_context.get("grounded_multimodal_context") or interaction_context.get("image_understanding"), image_context_status=image_context_status)
         route = dict(interaction_context.get("task_complexity_route") or {})
+        is_strategic_architecture = route.get("classification") == "STRATEGIC_TASK" and not route.get("clarification_required")
         is_standard_development = route.get("classification") == "STANDARD_TASK" and route.get("task_type") != "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required")
-        if is_standard_development:
+        if is_strategic_architecture:
+            from app.founder_ai.strategic_task import reconcile_architecture_task
+            route = reconcile_architecture_task(conversation_id=conversation_id, goal=request.content)
+            brain_turn = {"handled": True, "intent": "architecture_task", "message_type": "architecture_proposal",
+                          "reply": "已识别为 Architecture Task。Sino 已完成当前架构检查、边界分析与影响评估，并形成待 Founder 决策的 Proposal；批准前不会创建实施包或 Dispatch Codex。",
+                          "brain": brain_runtime.snapshot(conversation_id)}
+        elif is_standard_development:
             from app.founder_ai.standard_task_execution import begin_standard_task, dispatch_standard_task
             route = begin_standard_task(conversation_id=conversation_id, goal=request.content, route=route)
             route = dispatch_standard_task(conversation_id=conversation_id, goal=request.content)

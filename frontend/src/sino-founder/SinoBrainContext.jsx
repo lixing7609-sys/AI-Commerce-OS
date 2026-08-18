@@ -45,6 +45,7 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
   const quickFixRoute = brain.discovery?.task_complexity_route;
   const isQuickFix = quickFixRoute?.classification === "QUICK_FIX";
   const isStandardTask = quickFixRoute?.classification === "STANDARD_TASK" && Boolean(quickFixRoute?.standard_task_contract);
+  const isStrategicTask = quickFixRoute?.classification === "STRATEGIC_TASK";
   const autonomousLoop = brain.discovery?.autonomous_main_loop;
   const decision = brain.decision || {};
   const understanding = brain.discovery?.working_understanding || {};
@@ -68,11 +69,13 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
   return <section className="sino-brain-context sino-brain-dashboard" aria-label="Brain Dashboard">
     {!projectAware ? <FounderActionCard compact action={action} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} /> : null}
-    <header><h2>{constitution ? "Constitution Review Status" : "Brain Dashboard"}</h2><span>{isQuickFix ? "Quick Fix" : isStandardTask ? "Standard Task" : autonomousLoop ? "Autonomous Capability Build" : projectLifecycle?.rank >= 300 ? projectLifecycle.stage_label : STAGE_LABELS[brain.stage] || brain.stage}</span></header>
+    <header><h2>{constitution ? "Constitution Review Status" : "Brain Dashboard"}</h2><span>{isQuickFix ? "Quick Fix" : isStandardTask ? "Standard Task" : isStrategicTask ? "Architecture Task" : autonomousLoop ? "Autonomous Capability Build" : projectLifecycle?.rank >= 300 ? projectLifecycle.stage_label : STAGE_LABELS[brain.stage] || brain.stage}</span></header>
     {isQuickFix ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Task Type</dt><dd>Quick Fix</dd></div><div><dt>Visual Target</dt><dd>{quickFixRoute.quick_fix_contract?.visual_target || quickFixRoute.quick_fix_contract?.target_area}</dd></div><div><dt>Action</dt><dd>{quickFixRoute.quick_fix_contract?.operation === "REMOVE_UI_ELEMENT" ? "Remove UI Element" : "Bounded UI Fix"}</dd></div><div><dt>Current Step</dt><dd>{progress?.current_phase || (quickFixRoute.execution_status === "completed" ? "Completed" : quickFixRoute.clarification_required ? "需要确认目标位置" : "自动推进")}</dd></div><div><dt>Founder Decision</dt><dd>{progress?.founder_action_required ? "Required" : "Not Required"}</dd></div><div><dt>Next Action</dt><dd>{progress?.next_action || (quickFixRoute.execution_status === "completed" ? "等待 Founder 验收" : quickFixRoute.clarification_required ? "补充目标位置后继续 Quick Fix" : "Sino 自动执行")}</dd></div>
     </dl> : isStandardTask ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Task Type</dt><dd>Standard Task</dd></div><div><dt>Target</dt><dd>{quickFixRoute.standard_task_contract?.target_surface}</dd></div><div><dt>Current Step</dt><dd>{progress?.current_phase || quickFixRoute.current_step}</dd></div><div><dt>Execution</dt><dd>{progress?.execution_status || quickFixRoute.execution_status}</dd></div><div><dt>Founder Decision</dt><dd>{progress?.founder_action_required ? "Required" : "Not Required"}</dd></div><div><dt>Next Action</dt><dd>{progress?.next_action || (quickFixRoute.execution_status === "completed" ? "等待 Founder 验收" : "Sino 自动执行")}</dd></div>
+    </dl> : isStrategicTask ? <dl className="sino-brain-dashboard__grid">
+      <div><dt>Task Type</dt><dd>Architecture Task</dd></div><div><dt>Current Step</dt><dd>{progress?.current_phase || quickFixRoute.current_step}</dd></div><div><dt>Architecture Analysis</dt><dd>{quickFixRoute.architecture_analysis?.status}</dd></div><div><dt>Proposal</dt><dd>{quickFixRoute.architecture_proposal?.status}</dd></div><div><dt>Execution</dt><dd>Not Allowed Before Approval</dd></div><div><dt>Founder Decision</dt><dd>Required</dd></div><div><dt>Next Action</dt><dd>Founder 审核 Architecture Proposal</dd></div>
     </dl> : autonomousLoop ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Task Type</dt><dd>{autonomousLoop.task_type}</dd></div>
       <div><dt>Capability Gap</dt><dd>{autonomousLoop.capability_compatibility?.status}</dd></div>
