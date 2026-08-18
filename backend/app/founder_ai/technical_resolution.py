@@ -133,6 +133,11 @@ def resolve_local_health_check(*, conversation_id: str, task_id: str, execution_
         route.update({"founder_gate_required": False, "manual_continue_count": 0, "manual_codex_instruction_count": 0,
                       "stall_detected": True, "health_check_resumed": True, "technical_resolution_contract": contract,
                       "current_step": "complete" if resolved else "verification", "execution_status": "completed" if resolved else "technical_blocker"})
+        standard_contract = dict(route.get("standard_task_contract") or {})
+        standard_contract.update({"task_id": task_id, "conversation_id": conversation_id, "target_surface": "Local Development Environment",
+                                  "objective": "Verify Founder frontend, Backend, Database, Worker, Execution Lifecycle and Git Working Tree without modifying business functionality.",
+                                  "implementation_scope": [], "inspect_status": "health_check_completed" if resolved else "technical_blocker"})
+        route["standard_task_contract"] = standard_contract
         route.pop("technical_blocker", None)
         execution = dict(route.get("autonomous_execution") or {}); execution.update({"dispatch_status": "completed" if resolved else "technical_blocker",
             "verification": {"status": "PASS" if resolved else "BLOCKED", "health_check": attempts[-1]["evidence"] if attempts else None},
