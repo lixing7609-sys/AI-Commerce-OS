@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { approveFounderObject, archiveFounderObject, bindFounderConversationProject, clearFounderObjectDiscussion, continueFounderCandidateDiscussion, continueFounderObjectDiscussion, getFounderObject, reviewFounderCandidate } from "../services/founderAiApi.js";
-import { advanceSinoBrainStage, approveFounderExecution, confirmFormalObjectProposal, confirmSinoBrainGoal, continueProjectPlanningAnalysis, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, decideImageModelProbeGate, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, ensureFounderGateProposal, forceSinoBrainGoalReview, getConversationWorkspace, getFounderDraft, getFounderConversations, getFounderDrafts, getFounderExecution, getFounderProjects, getLifecycleAsset, getLifecycleReuseSuggestions, getProjectIntelligence, performConversationCapabilityAction, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reviewConstitutionUnderstanding, reviewConstitutionWorkItem, reviewConstitutionWorkItemRouting, reviewFounderGateProposal, reviewImplementationPlan, reviewProjectOutcome, reviewSinoBrainPackage, startLifecycleExecution, startSinoBrainStrategy, submitExecutionDelta, understandConstitutionWorkItem, uploadFounderImage } from "../services/founderAiApi.js";
+import { activateFounderConversation, advanceSinoBrainStage, approveFounderExecution, confirmFormalObjectProposal, confirmSinoBrainGoal, continueProjectPlanningAnalysis, createFounderConversation, createFounderExecution, createFounderProject, decideExecutionDelta, decideImageModelProbeGate, deleteFounderConversation, discussWithAutoDeliberation, discussWithCouncil, discussWithSino, ensureFounderGateProposal, forceSinoBrainGoalReview, getConversationWorkspace, getFounderDraft, getFounderConversations, getFounderDrafts, getFounderExecution, getFounderProjects, getLifecycleAsset, getLifecycleReuseSuggestions, getProjectIntelligence, performConversationCapabilityAction, reasonConfirmedGoal, resumeFounderExecution, retryCouncil, retrySinoReply, reviewConstitutionUnderstanding, reviewConstitutionWorkItem, reviewConstitutionWorkItemRouting, reviewFounderGateProposal, reviewImplementationPlan, reviewProjectOutcome, reviewSinoBrainPackage, startLifecycleExecution, startSinoBrainStrategy, submitExecutionDelta, understandConstitutionWorkItem, uploadFounderImage } from "../services/founderAiApi.js";
 import { createTaskAsset } from "../services/taskAssetApi.js";
 import { ApprovalPanel } from "./ApprovalPanel.jsx";
 import { AssetContext, AssetLifecycleCenter, ExecutionContext, LifecycleExecutionCenter } from "./AssetLifecycleCenter.jsx";
@@ -13,7 +13,7 @@ import { ExecutionCard } from "./ExecutionCard.jsx";
 import { ExecutionContextComposer } from "./ExecutionContextComposer.jsx";
 import { ExecutionDeltaPanel } from "./ExecutionDeltaPanel.jsx";
 import { ExecutionTimeline } from "./ExecutionTimeline.jsx";
-import { FounderHome, ProjectIntelligenceContext, ProjectWorkspace } from "./FounderHome.jsx";
+import { DraftDiscussion, FounderHome, ProjectIntelligenceContext, ProjectWorkspace } from "./FounderHome.jsx";
 import { FounderGateProposalReview } from "./FounderGateProposalReview.jsx";
 import { SinoFounderShell } from "./SinoFounderShell.jsx";
 import { stableConversationOrder } from "./SecretarySidebar.jsx";
@@ -128,7 +128,6 @@ export function ConversationWorkspace() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [creationContext, setCreationContext] = useState(null);
   const sendLockRef = useRef(false);
-  const explicitNewConversationRef = useRef(false);
   const skipNextRestoreRef = useRef(false);
   const initialRestoreRef = useRef(Boolean(conversationId));
   const activeConversationRef = useRef(conversationId);
@@ -339,27 +338,28 @@ export function ConversationWorkspace() {
 
   async function sendDiscussion(event) {
     event.preventDefault();
-    const content = discussionMessage.trim(); if (!content || busy || sendLockRef.current) return;
+    const content = discussionMessage.trim(); if ((!content && !pendingAttachments.length) || busy || sendLockRef.current) return;
     sendLockRef.current = true;
     setBusy(true); setError("");
     let id = conversationId;
     const effectiveMode = discussionMode === "auto" && snapshot?.sino_brain?.active_workspace_stage !== "strategy" ? "sino" : discussionMode;
     let progressTimer;
     try {
-      if (!id && activeProjectId && !explicitNewConversationRef.current) {
+      if (!id && view === "project" && activeProjectId) {
         const currentProjectConversation = conversations.find((item) => item.project_id === activeProjectId);
         if (currentProjectConversation) {
-          id = currentProjectConversation.id;
-          activeConversationRef.current = id;
-          skipNextRestoreRef.current = true;
-          setConversationId(id);
-          remember(CONVERSATION_KEY, id);
+          id = currentProjectConversation.id; activeConversationRef.current = id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id);
         }
       }
-      if (!id) { const conversation = await createFounderConversation("新讨论", activeProjectId); id = conversation.id; activeConversationRef.current = id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id); rememberConversation(id, "新讨论", conversation); }
+      const isFirstSubmit = !id;
+      if (isFirstSubmit) {
+        setConversationInitializing(true);
+        const conversation = await createFounderConversation("新讨论", activeProjectId, { conversation_type: "TEMPORARY_CONVERSATION", created_by: "FOUNDER" });
+        if (conversation.initialization_status && (conversation.initialization_status !== "ready" || conversation.brain_ready !== true || conversation.workspace_ready !== true)) throw new Error("Sino 初始化未完成");
+        id = conversation.id; activeConversationRef.current = id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id);
+      }
       const uploadedAttachments = [];
       for (const attachment of pendingAttachments) uploadedAttachments.push(await uploadFounderImage(id, attachment.file));
-      explicitNewConversationRef.current = false;
       if (effectiveMode === "council" || effectiveMode === "auto") {
         const messageType = effectiveMode === "auto" ? "auto_deliberation" : "council";
         setSnapshot((current) => ({ ...(current || {}), conversation: current?.conversation || { id, project_id: activeProjectId, title: "新讨论", state: "exploring" }, messages: [...(current?.messages || []), { message_id: `optimistic-${Date.now()}`, role: "founder", content, message_type: messageType }], council_runs: [...(current?.council_runs || []), { council_run_id: `pending-${Date.now()}`, question: content, discussion_mode: messageType, status: "running", participants: [], model_runs: [] }] }));
@@ -372,9 +372,13 @@ export function ConversationWorkspace() {
       progressTimer = window.setTimeout(pollProgress, 150);
       const interactionContext = selectedConstitutionWorkItemId ? { active_surface: "constitution_review", selected_constitution_work_item_id: selectedConstitutionWorkItemId } : undefined;
       if (uploadedAttachments.length && effectiveMode !== "sino") throw new Error("图片消息当前仅支持 Sino 模式");
-      const nextSnapshot = effectiveMode === "council" ? await discussWithCouncil(id, content) : effectiveMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content, undefined, interactionContext, uploadedAttachments.map((item) => item.attachment_id));
+      const submittedContent = content || "请结合附件理解这个需求。";
+      const nextSnapshot = effectiveMode === "council" ? await discussWithCouncil(id, submittedContent) : effectiveMode === "auto" ? await discussWithAutoDeliberation(id, submittedContent) : await discussWithSino(id, submittedContent, undefined, interactionContext, uploadedAttachments.map((item) => item.attachment_id));
+      const activatedConversation = isFirstSubmit ? await activateFounderConversation(id) : nextSnapshot.conversation;
       if (!conversationResponseMatches(id, activeConversationRef.current, nextSnapshot)) return;
-      setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); setSinoHealthy(true); rememberConversation(id, founderConversationTitle(nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content, nextSnapshot.sino_brain?.goal_brief?.goal), nextSnapshot.conversation);
+      const activatedSnapshot = isFirstSubmit ? { ...nextSnapshot, conversation: { ...nextSnapshot.conversation, ...activatedConversation } } : nextSnapshot;
+      if (isFirstSubmit) remember(WORKSPACE_VIEW_KEY, "conversation");
+      setSnapshot(activatedSnapshot); setDiscussionMessage(""); setReplyPending(false); setSinoHealthy(true); rememberConversation(id, founderConversationTitle(activatedSnapshot.conversation?.title || activatedSnapshot.messages?.[0]?.content || submittedContent, activatedSnapshot.sino_brain?.goal_brief?.goal), activatedSnapshot.conversation);
       setPendingAttachments((items) => { items.forEach((item) => URL.revokeObjectURL(item.preview)); return []; });
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
@@ -383,7 +387,7 @@ export function ConversationWorkspace() {
           else setError(`项目智能更新失败，已保留上一版本：${projectError.message}`);
         }
       }
-      const explicitGoal = nextSnapshot.goals?.find((item) => item.status === "goal_confirmed");
+      const explicitGoal = activatedSnapshot.goals?.find((item) => item.status === "goal_confirmed");
       if (explicitGoal) await prepareGoal(explicitGoal); else setView("conversation");
     } catch (requestError) {
       setSinoHealthy(false);
@@ -393,12 +397,16 @@ export function ConversationWorkspace() {
       if (id) {
         try {
           const persisted = await getConversationWorkspace(id);
-          setSnapshot(persisted); setDiscussionMessage(""); setView("conversation");
-          rememberConversation(id, founderConversationTitle(persisted.conversation?.title, persisted.sino_brain?.goal_brief?.goal), persisted.conversation);
-        } catch { setView("conversation"); }
+          if (persisted.conversation?.conversation_type === "TEMPORARY_CONVERSATION") {
+            setConversationId(null); activeConversationRef.current = null; remember(CONVERSATION_KEY, null); setSnapshot(null); setDiscussionMessage(content); setView("draft");
+          } else {
+            setSnapshot(persisted); setDiscussionMessage(""); setView("conversation");
+            rememberConversation(id, founderConversationTitle(persisted.conversation?.title, persisted.sino_brain?.goal_brief?.goal), persisted.conversation);
+          }
+        } catch { setConversationId(null); activeConversationRef.current = null; remember(CONVERSATION_KEY, null); setDiscussionMessage(content); setView("draft"); }
       }
     }
-    finally { sendLockRef.current = false; if (progressTimer) window.clearTimeout(progressTimer); setBusy(false); }
+    finally { sendLockRef.current = false; if (progressTimer) window.clearTimeout(progressTimer); setConversationInitializing(false); setBusy(false); }
   }
 
   async function confirmBrainGoal() {
@@ -604,22 +612,17 @@ export function ConversationWorkspace() {
     finally { sendLockRef.current = false; setBusy(false); }
   }
 
-  async function newConversation(preserveProject = false) {
-    const keepProject = preserveProject === true || preserveProject?.type === "click";
-    explicitNewConversationRef.current = keepProject;
+  function newConversation(preserveProject = false) {
+    const keepProject = preserveProject === true;
     setConversationId(null); activeConversationRef.current = null; resetConversationProjection(); setError("");
     if (!keepProject) { setActiveProjectId(null); setProjectIntelligence(null); forgetProject(); }
-    remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(WORKSPACE_VIEW_KEY, null); setCreationContext(null); setSelectedWorkspaceObject(null); setView("home");
-    setConversationInitializing(true); setBusy(true);
-    try {
-      const projectId = keepProject ? activeProjectId : null;
-      const conversation = await createFounderConversation("新讨论", projectId);
-      if (conversation.initialization_status && (conversation.initialization_status !== "ready" || conversation.brain_ready !== true || conversation.workspace_ready !== true)) throw new Error("Sino 初始化未完成");
-      activeConversationRef.current = conversation.id; setConversationId(conversation.id); remember(CONVERSATION_KEY, conversation.id); rememberConversation(conversation.id, "新讨论", conversation);
-      setSnapshot({ conversation, messages: [], founder_objects: [], object_candidates: [], sino_brain: { stage: "goal_discovery", active_workspace_stage: "goal", stage_workspaces: [] } });
-      setView("conversation");
-    } catch (requestError) { setError(requestError.message); }
-    finally { setConversationInitializing(false); setBusy(false); }
+    remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(WORKSPACE_VIEW_KEY, "home"); setCreationContext(null); setSelectedWorkspaceObject(null); setView("draft");
+  }
+
+  function goHome() {
+    setConversationId(null); activeConversationRef.current = null; resetConversationProjection(); setError("");
+    setActiveProjectId(null); setProjectIntelligence(null); forgetProject();
+    remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(WORKSPACE_VIEW_KEY, "home"); setCreationContext(null); setSelectedWorkspaceObject(null); setView("home");
   }
 
   async function quickCreate(type) {
@@ -903,6 +906,7 @@ export function ConversationWorkspace() {
   let main = <FounderHome snapshot={snapshot} execution={execution} intelligence={projectIntelligence} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} onNavigate={setView} onOpenConversation={selectConversation} onQuickCreate={quickCreate} healthy={sinoHealthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={selectProjectContext} onCreateProject={createProject} onFiles={openConversationFiles} mode={discussionMode} onModeChange={setDiscussionMode} pendingAttachments={pendingAttachments} onAddImages={addPendingImages} onRemoveImage={removePendingImage} />;
   let context = capabilityContext;
   const openDraft = (draft) => { setSelectedDraft(draft); setRepositorySection("drafts"); setView("capability-center"); };
+  if (view === "draft") { main = <DraftDiscussion message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={selectProjectContext} onCreateProject={createProject} onFiles={openConversationFiles} mode={discussionMode} onModeChange={setDiscussionMode} pendingAttachments={pendingAttachments} onAddImages={addPendingImages} onRemoveImage={removePendingImage} />; context = null; }
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} drafts={drafts.filter((item) => item.project_id === activeProjectId)} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} onOpenDraft={openDraft} onOpenFounderGate={openFounderGateProposal} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
   if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = selectedFounderGateProposal ? <FounderGateProposalReview proposal={selectedFounderGateProposal} busy={busy} onReview={reviewCurrentFounderGateProposal} onReturnDiscussion={() => setSelectedFounderGateProposal(null)} /> : <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} drafts={drafts} onOpenDraft={openDraft} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} capabilityAction={capabilityAction} capabilityAsset={activeCapabilityAsset} capabilityError={capabilityLifecycleError} onCapabilityAction={handleCapabilityAction} reuseSuggestions={reuseSuggestions} onReuse={handleReuseAsset} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onReviewConstitution={reviewConstitution} onReviewProjectOutcome={reviewPlanningOutcome} onReviewImplementationPlan={reviewCurrentImplementationPlan} onContinueProjectAnalysis={continueProjectPlanning} onReviewFounderGate={openFounderGateProposal} onImageProbeDecision={decideCurrentImageProbeGate} selectedConstitutionWorkItemId={selectedConstitutionWorkItemId} onSelectConstitutionWorkItem={selectConstitutionWorkItem} onContinueDiscussion={continueBrainDiscussion} onViewAssets={() => setView("capability-center")} onNewGoal={newConversation} pendingAttachments={pendingAttachments} onAddImages={addPendingImages} onRemoveImage={removePendingImage} /></section>; context = capabilityContext; }
   if (view === "capability-center") { main = <CapabilityCenter selected={selectedCapabilityAsset} onSelect={setSelectedCapabilityAsset} section={repositorySection} onSectionChange={(next) => { setRepositorySection(next); if (next !== "drafts") setSelectedDraft(null); }} selectedDraft={selectedDraft} onSelectDraft={setSelectedDraft} />; context = repositorySection === "drafts" ? <DraftContext selected={selectedDraft} busy={busy} onApproveImplementation={approveDraftImplementation} onViewImplementationPlan={(draft) => selectConversation(draft.source_conversation_id)} onReviewFounderGate={openFounderGateProposal} onReturnConversation={selectConversation} /> : <CapabilityContext selected={selectedCapabilityAsset} onContinue={continueAsset} onChanged={setSelectedCapabilityAsset} conversationId={conversationId} />; }
@@ -912,7 +916,7 @@ export function ConversationWorkspace() {
   if (view === "builder") { main = <SystemBuilderPanel projectId={activeProjectId} selected={selectedSystemAsset} onSelect={setSelectedSystemAsset} />; context = <SystemContext selected={selectedSystemAsset} onOpenAsset={openAssetRecord} />; }
   if (view === "settings") { const closeSettings = () => { const previous = previousFounderViewRef.current || "home"; persistWorkspace(previous, null); setView(previous); }; main = <ModelCenter onContextChange={setSettingsContext} />; context = <SettingsContext detail={settingsContext} onClose={closeSettings} />; }
 
-  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (normalized === "settings" && view !== "settings") previousFounderViewRef.current = view; if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject, onProjectsChanged: refreshProjects }} main={<>{conversationInitializing ? <div className="sino-initializing" role="status">Initializing Sino...</div> : null}{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
+  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); goHome(); } else { const normalized = normalizeFounderView(next); if (normalized === "settings" && view !== "settings") previousFounderViewRef.current = view; if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject, onProjectsChanged: refreshProjects }} main={<>{conversationInitializing ? <div className="sino-initializing" role="status">Initializing Sino...</div> : null}{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
 }
 
 function ContextSummary({ title, children }) {

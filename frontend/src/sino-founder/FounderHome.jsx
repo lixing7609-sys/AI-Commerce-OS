@@ -43,6 +43,28 @@ export function FounderHome({ intelligence, message, onMessage, onSend, busy, on
   </section>;
 }
 
+export function DraftDiscussion({ message, onMessage, onSend, busy, healthy, projects, activeProjectId, onSelectProject, onCreateProject, onFiles, mode, onModeChange, pendingAttachments, onAddImages, onRemoveImage }) {
+  return <section className="sino-draft-discussion" aria-label="Draft Discussion">
+    <div className="sino-home__center">
+      <GlobalSecretaryComposer
+        value={message}
+        onChange={onMessage}
+        onSubmit={onSend}
+        busy={busy}
+        healthy={healthy}
+        large
+        mode={mode}
+        onModeChange={onModeChange}
+        toolbar={<ComposerContextControls healthy={healthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={onSelectProject} onCreateProject={onCreateProject} onFiles={onFiles} />}
+        toolbarIncludesStatus
+        attachments={pendingAttachments}
+        onAddImages={onAddImages}
+        onRemoveImage={onRemoveImage}
+      />
+    </div>
+  </section>;
+}
+
 export function ProjectIntelligenceContext({ intelligence, onNavigate, onOpenConversation }) {
   const previousRef = useRef(null);
   const [changed, setChanged] = useState([]);

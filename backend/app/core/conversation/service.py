@@ -78,6 +78,64 @@ def ensure_conversation_runtime_state(conversation_id: str) -> dict:
         return {"conversation_id": conversation_id, "brain_id": brain.id, "brain_ready": True, "workspace_ready": True, "repaired": repaired}
 
 
+def activate_conversation(conversation_id: str) -> ConversationDB:
+    """Publish a transient Founder discussion after its first valid input persists."""
+    with SessionLocal() as session:
+        record = session.scalar(select(ConversationDB).where(
+            ConversationDB.id == conversation_id,
+            ConversationDB.system_id == FOUNDER_SYSTEM_KEY,
+        ))
+        if record is None:
+            raise LookupError("Conversation not found")
+        if record.conversation_type != "TEMPORARY_CONVERSATION" or record.created_by != "FOUNDER":
+            raise ConversationBoundaryError("Only a Founder draft discussion can be activated")
+        has_message = session.scalar(select(ConversationMessageDB.id).where(
+            ConversationMessageDB.conversation_id == conversation_id,
+            ConversationMessageDB.role == "founder",
+            ConversationMessageDB.content != "",
+        ).limit(1))
+        has_attachment = session.scalar(select(ConversationAttachmentDB.id).where(
+            ConversationAttachmentDB.conversation_id == conversation_id,
+        ).limit(1))
+        if not has_message and not has_attachment:
+            raise ConversationBoundaryError("A substantive Founder input is required")
+        record.conversation_type = "PROJECT_CONVERSATION" if record.project_id else "USER_CONVERSATION"
+        record.visibility = "conversation_list"
+        record.lifecycle_status = "active"
+        session.commit(); session.refresh(record)
+        return record
+
+
+def audit_empty_founder_conversations(*, hide: bool = False) -> dict:
+    """Conservatively classify empty Founder shells without deleting history."""
+    evidence_models = (
+        ConversationMessageDB, ConversationAttachmentDB, CandidateGoalDB, PendingQuestionDB,
+        GoalAssetDB, ExecutionDeltaDB, CouncilRunDB, TaskAssetDB, DecisionAssetDB,
+        ArtifactAssetDB, MemoryAssetDB, FounderObjectCandidateDB,
+    )
+    with SessionLocal() as session:
+        records = list(session.scalars(select(ConversationDB).where(
+            ConversationDB.system_id == FOUNDER_SYSTEM_KEY,
+            ConversationDB.created_by == "FOUNDER",
+            ConversationDB.conversation_type.in_(("USER_CONVERSATION", "PROJECT_CONVERSATION")),
+            ConversationDB.visibility == "conversation_list",
+            ConversationDB.lifecycle_status == "active",
+        ).order_by(ConversationDB.created_at.asc(), ConversationDB.id.asc())))
+        empty_ids = []
+        for record in records:
+            has_evidence = any(session.query(model).filter_by(conversation_id=record.id).first() is not None for model in evidence_models)
+            has_object = session.query(FounderObjectDB).filter_by(source_conversation_id=record.id).first() is not None
+            if not has_evidence and not has_object:
+                empty_ids.append(record.id)
+                if hide:
+                    record.conversation_type = "TEMPORARY_CONVERSATION"
+                    record.visibility = "hidden_from_conversation_list"
+                    record.lifecycle_status = "ephemeral"
+        if hide:
+            session.commit()
+        return {"audited_count": len(records), "empty_count": len(empty_ids), "hidden_count": len(empty_ids) if hide else 0, "conversation_ids": empty_ids}
+
+
 def list_conversations(*, scope: str = "all", project_id: str | None = None) -> list[ConversationDB]:
     if scope not in {"all", "global", "project"}: raise ConversationBoundaryError("Unsupported conversation list scope")
     if scope == "project" and not project_id: raise ConversationBoundaryError("Project conversation scope requires project_id")

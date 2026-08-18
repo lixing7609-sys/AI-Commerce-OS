@@ -55,6 +55,35 @@ def test_system_verification_and_temporary_records_never_pollute_lists(monkeypat
     assert conversation_service.get_conversation(verification.id).id == verification.id
 
 
+def test_first_substantive_message_activates_atomic_draft(monkeypatch):
+    factory = isolated(monkeypatch)
+    draft = conversation_service.create_conversation(title="新讨论", conversation_type="TEMPORARY_CONVERSATION", created_by="FOUNDER")
+    assert conversation_service.list_conversations() == []
+    try: conversation_service.activate_conversation(draft.id)
+    except conversation_service.ConversationBoundaryError: pass
+    else: raise AssertionError("An empty draft must not become a Conversation")
+    with factory() as session:
+        session.add(ConversationMessageDB(conversation_id=draft.id, role="founder", content="Home Draft Atomic Test")); session.commit()
+    active = conversation_service.activate_conversation(draft.id)
+    assert active.id == draft.id
+    assert active.conversation_type == "USER_CONVERSATION"
+    assert active.visibility == "conversation_list"
+    assert [item.id for item in conversation_service.list_conversations()] == [draft.id]
+
+
+def test_empty_shell_audit_hides_only_records_without_evidence(monkeypatch):
+    factory = isolated(monkeypatch)
+    empty = conversation_service.create_conversation(title="新讨论")
+    substantive = conversation_service.create_conversation(title="新讨论")
+    with factory() as session:
+        session.add(ConversationMessageDB(conversation_id=substantive.id, role="founder", content="真实 Founder 内容")); session.commit()
+    report = conversation_service.audit_empty_founder_conversations(hide=True)
+    assert report["conversation_ids"] == [empty.id]
+    assert report["hidden_count"] == 1
+    assert conversation_service.get_conversation(empty.id).lifecycle_status == "ephemeral"
+    assert [item.id for item in conversation_service.list_conversations()] == [substantive.id]
+
+
 def test_non_founder_runs_cannot_be_filed_into_projects(monkeypatch):
     isolated(monkeypatch)
     run = conversation_service.create_conversation(title="Probe", conversation_type="SYSTEM_RUN", created_by="SYSTEM")

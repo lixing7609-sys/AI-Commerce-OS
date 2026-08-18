@@ -32,6 +32,10 @@ export function deleteFounderConversation(conversationId) {
   return request(`/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE" }, "删除 Conversation 失败");
 }
 
+export function activateFounderConversation(conversationId) {
+  return request(`/conversations/${encodeURIComponent(conversationId)}/activate`, { method: "POST" }, "激活 Founder Conversation 失败");
+}
+
 export function bindFounderConversationProject(conversationId, projectId) {
   return request(`/conversations/${encodeURIComponent(conversationId)}/project`, {
     method: "PATCH",
