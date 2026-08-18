@@ -72,6 +72,18 @@ def test_grounded_draft_card_layout_resolves_stale_clarification_and_is_ready_fo
     contract = build_quick_fix_contract(result, conversation_id="functional-verification-v1-a")
     assert contract["inspect_status"] == "ready_for_fix"
 
+
+def test_bounded_card_layout_routes_to_quick_fix_when_vision_is_temporarily_unavailable():
+    result = route_task_complexity(
+        "把截图中箭头所指区域的卡片排版梳理整齐，保持现有功能和整体风格不变。",
+        image_context_status="unavailable",
+    )
+    assert result["classification"] == QUICK_FIX
+    assert result["clarification_required"] is False
+    assert result["founder_gate_required"] is False
+    assert result["strategy_meeting_required"] is False
+    assert result["quick_fix_contract"]["issue_type"] == "BOUNDED_UI_BUG"
+
 def test_unrelated_production_label_in_screenshot_does_not_trigger_founder_gate():
     grounded = {
         "merged_intent": 'remove the chevron left of "+" in Projects header',
