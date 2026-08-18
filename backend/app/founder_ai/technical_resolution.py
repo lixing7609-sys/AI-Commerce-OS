@@ -84,6 +84,30 @@ def build_resolution_contract(session, *, retry_budget: int = DEFAULT_RETRY_BUDG
             "last_attempt": None, "resolution_status": "pending", "created_at": _now()}
 
 
+def is_local_health_check_goal(goal: str) -> bool:
+    text = (goal or "").lower()
+    return "健康检查" in text and all(term in text for term in ("backend", "database", "worker", "git"))
+
+
+def mark_stalled_execution(*, conversation_id: str, execution_id: str, stall_evidence: dict) -> dict:
+    record = get_execution_session(execution_id)
+    if record is None: raise LookupError("Execution session not found")
+    session, package = record
+    if session.technical_resolution and session.technical_resolution.get("resolution_status") in {"diagnosing", "retrying", "resolved"}:
+        return session.technical_resolution
+    contract = build_resolution_contract(session); contract.update({"issue_type": "STALLED_EXECUTION", "resolution_status": "diagnosing", "stall_evidence": stall_evidence})
+    append_event(session, "stall_detected", status="stalled", message="Meaningful progress exceeded the execution stall threshold", metadata=stall_evidence)
+    session.technical_resolution = contract; save_execution_session(session, package)
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None: raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {}); route = dict(discovery.get("task_complexity_route") or {})
+        route.update({"stall_detected": True, "execution_status": "self_healing", "technical_resolution_contract": contract,
+                      "founder_gate_required": False, "manual_continue_count": 0, "manual_codex_instruction_count": 0})
+        discovery["task_complexity_route"] = route; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+    return contract
+
+
 def resolve_local_health_check(*, conversation_id: str, task_id: str, execution_id: str, repo_root: Path | None = None, retry_budget: int = DEFAULT_RETRY_BUDGET, health_runner=None) -> dict:
     root = (repo_root or Path(__file__).resolve().parents[3]).resolve(); record = get_execution_session(execution_id)
     if record is None: raise LookupError("Execution session not found")

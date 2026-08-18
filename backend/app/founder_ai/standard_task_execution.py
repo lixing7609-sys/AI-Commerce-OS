@@ -134,6 +134,11 @@ def _monitor(conversation_id: str, task_id: str, execution_id: str) -> None:
         record = get_execution_session(execution_id)
         if record is None: return
         session, _ = record
+        if session.status in {"queued", "executing", "testing"}:
+            from app.founder_ai.technical_resolution import evaluate_stall, mark_stalled_execution
+            stall = evaluate_stall(session)
+            if stall["stalled"]:
+                mark_stalled_execution(conversation_id=conversation_id, execution_id=execution_id, stall_evidence=stall)
         if session.status == "testing": _project(conversation_id, step="verification", execution={"dispatch_status": "verifying"})
         if session.status in {"completed", "failed", "blocked", "cancelled"}: break
         time.sleep(.25)
@@ -141,9 +146,17 @@ def _monitor(conversation_id: str, task_id: str, execution_id: str) -> None:
 
 
 def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, execution_id: str, repo_root: Path = REPO_ROOT) -> dict:
-    session, _ = get_execution_session(execution_id) or (None, None)
+    session, package = get_execution_session(execution_id) or (None, None)
     if session is None: raise LookupError("Standard execution session not found")
     if session.status != "completed": return _project(conversation_id, step="execution", blocker={"type": "standard_task_execution_failed", "reason": session.failure_reason, "founder_gate_required": False}, execution={"dispatch_status": session.status})
+    from app.founder_ai.technical_resolution import is_local_health_check_goal, resolve_local_health_check
+    if package and is_local_health_check_goal(package.goal):
+        resolution = dict(session.technical_resolution or {})
+        if resolution.get("resolution_status") != "resolved":
+            resolve_local_health_check(conversation_id=conversation_id, task_id=task_id, execution_id=execution_id, repo_root=repo_root)
+        with SessionLocal() as db:
+            state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+            return dict((state.discovery or {}).get("task_complexity_route") or {})
     diff_ok = subprocess.run(["git", "diff", "--check"], cwd=repo_root, capture_output=True, text=True).returncode == 0
     clean = not subprocess.run(["git", "status", "--porcelain=v1"], cwd=repo_root, capture_output=True, text=True).stdout.strip()
     verification = {"status": "PASS" if diff_ok and clean and session.commit_hash else "FAIL", "targeted_tests": list((session.result or {}).get("tests") or []), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": "PASS" if session.commit_hash else "FAIL", "working_tree": "clean" if clean else "dirty"}

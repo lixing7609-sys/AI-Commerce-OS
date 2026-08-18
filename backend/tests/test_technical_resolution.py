@@ -12,7 +12,7 @@ from app.founder_ai.execution_loop import ExecutionSession
 from app.founder_ai.execution_registry import save_execution_session
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 from app.founder_ai.technical_resolution import (
-    classify_subprocess_constraint, evaluate_stall, resolve_local_health_check, safe_repair_allowed,
+    classify_subprocess_constraint, evaluate_stall, is_local_health_check_goal, resolve_local_health_check, safe_repair_allowed,
 )
 
 
@@ -35,6 +35,8 @@ def test_permission_denied_is_a_technical_environment_constraint():
     result = classify_subprocess_constraint(session)
     assert result["issue_type"] == "LOCAL_OS_PERMISSION_DENIED"
     assert result["permission_denied"] is True
+    assert is_local_health_check_goal("检查 Founder frontend、Backend、Database、Worker、Execution Lifecycle 和 Git Working Tree 健康检查") is True
+    assert is_local_health_check_goal("给能力仓库增加搜索") is False
 
 
 def test_safe_repair_policy_never_changes_os_or_unknown_ownership():
