@@ -88,6 +88,7 @@ def _project(conversation_id: str, *, step: str, execution: dict | None = None, 
         route["manual_continue_required"] = False; route["manual_continue_count"] = 0; route["manual_codex_instruction_count"] = 0
         if execution: route["autonomous_execution"] = {**dict(route.get("autonomous_execution") or {}), **execution}
         if blocker: route["technical_blocker"] = blocker
+        elif step == "complete": route.pop("technical_blocker", None)
         discovery["task_complexity_route"] = route; discovery["standard_task_contract"] = route.get("standard_task_contract")
         state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
         return route
