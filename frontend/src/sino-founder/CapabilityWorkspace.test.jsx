@@ -7,6 +7,7 @@ import { getCapabilityDomains, getCapabilityRepositoryAssets, getFounderDraft, g
 
 vi.mock("../services/founderAiApi.js", () => ({ getCapabilityDomains: vi.fn(), getCapabilityRepositoryAssets: vi.fn(), getFounderDraft: vi.fn(), getFounderDrafts: vi.fn(), getLifecycleAsset: vi.fn(), performConversationCapabilityAction: vi.fn() }));
 const skill = { asset_id: "asset-skill", asset_type: "skill", domain_id: "commerce", name: "商品分镜生成 Skill", purpose: "生成结构化商品分镜", status: "candidate", version: 1, used_by_refs: [], dependency_refs: [], test_run_refs: [], available_actions: ["develop", "archive", "continue_discussion"] };
+const workflow = { ...skill, asset_id: "asset-workflow", asset_type: "workflow", name: "营销发布 Workflow" };
 function Harness() { const [selected, setSelected] = useState(null); return <><CapabilityCenter section="lifecycle" selected={selected} onSelect={setSelected} /><CapabilityContext selected={selected} onChanged={setSelected} /></>; }
 
 describe("AI Capability Center IA", () => {
@@ -31,6 +32,29 @@ describe("AI Capability Center IA", () => {
     fireEvent.click(await screen.findByRole("button", { name: /电商/ }));
     fireEvent.click(await screen.findByRole("button", { name: /商品分镜生成 Skill/ }));
     expect(screen.getByRole("button", { name: "开发" })).toBeTruthy();
+  });
+  it("searches Domain names before entering a Domain", async () => {
+    getCapabilityDomains.mockResolvedValue({ domains: [{ domain_id: "commerce", name: "电商", counts: {} }, { domain_id: "marketing", name: "营销", counts: {} }] });
+    render(<Harness />);
+    const search = await screen.findByRole("searchbox", { name: "搜索能力名称或 Domain" });
+    fireEvent.change(search, { target: { value: "营销" } });
+    expect(screen.queryByRole("button", { name: /电商/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /营销/ })).toBeTruthy();
+  });
+  it("searches capability names and the selected Domain without another API request", async () => {
+    getCapabilityRepositoryAssets.mockResolvedValue({ assets: [skill, workflow] });
+    render(<Harness />);
+    fireEvent.click(await screen.findByRole("button", { name: /电商/ }));
+    await screen.findByRole("button", { name: /商品分镜生成 Skill/ });
+    const requestCount = getCapabilityRepositoryAssets.mock.calls.length;
+    const search = screen.getByRole("searchbox", { name: "搜索能力名称或 Domain" });
+    fireEvent.change(search, { target: { value: "workflow" } });
+    expect(screen.queryByRole("button", { name: /商品分镜生成 Skill/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /营销发布 Workflow/ })).toBeTruthy();
+    fireEvent.change(search, { target: { value: "电商" } });
+    expect(screen.getByRole("button", { name: /商品分镜生成 Skill/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /营销发布 Workflow/ })).toBeTruthy();
+    expect(getCapabilityRepositoryAssets).toHaveBeenCalledTimes(requestCount);
   });
   it("uses the repository Ready action for the current Conversation", async () => {
     const ready = { ...skill, status: "ready", available_actions: ["reuse", "upgrade", "deprecate"], reference_count: 2 };

@@ -1313,6 +1313,11 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 /* Shared three-column workspace: Shell owns Sidebar | Primary | Inspector. */
 .sino-primary-list { min-width: 0; min-height: 0; width: 100%; flex: 1; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .sino-primary-list::-webkit-scrollbar { display: none; }
+.sino-repository-search { display: grid; gap: 7px; margin: 18px 0 4px; }
+.sino-repository-search label { color: var(--text-label); font-size: var(--font-label); }
+.sino-repository-search input { box-sizing: border-box; width: min(100%, 440px); padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 8px; outline: none; background: var(--surface-raised); color: var(--text-primary); font: inherit; }
+.sino-repository-search input::placeholder { color: var(--text-muted); }
+.sino-repository-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent); }
 .sino-workspace-inspector { box-sizing: border-box; width: 100%; min-width: 0; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; color: var(--text-primary); }
 .sino-workspace-inspector::-webkit-scrollbar { display: none; }
 .sino-workspace-inspector > .sino-asset-detail { width: 100%; min-height: 100%; padding: 0 0 28px; border: 0; overflow: visible; }
