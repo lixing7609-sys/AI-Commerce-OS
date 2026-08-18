@@ -148,12 +148,19 @@ class ExecutionWorker:
             return
         session, package = record
         try:
+            session.worker_id = "sino-execution-worker"
             session.started_at = session.started_at or _now().isoformat()
             append_event(session, "worker_started", status="executing", message="Execution worker started", timestamp=session.started_at)
             save_execution_session(session, package)
             logger.info("Execution worker started execution_id=%s", execution_id)
+            heartbeat_stop = Event()
+            heartbeat = Thread(target=self._heartbeat, args=(execution_id, heartbeat_stop), daemon=True, name=f"heartbeat-{execution_id}")
+            heartbeat.start()
             loop = FounderExecutionLoop(self.adapter, on_status=lambda status: self._on_status(execution_id, status))
-            session, artifact_draft, memory_draft = loop.run(session, package, cwd=self.project_root, defer_completion=True)
+            try:
+                session, artifact_draft, memory_draft = loop.run(session, package, cwd=self.project_root, defer_completion=True)
+            finally:
+                heartbeat_stop.set(); heartbeat.join(timeout=2)
             # Do not expose completion until callback assets and memories are durable.
             artifact = self.artifact_writer(
                 artifact_type="execution_result",
@@ -223,6 +230,14 @@ class ExecutionWorker:
             save_execution_session(session, package)
             self.queue.transition(execution_id, "failed")
             logger.exception("Founder execution %s failed", execution_id)
+
+    def _heartbeat(self, execution_id: str, stop: Event) -> None:
+        while not stop.wait(10):
+            record = get_execution_session(execution_id)
+            if record is None: return
+            session, package = record
+            session.worker_heartbeat_at = _now().isoformat()
+            save_execution_session(session, package)
 
     def _on_status(self, execution_id: str, status: str):
         record = get_execution_session(execution_id)

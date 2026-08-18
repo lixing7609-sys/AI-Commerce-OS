@@ -49,6 +49,12 @@ class ExecutionSession:
     restart_recovery_migrated_at: str | None = None
     source_status: str | None = None
     source_error_message: str | None = None
+    worker_id: str | None = None
+    worker_heartbeat_at: str | None = None
+    meaningful_progress_at: str | None = None
+    subprocess_pid: int | None = None
+    subprocess_exit_status: int | None = None
+    technical_resolution: dict[str, Any] | None = None
 
     def log(self, stage: str, message: str, *, timestamp: str | None = None) -> None:
         self.execution_logs.append({"timestamp": timestamp or datetime.now(timezone.utc).isoformat(), "stage": stage, "message": message})

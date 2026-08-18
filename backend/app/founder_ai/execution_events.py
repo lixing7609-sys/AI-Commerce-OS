@@ -26,6 +26,12 @@ EXECUTION_EVENT_NAMES = {
     "execution_paused_for_delta",
     "execution_replanned",
     "execution_resumed",
+    "worker_heartbeat",
+    "stall_detected",
+    "technical_resolution_started",
+    "technical_resolution_attempted",
+    "technical_resolution_completed",
+    "technical_resolution_exhausted",
 }
 
 LEGACY_EVENT_NAMES = {
@@ -95,6 +101,9 @@ def append_event(
     ).to_dict()
     session.events.append(event)
     session.current_stage = event_name
+    session.worker_heartbeat_at = event["timestamp"]
+    if event_name != "worker_heartbeat":
+        session.meaningful_progress_at = event["timestamp"]
     # Preserve the old response and persisted shape while clients migrate to events.
     session.execution_logs.append({"timestamp": event["timestamp"], "stage": event_name, "message": message})
     return event

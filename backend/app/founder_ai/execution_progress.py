@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from app.founder_ai.execution_registry import get_execution_session
+from app.founder_ai.technical_resolution import evaluate_stall
 
 
 STANDARD_PROGRESS = {"inspect": 10, "plan": 25, "execution": 35, "verification": 80, "learning": 95, "closure": 95, "complete": 100}
@@ -55,6 +56,10 @@ def build_execution_progress(route: dict) -> dict | None:
     route_step = route.get("current_step") or ("inspect" if classification == "STANDARD_TASK" else "issue")
     blocker = dict(route.get("technical_blocker") or {}) or None
     founder_required = bool(route.get("founder_gate_required"))
+    resolution = dict(route.get("technical_resolution_contract") or {})
+    exhausted = resolution.get("resolution_status") == "exhausted"
+    if exhausted:
+        founder_required = True
     terminal = not founder_required and (route.get("execution_status") == "completed" or bool(session and session.status == "completed" and session.commit_hash and not blocker))
     phase = "complete" if terminal else route_step
     if blocker and phase == "complete":
@@ -68,17 +73,23 @@ def build_execution_progress(route: dict) -> dict | None:
     latest_at = None
     if session:
         latest_at = next((event.get("timestamp") for event in reversed(session.events or []) if event.get("timestamp")), None) or session.completed_at or session.testing_at or session.started_at or session.queued_at
-    stale_age = _elapsed(latest_at) if latest_at and not terminal else 0
     running = bool(session and session.status in {"queued", "executing", "testing"})
-    stalled = running and stale_age > (300 if session.status == "queued" else 180)
-    if founder_required:
+    stall_evidence = evaluate_stall(session) if session and running else {"stalled": False}
+    stalled = bool(stall_evidence["stalled"])
+    if exhausted:
+        title, next_action = "Technical Blocker", "Founder 需要关注"
+    elif founder_required:
         title, next_action = "等待 Founder 授权", "Founder 需要操作"
+    elif resolution.get("resolution_status") == "retrying":
+        title, next_action = "正在重新验证", "Founder 无需操作"
+    elif resolution.get("resolution_status") in {"pending", "diagnosing"}:
+        title, next_action = "正在自愈", "Founder 无需操作"
     elif blocker:
         title, next_action = ("验证受阻" if phase in {"verification", "verify"} else "执行受阻"), "Sino 正在自动解决；Founder 无需操作"
     elif stalled:
         title, next_action = "执行器异常 · 正在自愈", "Founder 无需操作"
     elif terminal:
-        title, next_action = "已完成", "等待 Founder 验收"
+        title, next_action = ("环境健康检查完成" if route.get("health_check_resumed") else "已完成"), "等待 Founder 验收"
     else:
         titles = {"inspect": "正在检查", "plan": "正在规划", "execution": "正在实施", "fix": "正在修复", "verification": "正在验证", "verify": "正在验证", "learning": "正在沉淀", "closure": "正在关闭", "issue": "正在理解问题"}
         title, next_action = titles.get(phase, "正在自动执行"), "Founder 无需操作"
@@ -93,5 +104,7 @@ def build_execution_progress(route: dict) -> dict | None:
         "updated_at": latest_at or execution.get("dispatched_at"), "completed_at": completed_at,
         "elapsed_seconds": _elapsed(started_at, completed_at), "progress_percent": progress,
         "current_action": title, "next_action": next_action, "stalled": stalled,
-        "stall_reason": "worker_heartbeat_stale" if stalled else None,
+        "stall_reason": "meaningful_progress_stale" if stalled else None,
+        "worker_heartbeat_at": stall_evidence.get("worker_heartbeat_at"),
+        "meaningful_progress_at": stall_evidence.get("meaningful_progress_at"),
     }

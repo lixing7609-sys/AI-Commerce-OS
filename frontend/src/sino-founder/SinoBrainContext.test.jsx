@@ -37,6 +37,17 @@ describe("SinoBrainContext", () => {
     expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
     expect(screen.queryByText("确认后开始 Strategy Meeting。" )).toBeNull();
   });
+  it.each([
+    ["执行停滞 · 正在诊断", "Founder 无需操作", "stalled"],
+    ["正在自愈", "Founder 无需操作", "self_healing"],
+    ["正在重新验证", "Founder 无需操作", "retrying"],
+    ["Technical Blocker", "Founder 需要关注", "technical_blocker"],
+  ])("projects Path E technical resolution state %s", (title, nextAction, executionStatus) => {
+    render(<SinoBrainContext brain={{ stage: "standard_task", current_action: { action_id: "canonical_execution_progress", title, description: nextAction, progress_percent: 55, founder_action_required: executionStatus === "technical_blocker" }, execution_progress: { current_phase: "verification", execution_status: executionStatus, next_action: nextAction, founder_action_required: executionStatus === "technical_blocker" }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", current_step: "verification", execution_status: executionStatus, standard_task_contract: { target_surface: "Local Development Environment" } } } }} />);
+    expect(screen.getByText(title)).toBeTruthy();
+    expect(screen.getAllByText(nextAction).length).toBeGreaterThan(0);
+    expect(screen.getByText(executionStatus === "technical_blocker" ? "Required" : "Not Required")).toBeTruthy();
+  });
   it("projects a screenshot-grounded removal target and action", () => {
     render(<SinoBrainContext brain={{ discovery: { task_complexity_route: { classification: "QUICK_FIX", clarification_required: false, founder_gate_required: false, quick_fix_contract: { target_area: "Left Sidebar / Projects Header", visual_target: 'chevron immediately left of the "+" control', operation: "REMOVE_UI_ELEMENT" } } } }} />);
     expect(screen.getByText('chevron immediately left of the "+" control')).toBeTruthy();
