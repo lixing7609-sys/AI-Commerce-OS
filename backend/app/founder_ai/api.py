@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.context.service import get_founder_context
 from app.core.project.service import get_project_intelligence
-from app.core.conversation.service import get_conversation, resolve_conversation_id
+from app.core.conversation.service import ensure_conversation_runtime_state, get_conversation, resolve_conversation_id
 from app.founder_ai.orchestrator import (
     FOUNDER_SYSTEM_KEY,
     TaskAssetDraft,
@@ -477,6 +477,7 @@ def archive_founder_object(object_id: str):
 def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
     conversation_id = resolve_conversation_id(conversation_id)
     try:
+        ensure_conversation_runtime_state(conversation_id)
         interaction_context = dict(request.interaction_context or {})
         from app.founder_ai.task_complexity_router import route_task_complexity
         image_context_status = "not_present"

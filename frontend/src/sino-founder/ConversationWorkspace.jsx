@@ -105,6 +105,7 @@ export function ConversationWorkspace() {
   const [execution, setExecution] = useState(null);
   const [approved, setApproved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [conversationInitializing, setConversationInitializing] = useState(false);
   const [error, setError] = useState("");
   const [sinoHealthy, setSinoHealthy] = useState(true);
   const [replyPending, setReplyPending] = useState(false);
@@ -603,12 +604,22 @@ export function ConversationWorkspace() {
     finally { sendLockRef.current = false; setBusy(false); }
   }
 
-  function newConversation(preserveProject = false) {
+  async function newConversation(preserveProject = false) {
     const keepProject = preserveProject === true || preserveProject?.type === "click";
     explicitNewConversationRef.current = keepProject;
     setConversationId(null); activeConversationRef.current = null; resetConversationProjection(); setError("");
     if (!keepProject) { setActiveProjectId(null); setProjectIntelligence(null); forgetProject(); }
     remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(WORKSPACE_VIEW_KEY, null); setCreationContext(null); setSelectedWorkspaceObject(null); setView("home");
+    setConversationInitializing(true); setBusy(true);
+    try {
+      const projectId = keepProject ? activeProjectId : null;
+      const conversation = await createFounderConversation("新讨论", projectId);
+      if (conversation.initialization_status && (conversation.initialization_status !== "ready" || conversation.brain_ready !== true || conversation.workspace_ready !== true)) throw new Error("Sino 初始化未完成");
+      activeConversationRef.current = conversation.id; setConversationId(conversation.id); remember(CONVERSATION_KEY, conversation.id); rememberConversation(conversation.id, "新讨论", conversation);
+      setSnapshot({ conversation, messages: [], founder_objects: [], object_candidates: [], sino_brain: { stage: "goal_discovery", active_workspace_stage: "goal", stage_workspaces: [] } });
+      setView("conversation");
+    } catch (requestError) { setError(requestError.message); }
+    finally { setConversationInitializing(false); setBusy(false); }
   }
 
   async function quickCreate(type) {
@@ -901,7 +912,7 @@ export function ConversationWorkspace() {
   if (view === "builder") { main = <SystemBuilderPanel projectId={activeProjectId} selected={selectedSystemAsset} onSelect={setSelectedSystemAsset} />; context = <SystemContext selected={selectedSystemAsset} onOpenAsset={openAssetRecord} />; }
   if (view === "settings") { const closeSettings = () => { const previous = previousFounderViewRef.current || "home"; persistWorkspace(previous, null); setView(previous); }; main = <ModelCenter onContextChange={setSettingsContext} />; context = <SettingsContext detail={settingsContext} onClose={closeSettings} />; }
 
-  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (normalized === "settings" && view !== "settings") previousFounderViewRef.current = view; if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject, onProjectsChanged: refreshProjects }} main={<>{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
+  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("home", null); newConversation(); } else { const normalized = normalizeFounderView(next); if (normalized === "settings" && view !== "settings") previousFounderViewRef.current = view; if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject, onProjectsChanged: refreshProjects }} main={<>{conversationInitializing ? <div className="sino-initializing" role="status">Initializing Sino...</div> : null}{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
 }
 
 function ContextSummary({ title, children }) {

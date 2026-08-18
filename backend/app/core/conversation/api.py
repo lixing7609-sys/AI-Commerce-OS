@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.conversation.service import bind_conversation_project, create_conversation, delete_conversation, get_conversation, list_conversations
+from app.core.conversation.service import bind_conversation_project, create_conversation, delete_conversation, ensure_conversation_runtime_state, get_conversation, list_conversations
 
 
 class ConversationCreateIn(BaseModel):
@@ -32,6 +32,9 @@ class ConversationOut(BaseModel):
     merged_into_conversation_id: str | None
     created_at: datetime
     updated_at: datetime
+    initialization_status: str | None = None
+    brain_ready: bool | None = None
+    workspace_ready: bool | None = None
 
 
 class ConversationProjectIn(BaseModel):
@@ -53,7 +56,9 @@ def list_founder_conversations(scope: str = "all", project_id: str | None = None
 @router.post("", response_model=ConversationOut, status_code=201)
 def create_founder_conversation(request: ConversationCreateIn):
     try:
-        return create_conversation(title=request.title, project_id=request.project_id, conversation_type=request.conversation_type, created_by=request.created_by)
+        conversation = create_conversation(title=request.title, project_id=request.project_id, conversation_type=request.conversation_type, created_by=request.created_by)
+        readiness = ensure_conversation_runtime_state(conversation.id)
+        return ConversationOut.model_validate(conversation).model_copy(update={"initialization_status": "ready", "brain_ready": readiness["brain_ready"], "workspace_ready": readiness["workspace_ready"]})
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

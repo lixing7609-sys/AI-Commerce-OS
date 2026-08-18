@@ -228,6 +228,11 @@ class SinoBrainRuntime:
         return payload
 
     def snapshot(self, conversation_id: str) -> dict[str, Any] | None:
+        from app.core.conversation.service import ensure_conversation_runtime_state
+        try:
+            ensure_conversation_runtime_state(conversation_id)
+        except LookupError:
+            return None
         with SessionLocal() as session:
             record = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
             if not record:
@@ -3366,6 +3371,8 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         payload["stage_workspaces"] = SinoBrainRuntime._stage_workspaces(payload)
         payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] == "active"), "asset_commit" if record.stage == "conversation_completed" else "package")
         route = dict(payload["discovery"].get("task_complexity_route") or {})
+        from app.founder_ai.execution_progress import build_execution_progress
+        payload["execution_progress"] = build_execution_progress(route)
         if payload["discovery"].get("autonomous_main_loop"):
             payload["active_workspace_stage"] = next((item["stage_key"] for item in payload["stage_workspaces"] if item["status"] in {"active", "blocked"}), "complete")
         if route.get("classification") == "QUICK_FIX":
@@ -3391,6 +3398,15 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
     @staticmethod
     def _current_action(brain):
         route = dict((brain.get("discovery") or {}).get("task_complexity_route") or {})
+        progress = brain.get("execution_progress")
+        if progress:
+            return {
+                "action_id": "canonical_execution_progress", "title": progress["current_action"],
+                "description": progress["next_action"], "status_label": f"{progress['progress_percent']}%",
+                "timing_started_at": progress.get("started_at"), "timing_completed_at": progress.get("completed_at"),
+                "progress_percent": progress["progress_percent"], "founder_action_required": progress["founder_action_required"],
+                "stalled": progress["stalled"], "primary_label": None,
+            }
         autonomous = dict((brain.get("discovery") or {}).get("autonomous_main_loop") or {})
         if autonomous:
             status = autonomous.get("status")

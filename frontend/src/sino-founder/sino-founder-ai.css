@@ -1081,6 +1081,10 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-founder-action-card h2 { margin: 5px 0 4px; color: #e2e9e0; font: 600 17px/1.4 var(--font-sans); }
 .sino-founder-action-card h2 time{float:right;color:#8f9a8d;font:500 12px/1.8 var(--font-mono,monospace)}
 .sino-founder-action-card p { margin: 0; color: #9da79b; font: 400 14px/1.65 var(--font-serif); }
+.sino-execution-progress { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-top: 12px; }
+.sino-execution-progress::before { content: ""; grid-column: 1; grid-row: 1; height: 6px; border-radius: 999px; background: #283028; }
+.sino-execution-progress i { grid-column: 1; grid-row: 1; z-index: 1; height: 6px; border-radius: 999px; background: var(--accent); }
+.sino-execution-progress strong { grid-column: 2; grid-row: 1; color: #b9c2b7; font: 600 12px/1 var(--font-mono, monospace); }
 .sino-founder-action-card footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .sino-founder-action-card button { min-height: 34px; padding: 0 14px; border: 1px solid #394339; border-radius: 7px; background: transparent; color: #b9c2b7; font: 550 12px/1 var(--font-sans); }
 .sino-founder-action-card button.is-primary { border-color: var(--accent); background: var(--accent); color: #071007; opacity: 1; visibility: visible; }

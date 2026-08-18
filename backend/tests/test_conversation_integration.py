@@ -28,6 +28,8 @@ def test_new_conversation_is_bound_to_founder_ai():
     assert body["created_by"] == "FOUNDER"
     assert body["visibility"] == "conversation_list"
     assert body["lifecycle_status"] == "active"
+    assert body["initialization_status"] == "ready"
+    assert body["brain_ready"] is True and body["workspace_ready"] is True
 
 
 def test_conversation_can_be_listed_and_read():

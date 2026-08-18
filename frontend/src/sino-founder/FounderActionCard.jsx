@@ -39,7 +39,7 @@ export function FounderActionCard({ action, busy, onConfirmGoal, onReviseGoal, o
     return onContinueDiscussion?.();
   };
   return <article className={`sino-founder-action-card${compact ? " is-compact" : ""}`} aria-label="当前行动">
-    <span>Current Action</span><h2>{action.title} <Elapsed startedAt={action.timing_started_at} completedAt={action.timing_completed_at} /></h2><p>{action.description}</p>{action.status_label ? <small>{action.status_label}</small> : null}
+    <span>Current Action</span><h2>{action.title} <Elapsed startedAt={action.timing_started_at} completedAt={action.timing_completed_at} /></h2><p>{action.description}</p>{Number.isFinite(action.progress_percent) ? <div className="sino-execution-progress" aria-label={`任务进度 ${action.progress_percent}%`}><i style={{ width: `${action.progress_percent}%` }} /><strong>{action.progress_percent}%</strong></div> : null}{action.founder_action_required === false ? <small>Founder：无需操作</small> : action.founder_action_required === true ? <small>Founder：需要操作</small> : action.status_label ? <small>{action.status_label}</small> : null}
     {!readOnly && (action.primary_label || action.secondary_label || action.danger_label) ? <footer>{action.primary_label ? <button type="button" className="is-primary" disabled={busy || ["asset_commit", "project_maturity_evaluating"].includes(id)} onClick={primary}>{action.primary_label}</button> : null}{action.secondary_label ? <button type="button" disabled={busy} onClick={secondary}>{action.secondary_label}</button> : null}{action.danger_label ? <button type="button" className="is-danger" disabled={busy} onClick={() => onReviewPackage?.("return")}>{action.danger_label}</button> : null}</footer> : null}
   </article>;
 }

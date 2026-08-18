@@ -123,6 +123,7 @@ def test_execution_package_revalidation_api_reuses_resolved_conversation(monkeyp
 
 
 def test_discuss_route_accepts_and_forwards_constitution_interaction_context(monkeypatch):
+    monkeypatch.setattr(api, "ensure_conversation_runtime_state", lambda cid: {"conversation_id": cid})
     captured = {}
     monkeypatch.setattr(api, "resolve_conversation_id", lambda value: value)
     monkeypatch.setattr(api.brain_runtime, "process_message", lambda cid, content, interaction_context=None: captured.update({"conversation_id": cid, "content": content, "interaction_context": interaction_context}) or {"handled": True, "intent": "work_item_semantic_refresh", "message_type": "work_item_semantic_refresh", "reply": "updated", "brain": {"active_workspace_stage": "goal"}})
@@ -139,6 +140,7 @@ def test_clear_quick_fix_message_dispatches_autonomous_execution_without_continu
     from app.founder_ai import quick_fix_execution
 
     dispatched = []
+    monkeypatch.setattr(api, "ensure_conversation_runtime_state", lambda cid: {"conversation_id": cid})
     monkeypatch.setattr(api, "resolve_conversation_id", lambda value: value)
     monkeypatch.setattr(api.brain_runtime, "process_message", lambda cid, content, interaction_context=None: {
         "handled": True, "intent": "quick_fix", "message_type": "quick_fix", "reply": "auto",

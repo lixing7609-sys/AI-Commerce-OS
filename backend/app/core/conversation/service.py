@@ -53,9 +53,29 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
                 system_id=FOUNDER_SYSTEM_KEY,
             )
         )
+        session.add(SinoBrainSessionDB(conversation_id=record.id, project_id=project_id))
         session.commit()
         session.refresh(record)
         return record
+
+
+def ensure_conversation_runtime_state(conversation_id: str) -> dict:
+    """Idempotently restore the durable Context and Brain for an existing Conversation."""
+    with SessionLocal() as session:
+        conversation = session.get(ConversationDB, conversation_id)
+        if conversation is None or conversation.system_id != FOUNDER_SYSTEM_KEY:
+            raise LookupError("Founder AI conversation not found")
+        context = session.scalar(select(ConversationContextDB).where(ConversationContextDB.conversation_id == conversation_id))
+        brain = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+        repaired = []
+        if context is None:
+            context = ConversationContextDB(conversation_id=conversation_id, system_id=FOUNDER_SYSTEM_KEY)
+            session.add(context); repaired.append("workspace")
+        if brain is None:
+            brain = SinoBrainSessionDB(conversation_id=conversation_id, project_id=conversation.project_id)
+            session.add(brain); repaired.append("brain")
+        session.commit(); session.refresh(brain)
+        return {"conversation_id": conversation_id, "brain_id": brain.id, "brain_ready": True, "workspace_ready": True, "repaired": repaired}
 
 
 def list_conversations(*, scope: str = "all", project_id: str | None = None) -> list[ConversationDB]:
