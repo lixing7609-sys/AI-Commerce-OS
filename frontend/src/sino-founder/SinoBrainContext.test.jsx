@@ -22,6 +22,14 @@ describe("SinoBrainContext", () => {
     expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
     expect(screen.queryByRole("button", { name: "修改目标" })).toBeNull();
   });
+  it("projects a Standard Task without Goal confirmation or Strategy actions", () => {
+    render(<SinoBrainContext brain={{ stage: "standard_task", discovery: { task_complexity_route: { classification: "STANDARD_TASK", current_step: "execution", execution_status: "execution", standard_task_contract: { target_surface: "Capability Repository" } } } }} />);
+    expect(screen.getAllByText("Standard Task")).toHaveLength(2);
+    expect(screen.getByText("Capability Repository")).toBeTruthy();
+    expect(screen.getByText("Not Required")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
+    expect(screen.queryByText("确认后开始 Strategy Meeting。" )).toBeNull();
+  });
   it("projects a screenshot-grounded removal target and action", () => {
     render(<SinoBrainContext brain={{ discovery: { task_complexity_route: { classification: "QUICK_FIX", clarification_required: false, founder_gate_required: false, quick_fix_contract: { target_area: "Left Sidebar / Projects Header", visual_target: 'chevron immediately left of the "+" control', operation: "REMOVE_UI_ELEMENT" } } } }} />);
     expect(screen.getByText('chevron immediately left of the "+" control')).toBeTruthy();

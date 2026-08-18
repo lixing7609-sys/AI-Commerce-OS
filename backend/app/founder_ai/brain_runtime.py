@@ -3376,6 +3376,15 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
                 for index, (key, label) in enumerate((("issue", "问题"), ("inspect", "定位"), ("fix", "修复"), ("verify", "验证"), ("complete", "完成")))
             ]
             payload["active_workspace_stage"] = current_step
+        if route.get("classification") == "STANDARD_TASK" and route.get("standard_task_contract"):
+            current_step = route.get("current_step") or "inspect"
+            labels = {"inspect": "Inspect", "plan": "Plan", "execution": "Execution", "verification": "Verification", "checkpoint": "Checkpoint", "learning": "Learning", "closure": "Closure", "complete": "Completed"}
+            current_index = list(labels).index(current_step)
+            payload["stage_workspaces"] = [
+                {"stage_key": key, "label": label, "status": "completed" if index < current_index else "active" if index == current_index else "pending", "message_refs": list(payload["source_message_refs"]) if index <= current_index else []}
+                for index, (key, label) in enumerate(labels.items())
+            ]
+            payload["active_workspace_stage"] = current_step
         payload["current_action"] = SinoBrainRuntime._current_action(payload)
         return payload
 
@@ -3415,6 +3424,16 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
                 "completed": ("quick_fix_completed", "已完成，等待 Founder 验收", "Quick Fix 已完成并通过验证。"),
             }
             action_id, title, description = actions.get(status, actions["inspecting"])
+            return {"action_id": action_id, "title": title, "description": description, "primary_label": None}
+        if route.get("classification") == "STANDARD_TASK" and route.get("standard_task_contract"):
+            status = route.get("execution_status") or "inspecting"
+            actions = {
+                "inspecting": ("standard_inspecting", "正在检查实现", "Sino 正在读取现有 Capability Repository 数据与列表组件。"),
+                "execution": ("standard_executing", "正在自动实施", "Implementation Plan 已冻结，Codex 正在受控执行。"),
+                "verification": ("standard_verifying", "正在验证", "Sino 正在运行定向测试、构建与页面验收。"),
+                "completed": ("standard_completed", "已完成，等待 Founder 验收", "Standard Task 已通过验证、Learning 与 Closure。"),
+            }
+            action_id, title, description = actions.get(status, actions["execution"])
             return {"action_id": action_id, "title": title, "description": description, "primary_label": None}
         lifecycle = brain.get("project_lifecycle") or {}
         if lifecycle.get("rank", 0) >= 300 and lifecycle.get("current_action"):

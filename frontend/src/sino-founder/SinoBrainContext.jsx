@@ -44,12 +44,13 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
   const brief = brain.goal_brief || {};
   const quickFixRoute = brain.discovery?.task_complexity_route;
   const isQuickFix = quickFixRoute?.classification === "QUICK_FIX";
+  const isStandardTask = quickFixRoute?.classification === "STANDARD_TASK" && Boolean(quickFixRoute?.standard_task_contract);
   const autonomousLoop = brain.discovery?.autonomous_main_loop;
   const decision = brain.decision || {};
   const understanding = brain.discovery?.working_understanding || {};
   const risk = decision.key_risks?.[0] || "暂无关键风险";
   const question = decision.remaining_unknowns?.[0] || brief.unknowns?.[0] || "暂无待确认问题";
-  const action = isQuickFix ? null : capabilityAction || brain.current_action || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "确认后开始 Strategy Meeting。", primary_label: "开始讨论", secondary_label: "修改目标" } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "确认后把讨论成果沉淀为候选能力。", primary_label: "批准候选能力", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
+  const action = isQuickFix || isStandardTask ? null : capabilityAction || brain.current_action || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "确认后开始 Strategy Meeting。", primary_label: "开始讨论", secondary_label: "修改目标" } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "确认后把讨论成果沉淀为候选能力。", primary_label: "批准候选能力", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
   const constitution = brain.message_intent === "project_context_update" ? brain.constitution_understanding || {} : null;
   const workItems = constitution?.proposed_work_items || [];
   const reviewedWorkItems = workItems.filter((item) => item.founder_decision && item.founder_decision !== "pending").length;
@@ -65,10 +66,12 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
   const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
   return <section className="sino-brain-context sino-brain-dashboard" aria-label="Brain Dashboard">
-    {!projectAware && !isQuickFix ? <FounderActionCard compact action={action} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} /> : null}
-    <header><h2>{constitution ? "Constitution Review Status" : "Brain Dashboard"}</h2><span>{isQuickFix ? "Quick Fix" : autonomousLoop ? "Autonomous Capability Build" : projectLifecycle?.rank >= 300 ? projectLifecycle.stage_label : STAGE_LABELS[brain.stage] || brain.stage}</span></header>
+    {!projectAware && !isQuickFix && !isStandardTask ? <FounderActionCard compact action={action} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} /> : null}
+    <header><h2>{constitution ? "Constitution Review Status" : "Brain Dashboard"}</h2><span>{isQuickFix ? "Quick Fix" : isStandardTask ? "Standard Task" : autonomousLoop ? "Autonomous Capability Build" : projectLifecycle?.rank >= 300 ? projectLifecycle.stage_label : STAGE_LABELS[brain.stage] || brain.stage}</span></header>
     {isQuickFix ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Task Type</dt><dd>Quick Fix</dd></div><div><dt>Visual Target</dt><dd>{quickFixRoute.quick_fix_contract?.visual_target || quickFixRoute.quick_fix_contract?.target_area}</dd></div><div><dt>Action</dt><dd>{quickFixRoute.quick_fix_contract?.operation === "REMOVE_UI_ELEMENT" ? "Remove UI Element" : "Bounded UI Fix"}</dd></div><div><dt>Current Step</dt><dd>{quickFixRoute.execution_status === "completed" ? "Completed" : quickFixRoute.clarification_required ? "需要确认目标位置" : "自动推进"}</dd></div><div><dt>Founder Decision</dt><dd>Not Required</dd></div><div><dt>Next Action</dt><dd>{quickFixRoute.execution_status === "completed" ? "等待 Founder 验收" : quickFixRoute.clarification_required ? "补充目标位置后继续 Quick Fix" : "Sino 自动执行"}</dd></div>
+    </dl> : isStandardTask ? <dl className="sino-brain-dashboard__grid">
+      <div><dt>Task Type</dt><dd>Standard Task</dd></div><div><dt>Target</dt><dd>{quickFixRoute.standard_task_contract?.target_surface}</dd></div><div><dt>Current Step</dt><dd>{quickFixRoute.current_step}</dd></div><div><dt>Execution</dt><dd>{quickFixRoute.execution_status}</dd></div><div><dt>Founder Decision</dt><dd>Not Required</dd></div><div><dt>Next Action</dt><dd>{quickFixRoute.execution_status === "completed" ? "等待 Founder 验收" : "Sino 自动执行"}</dd></div>
     </dl> : autonomousLoop ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Task Type</dt><dd>{autonomousLoop.task_type}</dd></div>
       <div><dt>Capability Gap</dt><dd>{autonomousLoop.capability_compatibility?.status}</dd></div>

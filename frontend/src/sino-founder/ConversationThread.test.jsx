@@ -7,6 +7,15 @@ const snapshot = (id, messages) => ({ conversation: { id }, messages });
 afterEach(() => cleanup());
 
 describe("ConversationThread layout", () => {
+  it("renders the Standard Task lane instead of the Strategy pipeline", () => {
+    const value = snapshot("standard-task", [{ message_id: "m1", role: "founder", content: "给能力仓库增加搜索" }]);
+    value.sino_brain = { active_workspace_stage: "execution", stage_workspaces: [{ stage_key: "execution", label: "Execution", status: "active", message_refs: ["m1"] }], discovery: { task_complexity_route: { classification: "STANDARD_TASK", standard_task_contract: { target_surface: "Capability Repository" }, current_step: "execution", execution_status: "execution" } } };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByLabelText("Standard Task 流程")).toBeTruthy();
+    expect(screen.getByText("Inspect → Plan → Execution → Verification → Learning → Closure")).toBeTruthy();
+    expect(screen.queryByText("Strategy Meeting")).toBeNull();
+    expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
+  });
   it("renders the bounded Quick Fix lane instead of the Strategy pipeline", () => {
     const value = snapshot("quick-fix", [{ message_id: "m1", role: "founder", content: "修一下左边栏折叠" }]);
     value.sino_brain = { ...(value.sino_brain || {}), active_workspace_stage: "issue", stage_workspaces: [

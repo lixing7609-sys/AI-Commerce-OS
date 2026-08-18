@@ -491,8 +491,15 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
                 image_context_status = "unavailable"
         if interaction_context.get("active_surface") != "constitution_review":
             interaction_context["task_complexity_route"] = route_task_complexity(request.content, image_understanding=interaction_context.get("grounded_multimodal_context") or interaction_context.get("image_understanding"), image_context_status=image_context_status)
-        brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=interaction_context or None)
         route = dict(interaction_context.get("task_complexity_route") or {})
+        is_standard_development = route.get("classification") == "STANDARD_TASK" and route.get("task_type") != "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required")
+        if is_standard_development:
+            from app.founder_ai.standard_task_execution import begin_standard_task, dispatch_standard_task
+            route = begin_standard_task(conversation_id=conversation_id, goal=request.content, route=route)
+            route = dispatch_standard_task(conversation_id=conversation_id, goal=request.content)
+            brain_turn = {"handled": True, "intent": "standard_task", "message_type": "standard_task", "reply": "已识别为明确的 Standard Development Task。Sino 将自动完成 Inspect → Plan → Execution → Verification → Closure，不进入 Strategy Meeting。", "brain": brain_runtime.snapshot(conversation_id)}
+        else:
+            brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=interaction_context or None)
         if route.get("classification") == "QUICK_FIX" and not route.get("clarification_required") and not route.get("founder_gate_required"):
             from app.founder_ai.quick_fix_execution import dispatch_quick_fix
             dispatch_quick_fix(conversation_id=conversation_id, goal=request.content)
