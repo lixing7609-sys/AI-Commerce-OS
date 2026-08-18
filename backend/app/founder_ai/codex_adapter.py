@@ -5,6 +5,7 @@ import hashlib
 import logging
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import time
@@ -39,7 +40,7 @@ class CodexExecutionResult:
 
 class SubprocessCodexAdapter:
     def __init__(self, command: str = "codex", timeout_seconds: float | None = None, task_package_builder=None):
-        self.command = command
+        self.command = self._resolve_command(command)
         self.task_package_builder = task_package_builder or TaskPackageBuilder()
         # Founder execution packages commonly include the full backend/frontend
         # verification suite. Ten minutes is too short for that bounded workflow,
@@ -48,6 +49,18 @@ class SubprocessCodexAdapter:
         self.timeout_seconds = timeout_seconds if timeout_seconds is not None else float(configured_timeout)
         if self.timeout_seconds <= 0:
             raise ValueError("Codex timeout must be greater than zero")
+
+    @staticmethod
+    def _resolve_command(command: str) -> str:
+        """Resolve Codex once so launchd's reduced PATH cannot break dispatch."""
+        if Path(command).is_absolute():
+            return command
+        configured = os.getenv("FOUNDER_CODEX_EXECUTABLE")
+        resolved = shutil.which(configured or command)
+        if resolved:
+            return resolved
+        user_install = Path.home() / ".npm-global" / "bin" / command
+        return str(user_install) if user_install.is_file() else command
 
     def execute(self, package: ExecutionPackage, *, cwd: Path) -> CodexExecutionResult:
         instruction_path = self.task_package_builder.write(package, cwd / ".founder-execution")

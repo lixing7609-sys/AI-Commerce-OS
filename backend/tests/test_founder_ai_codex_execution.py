@@ -112,6 +112,15 @@ def test_codex_adapter_allows_long_founder_execution_by_default(monkeypatch):
     assert adapter.timeout_seconds > 600
 
 
+def test_codex_adapter_resolves_user_install_when_service_path_is_reduced(monkeypatch, tmp_path):
+    executable = tmp_path / ".npm-global" / "bin" / "codex"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(codex_adapter_module.shutil, "which", lambda _command: None)
+    monkeypatch.setattr(codex_adapter_module.Path, "home", lambda: tmp_path)
+    assert SubprocessCodexAdapter().command == str(executable)
+
+
 def test_codex_adapter_timeout_remains_configurable(monkeypatch):
     monkeypatch.setenv("FOUNDER_CODEX_TIMEOUT_SECONDS", "900")
 
@@ -178,7 +187,8 @@ def test_codex_adapter_transports_small_and_large_context_via_stdin(monkeypatch,
     result = SubprocessCodexAdapter(timeout_seconds=10).execute(package, cwd=tmp_path)
 
     assert result.exit_code == 0
-    assert calls[0]["args"] == ["codex", "exec", "-"]
-    assert len(" ".join(calls[0]["args"])) < 32
+    assert Path(calls[0]["args"][0]).name == "codex"
+    assert calls[0]["args"][1:] == ["exec", "-"]
+    assert len(" ".join(calls[0]["args"])) < 128
     assert len(calls[0]["input"]) > context_size
     assert "y" * min(context_size, 1000) not in calls[0]["input"]
