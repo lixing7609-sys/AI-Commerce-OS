@@ -55,7 +55,7 @@ def build_execution_progress(route: dict) -> dict | None:
     route_step = route.get("current_step") or ("inspect" if classification == "STANDARD_TASK" else "issue")
     blocker = dict(route.get("technical_blocker") or {}) or None
     founder_required = bool(route.get("founder_gate_required"))
-    terminal = route.get("execution_status") == "completed" or bool(session and session.status == "completed" and session.commit_hash and not blocker)
+    terminal = not founder_required and (route.get("execution_status") == "completed" or bool(session and session.status == "completed" and session.commit_hash and not blocker))
     phase = "complete" if terminal else route_step
     if blocker and phase == "complete":
         phase = "verification" if "verification" in str(blocker.get("type")) else "execution"
@@ -85,7 +85,7 @@ def build_execution_progress(route: dict) -> dict | None:
     return {
         "task_id": execution.get("task_id") or (route.get("standard_task_contract") or route.get("quick_fix_contract") or {}).get("task_id"),
         "execution_id": session_id, "task_type": classification, "current_phase": phase,
-        "execution_status": "completed" if terminal else "stalled" if stalled else "blocked" if blocker else (session.status if session else route.get("execution_status")),
+        "execution_status": "waiting_for_founder_authorization" if founder_required else "completed" if terminal else "stalled" if stalled else "blocked" if blocker else (session.status if session else route.get("execution_status")),
         "verification_status": "PASS" if terminal else "BLOCKED" if blocker and phase in {"verification", "verify"} else "PENDING",
         "closure_status": "awaiting_founder_acceptance" if terminal else "pending",
         "founder_action_required": founder_required, "technical_blocker": blocker,

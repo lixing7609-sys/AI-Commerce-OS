@@ -10,6 +10,7 @@ import { ConstitutionUnderstandingCard } from "./ConstitutionUnderstandingCard.j
 import { ExecutionPackageCard, ImplementationPlanCard, ProjectMaturityCard } from "./ProjectMaturityCard.jsx";
 import { projectCurrentAction, projectMaturityProjection } from "./projectMaturityProjection.js";
 import { ImageModelProbeDecisionCard } from "./ImageModelProbeDecisionCard.jsx";
+import { ExternalModelProbeDecisionCard } from "./ExternalModelProbeDecisionCard.jsx";
 import { founderImageUrl } from "../services/founderAiApi.js";
 
 const MODEL_NAMES = { claude: "Claude", gpt: "GPT", deepseek: "DeepSeek" };
@@ -196,7 +197,7 @@ function ReuseSuggestions({ items, busy, onReuse, onDevelop }) {
   return <section className="sino-reuse-suggestions" aria-label="可复用能力"><span>Capability Repository</span><h2>检测到已有相关能力</h2>{items.map((item) => <article key={item.asset_id}><div><strong>{item.name} · V{item.version}</strong><p>{item.reuse_reason}</p><small>{item.domain_id} · {statusLabel(item.status)}</small></div>{item.can_reuse ? <button type="button" disabled={busy} onClick={() => onReuse?.(item)}>引用</button> : <button type="button" disabled={busy} onClick={() => onDevelop?.({ action_id: "candidates_saved", asset_id: item.asset_id })}>开发</button>}</article>)}</section>;
 }
 
-export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onReviewConstitution, onReviewProjectOutcome, onReviewImplementationPlan, onContinueProjectAnalysis, onReviewFounderGate, onImageProbeDecision, onArchitectureDecision, selectedConstitutionWorkItemId, onSelectConstitutionWorkItem, onContinueDiscussion, onViewAssets, onNewGoal, capabilityAction, capabilityAsset, capabilityError, onCapabilityAction, reuseSuggestions, onReuse, pendingAttachments = [], onAddImages, onRemoveImage }) {
+export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onReviewConstitution, onReviewProjectOutcome, onReviewImplementationPlan, onContinueProjectAnalysis, onReviewFounderGate, onImageProbeDecision, onExternalProbeDecision, onArchitectureDecision, selectedConstitutionWorkItemId, onSelectConstitutionWorkItem, onContinueDiscussion, onViewAssets, onNewGoal, capabilityAction, capabilityAsset, capabilityError, onCapabilityAction, reuseSuggestions, onReuse, pendingAttachments = [], onAddImages, onRemoveImage }) {
   const logRef = useRef(null);
   const conversationRef = useRef(null);
   const scrollAfterSendRef = useRef(false);
@@ -304,7 +305,10 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
       ? { ...currentAction, title: "需要 Founder 判断", description: [maturity.blocking_question || currentAction?.description, maturity.why_founder_needed ? `为什么需要 Founder：${maturity.why_founder_needed}` : maturity.reason, maturity.sino_recommendation ? `Sino 建议：${maturity.sino_recommendation}` : null, maturity.recommendation_reason ? `建议理由：${maturity.recommendation_reason}` : null].filter(Boolean).join("\n\n"), primary_label: null, secondary_label: null }
       : currentAction;
   const imageProbeDecisionVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
-  const timelineAction = activeStage !== currentStage ? null : imageProbeDecisionVisible
+  const externalProbeGate = quickFixRoute?.founder_gate_contract?.gate_type === "EXTERNAL_MODEL_PROBE" ? quickFixRoute.founder_gate_contract : null;
+  const timelineAction = activeStage !== currentStage ? null : externalProbeGate
+    ? <ExternalModelProbeDecisionCard gate={externalProbeGate} busy={busy} onDecision={onExternalProbeDecision} />
+    : imageProbeDecisionVisible
     ? <ImageModelProbeDecisionCard loop={autonomousLoop} busy={busy} onDecision={onImageProbeDecision} />
     : isStrategicTask
     ? <ArchitectureProposalCard key={quickFixRoute?.architecture_proposal?.proposal_id} proposal={quickFixRoute?.architecture_proposal} busy={busy} onDecision={onArchitectureDecision} />

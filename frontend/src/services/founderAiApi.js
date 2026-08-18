@@ -140,6 +140,10 @@ export function decideImageModelProbeGate(conversationId, action, boundary) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/image-model-probe-gate/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, boundary }) }, "记录 Image Model Probe Founder Decision 失败");
 }
 
+export function decideExternalModelProbeGate(conversationId, action, boundary) {
+  return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/external-model-probe-gate/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, boundary }) }, "记录 External Model Probe Founder Decision 失败");
+}
+
 export function decideArchitectureProposal(conversationId, proposalId, action, proposalVersion, founderFeedback) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/brain/architecture-proposals/${encodeURIComponent(proposalId)}/decision`, {
     method: "POST", headers: { "Content-Type": "application/json" },

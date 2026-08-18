@@ -229,6 +229,10 @@ class ImageModelProbeDecisionIn(BaseModel):
     action: str
     boundary: dict[str, Any] | None = None
 
+class ExternalModelProbeDecisionIn(BaseModel):
+    action: str
+    boundary: dict[str, Any] | None = None
+
 class ArchitectureProposalDecisionIn(BaseModel):
     action: str
     proposal_version: int = Field(ge=1)
@@ -741,6 +745,19 @@ def decide_image_model_probe(conversation_id: str, request: ImageModelProbeDecis
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/external-model-probe-gate/decision", response_model=dict[str, Any])
+def decide_external_model_probe(conversation_id: str, request: ExternalModelProbeDecisionIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        from app.founder_ai.standard_task_founder_gate import decide_external_model_probe_gate
+        decide_external_model_probe_gate(conversation_id, action=request.action, boundary=request.boundary)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except (ValueError, PermissionError) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
