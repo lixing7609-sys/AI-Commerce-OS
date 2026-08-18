@@ -2,10 +2,10 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CapabilityCenter, CapabilityContext, DraftContext } from "./CapabilityWorkspace.jsx";
-import { getCapabilityDomains, getCapabilityRepositoryAssets, getFounderDraft, getFounderDrafts, getLifecycleAsset, performConversationCapabilityAction } from "../services/founderAiApi.js";
+import { CapabilityCenter, CapabilityContext, DraftContext, ExternalModelHealthCheck } from "./CapabilityWorkspace.jsx";
+import { checkModelProvider, getCapabilityDomains, getCapabilityRepositoryAssets, getFounderDraft, getFounderDrafts, getLifecycleAsset, getModelCenter, performConversationCapabilityAction } from "../services/founderAiApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({ getCapabilityDomains: vi.fn(), getCapabilityRepositoryAssets: vi.fn(), getFounderDraft: vi.fn(), getFounderDrafts: vi.fn(), getLifecycleAsset: vi.fn(), performConversationCapabilityAction: vi.fn() }));
+vi.mock("../services/founderAiApi.js", () => ({ checkModelProvider: vi.fn(), getCapabilityDomains: vi.fn(), getCapabilityRepositoryAssets: vi.fn(), getFounderDraft: vi.fn(), getFounderDrafts: vi.fn(), getLifecycleAsset: vi.fn(), getModelCenter: vi.fn(), performConversationCapabilityAction: vi.fn() }));
 const skill = { asset_id: "asset-skill", asset_type: "skill", domain_id: "commerce", name: "商品分镜生成 Skill", purpose: "生成结构化商品分镜", status: "candidate", version: 1, used_by_refs: [], dependency_refs: [], test_run_refs: [], available_actions: ["develop", "archive", "continue_discussion"] };
 const workflow = { ...skill, asset_id: "asset-workflow", asset_type: "workflow", name: "营销发布 Workflow" };
 function Harness() { const [selected, setSelected] = useState(null); return <><CapabilityCenter section="lifecycle" selected={selected} onSelect={setSelected} /><CapabilityContext selected={selected} onChanged={setSelected} /></>; }
@@ -73,6 +73,34 @@ describe("AI Capability Center IA", () => {
     render(<CapabilityContext selected={ready} conversationId="conv-current" onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "引用" }));
     await waitFor(() => expect(performConversationCapabilityAction).toHaveBeenCalledWith("conv-current", expect.objectContaining({ action: "reuse", target_asset_id: "asset-skill", target_id: "conv-current" })));
+  });
+});
+
+describe("External model connection health", () => {
+  const provider = { provider_key: "deepseek", display_name: "DeepSeek", configured: true, health_status: "healthy", last_health_check_at: "2026-08-18T02:00:00Z" };
+  beforeEach(() => { vi.clearAllMocks(); getModelCenter.mockResolvedValue({ providers: [provider] }); });
+  afterEach(cleanup);
+  it("shows the configured status without calling the external health probe", async () => {
+    render(<ExternalModelHealthCheck providerKey="deepseek" />);
+    expect(await screen.findByText("连接正常")).toBeTruthy();
+    expect(screen.getByText("已配置")).toBeTruthy();
+    expect(checkModelProvider).not.toHaveBeenCalled();
+  });
+  it("requires explicit Founder authorization before a potentially paid probe", async () => {
+    checkModelProvider.mockResolvedValue({ status: "healthy", configuration: provider });
+    render(<ExternalModelHealthCheck providerKey="deepseek" />);
+    fireEvent.click(await screen.findByRole("button", { name: "检查连接状态" }));
+    expect(screen.getByRole("alertdialog", { name: "Founder 健康检查授权" })).toBeTruthy();
+    expect(checkModelProvider).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "授权并检查" }));
+    await waitFor(() => expect(checkModelProvider).toHaveBeenCalledWith("deepseek"));
+  });
+  it("can cancel authorization without an external call", async () => {
+    render(<ExternalModelHealthCheck providerKey="deepseek" />);
+    fireEvent.click(await screen.findByRole("button", { name: "检查连接状态" }));
+    fireEvent.click(screen.getByRole("button", { name: "暂不授权" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(checkModelProvider).not.toHaveBeenCalled();
   });
 });
 

@@ -1434,6 +1434,18 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-capability-candidates article { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--border-default); }
 .sino-capability-candidates article div { display: grid; gap: 4px; }
 .sino-capability-candidates article span, .sino-workspace-row__identity small { color: var(--text-muted); font-size: var(--font-label); }
+.sino-model-health-check { display: grid; gap: 12px; margin: 18px 0; padding: 16px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-raised); }
+.sino-model-health-check > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.sino-model-health-check h3 { margin: 4px 0 0; color: var(--text-primary); }
+.sino-model-health-check > header > strong { color: var(--text-muted); font-size: var(--font-body-small); }
+.sino-model-health-check > header > strong[data-health="healthy"] { color: var(--accent); }
+.sino-model-health-check > header > strong[data-health="unhealthy"] { color: #d8b99e; }
+.sino-model-health-check dl { margin: 0; }
+.sino-model-health-authorization { display: grid; gap: 8px; padding: 13px 14px; border-left: 3px solid #b49072; background: rgba(180,144,114,.08); }
+.sino-model-health-authorization p { margin: 0; color: var(--text-secondary); line-height: 1.5; }
+.sino-model-health-authorization > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.sino-model-health-authorization button { padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: 7px; background: transparent; color: var(--text-primary); cursor: pointer; }
+.sino-model-health-authorization button.is-primary { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
 @media (max-width: 820px) { .sino-capability-timeline { grid-template-columns: repeat(4, minmax(0, 1fr)); } .sino-capability-lifecycle-card__identity div, .sino-capability-test-result dl div { grid-template-columns: 1fr; gap: 3px; } }
 .sino-project-maturity{margin:0 24px 12px;padding:12px 0;border:0;border-bottom:1px solid var(--border-default);background:transparent}
 .sino-project-maturity>header span,.sino-founder-input-required>span,.sino-outcome-review>span{color:var(--text-label);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
