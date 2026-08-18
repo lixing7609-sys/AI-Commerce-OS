@@ -27,6 +27,19 @@ function conversationTimestamp(item) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+export function compareConversationIdentity(left, right) {
+  const updated = conversationTimestamp(right) - conversationTimestamp(left);
+  if (updated) return updated;
+  const leftCreated = new Date(left.createdAt ?? left.created_at ?? 0).getTime() || 0;
+  const rightCreated = new Date(right.createdAt ?? right.created_at ?? 0).getTime() || 0;
+  if (rightCreated !== leftCreated) return rightCreated - leftCreated;
+  return String(right.id ?? right.conversation_id ?? "").localeCompare(String(left.id ?? left.conversation_id ?? ""));
+}
+
+export function stableConversationOrder(items) {
+  return [...items].sort(compareConversationIdentity);
+}
+
 function conversationTimeLabel(item, now) {
   const timestamp = conversationTimestamp(item);
   if (!timestamp) return "";
@@ -40,7 +53,7 @@ function conversationTimeLabel(item, now) {
 
 function ConversationList({ items, now, projects, activeConversationId, onSelectConversation, onDeleteConversation, onMoveConversation }) {
   const [menu, setMenu] = useState(null);
-  return <div className="sino-conversation-list">{items.map((item) => <div key={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b><small>{conversationTimeLabel(item, now)}</small></button><button type="button" className="sino-conversation-item__menu" aria-label={`会话操作 ${item.title}`} onClick={() => setMenu(menu === item.id ? null : item.id)}>···</button>{menu === item.id ? <div className="sino-sidebar-popover sino-conversation-move-menu"><strong>Move to Project</strong>{projects.filter((project) => project.id !== item.project_id).map((project) => <button key={project.id} type="button" onClick={() => { onMoveConversation(item.id, project.id); setMenu(null); }}>{project.name}</button>)}{item.project_id ? <button type="button" onClick={() => { onMoveConversation(item.id, null); setMenu(null); }}>移出 Project</button> : null}<button type="button" onClick={() => onDeleteConversation(item)}>删除会话</button></div> : null}</div>)}</div>;
+  return <div className="sino-conversation-list">{items.map((item) => <div key={item.id} data-conversation-id={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b><small>{conversationTimeLabel(item, now)}</small></button><button type="button" className="sino-conversation-item__menu" aria-label={`会话操作 ${item.title}`} onClick={() => setMenu(menu === item.id ? null : item.id)}>···</button>{menu === item.id ? <div className="sino-sidebar-popover sino-conversation-move-menu"><strong>Move to Project</strong>{projects.filter((project) => project.id !== item.project_id).map((project) => <button key={project.id} type="button" onClick={() => { onMoveConversation(item.id, project.id); setMenu(null); }}>{project.name}</button>)}{item.project_id ? <button type="button" onClick={() => { onMoveConversation(item.id, null); setMenu(null); }}>移出 Project</button> : null}<button type="button" onClick={() => onDeleteConversation(item)}>删除会话</button></div> : null}</div>)}</div>;
 }
 
 export function SecretarySidebar({ active, onNavigate, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject, onProjectsChanged }) {
@@ -55,7 +68,7 @@ export function SecretarySidebar({ active, onNavigate, conversations = [], activ
   const [editingProject, setEditingProject] = useState(null);
   const [projectAssignments, setProjectAssignments] = useState({});
   const [projectError, setProjectError] = useState("");
-  const founderConversations = conversations.filter((item) => !isDeveloperRecord(item)).sort((a, b) => conversationTimestamp(b) - conversationTimestamp(a));
+  const founderConversations = stableConversationOrder(conversations.filter((item) => !isDeveloperRecord(item)));
   const validProjectIds = new Set(projects.map((project) => project.id));
   const projectForConversation = (item) => {
     const projectId = Object.hasOwn(projectAssignments, item.id) ? projectAssignments[item.id] : item.project_id;

@@ -21,7 +21,7 @@ beforeEach(() => {
   getAssetMemoryCenter.mockResolvedValue({ artifacts: [], memories: [], executions: [] });
   getFounderProjects.mockResolvedValue(projects);
   getFounderConversations.mockRejectedValue(new Error("history unavailable"));
-  deleteFounderConversation.mockResolvedValue({ deleted: true });
+  deleteFounderConversation.mockImplementation(async (id) => ({ conversation_id: id, deleted: true }));
   getProjectIntelligence.mockResolvedValue(intelligence);
   getConversationWorkspace.mockResolvedValue(emptySnapshot);
   getFounderObjects.mockResolvedValue([]);

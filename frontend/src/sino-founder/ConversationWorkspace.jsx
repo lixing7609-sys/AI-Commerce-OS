@@ -16,6 +16,7 @@ import { ExecutionTimeline } from "./ExecutionTimeline.jsx";
 import { FounderHome, ProjectIntelligenceContext, ProjectWorkspace } from "./FounderHome.jsx";
 import { FounderGateProposalReview } from "./FounderGateProposalReview.jsx";
 import { SinoFounderShell } from "./SinoFounderShell.jsx";
+import { stableConversationOrder } from "./SecretarySidebar.jsx";
 import { SolutionCard } from "./SolutionCard.jsx";
 import { SystemBuilderPanel, SystemContext } from "./SystemBuilderPanel.jsx";
 import { TaskPlanCard } from "./TaskPlanCard.jsx";
@@ -53,7 +54,26 @@ export const normalizeFounderView = (next) => {
   if (next === "lifecycle") return "home";
   return next;
 };
-export const conversationResponseMatches = (requestedId, activeId, response) => Boolean(requestedId && requestedId === activeId && (response?.conversation?.id || requestedId) === requestedId);
+export const conversationResponseMatches = (requestedId, activeId, response) => {
+  const responseId = response?.conversation?.id || response?.conversation_id;
+  return Boolean(requestedId && requestedId === activeId && responseId === requestedId);
+};
+
+export const conversationListRecord = (item) => ({
+  id: item.id || item.conversation_id,
+  title: item.title || "新讨论",
+  state: item.state || item.conversation_state,
+  project_id: item.project_id || null,
+  updatedAt: item.updated_at || item.updatedAt || null,
+  createdAt: item.created_at || item.createdAt || null,
+});
+
+export const conversationFallbackAfterDelete = (items, deletedId) => {
+  const ordered = stableConversationOrder(items);
+  const deletedIndex = ordered.findIndex((item) => item.id === deletedId);
+  const remaining = ordered.filter((item) => item.id !== deletedId);
+  return remaining.length ? remaining[Math.min(Math.max(deletedIndex, 0), remaining.length - 1)] : null;
+};
 const queryView = () => { try { return new URLSearchParams(window.location.search).get("workspace"); } catch { return null; } };
 const queryObject = () => { try { return new URLSearchParams(window.location.search).get("object"); } catch { return null; } };
 
@@ -167,12 +187,17 @@ export function ConversationWorkspace() {
     return () => { active = false; };
   }, [view, persistWorkspace]);
 
-  const rememberConversation = useCallback((id, title = "新讨论") => {
+  const rememberConversation = useCallback((id, title = "新讨论", metadata = {}) => {
     if (!id) return;
     setConversations((current) => {
       const previous = current.find((item) => item.id === id);
-      const resolvedTitle = previous?.title && previous.title !== "新讨论" ? previous.title : title;
-      const next = [{ id, title: resolvedTitle.slice(0, 36), state: previous?.state, project_id: previous?.project_id || null, updatedAt: Date.now() }, ...current.filter((item) => item.id !== id)];
+      const resolvedTitle = title && title !== "新讨论" ? title : previous?.title || title;
+      const nextRecord = conversationListRecord({
+        ...previous, ...metadata, id, title: resolvedTitle.slice(0, 36),
+        updatedAt: metadata.updated_at || metadata.updatedAt || previous?.updatedAt || null,
+        createdAt: metadata.created_at || metadata.createdAt || previous?.createdAt || null,
+      });
+      const next = stableConversationOrder([nextRecord, ...current.filter((item) => item.id !== id)]);
       remember(CONVERSATION_HISTORY_KEY, JSON.stringify(next));
       return next;
     });
@@ -189,11 +214,11 @@ export function ConversationWorkspace() {
 
   const applyConversationSnapshot = useCallback((id, restored) => {
     const resolvedId = restored.conversation?.id || id;
-    if (!conversationResponseMatches(id, activeConversationRef.current || id, restored)) return false;
+    if (!conversationResponseMatches(id, activeConversationRef.current, restored)) return false;
     setConversationId(resolvedId); setSnapshot(restored); setDiscussionMessage(""); setExecutionMessage(""); setError("");
     setActiveProjectId(restored.conversation?.project_id || null); setProjectIntelligence(null);
     remember(CONVERSATION_KEY, resolvedId); remember(PROJECT_KEY, restored.conversation?.project_id || null);
-    rememberConversation(resolvedId, founderConversationTitle(restored.conversation?.title || restored.messages?.[0]?.content, restored.sino_brain?.goal_brief?.goal));
+    rememberConversation(resolvedId, founderConversationTitle(restored.conversation?.title || restored.messages?.[0]?.content, restored.sino_brain?.goal_brief?.goal), restored.conversation);
     const restoredGoal = restored.goals?.find((item) => ["goal_confirmed", "planning"].includes(item.status)) || restored.goals?.[0] || null;
     setGoal(restoredGoal);
     if (restored.active_execution) { setExecution(restored.active_execution); setExecutionId(restored.active_execution.id); setApproved(Boolean(restored.active_execution.execution_allowed)); remember(EXECUTION_KEY, restored.active_execution.id); }
@@ -208,7 +233,7 @@ export function ConversationWorkspace() {
     setSnapshot(restored);
     setActiveProjectId(restored.conversation?.project_id || null);
     remember(PROJECT_KEY, restored.conversation?.project_id || null);
-    rememberConversation(restored.conversation?.id || id, founderConversationTitle(restored.conversation?.title || restored.messages?.[0]?.content, restored.sino_brain?.goal_brief?.goal));
+    rememberConversation(restored.conversation?.id || id, founderConversationTitle(restored.conversation?.title || restored.messages?.[0]?.content, restored.sino_brain?.goal_brief?.goal), restored.conversation);
     const restoredGoal = restored.goals?.find((item) => ["goal_confirmed", "planning"].includes(item.status)) || restored.goals?.[0];
     if (restoredGoal) setGoal(restoredGoal);
     if (restored.active_execution) {
@@ -226,13 +251,14 @@ export function ConversationWorkspace() {
     let active = true;
     getConversationWorkspace(conversationId).then((restored) => {
       if (!active) return;
+      if (!conversationResponseMatches(conversationId, activeConversationRef.current, restored)) return;
       const resolvedId = restored.conversation?.id || conversationId;
       if (resolvedId !== conversationId) setConversationId(resolvedId);
       setSnapshot(restored);
       setActiveProjectId(restored.conversation?.project_id || null);
       remember(PROJECT_KEY, restored.conversation?.project_id || null);
       remember(CONVERSATION_KEY, resolvedId);
-      rememberConversation(resolvedId, founderConversationTitle(restored.conversation?.title || restored.messages?.[0]?.content, restored.sino_brain?.goal_brief?.goal));
+      rememberConversation(resolvedId, founderConversationTitle(restored.conversation?.title || restored.messages?.[0]?.content, restored.sino_brain?.goal_brief?.goal), restored.conversation);
       const restoredGoal = restored.goals?.find((item) => ["goal_confirmed", "planning"].includes(item.status)) || restored.goals?.[0];
       if (restoredGoal) setGoal(restoredGoal);
       if (restored.active_execution) {
@@ -245,7 +271,7 @@ export function ConversationWorkspace() {
     let active = true;
     getFounderConversations().then((items) => {
       if (!active) return;
-      const valid = items.map((item) => ({ id: item.id, title: item.title, state: item.state, project_id: item.project_id || null, updatedAt: new Date(item.updated_at || item.created_at || 0).getTime() || Date.now() }));
+      const valid = stableConversationOrder(items.map(conversationListRecord));
       setConversations(valid); remember(CONVERSATION_HISTORY_KEY, JSON.stringify(valid));
       const activeId = stored(CONVERSATION_KEY);
       if (activeId && !valid.some((item) => item.id === activeId) && activeId !== conversationId) remember(CONVERSATION_KEY, null);
@@ -272,7 +298,7 @@ export function ConversationWorkspace() {
     setProjectLoading(true); setProjectLoadError("");
     getProjectIntelligence(activeProjectId).then((value) => { if (active) {
       setProjectIntelligence(value); setProjectLoading(false); refreshProjects().catch(() => {});
-      getFounderConversations().then((items) => { if (!active) return; const valid = items.map((item) => ({ id: item.id, title: item.title, state: item.state, project_id: item.project_id || null, updatedAt: new Date(item.updated_at || item.created_at || 0).getTime() || Date.now() })); setConversations(valid); remember(CONVERSATION_HISTORY_KEY, JSON.stringify(valid)); }).catch(() => {});
+      getFounderConversations().then((items) => { if (!active) return; const valid = stableConversationOrder(items.map(conversationListRecord)); setConversations(valid); remember(CONVERSATION_HISTORY_KEY, JSON.stringify(valid)); }).catch(() => {});
       getFounderDrafts().then((data) => { if (active) setDrafts(data.drafts || []); }).catch(() => {});
     } }).catch((requestError) => {
       if (!active) return;
@@ -325,7 +351,7 @@ export function ConversationWorkspace() {
           remember(CONVERSATION_KEY, id);
         }
       }
-      if (!id) { const conversation = await createFounderConversation("新讨论", activeProjectId); id = conversation.id; activeConversationRef.current = id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id); rememberConversation(id, "新讨论"); }
+      if (!id) { const conversation = await createFounderConversation("新讨论", activeProjectId); id = conversation.id; activeConversationRef.current = id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id); rememberConversation(id, "新讨论", conversation); }
       const uploadedAttachments = [];
       for (const attachment of pendingAttachments) uploadedAttachments.push(await uploadFounderImage(id, attachment.file));
       explicitNewConversationRef.current = false;
@@ -343,7 +369,7 @@ export function ConversationWorkspace() {
       if (uploadedAttachments.length && effectiveMode !== "sino") throw new Error("图片消息当前仅支持 Sino 模式");
       const nextSnapshot = effectiveMode === "council" ? await discussWithCouncil(id, content) : effectiveMode === "auto" ? await discussWithAutoDeliberation(id, content) : await discussWithSino(id, content, undefined, interactionContext, uploadedAttachments.map((item) => item.attachment_id));
       if (!conversationResponseMatches(id, activeConversationRef.current, nextSnapshot)) return;
-      setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); setSinoHealthy(true); rememberConversation(id, founderConversationTitle(nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content, nextSnapshot.sino_brain?.goal_brief?.goal));
+      setSnapshot(nextSnapshot); setDiscussionMessage(""); setReplyPending(false); setSinoHealthy(true); rememberConversation(id, founderConversationTitle(nextSnapshot.conversation?.title || nextSnapshot.messages?.[0]?.content || content, nextSnapshot.sino_brain?.goal_brief?.goal), nextSnapshot.conversation);
       setPendingAttachments((items) => { items.forEach((item) => URL.revokeObjectURL(item.preview)); return []; });
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
@@ -363,7 +389,7 @@ export function ConversationWorkspace() {
         try {
           const persisted = await getConversationWorkspace(id);
           setSnapshot(persisted); setDiscussionMessage(""); setView("conversation");
-          rememberConversation(id, founderConversationTitle(persisted.conversation?.title, persisted.sino_brain?.goal_brief?.goal));
+          rememberConversation(id, founderConversationTitle(persisted.conversation?.title, persisted.sino_brain?.goal_brief?.goal), persisted.conversation);
         } catch { setView("conversation"); }
       }
     }
@@ -561,7 +587,7 @@ export function ConversationWorkspace() {
     sendLockRef.current = true; setBusy(true); setError("");
     try {
       const nextSnapshot = pendingReplyMode === "council" ? await retryCouncil(conversationId) : await retrySinoReply(conversationId);
-      setSnapshot(nextSnapshot); setReplyPending(false); setSinoHealthy(true); rememberConversation(conversationId, founderConversationTitle(nextSnapshot.conversation?.title, nextSnapshot.sino_brain?.goal_brief?.goal));
+      setSnapshot(nextSnapshot); setReplyPending(false); setSinoHealthy(true); rememberConversation(conversationId, founderConversationTitle(nextSnapshot.conversation?.title, nextSnapshot.sino_brain?.goal_brief?.goal), nextSnapshot.conversation);
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
         catch (projectError) {
@@ -590,7 +616,7 @@ export function ConversationWorkspace() {
       const conversation = await createFounderConversation(`创建 ${label}`, activeProjectId);
       const prompt = `我们来创建一个新的 ${label}。请告诉我你希望解决什么问题。`;
       setCreationContext({ type, name: `${label} 名称待讨论`, prompt });
-      setConversationId(conversation.id); remember(CONVERSATION_KEY, conversation.id); rememberConversation(conversation.id, `创建 ${label}`);
+      activeConversationRef.current = conversation.id; setConversationId(conversation.id); remember(CONVERSATION_KEY, conversation.id); rememberConversation(conversation.id, `创建 ${label}`, conversation);
       setSnapshot({ conversation: { ...conversation, title: `创建 ${label}` }, messages: [{ message_id: `guide-${Date.now()}`, role: "sino", content: prompt }], founder_objects: [], object_candidates: [] });
       setDiscussionMessage(""); setView("conversation");
     } catch (requestError) { setError(requestError.message); }
@@ -620,13 +646,16 @@ export function ConversationWorkspace() {
   async function confirmDeleteConversation() {
     if (!deleteTarget || busy) return;
     const id = deleteTarget.id;
+    const fallback = conversationFallbackAfterDelete(conversations, id);
     setBusy(true); setError("");
     try {
-      await deleteFounderConversation(id);
+      const deleted = await deleteFounderConversation(id);
+      if (deleted?.conversation_id !== id || deleted?.deleted !== true) throw new Error("删除结果与目标 Conversation 不一致");
       removeConversationHistory(id);
       if (id === conversationId) {
-        setConversationId(null); setSnapshot(null); setDiscussionMessage(""); setExecutionMessage(""); setGoal(null); setExecutionId(null); setExecution(null); setApproved(false); setActiveProjectId(null); setProjectIntelligence(null);
-        remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); forgetProject(); setView("home");
+        activeConversationRef.current = null; resetConversationProjection(); setConversationId(null);
+        remember(CONVERSATION_KEY, null); forgetProject();
+        if (fallback) await selectConversation(fallback.id); else { setActiveProjectId(null); setProjectIntelligence(null); setView("home"); }
       }
       setDeleteTarget(null);
     } catch (requestError) { setError(requestError.message); }
@@ -644,6 +673,7 @@ export function ConversationWorkspace() {
       await bindFounderConversationProject(conversationId, id);
       setActiveProjectId(id); remember(PROJECT_KEY, id);
       const restored = await getConversationWorkspace(conversationId);
+      if (!conversationResponseMatches(conversationId, activeConversationRef.current, restored)) return;
       setSnapshot(restored);
       if (!id) setProjectIntelligence(null);
       else setProjectReloadKey((current) => current + 1);

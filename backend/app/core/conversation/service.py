@@ -57,7 +57,7 @@ def list_conversations() -> list[ConversationDB]:
                     ConversationDB.conversation_kind == "founder_discussion",
                     ConversationDB.id.notin_(hidden_ids),
                 )
-                .order_by(ConversationDB.updated_at.desc())
+                .order_by(ConversationDB.updated_at.desc(), ConversationDB.created_at.desc(), ConversationDB.id.desc())
             )
         )
         internal_title = re.compile(r"^(goal\s*(revision|confirmation|understanding|brief)?|intent|validation|decision|discussion\s*package|package)(\b|\s|[-_:])", re.I)

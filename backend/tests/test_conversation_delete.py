@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from datetime import UTC, datetime
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -51,3 +52,33 @@ def test_delete_missing_conversation_is_controlled(monkeypatch):
     try: conversation_service.delete_conversation("missing")
     except LookupError as error: assert str(error) == "Conversation not found"
     else: raise AssertionError("missing Conversation must not appear deleted")
+
+
+def test_list_order_is_deterministic_when_timestamps_match(monkeypatch):
+    factory = isolated(monkeypatch)
+    records = [conversation_service.create_conversation(title=f"Identity Test {label}") for label in "ABC"]
+    same = datetime(2026, 8, 18, 2, 27, tzinfo=UTC)
+    with factory() as session:
+        for record in session.query(type(records[0])).all():
+            record.created_at = same
+            record.updated_at = same
+        session.commit()
+    expected = sorted((record.id for record in records), reverse=True)
+    assert [record.id for record in conversation_service.list_conversations()] == expected
+    assert [record.id for record in conversation_service.list_conversations()] == expected
+
+
+def test_safe_delete_removes_only_requested_conversation(monkeypatch):
+    factory = isolated(monkeypatch)
+    records = [conversation_service.create_conversation(title=f"Identity Test {label}") for label in "ABC"]
+    for label, record in zip("ABC", records):
+        with factory() as session:
+            session.add(ConversationMessageDB(conversation_id=record.id, role="founder", content=f"这是 {label}"))
+            session.commit()
+    result = conversation_service.delete_conversation(records[1].id)
+    assert result == {"conversation_id": records[1].id, "deleted": True}
+    assert conversation_service.get_conversation(records[0].id).title == "Identity Test A"
+    assert conversation_service.get_conversation(records[2].id).title == "Identity Test C"
+    with factory() as session:
+        remaining = {row.conversation_id: row.content for row in session.query(ConversationMessageDB).all()}
+    assert remaining == {records[0].id: "这是 A", records[2].id: "这是 C"}

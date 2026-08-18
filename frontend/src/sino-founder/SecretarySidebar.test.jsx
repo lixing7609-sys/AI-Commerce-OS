@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SecretarySidebar } from "./SecretarySidebar.jsx";
+import { SecretarySidebar, stableConversationOrder } from "./SecretarySidebar.jsx";
 import { bindFounderConversationProject, createFounderProject, deleteFounderProject, updateFounderProject } from "../services/founderAiApi.js";
 
 vi.mock("../services/founderAiApi.js", () => ({ bindFounderConversationProject: vi.fn(), createFounderProject: vi.fn(), deleteFounderProject: vi.fn(), updateFounderProject: vi.fn() }));
@@ -40,6 +40,19 @@ describe("Founder sidebar information architecture", () => {
     expect(titles).toEqual(["最新工作", "旧工作"]);
     expect(screen.queryByText("最近 7 天")).toBeNull();
     expect(document.querySelectorAll(".sino-conversation-group")).toHaveLength(0);
+  });
+
+  it("uses created time and conversation id as deterministic tie breakers", () => {
+    const timestamp = "2026-08-18T10:27:00.000000+08:00";
+    const conversations = [
+      { id: "conv-a", title: "A", updated_at: timestamp, created_at: timestamp },
+      { id: "conv-c", title: "C", updated_at: timestamp, created_at: timestamp },
+      { id: "conv-b", title: "B", updated_at: timestamp, created_at: timestamp },
+    ];
+    expect(stableConversationOrder(conversations).map((item) => item.id)).toEqual(["conv-c", "conv-b", "conv-a"]);
+    expect(stableConversationOrder(conversations).map((item) => item.id)).toEqual(["conv-c", "conv-b", "conv-a"]);
+    render(<SecretarySidebar conversations={conversations} projects={[]} />);
+    expect([...document.querySelectorAll(".sino-conversation-item")].map((item) => item.dataset.conversationId)).toEqual(["conv-c", "conv-b", "conv-a"]);
   });
 
   it("renders one fixed Conversation section after Project and never nests Conversations inside Project items", () => {
