@@ -134,7 +134,10 @@ describe("Sino Founder AI interaction responsibilities", () => {
     discussWithSino.mockResolvedValue({ ...emptySnapshot, conversation: { id: "conv-new", title: "产品战略", state: "exploring" }, messages: [{ message_id: "m-new", role: "founder", content: "讨论产品战略" }] });
     render(<SinoFounderAIApp />);
     fireEvent.click(screen.getByRole("button", { name: /新建讨论/ }));
-    expect(screen.getByRole("region", { name: "Draft Discussion" })).toBeTruthy();
+    const draft = screen.getByRole("region", { name: "Draft Discussion" });
+    expect(draft.classList.contains("sino-draft-discussion")).toBe(true);
+    expect(draft.querySelector(":scope > .sino-home__center .sino-global-composer")).toBeTruthy();
+    expect(screen.getByLabelText("Founder AI 工作区内容").classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
     expect(createFounderConversation).not.toHaveBeenCalled();
     const input = await screen.findByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……");
     fireEvent.change(input, { target: { value: "讨论产品战略" } });

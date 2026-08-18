@@ -25,6 +25,12 @@ describe("SinoFounderShell resizable dividers", () => {
     fireEvent.click(screen.getByRole("button", { name: "⚙ 设置" }));
     expect(props.onNavigate).toHaveBeenCalledWith("settings");
   });
+  it("gives Draft Discussion a full-height fixed workspace without changing Home", () => {
+    const { rerender } = render(<SinoFounderShell {...props} active="draft" main={<section aria-label="Draft Discussion" />} context={null} />);
+    expect(screen.getByRole("main", { name: "Founder AI 工作区内容" }).classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
+    rerender(<SinoFounderShell {...props} active="home" main={<section aria-label="Home" />} context={null} />);
+    expect(screen.getByRole("main", { name: "Founder AI 工作区内容" }).classList.contains("sino-founder-main--fixed-workspace")).toBe(false);
+  });
   it("resizes both panes within min/max constraints and persists widths", () => {
     render(<SinoFounderShell {...props} />);
     const left = screen.getByRole("separator", { name: "调整左侧栏宽度" });
