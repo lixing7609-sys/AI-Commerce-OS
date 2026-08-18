@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 from datetime import datetime, timezone
 import hashlib
+import json
 import re
 from pathlib import Path
 from threading import Event, Thread
@@ -24,6 +25,7 @@ from app.database.db import SessionLocal
 
 WORKER_ID = f"image-model-probe-worker-{uuid4().hex[:12]}"
 ASSET_ROOT = Path(__file__).resolve().parents[3] / ".runtime" / "studio-assets"
+RAW_RESPONSE_ROOT = Path(__file__).resolve().parents[3] / ".runtime" / "model-probe-responses"
 SAFE_PROMPT = "Generate one square e-commerce hero image of a generic unbranded desk lamp on a clean neutral white background. No logos, no text, capability verification only."
 URL_PATTERN = re.compile(r"https?://[^\s\])}>\"']+")
 
@@ -68,6 +70,81 @@ def _image_reference(body: dict) -> str | None:
     return None
 
 
+def _response_structure(value, *, depth: int = 0):
+    if depth > 8:
+        return "max_depth"
+    if isinstance(value, dict):
+        return {str(key): _response_structure(item, depth=depth + 1) for key, item in value.items()}
+    if isinstance(value, list):
+        return {"type": "array", "length": len(value), "items": [_response_structure(item, depth=depth + 1) for item in value[:2]]}
+    if isinstance(value, str):
+        return {"type": "string", "length": len(value), "data_url": value.startswith("data:image/")}
+    return type(value).__name__
+
+
+def _find_provider_image(value, path: tuple[str, ...] = ()) -> tuple[str, str | None, str] | None:
+    """Return reference, mime type, and response path without Provider coupling."""
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            found = _find_provider_image(item, (*path, str(index)))
+            if found:
+                return found
+        return None
+    if not isinstance(value, dict):
+        if isinstance(value, str) and value.startswith("data:image/"):
+            return value, value.split(";", 1)[0].split(":", 1)[1], ".".join(path)
+        return None
+    normalized = {str(key).casefold().replace("_", ""): key for key in value}
+    mime_key = normalized.get("mimetype") or normalized.get("mediatype")
+    mime_type = str(value.get(mime_key) or "") if mime_key else None
+    data_key = normalized.get("data") or normalized.get("b64json") or normalized.get("base64")
+    if data_key and isinstance(value.get(data_key), str) and (str(mime_type or "").startswith("image/") or "b64json" in normalized or any(part.casefold() in {"inlinedata", "inline_data", "image", "images"} for part in path)):
+        resolved_mime = mime_type if str(mime_type or "").startswith("image/") else "image/png"
+        return f"data:{resolved_mime};base64,{value[data_key]}", resolved_mime, ".".join((*path, str(data_key)))
+    for key in ("url", "image_url", "imageUrl", "uri", "file_uri", "fileUri"):
+        reference = value.get(key)
+        if isinstance(reference, dict):
+            reference = reference.get("url") or reference.get("uri")
+        if isinstance(reference, str) and (reference.startswith("data:image/") or reference.startswith("http://") or reference.startswith("https://")):
+            semantic_path = " ".join((*path, key)).casefold()
+            if any(term in semantic_path for term in ("image", "inline", "asset", "attachment", "output", "part")):
+                return reference, mime_type, ".".join((*path, key))
+    for key, item in value.items():
+        found = _find_provider_image(item, (*path, str(key)))
+        if found:
+            return found
+    return None
+
+
+def normalize_image_generation_response(body: dict, *, provider: str, model_id: str, raw_response_reference: str) -> dict:
+    found = _find_provider_image(body)
+    if not found:
+        legacy = _image_reference(body)
+        found = (legacy, None, "legacy_openai_compatible") if legacy else None
+    return {
+        "provider": provider,
+        "model_id": model_id,
+        "status": "PASS" if found else "FAIL",
+        "asset_kind": "binary_or_url_reference" if found else None,
+        "mime_type": found[1] if found else None,
+        "binary_reference": found[0] if found and found[0].startswith("data:image/") else None,
+        "url_reference": found[0] if found and not found[0].startswith("data:image/") else None,
+        "width": None,
+        "height": None,
+        "evidence": {"response_path": found[2] if found else None, "response_structure": _response_structure(body)},
+        "raw_response_reference": raw_response_reference,
+        "sensitive": False,
+    }
+
+
+def _persist_raw_response(body: dict, job_id: str, model_id: str) -> str:
+    RAW_RESPONSE_ROOT.mkdir(parents=True, exist_ok=True)
+    name = hashlib.sha256(f"{job_id}:{model_id}".encode()).hexdigest()[:20]
+    target = RAW_RESPONSE_ROOT / f"{name}.json"
+    target.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    return str(target.relative_to(Path(__file__).resolve().parents[3]))
+
+
 def _save_image(reference: str, job_id: str) -> dict:
     if reference.startswith("data:image/"):
         header, encoded = reference.split(",", 1)
@@ -106,11 +183,15 @@ def real_image_probe(candidate: dict, job_id: str) -> dict:
             return {"status": "BLOCKED", "reason": "provider_rate_or_quota_boundary", "http_status": 429}
         if response.status_code != 200:
             return {"status": "FAIL", "reason": "provider_probe_rejected", "http_status": response.status_code}
-        reference = _image_reference(response.json())
+        body = response.json()
+        raw_reference = _persist_raw_response(body, job_id, model_id)
+        normalized = normalize_image_generation_response(body, provider=provider_id, model_id=model_id, raw_response_reference=raw_reference)
+        reference = normalized.get("binary_reference") or normalized.get("url_reference")
         if not reference:
-            return {"status": "FAIL", "reason": "provider_returned_no_image_asset", "http_status": 200}
+            return {"status": "FAIL", "reason": "provider_returned_no_image_asset", "http_status": 200, "normalized_result": normalized}
         asset = _save_image(reference, job_id)
-        return {"status": "PASS", "reason": None, "http_status": 200, "asset": asset}
+        normalized.update({"status": "PASS", "asset_kind": "local_binary_reference", "binary_reference": asset["generation_reference"], "url_reference": None, "width": asset["width"], "height": asset["height"], "mime_type": asset["mime_type"]})
+        return {"status": "PASS", "reason": None, "http_status": 200, "asset": asset, "normalized_result": normalized}
     except httpx.TimeoutException:
         return {"status": "BLOCKED", "reason": "provider_probe_timeout"}
     except (httpx.HTTPError, ValueError, OSError):
@@ -255,7 +336,7 @@ class ModelProbeWorker:
             heartbeat = _now()
             _update_job(conversation_id, lambda current, loop: (current.update({"heartbeat_at": heartbeat, "status": "running", "current_candidate_index": index + 1}), loop.update({"status": "model_probe_running"})))
             result = self.probe(candidate, job["probe_job_id"])
-            result_record = {"provider_id": candidate.get("provider_id"), "model_id": candidate.get("model_id"), "probe_status": result["status"], "evidence": {"reason": result.get("reason"), "http_status": result.get("http_status"), "asset": result.get("asset")}, "external_effect": "single_provider_inference_call", "timestamp": _now()}
+            result_record = {"provider_id": candidate.get("provider_id"), "model_id": candidate.get("model_id"), "probe_status": result["status"], "evidence": {"reason": result.get("reason"), "http_status": result.get("http_status"), "asset": result.get("asset"), "normalized_result": result.get("normalized_result")}, "external_effect": "none" if result.get("reason") == "configured_model_or_credential_reference_unavailable" else "single_provider_inference_call", "timestamp": _now()}
             job = _update_job(conversation_id, lambda current, loop: current.update({"probe_results": [*(current.get("probe_results") or []), result_record], "heartbeat_at": _now(), "external_call_count": int(current.get("external_call_count") or 0) + (0 if result.get("reason") == "configured_model_or_credential_reference_unavailable" else 1)}))
             if result["status"] == "PASS":
                 passed = (candidate, result); break
@@ -270,3 +351,27 @@ class ModelProbeWorker:
 
 
 model_probe_worker = ModelProbeWorker()
+
+
+def requeue_single_approved_gemini_probe(conversation_id: str) -> dict:
+    """One bounded parser/adapter retry for the already-approved Gemini candidate."""
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        loop = dict((state.discovery or {}).get("autonomous_main_loop") or {})
+        decision = dict(loop.get("founder_probe_decision") or {})
+        job = dict(loop.get("model_probe_job") or {})
+        if decision.get("approval_status") != "approved" or loop.get("status") != "model_probe_failed":
+            raise ValueError("Approved failed probe job required")
+        if int(job.get("adapter_retry_count") or 0) >= 1:
+            raise ValueError("Gemini adapter retry already consumed")
+        candidate = next((dict(item) for item in loop.get("model_candidates") or [] if item.get("model_id") == "google/gemini-3.1-flash-image" and resolve_runtime_config(provider_key=item.get("provider_id"), model=item.get("model_id")) is not None), None)
+        if candidate is None:
+            raise ValueError("Approved Gemini candidate binding unavailable")
+    def requeue(job_state, loop_state):
+        job_state.update({"candidate_models": [candidate], "max_candidates": 1, "status": "queued", "queued_at": _now(), "started_at": None, "completed_at": None, "worker_id": None, "heartbeat_at": None, "adapter_retry_count": 1, "callback_status": "pending", "last_error": None, "current_candidate_index": None})
+        loop_state.update({"status": "model_probe_queued", "technical_blocker": None, "founder_gate_required": False})
+    job = _update_job(conversation_id, requeue)
+    model_probe_worker.wake()
+    return job

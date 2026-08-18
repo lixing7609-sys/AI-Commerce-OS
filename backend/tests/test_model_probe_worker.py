@@ -5,13 +5,29 @@ from sqlalchemy import select
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import SinoBrainSessionDB
 from app.database.db import SessionLocal
-from app.founder_ai.model_probe_worker import ModelProbeWorker, _image_reference
+from app.founder_ai.model_probe_worker import ModelProbeWorker, _image_reference, normalize_image_generation_response
 from app.founder_ai.brain_runtime import SinoBrainRuntime
 
 
 def test_extracts_image_from_openai_compatible_chat_response():
     body = {"choices": [{"message": {"content": "generated", "images": [{"image_url": {"url": "https://example.test/result.png"}}]}}]}
     assert _image_reference(body) == "https://example.test/result.png"
+
+
+def test_normalizes_gemini_inline_data_without_putting_base64_in_evidence():
+    body = {"candidates": [{"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": "aGVsbG8="}}]}}]}
+    result = normalize_image_generation_response(body, provider="configured", model_id="gemini-image", raw_response_reference=".runtime/raw.json")
+    assert result["status"] == "PASS"
+    assert result["mime_type"] == "image/png"
+    assert result["binary_reference"].startswith("data:image/png;base64,")
+    assert result["evidence"]["response_path"].endswith("inlineData.data")
+    assert "aGVsbG8=" not in str(result["evidence"])
+
+
+def test_normalizes_compatibility_wrapper_inline_data():
+    body = {"choices": [{"message": {"content": [{"type": "image", "source": {"type": "base64", "media_type": "image/webp", "data": "aGVsbG8="}}]}}]}
+    result = normalize_image_generation_response(body, provider="configured", model_id="wrapped-image", raw_response_reference=".runtime/raw.json")
+    assert result["status"] == "PASS" and result["mime_type"] == "image/webp"
 
 
 def test_stale_queue_and_stale_heartbeat_are_visible_technical_states():
