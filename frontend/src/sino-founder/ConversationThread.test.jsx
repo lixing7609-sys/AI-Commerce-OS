@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConversationThread, normalizeDisplayText, normalizeTextList } from "./ConversationThread.jsx";
 
@@ -8,13 +8,34 @@ afterEach(() => cleanup());
 
 describe("ConversationThread layout", () => {
   it("shows Architecture Proposal and never the Standard execution lane", () => {
-    const route = { classification: "STRATEGIC_TASK", task_type: "ARCHITECTURE_TASK", current_step: "decision_readiness", architecture_proposal: { status: "ready_for_founder_decision", current_problem: "Boundary unclear", proposed_boundary: "Founder owns definitions; Studio consumes Ready references.", founder_responsibilities: ["Validate"], studio_responsibilities: ["Execute Ready"], capability_lifecycle: ["candidate", "ready"], binding_contract: { reference: "id + version", consumer_rule: "ready_only" }, learning_feedback: "Return evidence", migration_impact: ["Preserve IDs"], risks: ["Drift"], recommended_decision: "Approve boundary" } };
+    const route = { classification: "STRATEGIC_TASK", task_type: "ARCHITECTURE_TASK", current_step: "decision_readiness", architecture_proposal: { proposal_id: "proposal-v1", proposal_version: 1, status: "ready_for_founder_decision", current_problem: "Boundary unclear", proposed_boundary: "Founder owns definitions; Studio consumes Ready references.", founder_responsibilities: ["Validate"], studio_responsibilities: ["Execute Ready"], capability_lifecycle: ["candidate", "ready"], binding_contract: { reference: "id + version", consumer_rule: "ready_only" }, learning_feedback: "Return evidence", migration_impact: ["Preserve IDs"], risks: ["Drift"], recommended_decision: "Approve boundary" } };
     const value = { ...snapshot("conv-architecture", [{ message_id: "m1", role: "founder", content: "重新设计 Founder 与 Studio Capability 供给关系" }]), sino_brain: { stage: "decision_ready", active_workspace_stage: "decision_readiness", source_message_refs: ["m1"], stage_workspaces: [{ stage_key: "decision_readiness", label: "Decision Readiness", status: "active", message_refs: ["m1"] }], discovery: { task_complexity_route: route }, current_action: { title: "等待 Founder 决策", primary_label: null } } };
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
     expect(screen.getByRole("region", { name: "Architecture Task 流程" })).toBeTruthy();
     expect(screen.getByRole("article", { name: "Architecture Proposal" })).toBeTruthy();
     expect(screen.getByText(/批准前禁止创建实施包/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "批准方案" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "修改方案" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "驳回方案" })).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Standard Task 流程" })).toBeNull();
+  });
+  it("wires approve, reject and revision feedback to real proposal actions", async () => {
+    const onDecision = vi.fn().mockResolvedValue(undefined);
+    const proposal = { proposal_id: "proposal-actions", proposal_version: 3, status: "ready_for_founder_decision", current_problem: "Boundary", proposed_boundary: "Ready only", founder_responsibilities: [], studio_responsibilities: [], capability_lifecycle: [], binding_contract: {}, migration_impact: [], risks: [] };
+    const value = { ...snapshot("conv-actions", []), sino_brain: { active_workspace_stage: "decision_readiness", stage_workspaces: [{ stage_key: "decision_readiness", label: "Decision Readiness", status: "active", message_refs: [] }], discovery: { task_complexity_route: { classification: "STRATEGIC_TASK", architecture_proposal: proposal } } } };
+    const { rerender } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} onArchitectureDecision={onDecision} />);
+    fireEvent.click(screen.getByRole("button", { name: "批准方案" }));
+    expect(onDecision).toHaveBeenCalledWith({ action: "approve", proposalId: "proposal-actions", proposalVersion: 3 });
+    fireEvent.click(screen.getByRole("button", { name: "驳回方案" }));
+    expect(onDecision).toHaveBeenCalledWith({ action: "reject", proposalId: "proposal-actions", proposalVersion: 3 });
+    fireEvent.click(screen.getByRole("button", { name: "修改方案" }));
+    await waitFor(() => expect(screen.getByLabelText("Architecture Proposal 修改意见")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("请输入希望调整的架构边界、职责或约束。"), { target: { value: "Studio 只引用 Ready Capability" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交修改意见" }));
+    expect(onDecision).toHaveBeenCalledWith({ action: "submit_revision", proposalId: "proposal-actions", proposalVersion: 3, founderFeedback: "Studio 只引用 Ready Capability" });
+    rerender(<ConversationThread snapshot={{ ...value, sino_brain: { ...value.sino_brain, discovery: { task_complexity_route: { classification: "STRATEGIC_TASK", architecture_proposal: { ...proposal, decision_status: "approved", status: "approved" } } } } }} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} onArchitectureDecision={onDecision} />);
+    expect(screen.getByText(/方案已批准/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "批准方案" })).toBeNull();
   });
   it("renders the Standard Task lane instead of the Strategy pipeline", () => {
     const value = snapshot("standard-task", [{ message_id: "m1", role: "founder", content: "给能力仓库增加搜索" }]);

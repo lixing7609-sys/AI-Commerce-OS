@@ -3394,7 +3394,7 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             payload["active_workspace_stage"] = current_step
         if route.get("classification") == "STRATEGIC_TASK":
             current_step = route.get("current_step") or "architecture_analysis"
-            labels = {"architecture_analysis": "Architecture Analysis", "alternatives": "Alternatives", "proposal": "Recommended Proposal", "impact_analysis": "Impact Analysis", "decision_readiness": "Decision Readiness"}
+            labels = {"architecture_analysis": "Architecture Analysis", "alternatives": "Alternatives", "proposal": "Recommended Proposal", "impact_analysis": "Impact Analysis", "decision_readiness": "Decision Readiness", "approved": "Approved", "rejected": "Rejected"}
             current_index = list(labels).index(current_step)
             payload["stage_workspaces"] = [
                 {"stage_key": key, "label": label, "status": "completed" if index < current_index else "active" if index == current_index else "pending", "message_refs": list(payload["source_message_refs"]) if index <= current_index else []}

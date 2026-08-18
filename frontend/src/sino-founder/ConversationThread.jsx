@@ -145,13 +145,28 @@ function GoalBriefConfirmationCard({ brain, busy, onConfirm, onRevise, onReviseG
   </article>;
 }
 
-function ArchitectureProposalCard({ proposal }) {
+function ArchitectureProposalCard({ proposal, busy, onDecision }) {
   if (!proposal) return null;
+  const [editingRevision, setEditingRevision] = useState(proposal.decision_status === "revision_requested");
+  const [feedback, setFeedback] = useState("");
+  const version = proposal.proposal_version || 1;
+  const status = proposal.decision_status || (proposal.status === "ready_for_founder_decision" ? "pending" : proposal.status);
   const list = (items) => <ul>{(items || []).map((item) => <li key={item}>{item}</li>)}</ul>;
+  async function requestRevision() {
+    setEditingRevision(true);
+    await onDecision?.({ action: "request_revision", proposalId: proposal.proposal_id, proposalVersion: version });
+  }
+  async function cancelRevision() {
+    await onDecision?.({ action: "cancel_revision", proposalId: proposal.proposal_id, proposalVersion: version });
+    setEditingRevision(false); setFeedback("");
+  }
   return <article className="sino-conversation-goal-brief" aria-label="Architecture Proposal">
-    <span>Architecture Proposal</span><h3>Founder → Studio Capability Supply Boundary</h3>
+    <span>Architecture Proposal · v{version}</span><h3>Founder → Studio Capability Supply Boundary</h3>
     <dl><div><dt>Current Problem</dt><dd>{proposal.current_problem}</dd></div><div><dt>Proposed Boundary</dt><dd>{proposal.proposed_boundary}</dd></div><div><dt>Founder Responsibilities</dt><dd>{list(proposal.founder_responsibilities)}</dd></div><div><dt>Studio Responsibilities</dt><dd>{list(proposal.studio_responsibilities)}</dd></div><div><dt>Capability Lifecycle</dt><dd>{(proposal.capability_lifecycle || []).join(" → ")}</dd></div><div><dt>Binding Contract</dt><dd>{proposal.binding_contract?.reference} · {proposal.binding_contract?.consumer_rule}</dd></div><div><dt>Data / Asset Ownership</dt><dd>Capability: Founder · Studio Task/Asset: Studio · Evidence: shared lineage</dd></div><div><dt>Execution Authority</dt><dd>Founder validates/promotes; Studio executes Ready bindings; implementation before approval is forbidden.</dd></div><div><dt>Learning Feedback</dt><dd>{proposal.learning_feedback}</dd></div><div><dt>Migration Impact</dt><dd>{list(proposal.migration_impact)}</dd></div><div><dt>Risks</dt><dd>{list(proposal.risks)}</dd></div><div><dt>Recommended Decision</dt><dd>{proposal.recommended_decision}</dd></div></dl>
-    <p><strong>Founder Decision Required</strong> · 批准方案 / 修改方案 / 驳回。批准前不会进入实施。</p>
+    {status === "approved" ? <p><strong>方案已批准</strong> · 等待进入实施阶段，本次决策不会自动 Dispatch Codex。</p>
+      : status === "rejected" ? <p><strong>方案已驳回</strong> · Task 已关闭，Proposal 与 Decision history 保留。</p>
+      : editingRevision || status === "revision_requested" ? <section aria-label="Architecture Proposal 修改意见"><label htmlFor={`architecture-feedback-${proposal.proposal_id}`}>请输入希望调整的架构边界、职责或约束。</label><textarea id={`architecture-feedback-${proposal.proposal_id}`} value={feedback} onChange={(event) => setFeedback(event.target.value)} disabled={busy} /><footer><button type="button" className="is-primary" disabled={busy || !feedback.trim()} onClick={() => onDecision?.({ action: "submit_revision", proposalId: proposal.proposal_id, proposalVersion: version, founderFeedback: feedback.trim() })}>提交修改意见</button><button type="button" disabled={busy} onClick={cancelRevision}>取消</button></footer></section>
+      : <><p><strong>Founder Decision Required</strong> · 批准前不会进入实施。</p><footer><button type="button" className="is-primary" disabled={busy} onClick={() => onDecision?.({ action: "approve", proposalId: proposal.proposal_id, proposalVersion: version })}>批准方案</button><button type="button" disabled={busy} onClick={requestRevision}>修改方案</button><button type="button" disabled={busy} onClick={() => onDecision?.({ action: "reject", proposalId: proposal.proposal_id, proposalVersion: version })}>驳回方案</button></footer></>}
   </article>;
 }
 
@@ -181,7 +196,7 @@ function ReuseSuggestions({ items, busy, onReuse, onDevelop }) {
   return <section className="sino-reuse-suggestions" aria-label="可复用能力"><span>Capability Repository</span><h2>检测到已有相关能力</h2>{items.map((item) => <article key={item.asset_id}><div><strong>{item.name} · V{item.version}</strong><p>{item.reuse_reason}</p><small>{item.domain_id} · {statusLabel(item.status)}</small></div>{item.can_reuse ? <button type="button" disabled={busy} onClick={() => onReuse?.(item)}>引用</button> : <button type="button" disabled={busy} onClick={() => onDevelop?.({ action_id: "candidates_saved", asset_id: item.asset_id })}>开发</button>}</article>)}</section>;
 }
 
-export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onReviewConstitution, onReviewProjectOutcome, onReviewImplementationPlan, onContinueProjectAnalysis, onReviewFounderGate, onImageProbeDecision, selectedConstitutionWorkItemId, onSelectConstitutionWorkItem, onContinueDiscussion, onViewAssets, onNewGoal, capabilityAction, capabilityAsset, capabilityError, onCapabilityAction, reuseSuggestions, onReuse, pendingAttachments = [], onAddImages, onRemoveImage }) {
+export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message, onMessage, onSend, busy, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onReviewConstitution, onReviewProjectOutcome, onReviewImplementationPlan, onContinueProjectAnalysis, onReviewFounderGate, onImageProbeDecision, onArchitectureDecision, selectedConstitutionWorkItemId, onSelectConstitutionWorkItem, onContinueDiscussion, onViewAssets, onNewGoal, capabilityAction, capabilityAsset, capabilityError, onCapabilityAction, reuseSuggestions, onReuse, pendingAttachments = [], onAddImages, onRemoveImage }) {
   const logRef = useRef(null);
   const conversationRef = useRef(null);
   const scrollAfterSendRef = useRef(false);
@@ -292,7 +307,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const timelineAction = activeStage !== currentStage ? null : imageProbeDecisionVisible
     ? <ImageModelProbeDecisionCard loop={autonomousLoop} busy={busy} onDecision={onImageProbeDecision} />
     : isStrategicTask
-    ? <ArchitectureProposalCard proposal={quickFixRoute?.architecture_proposal} />
+    ? <ArchitectureProposalCard key={quickFixRoute?.architecture_proposal?.proposal_id} proposal={quickFixRoute?.architecture_proposal} busy={busy} onDecision={onArchitectureDecision} />
     : capabilityAction
     ? <CapabilityLifecycleCard asset={capabilityAsset} action={capabilityAction} candidates={snapshot?.sino_brain?.discussion_package?.asset_commit?.items || []} error={capabilityError} busy={busy} onAction={onCapabilityAction} onContinue={onContinueDiscussion} onOpenRepository={onViewAssets} />
     : isExecutionPackage

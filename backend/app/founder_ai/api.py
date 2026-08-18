@@ -229,6 +229,11 @@ class ImageModelProbeDecisionIn(BaseModel):
     action: str
     boundary: dict[str, Any] | None = None
 
+class ArchitectureProposalDecisionIn(BaseModel):
+    action: str
+    proposal_version: int = Field(ge=1)
+    founder_feedback: str | None = Field(default=None, max_length=10000)
+
 class ConstitutionWorkItemReviewIn(BaseModel):
     work_item_id: str
     decision: str
@@ -732,6 +737,21 @@ def decide_image_model_probe(conversation_id: str, request: ImageModelProbeDecis
     try:
         from app.founder_ai.image_model_probe_gate import decide_image_model_probe_gate
         decide_image_model_probe_gate(conversation_id, action=request.action, boundary=request.boundary)
+        return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/brain/architecture-proposals/{proposal_id}/decision", response_model=dict[str, Any])
+def decide_architecture_proposal_action(conversation_id: str, proposal_id: str, request: ArchitectureProposalDecisionIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        from app.founder_ai.strategic_task import decide_architecture_proposal
+        decide_architecture_proposal(conversation_id=conversation_id, proposal_id=proposal_id,
+                                     proposal_version=request.proposal_version, action=request.action,
+                                     founder_feedback=request.founder_feedback)
         return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error

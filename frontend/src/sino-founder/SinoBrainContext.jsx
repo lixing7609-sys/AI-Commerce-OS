@@ -46,6 +46,7 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
   const isQuickFix = quickFixRoute?.classification === "QUICK_FIX";
   const isStandardTask = quickFixRoute?.classification === "STANDARD_TASK" && Boolean(quickFixRoute?.standard_task_contract);
   const isStrategicTask = quickFixRoute?.classification === "STRATEGIC_TASK";
+  const architectureDecisionStatus = quickFixRoute?.architecture_proposal?.decision_status || (quickFixRoute?.architecture_proposal?.status === "ready_for_founder_decision" ? "pending" : quickFixRoute?.architecture_proposal?.status);
   const autonomousLoop = brain.discovery?.autonomous_main_loop;
   const decision = brain.decision || {};
   const understanding = brain.discovery?.working_understanding || {};
@@ -75,7 +76,7 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
     </dl> : isStandardTask ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Task Type</dt><dd>Standard Task</dd></div><div><dt>Target</dt><dd>{quickFixRoute.standard_task_contract?.target_surface}</dd></div><div><dt>Current Step</dt><dd>{progress?.current_phase || quickFixRoute.current_step}</dd></div><div><dt>Execution</dt><dd>{progress?.execution_status || quickFixRoute.execution_status}</dd></div><div><dt>Founder Decision</dt><dd>{progress?.founder_action_required ? "Required" : "Not Required"}</dd></div><div><dt>Next Action</dt><dd>{progress?.next_action || (quickFixRoute.execution_status === "completed" ? "等待 Founder 验收" : "Sino 自动执行")}</dd></div>
     </dl> : isStrategicTask ? <dl className="sino-brain-dashboard__grid">
-      <div><dt>Task Type</dt><dd>Architecture Task</dd></div><div><dt>Current Step</dt><dd>{progress?.current_phase || quickFixRoute.current_step}</dd></div><div><dt>Architecture Analysis</dt><dd>{quickFixRoute.architecture_analysis?.status}</dd></div><div><dt>Proposal</dt><dd>{quickFixRoute.architecture_proposal?.status}</dd></div><div><dt>Execution</dt><dd>Not Allowed Before Approval</dd></div><div><dt>Founder Decision</dt><dd>Required</dd></div><div><dt>Next Action</dt><dd>Founder 审核 Architecture Proposal</dd></div>
+      <div><dt>Task Type</dt><dd>Architecture Task</dd></div><div><dt>Current Step</dt><dd>{progress?.current_phase || quickFixRoute.current_step}</dd></div><div><dt>Architecture Analysis</dt><dd>{quickFixRoute.architecture_analysis?.status}</dd></div><div><dt>Proposal</dt><dd>{quickFixRoute.architecture_proposal?.status}</dd></div><div><dt>Execution</dt><dd>{architectureDecisionStatus === "approved" ? "Allowed · Not Started" : "Not Allowed Before Approval"}</dd></div><div><dt>Founder Decision</dt><dd>{architectureDecisionStatus === "approved" ? "Approved" : architectureDecisionStatus === "rejected" ? "Rejected" : "Required"}</dd></div><div><dt>Next Action</dt><dd>{architectureDecisionStatus === "approved" ? "等待进入实施阶段" : architectureDecisionStatus === "rejected" ? "Task 已关闭" : architectureDecisionStatus === "revision_requested" ? "Founder 提交修改意见" : "Founder 审核 Architecture Proposal"}</dd></div>
     </dl> : autonomousLoop ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Task Type</dt><dd>{autonomousLoop.task_type}</dd></div>
       <div><dt>Capability Gap</dt><dd>{autonomousLoop.capability_compatibility?.status}</dd></div>
