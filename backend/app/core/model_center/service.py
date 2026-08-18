@@ -234,6 +234,8 @@ def get_model_center() -> dict:
         usage_rows = session.execute(select(CouncilModelRunDB.provider, func.count(CouncilModelRunDB.id), func.avg(CouncilModelRunDB.latency_ms)).group_by(CouncilModelRunDB.provider)).all()
         capability_configs = {row.capability_key: row for row in session.scalars(select(AICapabilityConfigDB))}
         registry_rows = list(session.scalars(select(ModelRegistryDB)))
+        from app.core.conversation_first.model import SinoBrainSessionDB
+        brain_states = list(session.scalars(select(SinoBrainSessionDB)))
     provider_items = [_serialize(row, key) for key, row in rows.items()]
     for key in PROVIDERS:
         if key not in rows:
@@ -246,6 +248,13 @@ def get_model_center() -> dict:
         capability_roles.append({"role_key": capability, "label": CAPABILITY_LABELS[capability], "provider_key": config.get("provider_key") or roles.get(capability) or roles.get(legacy), "model": config.get("model"), "fixed": False, "multiple": capability == "multi_model_discussion", "models": list(config.get("models", [])) if capability == "multi_model_discussion" else [], "execution_engine_id": config.get("execution_engine_id", "codex") if capability == "code_execution" else None})
     vision_probes = dict(((capability_configs.get("vision_model_routing").configuration if capability_configs.get("vision_model_routing") else {}) or {}).get("model_probes") or {})
     image_generation_probes = dict(((capability_configs.get("image_generation_model_routing").configuration if capability_configs.get("image_generation_model_routing") else {}) or {}).get("model_probes") or {})
+    from app.core.model_center.capability_registry import build_model_capability_registry
+    image_results = {}
+    for state in brain_states:
+        loop = dict((state.discovery or {}).get("autonomous_main_loop") or {})
+        for result in (loop.get("model_probe_job") or {}).get("probe_results") or []:
+            image_results[f"{result.get('provider_id')}:{result.get('model_id')}"] = result
+    capability_registry = build_model_capability_registry(rows, registry_rows, capability_configs, image_results)
     return {
         "provider_catalog": [{"provider_type": key, "display_name": value["display_name"], "default_base_url": value["default_base_url"], "requires_base_url": not bool(value["default_base_url"])} for key, value in PROVIDER_CATALOG.items()],
         "providers": provider_items,
@@ -256,6 +265,7 @@ def get_model_center() -> dict:
         "applications": [{"application_key": key, "label": label, "assignments": [_application_assignment(key, capability, assignments, rows, roles) for capability in CAPABILITIES]} for key, label in APPLICATIONS.items()],
         "health_cost": [{**item, "usage": usage.get(item["provider_key"], {"calls": 0, "average_latency_ms": None, "tokens": None, "cost": None, "quota": None})} for item in provider_items],
         "execution_engines": [{"engine_id": key, **value} for key, value in EXECUTION_ENGINE_REGISTRY.items()],
+        "model_capability_registry": capability_registry,
     }
 
 

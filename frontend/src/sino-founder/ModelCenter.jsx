@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { checkModelProvider, deleteModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveExecutionEngine, saveMultiModelAssignment, selectProviderModels, setModelProviderEnabled, updateModelProviderCredentials } from "../services/founderAiApi.js";
+import { checkModelProvider, deleteModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveExecutionEngine, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, setModelProviderEnabled, updateModelProviderCredentials } from "../services/founderAiApi.js";
 
 const empty = { provider_catalog: [], providers: [], roles: [], agents: [], health_cost: [], execution_engines: [] };
 const MODEL_TASK_LABELS = { sino_conversation: "默认对话模型", deep_thinking: "深度思考模型", goal_reasoning: "目标推理模型", project_analysis: "项目分析模型", system_builder: "系统构建模型", solution_review: "方案评审模型" };
@@ -68,6 +68,7 @@ export function ModelCenter({ onContextChange }) {
   async function assignExecutionEngine(engineId) { setBusy("execution-engine"); try { setCenter(await saveExecutionEngine(engineId)); setMessage("执行引擎已保存"); } catch (error) { setMessage(actionFailure("执行引擎")); } finally { setBusy(""); } }
   const modelOptions = installed.filter((item) => item.enabled && item.health_status === "healthy").flatMap((provider) => provider.selected_models.map((model) => ({ value: `${provider.provider_key}::${model}`, provider, model, label: (provider.available_models.find((item) => modelId(item) === model) || {}).display_name || model })));
   async function saveCouncil(models) { setBusy("multi"); try { setCenter(await saveMultiModelAssignment(models)); setMessage("多模型讨论配置已保存"); } catch (error) { setMessage(actionFailure("多模型讨论配置")); } finally { setBusy(""); } }
+  async function savePreferred(capability, value) { const [provider_id, model_id] = value ? value.split("::") : [null, null]; setBusy(`routing:${capability}`); try { const registry = await saveModelRoutingPreferred(capability, value ? { provider_id, model_id } : null); setCenter((current) => ({ ...current, model_capability_registry: registry })); setMessage("Preferred Primary 已保存；Active 仍只使用 verified + healthy 模型"); } catch (error) { setMessage(actionFailure("模型路由策略")); } finally { setBusy(""); } }
   const selectedProvider = installed.find((provider) => provider.provider_key === editing);
   const selectedModelMeta = selectedProvider?.available_models.find((model) => modelId(model) === selectedModel) || (selectedModel ? { model_id: selectedModel, display_name: selectedModel } : null);
   const modelRows = installed.flatMap((provider) => provider.selected_models.map((selected) => {
@@ -87,6 +88,8 @@ export function ModelCenter({ onContextChange }) {
     {section === "models" && <section className="sino-capability-section" aria-label="模型与 API">
       <div className="sino-capability-section-heading"><div><h3>我的模型</h3><p>管理已经接入 AI Commerce OS 的模型与服务。</p></div><button type="button" onClick={() => { setEditing(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></div>
       <div className="sino-my-models" role="table" aria-label="模型状态列表"><div className="sino-my-models__header" role="row"><strong>模型</strong><strong>Provider</strong><strong>健康状态</strong><strong>调用</strong><strong>Token</strong><strong>成本</strong><strong>延迟</strong><strong>额度</strong></div>{modelRows.map(({ provider, selected, meta, health: healthState, usage }) => { const active = editing === provider.provider_key && selectedModel === selected; return <button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} key={`${provider.provider_key}-${selected}`} onClick={() => selectModel(provider, selected)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span><span>{usage.calls ?? "—"}</span><span>{usage.tokens ?? "—"}</span><span>{usage.cost ?? "—"}</span><span>{usage.average_latency_ms == null ? "—" : `${usage.average_latency_ms} ms`}</span><span>{usage.quota ?? "—"}</span></button>; })}</div>
+      <ModelCapabilities registry={center.model_capability_registry} />
+      <RoutingPolicies registry={center.model_capability_registry} models={center.model_capability_registry?.models || []} busy={busy} onSave={savePreferred} />
     </section>}
 
     {adding && <AddModelModal step={installStep} center={center} install={install} editing={editing} busy={busy} providerKey={installProviderKey} onSelectProvider={beginProviderConnection} onInstallChange={setInstall} onConnect={addProvider} onChoose={choose} onClose={() => { setAdding(false); setInstallStep(1); setInstallProviderKey(null); }} />}
@@ -97,6 +100,20 @@ export function ModelCenter({ onContextChange }) {
     {section === "runtime" && <RuntimeEnvironmentSettings registry={runtimeRegistry} />}
     </div>
   </section>;
+}
+
+const CAPABILITY_LABELS = { TEXT_REASONING: "Sino Default Reasoning", VISION_UNDERSTANDING: "Vision Understanding", IMAGE_GENERATION: "Image Generation", TOOL_USE: "Tool Use", STRUCTURED_OUTPUT: "Structured Output" };
+const capabilityStatus = (value) => ({ VERIFIED: "Verified", UNVERIFIED: "Unverified", BLOCKED: "Blocked", UNSUPPORTED: "Unsupported" }[value] || value);
+function ModelCapabilities({ registry }) {
+  if (!registry) return null;
+  const fields = [["supports_text_reasoning", "Text"], ["supports_vision_understanding", "Vision"], ["supports_image_generation", "Image Gen"], ["supports_tool_use", "Tool"], ["supports_structured_output", "Structured"]];
+  return <section className="sino-model-capabilities" aria-label="Model Capabilities"><div className="sino-capability-section-heading"><div><h3>Model Capabilities</h3><p>只有 Provider metadata、真实 Probe 或人工配置可进入 Active routing。</p></div></div><div>{registry.models.filter((model) => model.selected).map((model) => <article key={`${model.provider_id}:${model.model_id}`}><header><strong>{model.display_name}</strong><span>{model.healthy ? "Healthy" : "Unavailable"}</span></header><div>{fields.map(([field, label]) => <span key={field} data-status={model.capabilities[field].status}><b>{label}</b>{capabilityStatus(model.capabilities[field].status)}</span>)}</div></article>)}</div></section>;
+}
+function RoutingPolicies({ registry, models, busy, onSave }) {
+  if (!registry) return null;
+  const options = models.filter((model) => model.enabled && model.selected);
+  const name = (ref) => ref?.display_name || ref?.model_id || "None";
+  return <section className="sino-routing-policies" aria-label="Model Routing Policy"><div className="sino-capability-section-heading"><div><h3>Model Routing Policy</h3><p>Preferred 表达偏好；Active 始终由 verified + healthy 约束决定。</p></div></div><div>{registry.routing_policies.map((policy) => <article key={policy.capability}><header><strong>{CAPABILITY_LABELS[policy.capability]}</strong><span data-status={policy.status}>{policy.status === "MISSING" ? "Missing" : "Active"}</span></header><label><span>Preferred</span><select aria-label={`${CAPABILITY_LABELS[policy.capability]} Preferred`} value={policy.preferred_primary ? `${policy.preferred_primary.provider_id}::${policy.preferred_primary.model_id}` : ""} disabled={busy === `routing:${policy.capability}`} onChange={(event) => onSave(policy.capability, event.target.value)}><option value="">Auto</option>{options.map((model) => <option key={`${policy.capability}-${model.provider_id}:${model.model_id}`} value={`${model.provider_id}::${model.model_id}`}>{model.display_name}</option>)}</select></label><dl><div><dt>Active</dt><dd>{name(policy.active_primary)}</dd></div><div><dt>Fallback</dt><dd>{name(policy.configured_fallback)}</dd></div><div><dt>Preferred Status</dt><dd>{policy.preferred_status}</dd></div></dl></article>)}</div></section>;
 }
 
 function RuntimeEnvironmentSettings({ registry }) {

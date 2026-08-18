@@ -264,6 +264,10 @@ export function saveCapabilityAssignment(capabilityKey, providerKey, model) {
   return request(`/founder-ai/model-center/capabilities/${encodeURIComponent(capabilityKey)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider_key: providerKey || null, model: model || null }) }, "保存能力分配失败");
 }
 
+export function saveModelRoutingPreferred(capability, preferredPrimary) {
+  return request(`/founder-ai/model-center/routing-policies/${encodeURIComponent(capability)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferred_primary: preferredPrimary }) }, "保存模型路由策略失败");
+}
+
 export function saveExecutionEngine(engineId) {
   return request("/founder-ai/model-center/execution-engine", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ engine_id: engineId }) }, "保存执行引擎失败");
 }

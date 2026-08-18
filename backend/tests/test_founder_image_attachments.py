@@ -13,27 +13,12 @@ def test_image_types_and_size_are_bounded():
         attachments.save_pending_image("missing", "x.gif", "image/gif", png_bytes())
 
 def test_vision_requires_explicit_capable_model(monkeypatch):
-    class Scalars:
-        def scalars(self, query): return []
-        def get(self, *args): return None
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-    monkeypatch.setattr(vision_routing, "SessionLocal", Scalars)
+    monkeypatch.setattr(vision_routing, "resolve_model_route", lambda capability: [])
     with pytest.raises(ValueError, match="vision_model_unavailable"):
         vision_routing.understand_images("conversation", "look", ["attachment"])
 
 def test_vision_routes_text_and_image_in_one_request(monkeypatch):
-    model = SimpleNamespace(provider_id="p", model_id="vision")
-    provider = SimpleNamespace(provider_key="p")
-    class Session:
-        calls = 0
-        def scalars(self, query):
-            self.calls += 1
-            return [provider] if self.calls == 1 else [model]
-        def get(self, *args): return None
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-    monkeypatch.setattr(vision_routing, "SessionLocal", Session)
+    monkeypatch.setattr(vision_routing, "resolve_model_route", lambda capability: [{"provider_id": "p", "model_id": "vision"}])
     monkeypatch.setattr(vision_routing, "multimodal_images", lambda c, ids: [{"mime_type":"image/png","base64":"AA==","data_url":"data:image/png;base64,AA=="}])
     seen = {}
     monkeypatch.setattr(vision_routing.llm_gateway, "generate_for_model", lambda p, m, request: seen.setdefault("request", request) or None)

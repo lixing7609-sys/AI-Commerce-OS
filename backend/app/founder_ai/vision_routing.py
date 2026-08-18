@@ -2,20 +2,15 @@
 from datetime import datetime, timezone
 import json
 from sqlalchemy import select
-from app.core.model_center.model import AICapabilityConfigDB, ModelProviderConfigDB, ModelRegistryDB
+from app.core.model_center.model import AICapabilityConfigDB, ModelRegistryDB
+from app.core.model_center.capability_registry import resolve_model_route
 from app.database.db import SessionLocal
 from app.founder_ai.attachments import multimodal_images
 from app.llm.gateway import llm_gateway
 from app.llm.models import LLMRequest
 
 def understand_images(conversation_id: str, text: str, attachment_ids: list[str]) -> dict:
-    with SessionLocal() as session:
-        providers = {item.provider_key: item for item in session.scalars(select(ModelProviderConfigDB).where(ModelProviderConfigDB.enabled.is_(True), ModelProviderConfigDB.health_status == "healthy"))}
-        models = list(session.scalars(select(ModelRegistryDB).where(ModelRegistryDB.enabled.is_(True), ModelRegistryDB.selected.is_(True)).order_by(ModelRegistryDB.supports_vision.desc(), ModelRegistryDB.id)))
-        audit = session.get(AICapabilityConfigDB, "vision_model_routing")
-        probes = dict(((audit.configuration if audit else {}) or {}).get("model_probes") or {})
-        candidates = [(item.provider_id, item.model_id) for item in models if item.provider_id in providers]
-        candidates.sort(key=lambda item: probes.get(f"{item[0]}:{item[1]}", {}).get("status") != "passed")
+    candidates = [(item["provider_id"], item["model_id"]) for item in resolve_model_route("VISION_UNDERSTANDING")]
     if not candidates: raise ValueError("vision_model_unavailable")
     images = multimodal_images(conversation_id, attachment_ids)
     errors = []

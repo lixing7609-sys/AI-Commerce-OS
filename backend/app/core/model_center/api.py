@@ -5,6 +5,7 @@ from app.core.model_center.service import delete_provider, discover_models, get_
 from app.llm.exceptions import AuthenticationError, ConfigurationError, LLMGatewayError
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMRequest
+from app.core.model_center.capability_registry import save_routing_preferred
 
 
 router = APIRouter(prefix="/founder-ai/model-center", tags=["Founder Model Center"])
@@ -61,6 +62,10 @@ class CapabilityAssignmentIn(BaseModel):
 
 class ExecutionEngineAssignmentIn(BaseModel):
     engine_id: str
+
+
+class RoutingPreferredIn(BaseModel):
+    preferred_primary: dict | None = None
 
 
 @router.get("")
@@ -195,6 +200,14 @@ def update_capability(capability_key: str, request: CapabilityAssignmentIn):
 def update_execution_engine(request: ExecutionEngineAssignmentIn):
     try:
         return save_execution_engine(request.engine_id)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.put("/routing-policies/{capability}")
+def update_routing_preferred(capability: str, request: RoutingPreferredIn):
+    try:
+        return save_routing_preferred(capability, request.preferred_primary)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 

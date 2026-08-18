@@ -805,6 +805,19 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-my-models > button.is-selected { box-shadow: inset 2px 0 var(--accent); background: var(--surface-selected); }
 .sino-my-models > button strong { min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .sino-my-models > button span { min-width: 0; overflow: hidden; color: #8d968a; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.sino-model-capabilities,.sino-routing-policies{margin-top:28px;padding-top:22px;border-top:1px solid var(--line)}
+.sino-model-capabilities>div:last-child,.sino-routing-policies>div:last-child{display:grid;gap:10px}
+.sino-model-capabilities article,.sino-routing-policies article{padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-raised)}
+.sino-model-capabilities article>header,.sino-routing-policies article>header{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px}
+.sino-model-capabilities article>header span,.sino-routing-policies article>header span{color:var(--text-label);font-size:11px;text-transform:uppercase}
+.sino-model-capabilities article>div{display:flex;flex-wrap:wrap;gap:8px}
+.sino-model-capabilities article>div>span{display:grid;gap:2px;min-width:92px;padding:7px 9px;border-radius:7px;background:var(--surface-default);color:var(--text-muted);font-size:11px}
+.sino-model-capabilities article>div>span[data-status="VERIFIED"]{color:var(--accent)}
+.sino-routing-policies article{display:grid;gap:10px}
+.sino-routing-policies label{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:12px;color:var(--text-label);font-size:12px}
+.sino-routing-policies select{min-width:0;padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--surface-default);color:var(--text-primary)}
+.sino-routing-policies dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0}
+.sino-routing-policies dl>div{padding:8px;background:var(--surface-default);border-radius:7px}.sino-routing-policies dt{color:var(--text-label);font-size:10px}.sino-routing-policies dd{margin:3px 0 0;overflow-wrap:anywhere;color:var(--text-secondary);font-size:12px}
 .sino-provider-connections button, .sino-provider-manager button { border: 1px solid var(--line); border-radius: 8px; background: transparent; color: #c4cbc0; padding: 8px 12px; font-size: 14px; cursor: pointer; }
 .sino-provider-connections { margin-top: 24px; }
 .sino-provider-connections > div { display: flex; align-items: center; gap: 16px; padding: 11px 4px; color: #aeb6aa; font-size: 14px; }
