@@ -24,6 +24,10 @@ def test_new_conversation_is_bound_to_founder_ai():
     assert response.status_code == 201
     body = response.json()
     assert body["system_id"] == "founder_ai"
+    assert body["conversation_type"] == "USER_CONVERSATION"
+    assert body["created_by"] == "FOUNDER"
+    assert body["visibility"] == "conversation_list"
+    assert body["lifecycle_status"] == "active"
 
 
 def test_conversation_can_be_listed_and_read():
@@ -46,7 +50,9 @@ def test_conversation_project_binding_persists_and_can_be_cleared():
         restored = client.get(f"/api/v1/conversations/{conversation['id']}")
         cleared = client.patch(f"/api/v1/conversations/{conversation['id']}/project", json={"project_id": None})
     assert bound.status_code == 200 and restored.json()["project_id"] == project["id"]
+    assert bound.json()["conversation_type"] == "PROJECT_CONVERSATION"
     assert cleared.status_code == 200 and cleared.json()["project_id"] is None
+    assert cleared.json()["id"] == conversation["id"] and cleared.json()["conversation_type"] == "USER_CONVERSATION"
     with SessionLocal() as session:
         session.query(ConversationDB).filter_by(id=conversation["id"]).delete()
         from app.core.project.model import FounderProjectDB

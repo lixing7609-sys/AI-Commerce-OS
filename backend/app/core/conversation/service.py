@@ -16,21 +16,34 @@ from core.founder_intent.model import ConversationCandidateContextDB, FounderObj
 from core.founder_object.model import ConversationObjectContextDB, FounderObjectDB, FounderObjectRevisionDB
 
 FOUNDER_SYSTEM_KEY = "founder_ai"
+CONVERSATION_TYPES = {"USER_CONVERSATION", "PROJECT_CONVERSATION", "SYSTEM_RUN", "VERIFICATION_RUN", "TEMPORARY_CONVERSATION"}
+CREATORS = {"FOUNDER", "SINO", "SYSTEM", "VERIFICATION"}
+LIST_VISIBLE_TYPES = {"USER_CONVERSATION", "PROJECT_CONVERSATION"}
 
 
 class ConversationBoundaryError(ValueError):
     """Raised when a conversation crosses the Founder application boundary."""
 
 
-def create_conversation(*, title: str | None = None, project_id: str | None = None, topic_key: str | None = None) -> ConversationDB:
+def create_conversation(*, title: str | None = None, project_id: str | None = None, topic_key: str | None = None, conversation_type: str = "USER_CONVERSATION", created_by: str = "FOUNDER") -> ConversationDB:
     if project_id and get_project(project_id) is None:
         raise ConversationBoundaryError("Founder project not found")
+    conversation_type = conversation_type.upper()
+    created_by = created_by.upper()
+    if conversation_type not in CONVERSATION_TYPES: raise ConversationBoundaryError("Unsupported conversation type")
+    if created_by not in CREATORS: raise ConversationBoundaryError("Unsupported conversation creator")
+    if project_id and conversation_type == "USER_CONVERSATION": conversation_type = "PROJECT_CONVERSATION"
+    hidden = conversation_type in {"SYSTEM_RUN", "VERIFICATION_RUN", "TEMPORARY_CONVERSATION"}
     with SessionLocal() as session:
         record = ConversationDB(
             system_id=FOUNDER_SYSTEM_KEY,
             project_id=project_id,
             title=(title or "New Conversation").strip() or "New Conversation",
             topic_key=topic_key,
+            conversation_type=conversation_type,
+            created_by=created_by,
+            visibility="hidden_from_conversation_list" if hidden else "conversation_list",
+            lifecycle_status="ephemeral" if conversation_type == "TEMPORARY_CONVERSATION" else "active",
         )
         session.add(record)
         session.flush()
@@ -45,18 +58,26 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
         return record
 
 
-def list_conversations() -> list[ConversationDB]:
+def list_conversations(*, scope: str = "all", project_id: str | None = None) -> list[ConversationDB]:
+    if scope not in {"all", "global", "project"}: raise ConversationBoundaryError("Unsupported conversation list scope")
+    if scope == "project" and not project_id: raise ConversationBoundaryError("Project conversation scope requires project_id")
     with SessionLocal() as session:
         hidden_ids = hidden_entity_ids(session, "conversation")
+        conditions = [
+            ConversationDB.system_id == FOUNDER_SYSTEM_KEY,
+            ConversationDB.status == "active",
+            ConversationDB.conversation_kind == "founder_discussion",
+            ConversationDB.conversation_type.in_(LIST_VISIBLE_TYPES),
+            ConversationDB.visibility == "conversation_list",
+            ConversationDB.lifecycle_status == "active",
+            ConversationDB.id.notin_(hidden_ids),
+        ]
+        if scope == "global": conditions.extend([ConversationDB.conversation_type == "USER_CONVERSATION", ConversationDB.project_id.is_(None)])
+        if scope == "project": conditions.extend([ConversationDB.conversation_type == "PROJECT_CONVERSATION", ConversationDB.project_id == project_id])
         records = list(
             session.scalars(
                 select(ConversationDB)
-                .where(
-                    ConversationDB.system_id == FOUNDER_SYSTEM_KEY,
-                    ConversationDB.status == "active",
-                    ConversationDB.conversation_kind == "founder_discussion",
-                    ConversationDB.id.notin_(hidden_ids),
-                )
+                .where(*conditions)
                 .order_by(ConversationDB.updated_at.desc(), ConversationDB.created_at.desc(), ConversationDB.id.desc())
             )
         )
@@ -82,6 +103,9 @@ def active_project_conversation(project_id: str) -> ConversationDB | None:
                 ConversationDB.project_id == project_id,
                 ConversationDB.status == "active",
                 ConversationDB.conversation_kind == "founder_discussion",
+                ConversationDB.conversation_type == "PROJECT_CONVERSATION",
+                ConversationDB.visibility == "conversation_list",
+                ConversationDB.lifecycle_status == "active",
             ).order_by(ConversationDB.updated_at.desc(), ConversationDB.created_at.asc())
         )
 
@@ -110,6 +134,9 @@ def merge_project_conversations(*, project_id: str, conversation_ids: list[str],
         canonical.topic_key = topic_key or canonical.topic_key or f"project:{project_id}:current"
         canonical.status = "active"
         canonical.conversation_kind = "founder_discussion"
+        canonical.conversation_type = "PROJECT_CONVERSATION"
+        canonical.visibility = "conversation_list"
+        canonical.lifecycle_status = "active"
 
         brain_rows = list(session.scalars(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id.in_(unique_ids)).order_by(SinoBrainSessionDB.updated_at.asc())))
         canonical_brain = next((item for item in brain_rows if item.conversation_id == canonical.id), None)
@@ -183,7 +210,10 @@ def bind_conversation_project(conversation_id: str, project_id: str | None) -> C
         record = session.scalar(select(ConversationDB).where(ConversationDB.id == conversation_id, ConversationDB.system_id == FOUNDER_SYSTEM_KEY))
         if record is None:
             raise LookupError("Conversation not found")
+        if record.conversation_type not in {"USER_CONVERSATION", "PROJECT_CONVERSATION"}:
+            raise ConversationBoundaryError("Only Founder conversations can be filed into a Project")
         record.project_id = project_id
+        record.conversation_type = "PROJECT_CONVERSATION" if project_id else "USER_CONVERSATION"
         session.commit(); session.refresh(record)
         return record
 

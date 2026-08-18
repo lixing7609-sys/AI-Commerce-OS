@@ -11,6 +11,8 @@ class ConversationCreateIn(BaseModel):
 
     title: str | None = Field(default=None, max_length=200)
     project_id: str | None = Field(default=None, max_length=40)
+    conversation_type: str = Field(default="USER_CONVERSATION", max_length=30)
+    created_by: str = Field(default="FOUNDER", max_length=20)
 
 
 class ConversationOut(BaseModel):
@@ -22,6 +24,10 @@ class ConversationOut(BaseModel):
     title: str
     status: str
     conversation_kind: str
+    conversation_type: str
+    created_by: str
+    visibility: str
+    lifecycle_status: str
     topic_key: str | None
     merged_into_conversation_id: str | None
     created_at: datetime
@@ -37,14 +43,17 @@ router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
 
 @router.get("", response_model=list[ConversationOut])
-def list_founder_conversations():
-    return list_conversations()
+def list_founder_conversations(scope: str = "all", project_id: str | None = None):
+    try:
+        return list_conversations(scope=scope, project_id=project_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @router.post("", response_model=ConversationOut, status_code=201)
 def create_founder_conversation(request: ConversationCreateIn):
     try:
-        return create_conversation(title=request.title, project_id=request.project_id)
+        return create_conversation(title=request.title, project_id=request.project_id, conversation_type=request.conversation_type, created_by=request.created_by)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

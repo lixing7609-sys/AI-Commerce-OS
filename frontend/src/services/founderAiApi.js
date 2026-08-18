@@ -16,11 +16,11 @@ async function request(path, options, fallback) {
   return response.json();
 }
 
-export function createFounderConversation(title, projectId) {
+export function createFounderConversation(title, projectId, governance = {}) {
   return request("/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, project_id: projectId || null }),
+    body: JSON.stringify({ title, project_id: projectId || null, ...governance }),
   }, "创建 Founder Conversation 失败");
 }
 

@@ -64,6 +64,10 @@ export const conversationListRecord = (item) => ({
   title: item.title || "新讨论",
   state: item.state || item.conversation_state,
   project_id: item.project_id || null,
+  conversation_type: item.conversation_type || "USER_CONVERSATION",
+  created_by: item.created_by || "FOUNDER",
+  visibility: item.visibility || "conversation_list",
+  lifecycle_status: item.lifecycle_status || "active",
   updatedAt: item.updated_at || item.updatedAt || null,
   createdAt: item.created_at || item.createdAt || null,
 });

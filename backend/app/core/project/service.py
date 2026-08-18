@@ -70,7 +70,7 @@ def project_counts(project_ids: list[str]) -> dict[str, dict[str, int]]:
     counts = {project_id: {"conversation_count": 0, "candidate_count": 0, "ready_count": 0} for project_id in project_ids}
     if not project_ids: return counts
     with SessionLocal() as session:
-        for project_id, count in session.execute(select(ConversationDB.project_id, func.count()).where(ConversationDB.project_id.in_(project_ids), ConversationDB.system_id == FOUNDER_SYSTEM_KEY, ConversationDB.status == "active", ConversationDB.conversation_kind == "founder_discussion").group_by(ConversationDB.project_id)):
+        for project_id, count in session.execute(select(ConversationDB.project_id, func.count()).where(ConversationDB.project_id.in_(project_ids), ConversationDB.system_id == FOUNDER_SYSTEM_KEY, ConversationDB.status == "active", ConversationDB.conversation_kind == "founder_discussion", ConversationDB.conversation_type == "PROJECT_CONVERSATION", ConversationDB.visibility == "conversation_list", ConversationDB.lifecycle_status == "active").group_by(ConversationDB.project_id)):
             counts[project_id]["conversation_count"] = count
         for project_id, status, count in session.execute(select(AssetCatalogDB.project_id, AssetCatalogDB.status, func.count()).where(AssetCatalogDB.project_id.in_(project_ids), AssetCatalogDB.status.in_(["candidate", "ready"])).group_by(AssetCatalogDB.project_id, AssetCatalogDB.status)):
             counts[project_id][f"{status}_count"] = count
@@ -91,7 +91,8 @@ def delete_project(project_id: str) -> dict:
     with SessionLocal() as session:
         record = session.scalar(select(FounderProjectDB).where(FounderProjectDB.id == project_id, FounderProjectDB.system_id == FOUNDER_SYSTEM_KEY))
         if record is None: raise LookupError("Founder project not found")
-        session.query(ConversationDB).filter_by(project_id=project_id).update({"project_id": None}, synchronize_session=False)
+        session.query(ConversationDB).filter_by(project_id=project_id, conversation_type="PROJECT_CONVERSATION").update({"project_id": None, "conversation_type": "USER_CONVERSATION"}, synchronize_session=False)
+        session.query(ConversationDB).filter(ConversationDB.project_id == project_id, ConversationDB.conversation_type != "PROJECT_CONVERSATION").update({"project_id": None}, synchronize_session=False)
         session.query(AssetCatalogDB).filter_by(project_id=project_id).update({"project_id": None}, synchronize_session=False)
         session.query(ProjectIntelligenceDB).filter_by(project_id=project_id).delete(synchronize_session=False)
         session.delete(record); session.commit()
@@ -152,7 +153,7 @@ def get_project_intelligence(project_id: str) -> dict:
         intelligence = session.get(ProjectIntelligenceDB, project_id)
         hidden_conversations = hidden_entity_ids(session, "conversation")
         hidden_memories = hidden_entity_ids(session, "memory")
-        all_conversations = list(session.scalars(select(ConversationDB).where(ConversationDB.project_id == project_id, ConversationDB.system_id == FOUNDER_SYSTEM_KEY, ConversationDB.status == "active", ConversationDB.conversation_kind == "founder_discussion").order_by(ConversationDB.updated_at.desc())))
+        all_conversations = list(session.scalars(select(ConversationDB).where(ConversationDB.project_id == project_id, ConversationDB.system_id == FOUNDER_SYSTEM_KEY, ConversationDB.status == "active", ConversationDB.conversation_kind == "founder_discussion", ConversationDB.conversation_type == "PROJECT_CONVERSATION", ConversationDB.visibility == "conversation_list", ConversationDB.lifecycle_status == "active").order_by(ConversationDB.updated_at.desc(), ConversationDB.created_at.desc(), ConversationDB.id.desc())))
         conversations = [item for item in all_conversations if item.id not in hidden_conversations]
         conversation_ids = [item.id for item in conversations]
         all_conversation_ids = [item.id for item in all_conversations]

@@ -52,6 +52,7 @@ def _classify(path: str, content: str) -> tuple[list[str], str, bool]:
         ("autonomous_main_loop", ("autonomous_main_loop", "autonomous main loop", "manual_continue_count", "main_loop_stalled")),
         ("session_lifecycle_reconciliation", ("session_lifecycle", "actually_active", "resumable_paused", "stale_paused", "restart_recovery", "migrate_restart_failure")),
         ("founder_v1_interaction", ("core/conversation/service.py", "test_conversation_delete", "conversationattachment", "conversation_attachment", "attachment_refs", "attachment_ids", "uploadfounderimage", "deletefounderconversation", "globalsecretarycomposer", "sino-image", "task_complexity_router", "quick_fix_contract", "dispatch_quick_fix", "quick fix execution", "bounded_quick_fix", "bounded technical lane", "visual_grounding", "grounding_confidence", "clarification_reason", "conversationresponsematches", "conversationfallbackafterdelete", "stableconversationorder", "data-conversation-id", "conversation list", "pendingattachments", "supports_vision", "multimodal", "metadata.get(\"images\")")),
+        ("conversation_lifecycle_filing", ("conversation_type", "project_conversation", "system_run", "verification_run", "temporary_conversation", "hidden_from_conversation_list", "lifecycle_status", "governance =", "conversation governance", "conversation filing")),
     )
     for capability, terms in markers:
         if any(term in text for term in terms):

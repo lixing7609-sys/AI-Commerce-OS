@@ -19,12 +19,12 @@ describe("Founder sidebar information architecture", () => {
     expect(onNavigate).toHaveBeenCalledWith("settings");
   });
 
-  it("keeps real conversations and hides only records with explicit test provenance", () => {
+  it("uses governance metadata rather than titles to hide non-Founder runs", () => {
     const now = Date.now();
     render(<SecretarySidebar
       conversations={[
         { id: "real", title: "AI短剧生产系统", updatedAt: now },
-        { id: "test", title: "Runtime probe", updatedAt: now, provenance: "test" },
+        { id: "test", title: "Runtime probe", updatedAt: now, conversation_type: "VERIFICATION_RUN", visibility: "hidden_from_conversation_list", created_by: "VERIFICATION" },
       ]}
       projects={[{ id: "project-1", name: "验证AI短剧生产的可行性，跑通从创意到成片的全流程，为后续商业化或产品化打基础。 Project", description: "验证 AI 短剧生产可行性" }]}
     />);
@@ -55,7 +55,7 @@ describe("Founder sidebar information architecture", () => {
     expect([...document.querySelectorAll(".sino-conversation-item")].map((item) => item.dataset.conversationId)).toEqual(["conv-c", "conv-b", "conv-a"]);
   });
 
-  it("renders one fixed Conversation section after Project and never nests Conversations inside Project items", () => {
+  it("files project Conversations under the Project and keeps only unassigned Founder Conversations global", () => {
     const conversations = [
       { id: "project-work", project_id: "project-1", title: "Project 内工作", updatedAt: 20 },
       { id: "general-work", project_id: null, title: "普通工作", updatedAt: 10 },
@@ -71,10 +71,11 @@ describe("Founder sidebar information architecture", () => {
     const list = section.querySelector(".sino-sidebar__scroll-region .sino-conversation-list");
     expect([...section.children]).toEqual([title, section.querySelector(":scope > .sino-sidebar__scroll-region")]);
     expect(title.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect([...list.querySelectorAll("b")].map((item) => item.textContent)).toEqual(["Project 内工作", "普通工作"]);
+    expect([...list.querySelectorAll("b")].map((item) => item.textContent)).toEqual(["普通工作"]);
 
     rerender(<SecretarySidebar conversations={conversations} projects={projects} activeProjectId="project-1" onSelectConversation={vi.fn()} />);
-    expect([...document.querySelectorAll(".sino-sidebar__scroll-region .sino-conversation-item__open b")].map((item) => item.textContent)).toEqual(["Project 内工作", "普通工作"]);
+    expect([...document.querySelectorAll(".sino-sidebar__scroll-region .sino-conversation-item__open b")].map((item) => item.textContent)).toEqual(["普通工作"]);
+    expect([...document.querySelectorAll(".sino-project-item .sino-conversation-item__open b")].map((item) => item.textContent)).toEqual(["Project 内工作"]);
     expect(document.querySelectorAll(".sino-sidebar__conversation-title")).toHaveLength(1);
     expect(document.querySelector('.sino-collapsed-navigation [aria-label="会话"]')).toBeNull();
   });
@@ -91,6 +92,37 @@ describe("Founder sidebar information architecture", () => {
     expect(titles()).toEqual(["最近讨论", "较早讨论"]);
     rerender(<SecretarySidebar conversations={conversations} projects={projects} activeProjectId="studio" onSelectConversation={vi.fn()} />);
     expect(titles()).toEqual(["最近讨论", "较早讨论"]);
+  });
+
+  it("keeps the active conversation id selected while filing and unfiling", async () => {
+    bindFounderConversationProject.mockImplementation(async (id, projectId) => ({ id, project_id: projectId, conversation_type: projectId ? "PROJECT_CONVERSATION" : "USER_CONVERSATION" }));
+    const onSelectConversation = vi.fn();
+    const conversation = { id: "conv-active", title: "Active filing", conversation_type: "USER_CONVERSATION", project_id: null, updatedAt: 20 };
+    const projects = [{ id: "project-a", name: "Project A" }];
+    const { rerender } = render(<SecretarySidebar conversations={[conversation]} projects={projects} activeConversationId="conv-active" onSelectConversation={onSelectConversation} />);
+    fireEvent.click(screen.getByRole("button", { name: /会话操作 Active filing/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Project A" }));
+    await waitFor(() => expect(bindFounderConversationProject).toHaveBeenCalledWith("conv-active", "project-a"));
+    expect(onSelectConversation).toHaveBeenCalledWith("conv-active");
+
+    rerender(<SecretarySidebar conversations={[{ ...conversation, project_id: "project-a", conversation_type: "PROJECT_CONVERSATION" }]} projects={projects} activeProjectId="project-a" activeConversationId="conv-active" onSelectConversation={onSelectConversation} />);
+    expect(document.querySelector('.sino-project-item .sino-conversation-item[data-conversation-id="conv-active"].is-active')).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /会话操作 Active filing/ }));
+    fireEvent.click(screen.getByRole("button", { name: "移出 Project" }));
+    await waitFor(() => expect(bindFounderConversationProject).toHaveBeenCalledWith("conv-active", null));
+  });
+
+  it("never renders governed System, Verification, or ephemeral records", () => {
+    render(<SecretarySidebar conversations={[
+      { id: "user", title: "Founder", conversation_type: "USER_CONVERSATION", visibility: "conversation_list", lifecycle_status: "active" },
+      { id: "system", title: "System", conversation_type: "SYSTEM_RUN", visibility: "hidden_from_conversation_list", lifecycle_status: "active" },
+      { id: "verify", title: "Verify", conversation_type: "VERIFICATION_RUN", visibility: "hidden_from_conversation_list", lifecycle_status: "active" },
+      { id: "empty", title: "Empty", conversation_type: "TEMPORARY_CONVERSATION", visibility: "hidden_from_conversation_list", lifecycle_status: "ephemeral" },
+    ]} projects={[]} />);
+    expect(screen.getByText("Founder")).toBeTruthy();
+    expect(screen.queryByText("System")).toBeNull();
+    expect(screen.queryByText("Verify")).toBeNull();
+    expect(screen.queryByText("Empty")).toBeNull();
   });
 
   it("renders a System Project beneath its persisted parent Project", () => {
