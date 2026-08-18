@@ -1381,14 +1381,6 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   .sino-legacy-executions > button.sino-workspace-row { grid-template-columns: 1fr 14px; }
   .sino-workspace-row__metrics { grid-column: 1 / -1; grid-row: 2; }
 }
-.sino-domain-grid { min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); align-content: start; gap: 12px; }
-.sino-domain-grid > button { display: grid; gap: 18px; padding: 20px; border: 1px solid var(--border-default); border-radius: 10px; background: var(--surface-raised); color: var(--text-primary); text-align: left; cursor: pointer; }
-.sino-domain-grid > button:hover { border-color: var(--accent); background: var(--surface-selected); }
-.sino-domain-grid > button > strong { font-size: var(--font-section-title); }
-.sino-domain-grid dl { margin: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.sino-domain-grid dl div { display: grid; gap: 5px; }
-.sino-domain-grid dt { color: var(--text-label); font-size: var(--font-label); }
-.sino-domain-grid dd { margin: 0; color: var(--text-primary); }
 .sino-reuse-suggestions { display: grid; gap: 8px; margin: 0 0 20px; padding: 16px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-raised); }
 .sino-reuse-suggestions > span, .sino-reuse-suggestions small { color: var(--text-label); font-size: var(--font-label); }
 .sino-reuse-suggestions h2 { margin: 0 0 4px; font-size: var(--font-section-title); }

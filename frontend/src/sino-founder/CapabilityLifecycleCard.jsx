@@ -14,7 +14,7 @@ const ACTION_LABELS = {
 function LifecycleTimeline({ asset }) {
   const test = asset?.test_run_refs?.at?.(-1);
   const current = asset?.status === "testing" && test?.status === "passed" ? 5 : (ORDER[asset?.status] ?? 1);
-  return <ol className="sino-capability-timeline" aria-label="能力生命周期">{STEPS.map(([key, label], index) => <li key={key} className={index < current ? "is-complete" : index === current ? "is-current" : ""}><span>{index < current ? "✓" : index + 1}</span><b>{label}</b></li>)}</ol>;
+  return <ol className="sino-capability-timeline" aria-label="能力周期">{STEPS.map(([key, label], index) => <li key={key} className={index < current ? "is-complete" : index === current ? "is-current" : ""}><span>{index < current ? "✓" : index + 1}</span><b>{label}</b></li>)}</ol>;
 }
 
 function TestResult({ test }) {
@@ -34,7 +34,7 @@ export function CapabilityLifecycleCard({ asset, action, candidates = [], error,
   const actions = asset?.available_actions || [];
   const development = asset?.development_run_refs?.at?.(-1);
   const test = asset?.test_run_refs?.at?.(-1);
-  return <section className="sino-capability-lifecycle-card" aria-label="能力生命周期">
+  return <section className="sino-capability-lifecycle-card" aria-label="能力周期">
     {asset ? <>
       <header><div><span>Current Capability</span><h2>{asset.name}</h2><p>{objectTypeLabel(asset.asset_type)} · {asset.domain_id || "通用"}</p></div><strong>{statusLabel(asset.status)} · V{asset.version || 1}</strong></header>
       <LifecycleTimeline asset={asset} />

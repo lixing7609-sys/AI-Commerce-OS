@@ -12,6 +12,13 @@ function Harness() { const [selected, setSelected] = useState(null); return <><C
 describe("AI Capability Center IA", () => {
   beforeEach(() => { getCapabilityDomains.mockResolvedValue({ domains: [{ domain_id: "commerce", name: "电商", counts: { candidate: 1, developing: 0, testing: 0, ready: 0 } }] }); getCapabilityRepositoryAssets.mockResolvedValue({ assets: [skill] }); getLifecycleAsset.mockResolvedValue(skill); getFounderDrafts.mockResolvedValue({ drafts: [] }); });
   afterEach(cleanup);
+  it("uses the shortened capability-cycle label and Draft Center row cards for domains", async () => {
+    const { container } = render(<Harness />);
+    expect(screen.getByRole("button", { name: "能力周期" })).toBeTruthy();
+    const domain = await screen.findByRole("button", { name: /电商/ });
+    expect(domain.classList.contains("sino-workspace-row")).toBe(true);
+    expect(container.querySelector(".sino-domain-list.sino-draft-list")).toBeTruthy();
+  });
   it("reads the formal Asset Catalog and excludes non-capability assets", async () => {
     render(<Harness />);
     fireEvent.click(await screen.findByRole("button", { name: /电商/ }));
