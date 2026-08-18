@@ -175,6 +175,7 @@ class ModelProbeWorker:
             return
         self._stop.clear()
         self._recover_legacy_queue()
+        self._recover_unavailable_candidate_failure()
         self._thread = Thread(target=self._consume, name="sino-image-model-probe-worker", daemon=True)
         self._thread.start()
 
@@ -214,6 +215,28 @@ class ModelProbeWorker:
                 job.update({"probe_job_id": _job_id(conversation_id, decision["decision_id"]), "conversation_id": conversation_id, "task_id": loop["task_id"], "decision_id": decision["decision_id"], "approved_scope": decision["approved_scope"], "candidate_models": list(dispatch.get("candidates") or []), "max_candidates": int(decision["max_probe_candidate_count"]), "status": "queued", "queued_at": queued_at, "started_at": None, "completed_at": None, "worker_id": None, "heartbeat_at": None, "attempt_count": 0, "retry_count": 0, "probe_results": [], "callback_status": "pending", "last_error": None})
             _update_job(conversation_id, materialize)
 
+    def _recover_unavailable_candidate_failure(self):
+        """Retry once when the old scheduler selected zero executable bindings."""
+        with SessionLocal() as session:
+            rows = list(session.scalars(select(SinoBrainSessionDB)))
+            targets = []
+            for state in rows:
+                loop = dict((state.discovery or {}).get("autonomous_main_loop") or {})
+                job = dict(loop.get("model_probe_job") or {})
+                results = list(job.get("probe_results") or [])
+                unavailable_only = bool(results) and all((item.get("evidence") or {}).get("reason") == "configured_model_or_credential_reference_unavailable" for item in results)
+                if loop.get("status") == "model_probe_failed" and job.get("retry_count", 0) == 0 and unavailable_only and loop.get("founder_probe_decision", {}).get("approval_status") == "approved":
+                    candidates = []
+                    for item in loop.get("model_candidates") or []:
+                        if resolve_runtime_config(provider_key=item.get("provider_id"), model=item.get("model_id")) is not None:
+                            candidates.append(dict(item))
+                    targets.append((state.conversation_id, candidates[: int(job.get("max_candidates") or 1)]))
+        for conversation_id, candidates in targets:
+            def requeue(job, loop):
+                job.update({"candidate_models": candidates, "status": "queued", "queued_at": _now(), "started_at": None, "completed_at": None, "worker_id": None, "heartbeat_at": None, "retry_count": 1, "callback_status": "pending", "last_error": None, "current_candidate_index": None})
+                loop.update({"status": "model_probe_queued", "technical_blocker": None})
+            _update_job(conversation_id, requeue)
+
     def _consume(self):
         while not self._stop.is_set():
             for conversation_id in self._queued_conversations():
@@ -233,7 +256,7 @@ class ModelProbeWorker:
             _update_job(conversation_id, lambda current, loop: (current.update({"heartbeat_at": heartbeat, "status": "running", "current_candidate_index": index + 1}), loop.update({"status": "model_probe_running"})))
             result = self.probe(candidate, job["probe_job_id"])
             result_record = {"provider_id": candidate.get("provider_id"), "model_id": candidate.get("model_id"), "probe_status": result["status"], "evidence": {"reason": result.get("reason"), "http_status": result.get("http_status"), "asset": result.get("asset")}, "external_effect": "single_provider_inference_call", "timestamp": _now()}
-            job = _update_job(conversation_id, lambda current, loop: current.update({"probe_results": [*(current.get("probe_results") or []), result_record], "heartbeat_at": _now()}))
+            job = _update_job(conversation_id, lambda current, loop: current.update({"probe_results": [*(current.get("probe_results") or []), result_record], "heartbeat_at": _now(), "external_call_count": int(current.get("external_call_count") or 0) + (0 if result.get("reason") == "configured_model_or_credential_reference_unavailable" else 1)}))
             if result["status"] == "PASS":
                 passed = (candidate, result); break
         if passed:

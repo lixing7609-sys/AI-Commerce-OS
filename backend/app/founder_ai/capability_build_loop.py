@@ -6,6 +6,7 @@ import hashlib
 import re
 
 from app.core.model_center.service import get_model_center
+from app.core.model_center.service import resolve_runtime_config
 from app.database.db import SessionLocal
 from app.founder_ai.capability_compatibility import lookup_image_generation_compatibility
 from app.core.conversation_first.model import SinoBrainSessionDB
@@ -96,10 +97,8 @@ def resume_authorized_capability_build_loop(conversation_id: str, decision: dict
         if loop.get("task_id") != decision.get("task_id") or decision.get("approval_status") != "approved":
             raise ValueError("Founder decision does not match the current autonomous task")
         candidates = [dict(item) for item in loop.get("model_candidates") or []]
-        ranked = sorted(
-            (item for item in candidates if item.get("probe_status") == "NOT_RUN"),
-            key=lambda item: (not bool(item.get("provider_id")), "seedream" not in str(item.get("model_id", "")).lower(), str(item.get("model_id"))),
-        )[: int(decision["max_probe_candidate_count"])]
+        executable = [item for item in candidates if item.get("probe_status") == "NOT_RUN" and resolve_runtime_config(provider_key=item.get("provider_id"), model=item.get("model_id")) is not None]
+        ranked = sorted(executable, key=lambda item: ("image" not in str(item.get("model_id", "")).lower(), str(item.get("provider_id")), str(item.get("model_id"))))[: int(decision["max_probe_candidate_count"])]
         loop["probe_dispatch"] = {
             "status": "queued",
             "decision_id": decision["decision_id"],
@@ -128,6 +127,7 @@ def resume_authorized_capability_build_loop(conversation_id: str, decision: dict
             "attempt_count": 0,
             "retry_count": 0,
             "probe_results": [],
+            "external_call_count": 0,
             "callback_status": "pending",
             "last_error": None,
         }
