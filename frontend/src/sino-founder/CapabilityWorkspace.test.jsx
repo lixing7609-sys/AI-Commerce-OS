@@ -41,6 +41,17 @@ describe("AI Capability Center IA", () => {
     expect(screen.queryByRole("button", { name: /电商/ })).toBeNull();
     expect(screen.getByRole("button", { name: /营销/ })).toBeTruthy();
   });
+  it("searches capability names globally before entering a Domain and opens the match", async () => {
+    render(<Harness />);
+    const search = await screen.findByRole("searchbox", { name: "搜索能力名称或 Domain" });
+    fireEvent.change(search, { target: { value: "商品分镜生成" } });
+    const match = await screen.findByRole("button", { name: /商品分镜生成 Skill/ });
+    expect(screen.queryByText("没有匹配的 Domain")).toBeNull();
+    expect(screen.getByRole("region", { name: "匹配的能力" })).toBeTruthy();
+    fireEvent.click(match);
+    await waitFor(() => expect(getLifecycleAsset).toHaveBeenCalledWith("asset-skill"));
+    expect(await screen.findByRole("heading", { name: "电商" })).toBeTruthy();
+  });
   it("searches capability names and the selected Domain without another API request", async () => {
     getCapabilityRepositoryAssets.mockResolvedValue({ assets: [skill, workflow] });
     render(<Harness />);

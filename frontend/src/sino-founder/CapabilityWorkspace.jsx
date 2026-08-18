@@ -36,18 +36,38 @@ function StructuredValue({ value }) {
 }
 
 function LifecycleCenter({ selected, onSelect }) {
-  const [domains, setDomains] = useState([]); const [domain, setDomain] = useState(""); const [assets, setAssets] = useState([]); const [type, setType] = useState(""); const [status, setStatus] = useState(""); const [query, setQuery] = useState(""); const [error, setError] = useState("");
+  const [domains, setDomains] = useState([]); const [domain, setDomain] = useState(""); const [assets, setAssets] = useState([]); const [globalAssets, setGlobalAssets] = useState([]); const [globalAssetsLoaded, setGlobalAssetsLoaded] = useState(false); const [type, setType] = useState(""); const [status, setStatus] = useState(""); const [query, setQuery] = useState(""); const [error, setError] = useState("");
   useEffect(() => { getCapabilityDomains().then((data) => setDomains(data.domains || [])).catch((reason) => setError(reason.message)); }, []);
   useEffect(() => { if (!domain) return; getCapabilityRepositoryAssets(domain, type, status).then((data) => setAssets((data.assets || []).filter((item) => CAPABILITY_TYPES.has(item.asset_type) || item.asset_type === "knowledge"))).catch((reason) => setError(reason.message)); }, [domain, type, status]);
   const normalizedQuery = query.trim().toLocaleLowerCase();
+  useEffect(() => {
+    if (domain || !normalizedQuery || !domains.length || globalAssetsLoaded) return;
+    let active = true;
+    Promise.all(domains.map((item) => getCapabilityRepositoryAssets(item.domain_id, "", "")))
+      .then((responses) => {
+        if (!active) return;
+        const uniqueAssets = new Map();
+        responses.flatMap((response) => response.assets || []).forEach((item) => {
+          if (CAPABILITY_TYPES.has(item.asset_type) || item.asset_type === "knowledge") uniqueAssets.set(item.asset_id, item);
+        });
+        setGlobalAssets([...uniqueAssets.values()]); setGlobalAssetsLoaded(true);
+      })
+      .catch((reason) => { if (active) setError(reason.message); });
+    return () => { active = false; };
+  }, [domain, normalizedQuery, domains, globalAssetsLoaded]);
   const selectedDomain = domains.find((item) => item.domain_id === domain);
   const visibleDomains = useMemo(() => domains.filter((item) => !normalizedQuery || `${item.name || ""} ${item.domain_id || ""}`.toLocaleLowerCase().includes(normalizedQuery)), [domains, normalizedQuery]);
+  const globalMatches = useMemo(() => globalAssets.filter((item) => {
+    const assetDomain = domains.find((candidate) => candidate.domain_id === item.domain_id);
+    return normalizedQuery && `${businessAssetName(item)} ${businessPurpose(item)} ${item.domain_id || ""} ${assetDomain?.name || ""}`.toLocaleLowerCase().includes(normalizedQuery);
+  }), [globalAssets, domains, normalizedQuery]);
   const visible = useMemo(() => assets.filter((item) => !normalizedQuery || `${businessAssetName(item)} ${item.domain_id || ""} ${selectedDomain?.name || ""}`.toLocaleLowerCase().includes(normalizedQuery)), [assets, normalizedQuery, selectedDomain?.name]);
   async function choose(item) { onSelect?.(item); try { onSelect?.(await getLifecycleAsset(item.asset_id)); } catch (reason) { setError(reason.message); } }
+  function chooseGlobal(item) { setDomain(item.domain_id); choose(item); }
   return <>
     <header><div><span className="sino-kicker">Capability Repository</span><h1>{domain ? selectedDomain?.name || domain : "能力仓库"}</h1><p>按业务 Domain 保存 Candidate、Developing、Testing 与 Ready 能力；只有 Ready 可以正式引用。</p></div>{domain ? <button onClick={() => { setDomain(""); setAssets([]); onSelect?.(null); }}>返回 Domain</button> : null}</header>
     <div className="sino-repository-search"><label htmlFor="capability-repository-search">搜索能力名称或 Domain</label><input id="capability-repository-search" type="search" value={query} placeholder="搜索能力名称或 Domain" onChange={(event) => setQuery(event.target.value)} /></div>
-    {!domain ? <div className="sino-primary-list sino-draft-list sino-domain-list">{visibleDomains.length ? visibleDomains.map((item) => <button type="button" key={item.domain_id} className="sino-workspace-row" onClick={() => setDomain(item.domain_id)}><div className="sino-workspace-row__identity"><span>Capability Domain</span><strong>{item.name}</strong><p>按能力状态查看与管理该业务 Domain</p></div><dl className="sino-workspace-row__metrics">{STATUSES.slice(1, 5).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{item.counts?.[key] || 0}</dd></div>)}</dl><i aria-hidden="true">›</i></button>) : <div className="sino-business-empty"><strong>没有匹配的 Domain</strong><p>请尝试其他 Domain 名称。</p></div>}</div> : <><nav aria-label="能力类型筛选">{TYPES.map(([key, label]) => <button key={key || "all"} className={type === key ? "is-active" : ""} onClick={() => setType(key)}>{label}</button>)}</nav><nav aria-label="能力状态筛选">{STATUSES.map(([key, label]) => <button key={key || "all"} className={status === key ? "is-active" : ""} onClick={() => setStatus(key)}>{label}</button>)}</nav></>}
+    {!domain ? <div className="sino-global-search-results">{visibleDomains.length ? <div className="sino-primary-list sino-draft-list sino-domain-list">{visibleDomains.map((item) => <button type="button" key={item.domain_id} className="sino-workspace-row" onClick={() => setDomain(item.domain_id)}><div className="sino-workspace-row__identity"><span>Capability Domain</span><strong>{item.name}</strong><p>按能力状态查看与管理该业务 Domain</p></div><dl className="sino-workspace-row__metrics">{STATUSES.slice(1, 5).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{item.counts?.[key] || 0}</dd></div>)}</dl><i aria-hidden="true">›</i></button>)}</div> : null}{normalizedQuery && globalMatches.length ? <section className="sino-global-capability-results" aria-label="匹配的能力"><h2>匹配的能力</h2><div className="sino-primary-list sino-asset-list">{globalMatches.map((item) => <button type="button" key={item.asset_id} className="sino-workspace-row" onClick={() => chooseGlobal(item)}><div className="sino-workspace-row__identity"><span>{objectTypeLabel(item.asset_type)} · {domains.find((candidate) => candidate.domain_id === item.domain_id)?.name || item.domain_id}</span><strong>{businessAssetName(item)}</strong><p>{businessPurpose(item)}</p></div><dl className="sino-workspace-row__metrics"><div><dt>状态</dt><dd>{statusLabel(item.status)}</dd></div><div><dt>版本</dt><dd>V{item.version || 1}</dd></div></dl><i aria-hidden="true">›</i></button>)}</div></section> : null}{normalizedQuery && globalAssetsLoaded && !visibleDomains.length && !globalMatches.length ? <div className="sino-business-empty"><strong>没有匹配的 Domain 或能力</strong><p>请尝试其他 Domain 或能力名称。</p></div> : null}</div> : <><nav aria-label="能力类型筛选">{TYPES.map(([key, label]) => <button key={key || "all"} className={type === key ? "is-active" : ""} onClick={() => setType(key)}>{label}</button>)}</nav><nav aria-label="能力状态筛选">{STATUSES.map(([key, label]) => <button key={key || "all"} className={status === key ? "is-active" : ""} onClick={() => setStatus(key)}>{label}</button>)}</nav></>}
     {error && <p role="alert">{error}</p>}
     {domain ? <div className="sino-primary-list sino-asset-list">{visible.length ? visible.map((item) => <button type="button" key={item.asset_id} className={`sino-workspace-row${selected?.asset_id === item.asset_id ? " is-active" : ""}`} onClick={() => choose(item)}><div className="sino-workspace-row__identity"><span>{objectTypeLabel(item.asset_type)}</span><strong>{businessAssetName(item)}</strong><p>{businessPurpose(item)}</p><small>来源 {item.source_conversation_id || "历史会话不可用"}</small></div><dl className="sino-workspace-row__metrics"><div><dt>状态</dt><dd>{statusLabel(item.status)}</dd></div><div><dt>版本</dt><dd>V{item.version || 1}</dd></div><div><dt>Reuse</dt><dd>{item.reference_count || 0}</dd></div><div><dt>更新时间</dt><dd>{date(item.updated_at)}</dd></div></dl><i aria-hidden="true">›</i></button>) : <div className="sino-business-empty"><strong>{normalizedQuery ? "没有匹配的能力" : "当前筛选下没有能力"}</strong><p>{normalizedQuery ? "请尝试其他能力名称或 Domain。" : "Discussion Package 批准后，候选能力会按 Domain 进入这里。"}</p></div>}</div> : null}
   </>;
