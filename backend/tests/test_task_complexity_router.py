@@ -1,4 +1,5 @@
 from app.founder_ai.task_complexity_router import *
+from app.founder_ai.quick_fix_progression import build_quick_fix_contract
 
 def test_quick_fix_skips_strategy_and_architecture():
     result = route_task_complexity("修一下左边栏 AI Commerce OS 的折叠问题。")
@@ -42,6 +43,34 @@ def test_grounded_removal_intent_is_a_quick_fix_without_clarification():
     assert result["quick_fix_contract"]["issue_type"] == "UI_CLEANUP"
     assert result["quick_fix_contract"]["operation"] == "REMOVE_UI_ELEMENT"
     assert result["quick_fix_contract"]["visual_target"] == grounded["annotation_target"]
+
+
+def test_grounded_draft_card_layout_resolves_stale_clarification_and_is_ready_for_inspect():
+    grounded = {
+        "attachment_id": "attachment-draft-center",
+        "visual_target": "Draft Center cards/table layout region",
+        "annotation_target": "Draft Center cards/table layout region",
+        "target_area": "Capability Repository / Draft Center / Draft cards region",
+        "visual_location": "Capability Repository / Draft Center / Draft cards region",
+        "text_intent": {"operation": "BOUNDED_UI_LAYOUT", "action_clear": True},
+        "expected_change": "organize card layout, alignment and spacing for readability",
+        "constraints": ["preserve_existing_functionality", "preserve_existing_visual_style"],
+        "merged_intent": "organize layout of Draft Center cards/table layout region",
+        "grounding_confidence": 0.95,
+        "clarification_required": True,
+        "clarification_reason": "text_action_unclear",
+    }
+    result = route_task_complexity(
+        "把截图中箭头所指区域的卡片排版梳理整齐，保持现有功能和整体风格不变。",
+        image_understanding=grounded,
+        image_context_status="available",
+    )
+    assert result["classification"] == QUICK_FIX
+    assert result["clarification_required"] is False
+    assert result["quick_fix_contract"]["target_area"] == grounded["target_area"]
+    assert result["quick_fix_contract"]["clarification_reason"] is None
+    contract = build_quick_fix_contract(result, conversation_id="functional-verification-v1-a")
+    assert contract["inspect_status"] == "ready_for_fix"
 
 def test_unrelated_production_label_in_screenshot_does_not_trigger_founder_gate():
     grounded = {
