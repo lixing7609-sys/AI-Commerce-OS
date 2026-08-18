@@ -22,6 +22,7 @@ from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSe
 from app.core.model_center.model import AICapabilityConfigDB
 from app.core.model_center.service import resolve_runtime_config
 from app.database.db import SessionLocal
+from app.founder_ai.image_generation_routing import build_image_generation_request, resolve_image_generation_route
 
 WORKER_ID = f"image-model-probe-worker-{uuid4().hex[:12]}"
 ASSET_ROOT = Path(__file__).resolve().parents[3] / ".runtime" / "studio-assets"
@@ -171,27 +172,28 @@ def real_image_probe(candidate: dict, job_id: str) -> dict:
     runtime = resolve_runtime_config(provider_key=provider_id, model=model_id)
     if runtime is None:
         return {"status": "BLOCKED", "reason": "configured_model_or_credential_reference_unavailable"}
+    route = resolve_image_generation_route(runtime.provider_type)
+    if not route.supported:
+        return {"status": "BLOCKED", "reason": "provider_model_binding_incompatible", "endpoint_resolution": route.as_dict()}
     headers = {"Authorization": f"Bearer {runtime.api_key}"}
-    chat_payload = {"model": model_id, "messages": [{"role": "user", "content": SAFE_PROMPT}], "modalities": ["text", "image"], "max_tokens": 512}
+    endpoint, payload = build_image_generation_request(base_url=runtime.base_url, model_id=model_id, prompt=SAFE_PROMPT)
     try:
-        response = httpx.post(f"{runtime.base_url.rstrip('/')}/chat/completions", json=chat_payload, headers=headers, timeout=120)
-        if response.status_code in {404, 405} and runtime.provider_type == "openai":
-            response = httpx.post(f"{runtime.base_url.rstrip('/')}/images/generations", json={"model": model_id, "prompt": SAFE_PROMPT, "size": "1024x1024", "n": 1}, headers=headers, timeout=120)
+        response = httpx.post(endpoint, json=payload, headers=headers, timeout=120)
         if response.status_code in {401, 403}:
             return {"status": "BLOCKED", "reason": "credential_reference_rejected", "http_status": response.status_code}
         if response.status_code == 429:
             return {"status": "BLOCKED", "reason": "provider_rate_or_quota_boundary", "http_status": 429}
         if response.status_code != 200:
-            return {"status": "FAIL", "reason": "provider_probe_rejected", "http_status": response.status_code}
+            return {"status": "FAIL", "reason": "provider_probe_rejected", "http_status": response.status_code, "endpoint_resolution": route.as_dict()}
         body = response.json()
         raw_reference = _persist_raw_response(body, job_id, model_id)
         normalized = normalize_image_generation_response(body, provider=provider_id, model_id=model_id, raw_response_reference=raw_reference)
         reference = normalized.get("binary_reference") or normalized.get("url_reference")
         if not reference:
-            return {"status": "FAIL", "reason": "provider_returned_no_image_asset", "http_status": 200, "normalized_result": normalized}
+            return {"status": "FAIL", "reason": "provider_returned_no_image_asset", "http_status": 200, "normalized_result": normalized, "endpoint_resolution": route.as_dict()}
         asset = _save_image(reference, job_id)
         normalized.update({"status": "PASS", "asset_kind": "local_binary_reference", "binary_reference": asset["generation_reference"], "url_reference": None, "width": asset["width"], "height": asset["height"], "mime_type": asset["mime_type"]})
-        return {"status": "PASS", "reason": None, "http_status": 200, "asset": asset, "normalized_result": normalized}
+        return {"status": "PASS", "reason": None, "http_status": 200, "asset": asset, "normalized_result": normalized, "endpoint_resolution": route.as_dict()}
     except httpx.TimeoutException:
         return {"status": "BLOCKED", "reason": "provider_probe_timeout"}
     except (httpx.HTTPError, ValueError, OSError):
