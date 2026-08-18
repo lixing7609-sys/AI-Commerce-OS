@@ -377,3 +377,39 @@ def requeue_single_approved_gemini_probe(conversation_id: str) -> dict:
     job = _update_job(conversation_id, requeue)
     model_probe_worker.wake()
     return job
+
+
+def requeue_single_approved_gemini_endpoint_probe(conversation_id: str) -> dict:
+    """One endpoint-routing retry under the existing bounded Founder approval."""
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        loop = dict((state.discovery or {}).get("autonomous_main_loop") or {})
+        decision = dict(loop.get("founder_probe_decision") or {})
+        job = dict(loop.get("model_probe_job") or {})
+        if decision.get("approval_status") != "approved" or loop.get("status") != "model_probe_failed":
+            raise ValueError("Approved failed probe job required")
+        if int(job.get("endpoint_retry_count") or 0) >= 1:
+            raise ValueError("Gemini endpoint retry already consumed")
+        candidate = next((dict(item) for item in loop.get("model_candidates") or [] if item.get("model_id") == "google/gemini-3.1-flash-image" and resolve_runtime_config(provider_key=item.get("provider_id"), model=item.get("model_id")) is not None), None)
+        if candidate is None:
+            raise ValueError("Approved Gemini candidate binding unavailable")
+        route = resolve_image_generation_route("ofoxai")
+        if not route.supported or route.request_mode != "images_generation":
+            raise ValueError("Verified image-generation endpoint route required")
+
+    def requeue(job_state, loop_state):
+        history = [*(job_state.get("attempt_history") or [])]
+        history.append({key: job_state.get(key) for key in ("status", "started_at", "completed_at", "worker_id", "attempt_count", "last_error")})
+        job_state.update({
+            "candidate_models": [candidate], "max_candidates": 1, "status": "queued", "queued_at": _now(),
+            "started_at": None, "completed_at": None, "worker_id": None, "heartbeat_at": None,
+            "endpoint_retry_count": 1, "callback_status": "pending", "last_error": None,
+            "current_candidate_index": None, "attempt_history": history,
+            "endpoint_resolution": route.as_dict(),
+        })
+        loop_state.update({"status": "model_probe_queued", "technical_blocker": None, "founder_gate_required": False})
+    job = _update_job(conversation_id, requeue)
+    model_probe_worker.wake()
+    return job
