@@ -5,6 +5,12 @@ import { describe, expect, it } from "vitest";
 const css = readFileSync(new URL("./sino-founder-ai.css", import.meta.url), "utf8");
 
 describe("Conversation Composer layout", () => {
+  it("keeps Draft Center cards on the shared responsive workspace grid", () => {
+    expect(css).toMatch(/\.sino-draft-list > button\.sino-workspace-row,\s*\.sino-asset-list > button\.sino-workspace-row,[\s\S]*?grid-template-columns: minmax\(220px, 1\.15fr\) minmax\(360px, 1fr\) 18px/);
+    expect(css).toMatch(/@media \(max-width: 1180px\)[\s\S]*?\.sino-draft-list > button\.sino-workspace-row,[\s\S]*?grid-template-columns: minmax\(210px, \.9fr\) minmax\(300px, 1fr\) 14px/);
+    expect(css).toMatch(/@media \(max-width: 820px\)[\s\S]*?\.sino-draft-list > button\.sino-workspace-row,[\s\S]*?grid-template-columns: 1fr 14px/);
+  });
+
   it("keeps the complete desktop ancestor chain at a calculable full height", () => {
     const app = css.match(/\.sino-app\s*\{([^}]*)\}/)?.[1] || "";
     const shell = css.match(/\.sino-founder-shell\s*\{([^}]*)\}/)?.[1] || "";

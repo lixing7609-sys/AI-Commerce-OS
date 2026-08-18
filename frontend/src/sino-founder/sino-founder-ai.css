@@ -1320,7 +1320,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-system-structure__list section > button.is-active { background: var(--surface-selected); color: var(--text-primary); }
 
 /* Primary Workspace rows use the whole center column; context lives only in the right Inspector. */
-.sino-primary-list.sino-asset-list { align-items: stretch; }
+.sino-primary-list:is(.sino-asset-list, .sino-draft-list) { align-items: stretch; }
+.sino-draft-list > button.sino-workspace-row,
 .sino-asset-list > button.sino-workspace-row,
 .sino-system-structure__list section > button.sino-workspace-row,
 .sino-legacy-executions > button.sino-workspace-row {
@@ -1341,8 +1342,10 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   text-align: left;
   cursor: pointer;
 }
+.sino-draft-list > button.sino-workspace-row:hover,
 .sino-asset-list > button.sino-workspace-row:hover,
 .sino-system-structure__list section > button.sino-workspace-row:hover { background: var(--surface-raised); border-left-color: var(--border-strong); }
+.sino-draft-list > button.sino-workspace-row.is-active,
 .sino-asset-list > button.sino-workspace-row.is-active,
 .sino-system-structure__list section > button.sino-workspace-row.is-active { background: var(--surface-selected); border-left-color: var(--accent); }
 .sino-workspace-row__identity { min-width: 0; display: grid; gap: 5px; }
@@ -1364,6 +1367,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-business-empty { box-sizing: border-box; width: 100%; }
 
 @media (max-width: 1180px) {
+  .sino-draft-list > button.sino-workspace-row,
   .sino-asset-list > button.sino-workspace-row,
   .sino-system-structure__list section > button.sino-workspace-row,
   .sino-legacy-executions > button.sino-workspace-row { grid-template-columns: minmax(210px, .9fr) minmax(300px, 1fr) 14px; gap: 16px; }
@@ -1371,6 +1375,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   .sino-workspace-row--execution .sino-workspace-row__metrics { grid-template-columns: repeat(3, minmax(72px, 1fr)); row-gap: 10px; }
 }
 @media (max-width: 820px) {
+  .sino-draft-list > button.sino-workspace-row,
   .sino-asset-list > button.sino-workspace-row,
   .sino-system-structure__list section > button.sino-workspace-row,
   .sino-legacy-executions > button.sino-workspace-row { grid-template-columns: 1fr 14px; }
