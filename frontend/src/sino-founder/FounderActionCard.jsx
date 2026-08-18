@@ -1,3 +1,20 @@
+import { useEffect, useState } from "react";
+
+function Elapsed({ startedAt, completedAt }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!startedAt || completedAt) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt, completedAt]);
+  if (!startedAt) return null;
+  const seconds = Math.max(0, Math.floor(((completedAt ? Date.parse(completedAt) : now) - Date.parse(startedAt)) / 1000));
+  const hh = String(Math.floor(seconds / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+  return <time dateTime={`PT${seconds}S`} aria-label="已耗时">{hh}:{mm}:{ss}</time>;
+}
+
 export function FounderActionCard({ action, busy, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onReviewProjectOutcome, onContinueProjectAnalysis, onContinueDiscussion, onViewAssets, onNewGoal, onCapabilityAction, compact = false, readOnly = false }) {
   if (!action) return null;
   const id = action.action_id;
@@ -22,7 +39,7 @@ export function FounderActionCard({ action, busy, onConfirmGoal, onReviseGoal, o
     return onContinueDiscussion?.();
   };
   return <article className={`sino-founder-action-card${compact ? " is-compact" : ""}`} aria-label="当前行动">
-    <span>Current Action</span><h2>{action.title}</h2><p>{action.description}</p>{action.status_label ? <small>{action.status_label}</small> : null}
+    <span>Current Action</span><h2>{action.title} <Elapsed startedAt={action.timing_started_at} completedAt={action.timing_completed_at} /></h2><p>{action.description}</p>{action.status_label ? <small>{action.status_label}</small> : null}
     {!readOnly && (action.primary_label || action.secondary_label || action.danger_label) ? <footer>{action.primary_label ? <button type="button" className="is-primary" disabled={busy || ["asset_commit", "project_maturity_evaluating"].includes(id)} onClick={primary}>{action.primary_label}</button> : null}{action.secondary_label ? <button type="button" disabled={busy} onClick={secondary}>{action.secondary_label}</button> : null}{action.danger_label ? <button type="button" className="is-danger" disabled={busy} onClick={() => onReviewPackage?.("return")}>{action.danger_label}</button> : null}</footer> : null}
   </article>;
 }

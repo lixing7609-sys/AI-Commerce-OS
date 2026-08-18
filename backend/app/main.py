@@ -38,6 +38,7 @@ from app.core.runtime_environment.api import router as runtime_environment_route
 from app.founder_ai.api import router as founder_ai_router
 from app.studio_ai.api import router as studio_ai_router
 from app.founder_ai.execution_worker import execution_worker
+from app.founder_ai.model_probe_worker import model_probe_worker
 from app.services.database_readiness_service import (
     DatabaseReadinessError,
     DatabaseReadinessService,
@@ -136,6 +137,12 @@ async def lifespan(app: FastAPI):
     except Exception as error:
         logger.error("Founder execution worker startup failed: %s", type(error).__name__)
 
+    try:
+        model_probe_worker.start()
+        model_probe_worker.wake()
+    except Exception as error:
+        logger.error("Image model probe worker startup failed: %s", type(error).__name__)
+
     heartbeat_task = asyncio.create_task(
         _heartbeat_loop(HEARTBEAT_INTERVAL_SECONDS)
     )
@@ -148,6 +155,11 @@ async def lifespan(app: FastAPI):
             execution_worker.stop()
         except Exception as error:
             logger.error("Founder execution worker stop failed: %s", type(error).__name__)
+
+        try:
+            model_probe_worker.stop()
+        except Exception as error:
+            logger.error("Image model probe worker stop failed: %s", type(error).__name__)
 
         try:
             await task_consumer_service.stop()

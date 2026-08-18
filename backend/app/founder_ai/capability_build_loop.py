@@ -109,10 +109,37 @@ def resume_authorized_capability_build_loop(conversation_id: str, decision: dict
             "manual_continue_required": False,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+        queued_at = loop["probe_dispatch"]["created_at"]
+        probe_job_id = _id("model-probe-job", f"{conversation_id}:{decision['decision_id']}")
+        loop["model_probe_job"] = {
+            "probe_job_id": probe_job_id,
+            "conversation_id": conversation_id,
+            "task_id": loop["task_id"],
+            "decision_id": decision["decision_id"],
+            "approved_scope": decision["approved_scope"],
+            "candidate_models": ranked,
+            "max_candidates": int(decision["max_probe_candidate_count"]),
+            "status": "queued",
+            "queued_at": queued_at,
+            "started_at": None,
+            "completed_at": None,
+            "worker_id": None,
+            "heartbeat_at": None,
+            "attempt_count": 0,
+            "retry_count": 0,
+            "probe_results": [],
+            "callback_status": "pending",
+            "last_error": None,
+        }
         loop["status"] = "model_probe_queued"
         loop["progress"] = [*(loop.get("progress") or []), {"stage": "model_probe", "status": "queued", "decision_id": decision["decision_id"]}]
         discovery["autonomous_main_loop"] = loop
         state.discovery = discovery
         state.updated_at = datetime.now(timezone.utc)
         session.commit()
+        try:
+            from app.founder_ai.model_probe_worker import model_probe_worker
+            model_probe_worker.wake()
+        except Exception:
+            pass
         return loop

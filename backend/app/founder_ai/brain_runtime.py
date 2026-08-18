@@ -3385,12 +3385,25 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
         autonomous = dict((brain.get("discovery") or {}).get("autonomous_main_loop") or {})
         if autonomous:
             status = autonomous.get("status")
+            job = dict(autonomous.get("model_probe_job") or {})
             if status == "founder_gate_required":
                 blocker = autonomous.get("capability_compatibility", {}).get("status")
                 return {"action_id": "image_model_probe_gate", "title": "Image Model Probe 需要授权边界", "description": f"Capability compatibility: {blocker}. Sino 已自动推进到真实模型 Probe；未执行未授权的外部生成调用。", "status_label": "Founder Gate Required", "primary_label": None}
             if status == "technical_blocker":
                 return {"action_id": "capability_build_blocked", "title": "Capability Build Technical Blocker", "description": (autonomous.get("technical_blocker") or {}).get("reason"), "status_label": "Blocked", "primary_label": None}
-            return {"action_id": "capability_build_running", "title": "Sino 正在自动执行", "description": "Capability Gap → Model Probe → Capability Build → Validate → Studio Binding", "status_label": status, "primary_label": None}
+            if status in {"model_probe_queued", "model_probe_dispatching", "model_probe_running", "model_probe_failed"}:
+                labels = {"model_probe_queued": "Queued", "model_probe_dispatching": "Dispatching", "model_probe_running": f"Probing {job.get('current_candidate_index') or 1}/{job.get('max_candidates') or 1}", "model_probe_failed": "Failed"}
+                try:
+                    reference = job.get("heartbeat_at") if status == "model_probe_running" else job.get("queued_at")
+                    age_seconds = (datetime.now(timezone.utc) - datetime.fromisoformat(reference)).total_seconds() if reference else 0
+                except (TypeError, ValueError):
+                    age_seconds = 0
+                if status == "model_probe_queued" and not job.get("worker_id") and age_seconds > 300:
+                    labels[status] = "Waiting for executor · stalled"
+                if status == "model_probe_running" and age_seconds > 120:
+                    labels[status] = "Worker stalled"
+                return {"action_id": "image_model_probe_progress", "title": "Image Model Probe", "description": "正在使用 Founder 已批准的最小范围验证当前已配置候选模型。", "status_label": labels[status], "timing_started_at": job.get("started_at") or job.get("queued_at"), "timing_completed_at": job.get("completed_at"), "primary_label": None}
+            return {"action_id": "capability_build_running", "title": "Sino 正在自动执行", "description": "Capability Gap → Model Probe → Capability Build → Validate → Studio Binding", "status_label": status, "timing_started_at": autonomous.get("created_at"), "timing_completed_at": autonomous.get("completed_at"), "primary_label": None}
         if route.get("classification") == "QUICK_FIX":
             if route.get("clarification_required"):
                 return {"action_id": "quick_fix_clarification", "title": "需要确认目标位置", "description": "截图标注不足以唯一定位目标；保持 Quick Fix，不进入 Strategy Meeting。", "primary_label": None}
