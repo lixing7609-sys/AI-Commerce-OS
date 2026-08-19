@@ -20,3 +20,12 @@ test("Capability Repository clear control is conditionally visible and restores 
   await page.getByRole("button", { name: "能力周期", exact: true }).click();
   await expect(page.getByRole("button", { name: "清除", exact: true })).toHaveCount(0);
 });
+
+test("current task exposes its verified result and opens Capability Repository", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('button.sino-conversation-item__open[title="能力仓库页面的搜索框右侧增加一个“清除”按钮"]').click();
+  await expect(page.getByText("100%").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("region", { name: "验收结果" })).toContainText("PASS");
+  await page.getByRole("button", { name: "查看结果" }).click();
+  await expect(page.getByRole("region", { name: "能力仓库" })).toBeVisible();
+});
