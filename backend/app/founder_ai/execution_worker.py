@@ -157,10 +157,16 @@ class ExecutionWorker:
             heartbeat = Thread(target=self._heartbeat, args=(execution_id, heartbeat_stop), daemon=True, name=f"heartbeat-{execution_id}")
             heartbeat.start()
             loop = FounderExecutionLoop(self.adapter, on_status=lambda status: self._on_status(execution_id, status))
+            if hasattr(self.adapter, "on_process_started"):
+                self.adapter.on_process_started = lambda pid: self._record_subprocess(execution_id, pid)
             try:
                 session, artifact_draft, memory_draft = loop.run(session, package, cwd=self.project_root, defer_completion=True)
             finally:
                 heartbeat_stop.set(); heartbeat.join(timeout=2)
+            from app.founder_ai.execution_cancel import callback_allowed
+            if not callback_allowed(execution_id):
+                logger.info("Ignoring completion callback after Founder cancellation execution_id=%s", execution_id)
+                return
             # Do not expose completion until callback assets and memories are durable.
             artifact = self.artifact_writer(
                 artifact_type="execution_result",
@@ -230,6 +236,11 @@ class ExecutionWorker:
             save_execution_session(session, package)
             self.queue.transition(execution_id, "failed")
             logger.exception("Founder execution %s failed", execution_id)
+
+    def _record_subprocess(self, execution_id: str, pid: int) -> None:
+        record = get_execution_session(execution_id)
+        if record:
+            session, package = record; session.subprocess_pid = pid; save_execution_session(session, package)
 
     def _heartbeat(self, execution_id: str, stop: Event) -> None:
         while not stop.wait(10):

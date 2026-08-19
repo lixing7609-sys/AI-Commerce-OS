@@ -1,6 +1,7 @@
 import { FounderActionCard } from "./FounderActionCard.jsx";
 import { ContextSourcesDebug } from "./ContextSourcesDebug.jsx";
 import { projectMaturityProjection } from "./projectMaturityProjection.js";
+import { cancelFounderExecution } from "../services/founderAiApi.js";
 
 const STAGE_LABELS = {
   goal_discovery: "Goal Understanding · 目标理解", goal_review: "Goal Brief · 目标确认",
@@ -54,6 +55,9 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
   const question = decision.remaining_unknowns?.[0] || brief.unknowns?.[0] || "暂无待确认问题";
   const action = capabilityAction || brain.current_action || (isQuickFix || isStandardTask ? null : brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "确认后开始 Strategy Meeting。", primary_label: "开始讨论", secondary_label: "修改目标" } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "确认后把讨论成果沉淀为候选能力。", primary_label: "批准候选能力", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
   const progress = brain.execution_progress;
+  const executionId = progress?.execution_id || quickFixRoute?.autonomous_execution?.execution_session_id;
+  const canStop = Boolean(executionId && ["queued", "executing", "testing", "verification", "self_healing", "retrying", "stalled", "waiting_for_founder_authorization", "cancelling"].includes(progress?.execution_status));
+  const visibleResult = quickFixRoute?.visible_result;
   const constitution = brain.message_intent === "project_context_update" ? brain.constitution_understanding || {} : null;
   const workItems = constitution?.proposed_work_items || [];
   const reviewedWorkItems = workItems.filter((item) => item.founder_decision && item.founder_decision !== "pending").length;
@@ -162,6 +166,8 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
     </section> : null}
     {!isQuickFix && brain.stage === "goal_discovery" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onForceReview}>目标已经够清楚，开始讨论</button> : null}
     {!isQuickFix && brain.stage === "goal_confirmed" ? <button type="button" className="sino-brain-force-review" disabled={busy} onClick={onStartStrategy}>开始策略会议</button> : null}
+    {canStop ? <section className="sino-emergency-stop" aria-label="任务控制"><button type="button" disabled={busy || progress?.execution_status === "cancelling"} onClick={() => cancelFounderExecution(executionId)}>{progress?.execution_status === "cancelling" ? "正在停止…" : "停止任务"}</button></section> : null}
+    {visibleResult?.verification_status === "PASS" ? <section className="sino-visible-result" aria-label="验收结果"><span>验收结果</span><h3>{visibleResult.title}</h3><dl><div><dt>验证</dt><dd>PASS</dd></div><div><dt>目标</dt><dd>{visibleResult.target_surface}</dd></div></dl><button type="button" className="is-primary" onClick={onViewAssets}>查看结果</button></section> : null}
     <PackageOverview pkg={brain.discussion_package} />
     {brain.discussion_package?.asset_commit ? <section className="sino-asset-commit-dashboard" aria-label="Candidate Commit Status"><h3>Candidate Commit Status</h3>{brain.discussion_package.asset_commit.items?.map((item) => <div key={item.asset_id}><span>{TYPE_LABELS[item.object_type] || item.object_type}</span><strong>{item.name}</strong><b>{item.lifecycle_status === "ready" ? "Ready" : "Candidate"}</b></div>)}</section> : null}
     {brain.strategy_proposals?.length || brain.discussion_package?.lifecycle?.length ? <details className="sino-brain-evidence"><summary>Developer Timeline · 查看讨论依据</summary>{brain.strategy_proposals?.map((item) => <article key={item.model_run_id || `${item.provider}-${item.model}`}><strong>{item.model} · {item.provider}</strong><p>{item.proposal?.core_judgment || item.proposal?.recommendation || "已记录结构化提案"}</p></article>)}{brain.discussion_package?.lifecycle?.map((item, index) => <article key={`${item.status}-${index}`}><strong>{item.status}</strong><p>{item.at}</p></article>)}</details> : null}

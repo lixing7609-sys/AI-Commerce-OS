@@ -39,9 +39,10 @@ class CodexExecutionResult:
 
 
 class SubprocessCodexAdapter:
-    def __init__(self, command: str = "codex", timeout_seconds: float | None = None, task_package_builder=None):
+    def __init__(self, command: str = "codex", timeout_seconds: float | None = None, task_package_builder=None, on_process_started=None):
         self.command = self._resolve_command(command)
         self.task_package_builder = task_package_builder or TaskPackageBuilder()
+        self.on_process_started = on_process_started
         # Founder execution packages commonly include the full backend/frontend
         # verification suite. Ten minutes is too short for that bounded workflow,
         # especially on the first run when tool caches are cold.
@@ -78,6 +79,7 @@ class SubprocessCodexAdapter:
             text=True,
             start_new_session=True,
         )
+        if self.on_process_started: self.on_process_started(process.pid)
         try:
             stdout, stderr = process.communicate(input=instruction, timeout=self.timeout_seconds)
         except subprocess.TimeoutExpired as error:

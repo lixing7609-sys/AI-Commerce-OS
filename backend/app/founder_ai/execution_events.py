@@ -32,6 +32,8 @@ EXECUTION_EVENT_NAMES = {
     "technical_resolution_attempted",
     "technical_resolution_completed",
     "technical_resolution_exhausted",
+    "founder_stop_requested",
+    "cancelled_by_founder",
 }
 
 LEGACY_EVENT_NAMES = {

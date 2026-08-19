@@ -43,6 +43,17 @@ describe("SinoBrainContext", () => {
     expect(screen.getByText("复用验证完成")).toBeTruthy();
     expect(screen.queryByText("Capability Repository")).toBeNull();
   });
+  it("shows Emergency Stop only for cancellable execution states", () => {
+    const { rerender } = render(<SinoBrainContext brain={{ stage: "standard_task", execution_progress: { execution_id: "execution-1", execution_status: "executing" }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", standard_task_contract: { target_surface: "Capability Repository" } } } }} />);
+    expect(screen.getByRole("button", { name: "停止任务" })).toBeTruthy();
+    rerender(<SinoBrainContext brain={{ stage: "standard_task", execution_progress: { execution_id: "execution-1", execution_status: "completed" }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", standard_task_contract: { target_surface: "Capability Repository" } } } }} />);
+    expect(screen.queryByRole("button", { name: "停止任务" })).toBeNull();
+  });
+  it("shows a verified visible result with a direct target action", () => {
+    render(<SinoBrainContext onViewAssets={vi.fn()} brain={{ stage: "standard_task", execution_progress: { execution_status: "completed" }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", standard_task_contract: { target_surface: "Capability Repository" }, visible_result: { title: "能力仓库搜索清除功能", target_surface: "Capability Repository", verification_status: "PASS" } } } }} />);
+    expect(screen.getByRole("region", { name: "验收结果" }).textContent).toContain("PASS");
+    expect(screen.getByRole("button", { name: "查看结果" })).toBeTruthy();
+  });
   it.each([
     ["执行停滞 · 正在诊断", "Founder 无需操作", "stalled"],
     ["正在自愈", "Founder 无需操作", "self_healing"],

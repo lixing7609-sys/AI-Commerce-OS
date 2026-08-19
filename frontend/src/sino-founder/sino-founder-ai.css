@@ -1321,9 +1321,12 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-primary-list::-webkit-scrollbar { display: none; }
 .sino-repository-search { display: grid; gap: 7px; margin: 18px 0 4px; }
 .sino-repository-search label { color: var(--text-label); font-size: var(--font-label); }
-.sino-repository-search input { box-sizing: border-box; width: min(100%, 440px); padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 8px; outline: none; background: var(--surface-raised); color: var(--text-primary); font: inherit; }
+.sino-repository-search__controls { display: flex; gap: 8px; width: min(100%, 440px); }
+.sino-repository-search input { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 8px; outline: none; background: var(--surface-raised); color: var(--text-primary); font: inherit; }
 .sino-repository-search input::placeholder { color: var(--text-muted); }
 .sino-repository-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent); }
+.sino-repository-search__controls button { flex: 0 0 auto; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-raised); color: var(--text-secondary); font: inherit; cursor: pointer; }
+.sino-repository-search__controls button:hover { border-color: var(--accent); color: var(--text-primary); }
 .sino-global-search-results { display: grid; gap: 18px; min-height: 0; overflow-y: auto; }
 .sino-global-capability-results { display: grid; gap: 10px; }
 .sino-global-capability-results > h2 { margin: 0; color: var(--text-label); font-size: var(--font-label); font-weight: 600; }

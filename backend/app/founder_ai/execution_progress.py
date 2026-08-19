@@ -67,6 +67,13 @@ def build_execution_progress(route: dict) -> dict | None:
     session_id = execution.get("execution_session_id")
     record = get_execution_session(session_id) if session_id else None
     session = record[0] if record else None
+    if route.get("execution_status") == "cancelled" or (session and session.status in {"cancelled", "canceled"}):
+        return {"task_id": execution.get("task_id"), "execution_id": session_id, "task_type": classification, "current_phase": "complete",
+                "execution_status": "cancelled", "verification_status": "NOT_APPLICABLE", "closure_status": "cancelled",
+                "founder_action_required": False, "technical_blocker": None, "started_at": session.started_at if session else None,
+                "phase_started_at": None, "updated_at": session.completed_at if session else None, "completed_at": session.completed_at if session else None,
+                "elapsed_seconds": _elapsed(session.started_at, session.completed_at) if session else 0, "progress_percent": 100,
+                "current_action": "已停止", "next_action": "本次任务已由 Founder 停止", "stalled": False, "stall_reason": None}
     route_step = route.get("current_step") or ("inspect" if classification == "STANDARD_TASK" else "issue")
     blocker = dict(route.get("technical_blocker") or {}) or None
     founder_required = bool(route.get("founder_gate_required"))

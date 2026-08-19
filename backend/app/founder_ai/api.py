@@ -1278,6 +1278,13 @@ def get_founder_execution_status(execution_id: str):
     """Canonical polling and refresh-recovery contract for execution runtime state."""
     return get_founder_execution(execution_id)
 
+@router.post("/executions/{execution_id}/cancel", response_model=dict[str, Any])
+def cancel_founder_execution(execution_id: str):
+    from app.founder_ai.execution_cancel import request_founder_cancel
+    try: return request_founder_cancel(execution_id)
+    except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error: raise HTTPException(status_code=409, detail=str(error)) from error
+
 
 @router.post("/executions/{execution_id}/resume", response_model=ExecutionSessionOut)
 def resume_founder_execution(execution_id: str):

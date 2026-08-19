@@ -23,6 +23,8 @@ import { TaskPlanCard } from "./TaskPlanCard.jsx";
 import { SinoBrainContext } from "./SinoBrainContext.jsx";
 import { founderConversationTitle } from "./founderConversationTitle.js";
 
+export const shouldPollWorkspace = (status) => ["queued", "executing", "testing", "verification", "self_healing", "retrying", "stalled", "waiting_for_founder_authorization", "cancelling"].includes(status);
+
 const CONVERSATION_KEY = "sino-founder-active-conversation";
 const EXECUTION_KEY = "sino-founder-active-execution";
 const CONVERSATION_HISTORY_KEY = "sino-founder-conversation-history";
@@ -320,6 +322,16 @@ export function ConversationWorkspace() {
     const timer = window.setInterval(() => getFounderExecution(executionId).then(setExecution).catch((requestError) => { setError(requestError.message); }), 1000);
     return () => window.clearInterval(timer);
   }, [executionId, execution?.status]);
+  const liveProgressStatus = snapshot?.sino_brain?.execution_progress?.execution_status;
+  useEffect(() => {
+    if (!conversationId || view !== "conversation" || !shouldPollWorkspace(liveProgressStatus)) return undefined;
+    let active = true;
+    const timer = window.setInterval(async () => {
+      try { const restored = await getConversationWorkspace(conversationId); if (active && conversationResponseMatches(conversationId, activeConversationRef.current, restored)) setSnapshot(restored); }
+      catch { /* retain the last canonical projection while one poll fails */ }
+    }, 1500);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [conversationId, liveProgressStatus, view]);
   useEffect(() => { const normalized = normalizeFounderView(view); if (normalized !== view) setView(normalized); }, [view]);
 
   const hasExecutionContext = Boolean(goal?.goal_id || execution?.task_asset_id || executionId);

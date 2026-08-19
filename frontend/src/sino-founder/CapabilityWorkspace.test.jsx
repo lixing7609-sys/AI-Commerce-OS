@@ -41,6 +41,19 @@ describe("AI Capability Center IA", () => {
     expect(screen.queryByRole("button", { name: /电商/ })).toBeNull();
     expect(screen.getByRole("button", { name: /营销/ })).toBeTruthy();
   });
+  it("shows Clear only for a search term and restores the full Domain list", async () => {
+    getCapabilityDomains.mockResolvedValue({ domains: [{ domain_id: "commerce", name: "电商", counts: {} }, { domain_id: "marketing", name: "营销", counts: {} }] });
+    render(<Harness />);
+    const search = await screen.findByRole("searchbox", { name: "搜索能力名称或 Domain" });
+    expect(screen.queryByRole("button", { name: "清除" })).toBeNull();
+    fireEvent.change(search, { target: { value: "营销" } });
+    expect(screen.queryByRole("button", { name: /电商/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "清除" }));
+    expect(search.value).toBe("");
+    expect(screen.getByRole("button", { name: /电商/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /营销/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "清除" })).toBeNull();
+  });
   it("searches capability names globally before entering a Domain and opens the match", async () => {
     render(<Harness />);
     const search = await screen.findByRole("searchbox", { name: "搜索能力名称或 Domain" });
