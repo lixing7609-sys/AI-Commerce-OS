@@ -188,7 +188,7 @@ def test_codex_adapter_transports_small_and_large_context_via_stdin(monkeypatch,
 
     assert result.exit_code == 0
     assert Path(calls[0]["args"][0]).name == "codex"
-    assert calls[0]["args"][1:] == ["exec", "-"]
+    assert calls[0]["args"][1:] == ["exec", "-s", "workspace-write", "-c", 'approval_policy="never"', "-"]
     assert len(" ".join(calls[0]["args"])) < 128
     assert len(calls[0]["input"]) > context_size
     assert "y" * min(context_size, 1000) not in calls[0]["input"]

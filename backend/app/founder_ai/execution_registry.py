@@ -101,8 +101,44 @@ def create_execution_session(task_asset_id: str, package: ExecutionPackage) -> E
         execution_package_id=f"package-{uuid4().hex[:16]}",
         executor=engine_id,
     )
+    from .codex_authorization import build_authorization_envelope
+    session.authorization_envelope = build_authorization_envelope(task_asset_id, session.id, package)
     save_execution_session(session, package)
     return session
+
+
+def authorize_codex_request(execution_id: str, request: dict) -> dict:
+    """Evaluate and persist one idempotent Codex operation request."""
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise LookupError("Execution session not found")
+    session, package = record
+    from .codex_authorization import build_authorization_envelope, evaluate_codex_request
+    session.authorization_envelope = session.authorization_envelope or build_authorization_envelope(session.task_asset_id, session.id, package)
+    requested_id = request.get("request_id")
+    if requested_id:
+        existing = next((item for item in session.authorization_audit if item.get("request_id") == requested_id), None)
+        if existing:
+            return existing
+    decision = evaluate_codex_request(request, session.authorization_envelope)
+    session.authorization_audit.append(decision)
+    if decision["founder_action_required"]:
+        session.pending_codex_authorization = decision
+    save_execution_session(session, package)
+    return decision
+
+
+def apply_codex_founder_authorization(execution_id: str, approved_scope: dict) -> dict:
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise LookupError("Execution session not found")
+    session, package = record
+    from .codex_authorization import apply_founder_scope, build_authorization_envelope
+    envelope = session.authorization_envelope or build_authorization_envelope(session.task_asset_id, session.id, package)
+    session.authorization_envelope = apply_founder_scope(envelope, approved_scope)
+    session.pending_codex_authorization = None
+    save_execution_session(session, package)
+    return session.authorization_envelope
 
 
 def create_controlled_handoff_session(*, session_id: str, handoff_id: str, package_id: str, readiness_contract_id: str, scope_fingerprint: str, executor_provider: str, package: ExecutionPackage) -> ExecutionSession:

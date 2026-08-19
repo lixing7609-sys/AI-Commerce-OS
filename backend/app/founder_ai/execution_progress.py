@@ -77,6 +77,9 @@ def build_execution_progress(route: dict) -> dict | None:
     route_step = route.get("current_step") or ("inspect" if classification == "STANDARD_TASK" else "issue")
     blocker = dict(route.get("technical_blocker") or {}) or None
     founder_required = bool(route.get("founder_gate_required"))
+    codex_boundary = dict(session.pending_codex_authorization or {}) if session else {}
+    if codex_boundary:
+        founder_required = True
     resolution = dict(route.get("technical_resolution_contract") or {})
     exhausted = resolution.get("resolution_status") == "exhausted"
     if exhausted:
@@ -128,4 +131,5 @@ def build_execution_progress(route: dict) -> dict | None:
         "stall_reason": "meaningful_progress_stale" if stalled else None,
         "worker_heartbeat_at": stall_evidence.get("worker_heartbeat_at"),
         "meaningful_progress_at": stall_evidence.get("meaningful_progress_at"),
+        "codex_authorization_boundary": codex_boundary or None,
     }

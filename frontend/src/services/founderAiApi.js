@@ -366,6 +366,12 @@ export function resumeFounderExecution(executionId) {
   return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/resume`, { method: "POST" }, "恢复执行失败");
 }
 
+export function decideCodexAuthorization(executionId, action, approvedScope = {}) {
+  return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/codex-authorization/decision`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, approved_scope: approvedScope }),
+  }, "处理 Codex 授权边界失败");
+}
+
 export function getLifecycleAssets(assetType, includeLegacy = false) {
   const query = new URLSearchParams();
   if (assetType) query.set("asset_type", assetType);

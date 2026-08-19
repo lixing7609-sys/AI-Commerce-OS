@@ -49,7 +49,7 @@ class TaskPackage:
             f"## Acceptance Criteria\n{json.dumps(self.acceptance_criteria, ensure_ascii=False, indent=2)}\n\n"
             "## Authorization\n"
             + ("Founder approval is granted. " if self.approval_required else "This bounded technical lane does not require a Founder decision. ")
-            + "Execute only the frozen scope and run the acceptance criteria.\n\n"
+            + "Execute only the frozen scope and run the acceptance criteria. Local reads, scoped patches, tests, builds, localhost verification and a verified local checkpoint are authorized by Sino. External APIs, credentials, cost, production writes, destructive Git, system security changes and unrelated paths are forbidden unless an exact Founder authorization is attached.\n\n"
             f"## Commit Requirement\n{self.commit_requirement}\n"
         )
 

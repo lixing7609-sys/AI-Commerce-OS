@@ -33,6 +33,17 @@ describe("SinoBrainContext", () => {
     expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
     expect(screen.queryByText("确认后开始 Strategy Meeting。" )).toBeNull();
   });
+  it("keeps ordinary Codex permissions out of Founder Action Queue and shows only a Founder boundary", () => {
+    const base = { stage: "standard_task", discovery: { task_complexity_route: { classification: "STANDARD_TASK", standard_task_contract: { task_id: "task-auth", target_surface: "Repository" }, autonomous_execution: { execution_session_id: "execution-auth" } } } };
+    const { rerender } = render(<SinoBrainContext brain={{ ...base, execution_progress: { task_id: "task-auth", execution_id: "execution-auth", execution_status: "executing", founder_action_required: false } }} />);
+    expect(screen.getByText("当前无需操作")).toBeTruthy();
+    expect(screen.queryByRole("article", { name: "Codex Founder Boundary" })).toBeNull();
+    rerender(<SinoBrainContext brain={{ ...base, execution_progress: { task_id: "task-auth", execution_id: "execution-auth", execution_status: "waiting_for_founder_authorization", founder_action_required: true, codex_authorization_boundary: { request_id: "request-external", operation_type: "external_paid_api", decision_reason: "The request crosses a Founder authorization boundary.", resource_scope: "provider", risk_level: "high", external_effect: "provider request" } } }} />);
+    expect(screen.getByRole("article", { name: "Codex Founder Boundary" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "批准" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "修改范围" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "驳回" })).toBeTruthy();
+  });
   it("projects reuse completion without a stale Capability Repository target", () => {
     render(<SinoBrainContext brain={{ stage: "standard_task", current_action: { action_id: "canonical_execution_progress", title: "复用验证完成", description: "等待 Founder 验收", progress_percent: 100, founder_action_required: false }, execution_progress: { task_id: "task-reuse", current_phase: "complete", execution_status: "completed", next_action: "等待 Founder 验收", founder_action_required: false }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", reuse_lane: true, current_step: "complete", execution_status: "completed", standard_task_contract: { task_id: "task-reuse", target_surface: "Local Development Environment" } } } }} />);
     expect(screen.getByText("Local Development Environment")).toBeTruthy();

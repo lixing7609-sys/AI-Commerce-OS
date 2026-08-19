@@ -17,6 +17,7 @@ from app.founder_ai.orchestrator import (
 )
 from app.founder_ai.execution_registry import approve_execution_session, create_execution_session
 from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions, list_actually_active_sessions
+from app.founder_ai.execution_registry import authorize_codex_request, apply_codex_founder_authorization, save_execution_session
 from app.founder_ai.execution_worker import enqueue_execution, execution_queue, resume_execution
 from app.founder_ai.sino_brain import SinoBrain
 from app.llm.exceptions import LLMGatewayError
@@ -201,6 +202,29 @@ class ExecutionCreateIn(BaseModel):
     goal_id: str | None = None
 
 
+class CodexOperationRequestIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: str | None = None
+    operation_type: str
+    requested_paths: list[str] = Field(default_factory=list)
+    resource_scope: str | None = None
+    external_effect: str | None = None
+    credential_use: bool = False
+    incremental_cost: bool = False
+    estimated_cost: float = 0
+    provider: str | None = None
+    production_write: bool = False
+    destructive: bool = False
+    verification_passed: bool = False
+    ownership_resolved: bool = False
+
+
+class CodexBoundaryDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str
+    approved_scope: dict[str, Any] = Field(default_factory=dict)
+
+
 class DiscussionMessageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     content: str = Field(min_length=1, max_length=10000)
@@ -345,6 +369,9 @@ class ExecutionSessionOut(BaseModel):
     current_stage: str | None = None
     package_version: int = 1
     deltas: list[dict[str, Any]] = Field(default_factory=list)
+    authorization_envelope: dict[str, Any] | None = None
+    authorization_audit: list[dict[str, Any]] = Field(default_factory=list)
+    pending_codex_authorization: dict[str, Any] | None = None
 
 
 class ExecutionResultOut(ExecutionSessionOut):
@@ -1302,6 +1329,9 @@ def _execution_observability(session) -> dict[str, Any]:
         "pause_reason": session.pause_reason,
         "recoverable": session.recoverable,
         "current_stage": session.current_stage,
+        "authorization_envelope": session.authorization_envelope,
+        "authorization_audit": session.authorization_audit,
+        "pending_codex_authorization": session.pending_codex_authorization,
     }
 
 
@@ -1328,6 +1358,39 @@ def get_founder_execution(execution_id: str):
 def get_founder_execution_status(execution_id: str):
     """Canonical polling and refresh-recovery contract for execution runtime state."""
     return get_founder_execution(execution_id)
+
+
+@router.post("/executions/{execution_id}/codex-authorization/requests", response_model=dict[str, Any])
+def evaluate_codex_operation(execution_id: str, request: CodexOperationRequestIn):
+    try:
+        return authorize_codex_request(execution_id, request.model_dump(exclude_none=True))
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/executions/{execution_id}/codex-authorization/decision", response_model=dict[str, Any])
+def decide_codex_boundary(execution_id: str, request: CodexBoundaryDecisionIn):
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Execution session not found")
+    session, package = record
+    pending = session.pending_codex_authorization
+    if not pending:
+        raise HTTPException(status_code=409, detail="No pending Codex Founder boundary")
+    action = request.action.lower()
+    if action == "approve":
+        envelope = apply_codex_founder_authorization(execution_id, request.approved_scope)
+        return {"decision": "approved", "authorization_envelope": envelope, "auto_resume": True}
+    if action == "modify":
+        session.pending_codex_authorization = {**pending, "decision": "scope_revision_requested", "requested_scope": request.approved_scope}
+        save_execution_session(session, package)
+        return {"decision": "scope_revision_requested", "pending": session.pending_codex_authorization}
+    if action == "reject":
+        session.pending_codex_authorization = None
+        session.authorization_audit.append({**pending, "decision": "rejected", "authorized_by": "FOUNDER", "authorized_at": None})
+        save_execution_session(session, package)
+        return {"decision": "rejected", "auto_resume": False}
+    raise HTTPException(status_code=422, detail="action must be approve, modify, or reject")
 
 @router.post("/executions/{execution_id}/cancel", response_model=dict[str, Any])
 def cancel_founder_execution(execution_id: str):

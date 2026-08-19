@@ -55,6 +55,9 @@ class ExecutionSession:
     subprocess_pid: int | None = None
     subprocess_exit_status: int | None = None
     technical_resolution: dict[str, Any] | None = None
+    authorization_envelope: dict[str, Any] | None = None
+    authorization_audit: list[dict[str, Any]] = field(default_factory=list)
+    pending_codex_authorization: dict[str, Any] | None = None
 
     def log(self, stage: str, message: str, *, timestamp: str | None = None) -> None:
         self.execution_logs.append({"timestamp": timestamp or datetime.now(timezone.utc).isoformat(), "stage": stage, "message": message})

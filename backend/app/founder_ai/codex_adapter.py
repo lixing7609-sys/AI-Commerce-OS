@@ -71,7 +71,7 @@ class SubprocessCodexAdapter:
         started = time.monotonic()
         logger.info("Codex started instruction=%s timeout_seconds=%s", instruction_path.name, self.timeout_seconds)
         process = subprocess.Popen(
-            [self.command, "exec", "-"],
+            [self.command, "exec", "-s", "workspace-write", "-c", 'approval_policy="never"', "-"],
             cwd=str(cwd),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
