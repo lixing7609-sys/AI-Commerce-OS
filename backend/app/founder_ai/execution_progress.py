@@ -7,6 +7,7 @@ from app.founder_ai.technical_resolution import evaluate_stall
 STANDARD_PROGRESS = {"inspect": 10, "plan": 25, "execution": 35, "verification": 80, "learning": 95, "closure": 95, "complete": 100}
 QUICK_FIX_PROGRESS = {"issue": 5, "inspect": 20, "fix": 40, "verify": 80, "complete": 100}
 STRATEGIC_PROGRESS = {"architecture_analysis": 25, "alternatives": 45, "proposal": 55, "impact_analysis": 75, "decision_readiness": 90, "approved": 100, "rejected": 100}
+REUSE_PROGRESS = {"reuse_lookup": 15, "candidate_found": 25, "binding_validation": 40, "lightweight_verification": 70, "verification": 90, "complete": 100}
 
 
 def _parse(value):
@@ -50,6 +51,19 @@ def build_execution_progress(route: dict) -> dict | None:
             "stalled": False, "stall_reason": None,
         }
     execution = dict(route.get("autonomous_execution") or {})
+    if classification == "STANDARD_TASK" and route.get("reuse_lane"):
+        log = list(route.get("progress_log") or [])
+        phase = route.get("current_step") or (log[-1] if log else "reuse_lookup")
+        reuse = dict(route.get("reuse") or {})
+        completed = route.get("execution_status") == "completed"
+        current_action = "复用验证完成" if completed else "正在验证当前环境" if phase in {"lightweight_verification", "verification"} else "正在复用已有经验"
+        return {"task_id": (route.get("standard_task_contract") or {}).get("task_id"), "execution_id": None,
+                "task_type": classification, "current_phase": phase, "execution_status": "completed" if completed else route.get("execution_status"),
+                "verification_status": "PASS" if completed else "PENDING", "closure_status": "awaiting_founder_acceptance" if completed else "pending",
+                "founder_action_required": False, "technical_blocker": route.get("technical_blocker"), "started_at": None,
+                "phase_started_at": None, "updated_at": (reuse.get("lightweight_validation") or {}).get("checked_at"), "completed_at": (reuse.get("lightweight_validation") or {}).get("checked_at") if completed else None,
+                "elapsed_seconds": 0, "progress_percent": REUSE_PROGRESS.get(phase, 0), "current_action": current_action,
+                "next_action": "等待 Founder 验收" if completed else "Founder 无需操作", "stalled": False, "stall_reason": None}
     session_id = execution.get("execution_session_id")
     record = get_execution_session(session_id) if session_id else None
     session = record[0] if record else None

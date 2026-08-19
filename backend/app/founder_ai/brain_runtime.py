@@ -3385,7 +3385,8 @@ goal_brief_draft 至少包括 summary, goal, problem, target_user, product_busin
             payload["active_workspace_stage"] = current_step
         if route.get("classification") == "STANDARD_TASK" and route.get("standard_task_contract"):
             current_step = route.get("current_step") or "inspect"
-            labels = {"inspect": "Inspect", "plan": "Plan", "execution": "Execution", "verification": "Verification", "checkpoint": "Checkpoint", "learning": "Learning", "closure": "Closure", "complete": "Completed"}
+            labels = ({"reuse_lookup": "Reuse Lookup", "candidate_found": "Reuse Hit", "binding_validation": "Binding Validation", "lightweight_verification": "Lightweight Verification", "verification": "Verification", "complete": "Completed"}
+                      if route.get("reuse_lane") else {"inspect": "Inspect", "plan": "Plan", "execution": "Execution", "verification": "Verification", "checkpoint": "Checkpoint", "learning": "Learning", "closure": "Closure", "complete": "Completed"})
             current_index = list(labels).index(current_step)
             payload["stage_workspaces"] = [
                 {"stage_key": key, "label": label, "status": "completed" if index < current_index else "active" if index == current_index else "pending", "message_refs": list(payload["source_message_refs"]) if index <= current_index else []}

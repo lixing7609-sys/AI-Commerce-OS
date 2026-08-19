@@ -513,7 +513,11 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         elif is_standard_development:
             from app.founder_ai.standard_task_execution import begin_standard_task, dispatch_standard_task
             route = begin_standard_task(conversation_id=conversation_id, goal=request.content, route=route)
-            route = dispatch_standard_task(conversation_id=conversation_id, goal=request.content)
+            from app.founder_ai.reuse_lane import is_reuse_health_check_goal, execute_reuse_health_check
+            if is_reuse_health_check_goal(request.content):
+                route = execute_reuse_health_check(conversation_id=conversation_id, goal=request.content, route=route)
+            else:
+                route = dispatch_standard_task(conversation_id=conversation_id, goal=request.content)
             brain_turn = {"handled": True, "intent": "standard_task", "message_type": "standard_task", "reply": "已识别为明确的 Standard Development Task。Sino 将自动完成 Inspect → Plan → Execution → Verification → Closure，不进入 Strategy Meeting。", "brain": brain_runtime.snapshot(conversation_id)}
         else:
             brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=interaction_context or None)

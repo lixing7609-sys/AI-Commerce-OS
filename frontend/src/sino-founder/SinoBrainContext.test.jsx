@@ -37,6 +37,12 @@ describe("SinoBrainContext", () => {
     expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
     expect(screen.queryByText("确认后开始 Strategy Meeting。" )).toBeNull();
   });
+  it("projects reuse completion without a stale Capability Repository target", () => {
+    render(<SinoBrainContext brain={{ stage: "standard_task", current_action: { action_id: "canonical_execution_progress", title: "复用验证完成", description: "等待 Founder 验收", progress_percent: 100, founder_action_required: false }, execution_progress: { current_phase: "complete", execution_status: "completed", next_action: "等待 Founder 验收", founder_action_required: false }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", reuse_lane: true, current_step: "complete", execution_status: "completed", standard_task_contract: { target_surface: "Local Development Environment" } } } }} />);
+    expect(screen.getByText("Local Development Environment")).toBeTruthy();
+    expect(screen.getByText("复用验证完成")).toBeTruthy();
+    expect(screen.queryByText("Capability Repository")).toBeNull();
+  });
   it.each([
     ["执行停滞 · 正在诊断", "Founder 无需操作", "stalled"],
     ["正在自愈", "Founder 无需操作", "self_healing"],

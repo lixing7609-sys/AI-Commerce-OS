@@ -28,6 +28,18 @@ def _now() -> str:
 
 
 def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: str | None = None) -> dict:
+    from app.founder_ai.technical_resolution import is_local_health_check_goal
+    if is_local_health_check_goal(goal):
+        return {
+            "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
+            "task_type": "STANDARD_TASK", "target_surface": "Local Development Environment",
+            "objective": "Verify Founder frontend, Backend, Database, Worker, Execution Lifecycle and Git Working Tree.",
+            "acceptance_criteria": ["Frontend responds", "Backend and Database are healthy", "Lifecycle is healthy", "Git working tree is clean"],
+            "constraints": ["application_owned_evidence_only", "no_privileged_cross_app_inspection", "no_business_changes"],
+            "implementation_scope": [], "prohibited_scope": ["macos_privacy_changes", "external_calls", "business_code_changes"],
+            "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact"],
+            "inspect_status": "ready_for_reuse_lookup", "implementation_plan": [], "source_goal": goal,
+        }
     return {
         "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
         "task_type": "STANDARD_TASK", "target_surface": "Capability Repository",
