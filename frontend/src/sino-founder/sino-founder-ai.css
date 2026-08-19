@@ -1093,6 +1093,24 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-founder-action-card button.is-danger { color: #9b827e; }
 .sino-founder-action-card.is-compact { margin: 0 0 14px; padding: 14px; }
 .sino-founder-action-card.is-compact h2 { font-size: 14px; }
+.sino-live-execution-detail { margin: 18px 0 26px; padding: 22px 0; border-block: 1px solid color-mix(in srgb, var(--line) 68%, transparent); }
+.sino-live-execution-detail > header span { color: var(--accent); font: 600 12px/1.4 var(--font-sans); }
+.sino-live-execution-detail > header h2 { margin: 5px 0 20px; color: var(--text-primary); font: 600 19px/1.4 var(--font-sans); }
+.sino-live-execution-detail > dl { display: grid; gap: 17px; margin: 0; }
+.sino-live-execution-detail > dl > div { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 18px; }
+.sino-live-execution-detail dt { color: var(--text-muted); font: 550 12px/1.55 var(--font-sans); }
+.sino-live-execution-detail dd { margin: 0; color: var(--text-secondary); font: 400 14px/1.65 var(--font-serif); overflow-wrap: anywhere; }
+.sino-live-execution-detail ul { margin: 0; padding-left: 17px; }
+.sino-live-execution-detail__result { display: flex; align-items: center; gap: 14px; margin-top: 21px; padding-top: 17px; border-top: 1px solid var(--line); }
+.sino-live-execution-detail__result strong { color: var(--text-primary); font-size: 14px; }
+.sino-live-execution-detail__result span { color: var(--accent); font-size: 12px; }
+.sino-live-execution-detail button { min-height: 30px; margin-left: auto; padding: 4px 11px; border: 1px solid var(--border-strong); border-radius: 7px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.sino-live-execution-detail > details { margin-top: 20px; color: var(--text-muted); font-size: 12px; }
+.sino-live-execution-detail > details summary { cursor: pointer; }
+.sino-live-execution-detail > details dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin: 14px 0 0; }
+.sino-live-execution-detail > details dl div { min-width: 0; }
+.sino-live-execution-detail > details dd { font: 12px/1.5 var(--font-mono, monospace); }
+@media (max-width: 700px) { .sino-live-execution-detail > dl > div { grid-template-columns: 1fr; gap: 3px; }.sino-live-execution-detail > details dl { grid-template-columns: 1fr; } }
 .sino-image-probe-decision{margin:4px 0 24px;padding:18px 20px;border:1px solid #394339;border-radius:12px;background:#101410}.sino-image-probe-decision header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.sino-image-probe-decision header span{color:var(--accent);font-size:12px;font-weight:600}.sino-image-probe-decision h2{margin:5px 0 12px;font-size:18px}.sino-image-probe-decision header>strong{color:#d9bd78;font-size:12px}.sino-image-probe-decision dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 14px}.sino-image-probe-decision dl div{padding:9px 10px;border:1px solid #293229;border-radius:8px}.sino-image-probe-decision dt{color:#879286;font-size:11px}.sino-image-probe-decision dd{margin:4px 0 0;color:#d5ddd3;font-size:12px}.sino-image-probe-decision section{margin-top:10px}.sino-image-probe-decision section p{margin:3px 0;color:#9da79b;font-size:13px}.sino-image-probe-decision fieldset{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;padding:12px;border:1px solid #394339;border-radius:8px}.sino-image-probe-decision fieldset label{display:flex;align-items:center;gap:6px;font-size:12px}.sino-image-probe-decision input[type=number]{width:56px}.sino-image-probe-decision footer{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.sino-image-probe-decision button{min-height:34px;padding:0 14px;border:1px solid #394339;border-radius:7px;background:transparent;color:#b9c2b7}.sino-image-probe-decision button.is-primary{border-color:var(--accent);background:var(--accent);color:#071007}.sino-image-probe-decision button.is-danger{color:#c79a91}@media(max-width:700px){.sino-image-probe-decision dl{grid-template-columns:1fr}}
 .sino-brain-dashboard { padding: 14px; color: #b8c1b6; }
 .sino-brain-dashboard > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 4px 0 14px; }

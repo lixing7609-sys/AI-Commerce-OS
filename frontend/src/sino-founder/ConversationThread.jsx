@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { GlobalSecretaryComposer } from "./GlobalSecretaryComposer.jsx";
 import { FounderActionCard } from "./FounderActionCard.jsx";
+import { LiveExecutionDetail } from "./LiveExecutionDetail.jsx";
 import { CapabilityLifecycleCard } from "./CapabilityLifecycleCard.jsx";
 import { AssetCommitWorkspace } from "./AssetCommitWorkspace.jsx";
 import { founderConversationTitle } from "./founderConversationTitle.js";
@@ -307,7 +308,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const imageProbeDecisionVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
   const externalProbeGate = quickFixRoute?.founder_gate_contract?.gate_type === "EXTERNAL_MODEL_PROBE" ? quickFixRoute.founder_gate_contract : null;
   const timelineAction = activeStage !== currentStage ? null : externalProbeGate
-    ? <ExternalModelProbeDecisionCard gate={externalProbeGate} busy={busy} onDecision={onExternalProbeDecision} />
+    ? <><LiveExecutionDetail brain={snapshot?.sino_brain} snapshot={snapshot} onViewResult={onViewAssets} /><ExternalModelProbeDecisionCard gate={externalProbeGate} busy={busy} onDecision={onExternalProbeDecision} /></>
     : imageProbeDecisionVisible
     ? <ImageModelProbeDecisionCard loop={autonomousLoop} busy={busy} onDecision={onImageProbeDecision} />
     : isStrategicTask
@@ -320,7 +321,9 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
       ? <><ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} reviewable={reviewableProjectDraft} /><ImplementationPlanCard plan={implementationPlan} busy={busy} onReview={onReviewImplementationPlan} /></>
     : isOutcomeReview
       ? <ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} reviewable={reviewableProjectDraft} />
-      : <FounderActionCard action={workspaceAction} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onReviseGoal} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueProjectAnalysis={onContinueProjectAnalysis} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} />;
+      : isQuickFix || isStandardTask
+        ? <LiveExecutionDetail brain={snapshot?.sino_brain} snapshot={snapshot} onViewResult={onViewAssets} />
+        : <FounderActionCard action={workspaceAction} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onReviseGoal} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueProjectAnalysis={onContinueProjectAnalysis} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} />;
   return <section className="sino-conversation-thread" aria-label="Conversation">
     <header className="sino-conversation-header"><div><h1>{founderConversationTitle(snapshot?.conversation?.title, snapshot?.sino_brain?.goal_brief?.goal)}</h1><p>{selectedStage?.label || activeStage}</p></div><dl><div><dt>Status</dt><dd>{snapshot?.sino_brain?.current_action?.title || "讨论中"}</dd></div><div><dt>Confidence</dt><dd>{snapshot?.sino_brain?.decision?.confidence ? `${Math.round(snapshot.sino_brain.decision.confidence * 100)}%` : "—"}</dd></div></dl></header>
     {isQuickFix ? <section className="sino-quick-fix-route" aria-label="Quick Fix 流程"><strong>Quick Fix</strong><span>问题 → 定位 → 修复 → 验证 → 完成</span>{quickFixRoute?.clarification_required ? <small>需要确认目标位置；仍保持 Quick Fix，不进入 Strategy Meeting。</small> : quickFixRoute?.evidence?.image_context_status === "unavailable" ? <small>图片上下文当前不可用；已按明确文字继续 Quick Fix。</small> : null}</section> : isStandardTask ? <section className="sino-quick-fix-route" aria-label="Standard Task 流程"><strong>Standard Task</strong><span>Inspect → Plan → Execution → Verification → Learning → Closure</span></section> : isStrategicTask ? <section className="sino-quick-fix-route" aria-label="Architecture Task 流程"><strong>Architecture Task</strong><span>Analysis → Alternatives → Proposal → Impact → Founder Decision</span><small>批准前禁止创建实施包或 Dispatch Codex。</small></section> : <StageNavigator stages={stages} activeStage={activeStage} onSelect={selectStage} />}

@@ -72,7 +72,9 @@ describe("ConversationThread layout", () => {
       { stage_key: "inspect", label: "定位", status: "active", message_refs: ["m1"] },
     ], discovery: { task_complexity_route: { classification: "QUICK_FIX", clarification_required: false, founder_gate_required: false, current_step: "inspect", execution_status: "inspecting", manual_continue_count: 0, evidence: {} } } };
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
-    expect(screen.getAllByText("正在定位问题")).toHaveLength(2);
+    expect(screen.getAllByText("正在定位问题")).toHaveLength(1);
+    expect(screen.getByLabelText("实时执行详情")).toBeTruthy();
+    expect(screen.queryByLabelText(/任务进度/)).toBeNull();
     expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
     expect(screen.queryByText("继续理解目标")).toBeNull();
     expect(screen.queryByText("Strategy Meeting")).toBeNull();
