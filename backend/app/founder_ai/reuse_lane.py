@@ -21,7 +21,7 @@ def _now() -> str:
 
 def is_reuse_health_check_goal(goal: str) -> bool:
     text = (goal or "").lower()
-    return is_local_health_check_goal(goal) and any(term in text for term in ("再次", "复用", "上一次", "previous", "reuse"))
+    return "健康检查" in text and any(term in text for term in ("再次", "复用", "上一次", "previous", "reuse"))
 
 
 def _candidate(current_execution_id: str | None = None) -> dict | None:
@@ -81,6 +81,9 @@ def execute_reuse_health_check(*, conversation_id: str, goal: str, route: dict, 
                                current_execution_id: str | None = None, repo_root: Path = REPO_ROOT,
                                health_runner=None) -> dict:
     contract = build_standard_task_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+    contract.update({"target_surface": "Local Development Environment",
+                     "objective": "Verify Founder frontend, Backend, Database, Worker, Execution Lifecycle and Git Working Tree by reusing the validated path.",
+                     "implementation_scope": [], "implementation_plan": [], "inspect_status": "ready_for_reuse_lookup"})
     reuse = lookup_reuse_candidate(conversation_id=conversation_id, task_id=contract["task_id"], goal=goal,
                                    current_execution_id=current_execution_id, repo_root=repo_root)
     if not reuse.get("binding_valid"):

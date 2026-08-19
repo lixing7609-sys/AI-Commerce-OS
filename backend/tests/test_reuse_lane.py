@@ -5,6 +5,7 @@ from app.founder_ai.reuse_lane import is_reuse_health_check_goal, lookup_reuse_c
 from app.founder_ai.standard_task_execution import build_standard_task_contract
 
 GOAL = "再次执行一次 Sino Founder AI 本地开发环境健康检查，复用上一次已经验证通过的检查路径、运行环境和 Technical Resolution 经验；不要重新做 Runtime Discovery。Backend Database Worker Git。"
+REFERENTIAL_GOAL = "再次执行一次 Sino Founder AI 本地开发环境健康检查，复用上一次已经验证通过的检查路径、运行环境和 Technical Resolution 经验。"
 
 def source():
     session = ExecutionSession("execution-source", "task-source", "package-source", status="completed", completed_at="2026-08-18T12:36:48+00:00", memory={"memory_id": "learning-source"}, technical_resolution={"resolution_status": "resolved", "last_attempt": {"evidence": {"status": "PASS", "method": "application_owned_low_privilege_evidence"}}})
@@ -32,6 +33,7 @@ def test_reuse_binding_invalidation_falls_back_without_fake_binding(monkeypatch,
 
 def test_current_health_contract_is_not_polluted_by_previous_business_surface():
     assert is_reuse_health_check_goal(GOAL)
+    assert is_reuse_health_check_goal(REFERENTIAL_GOAL)
     contract = build_standard_task_contract(conversation_id="conv-current", task_id="task-current", goal=GOAL)
     assert contract["target_surface"] == "Local Development Environment"
     assert contract["implementation_scope"] == [] and contract["implementation_plan"] == []
