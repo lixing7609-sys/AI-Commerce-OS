@@ -384,9 +384,12 @@ def _candidate_snapshot(snapshot: dict, conversation_id: str) -> dict:
 
 @router.get("/conversations/{conversation_id}/workspace", response_model=dict[str, Any])
 def get_conversation_workspace(conversation_id: str):
-    conversation_id = resolve_conversation_id(conversation_id)
     try:
+        conversation_id = resolve_conversation_id(conversation_id)
         snapshot = council_service.snapshot(conversation_id)
+        from app.founder_ai.conversation_task_interaction import project_execution_events
+        if project_execution_events(conversation_id):
+            snapshot = council_service.snapshot(conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail={"code": "conversation_not_found", "message": str(error)}) from error
     active = next(iter(reversed(list_actually_active_sessions(queue_getter=execution_queue.get, task_lookup=get_founder_task_asset))), None)
@@ -488,6 +491,14 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
     try:
         ensure_conversation_runtime_state(conversation_id)
         interaction_context = dict(request.interaction_context or {})
+        from app.founder_ai.conversation_task_interaction import (
+            has_explicit_execution_intent, has_stop_intent, pending_task_understanding,
+            persist_task_understanding, record_runtime_intervention, task_understanding_reply,
+        )
+        current_brain = brain_runtime.snapshot(conversation_id)
+        current_route = dict((current_brain.get("discovery") or {}).get("task_complexity_route") or {})
+        current_execution_status = current_route.get("execution_status")
+        task_bound = bool((current_route.get("autonomous_execution") or {}).get("execution_session_id") and current_execution_status not in {"completed", "cancelled", "rejected"})
         from app.founder_ai.task_complexity_router import route_task_complexity
         image_context_status = "not_present"
         if request.attachment_ids:
@@ -502,31 +513,52 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         if interaction_context.get("active_surface") != "constitution_review":
             interaction_context["task_complexity_route"] = route_task_complexity(request.content, image_understanding=interaction_context.get("grounded_multimodal_context") or interaction_context.get("image_understanding"), image_context_status=image_context_status)
         route = dict(interaction_context.get("task_complexity_route") or {})
+        explicit_execution = has_explicit_execution_intent(request.content)
+        pending = pending_task_understanding(conversation_id) if explicit_execution else None
+        execution_goal = (pending or {}).get("goal") or request.content
+        if pending and pending.get("route"):
+            route = dict(pending["route"])
+            route["discussion_context"] = list(pending.get("discussion_turns") or [execution_goal])
         is_strategic_architecture = route.get("classification") == "STRATEGIC_TASK" and not route.get("clarification_required")
         is_standard_development = route.get("classification") == "STANDARD_TASK" and route.get("task_type") != "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required")
-        if is_strategic_architecture:
+        if task_bound and has_stop_intent(request.content):
+            from app.founder_ai.execution_cancel import request_founder_cancel
+            request_founder_cancel((current_route.get("autonomous_execution") or {}).get("execution_session_id"))
+            brain_turn = {"handled": True, "intent": "founder_emergency_stop", "message_type": "runtime_intervention", "reply": "收到，正在安全停止当前任务。", "brain": brain_runtime.snapshot(conversation_id)}
+            route = current_route
+        elif task_bound:
+            reply = record_runtime_intervention(conversation_id, request.content, current_route)
+            brain_turn = {"handled": True, "intent": "runtime_intervention", "message_type": "runtime_intervention", "reply": reply, "brain": brain_runtime.snapshot(conversation_id)}
+            route = current_route
+        elif is_strategic_architecture and explicit_execution:
             from app.founder_ai.strategic_task import reconcile_architecture_task
-            route = reconcile_architecture_task(conversation_id=conversation_id, goal=request.content)
+            route = reconcile_architecture_task(conversation_id=conversation_id, goal=execution_goal)
             brain_turn = {"handled": True, "intent": "architecture_task", "message_type": "architecture_proposal",
                           "reply": "已识别为 Architecture Task。Sino 已完成当前架构检查、边界分析与影响评估，并形成待 Founder 决策的 Proposal；批准前不会创建实施包或 Dispatch Codex。",
                           "brain": brain_runtime.snapshot(conversation_id)}
-        elif is_standard_development:
+        elif is_standard_development and explicit_execution:
             from app.founder_ai.standard_task_execution import begin_standard_task, dispatch_standard_task
-            route = begin_standard_task(conversation_id=conversation_id, goal=request.content, route=route)
+            route = begin_standard_task(conversation_id=conversation_id, goal=execution_goal, route=route)
             from app.founder_ai.reuse_lane import is_reuse_health_check_goal, execute_reuse_health_check
-            if is_reuse_health_check_goal(request.content):
-                route = execute_reuse_health_check(conversation_id=conversation_id, goal=request.content, route=route)
+            if is_reuse_health_check_goal(execution_goal):
+                route = execute_reuse_health_check(conversation_id=conversation_id, goal=execution_goal, route=route)
             else:
-                route = dispatch_standard_task(conversation_id=conversation_id, goal=request.content)
-            brain_turn = {"handled": True, "intent": "standard_task", "message_type": "standard_task", "reply": "已识别为明确的 Standard Development Task。Sino 将自动完成 Inspect → Plan → Execution → Verification → Closure，不进入 Strategy Meeting。", "brain": brain_runtime.snapshot(conversation_id)}
+                route = dispatch_standard_task(conversation_id=conversation_id, goal=execution_goal)
+            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": "收到。已经根据当前讨论生成任务，开始执行。", "brain": brain_runtime.snapshot(conversation_id)}
+        elif explicit_execution and route.get("classification") == "QUICK_FIX" and not route.get("clarification_required") and not route.get("founder_gate_required"):
+            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": "收到。已经根据当前讨论生成任务，开始执行。", "brain": current_brain}
+        elif not explicit_execution and route.get("classification") in {"STANDARD_TASK", "QUICK_FIX", "STRATEGIC_TASK"}:
+            persist_task_understanding(conversation_id, request.content, route)
+            brain_turn = {"handled": True, "intent": "task_discussion", "message_type": "discussion", "reply": task_understanding_reply(request.content, route), "brain": brain_runtime.snapshot(conversation_id)}
         else:
             brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=interaction_context or None)
-        if route.get("classification") == "QUICK_FIX" and not route.get("clarification_required") and not route.get("founder_gate_required"):
+        if explicit_execution and route.get("classification") == "QUICK_FIX" and not route.get("clarification_required") and not route.get("founder_gate_required"):
             from app.founder_ai.quick_fix_execution import dispatch_quick_fix
-            dispatch_quick_fix(conversation_id=conversation_id, goal=request.content)
-        if route.get("task_type") == "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required"):
+            dispatch_quick_fix(conversation_id=conversation_id, goal=execution_goal)
+            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": "收到。已经根据当前讨论生成任务，开始执行。", "brain": brain_runtime.snapshot(conversation_id)}
+        if explicit_execution and route.get("task_type") == "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required"):
             from app.founder_ai.capability_build_loop import run_capability_build_loop
-            loop = run_capability_build_loop(conversation_id=conversation_id, goal=request.content)
+            loop = run_capability_build_loop(conversation_id=conversation_id, goal=execution_goal)
             projected = brain_runtime.attach_autonomous_main_loop(conversation_id, route, loop)
             brain_turn = {
                 "handled": True, "intent": "capability_build_task", "message_type": "autonomous_main_loop",
@@ -745,6 +777,8 @@ def decide_image_model_probe(conversation_id: str, request: ImageModelProbeDecis
     try:
         from app.founder_ai.image_model_probe_gate import decide_image_model_probe_gate
         decide_image_model_probe_gate(conversation_id, action=request.action, boundary=request.boundary)
+        from app.founder_ai.conversation_task_interaction import project_founder_decision
+        project_founder_decision(conversation_id, source_id="image-model-probe", action=request.action, subject="有限 Image Model Probe")
         return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
@@ -758,6 +792,8 @@ def decide_external_model_probe(conversation_id: str, request: ExternalModelProb
     try:
         from app.founder_ai.standard_task_founder_gate import decide_external_model_probe_gate
         decide_external_model_probe_gate(conversation_id, action=request.action, boundary=request.boundary)
+        from app.founder_ai.conversation_task_interaction import project_founder_decision
+        project_founder_decision(conversation_id, source_id="external-model-probe", action=request.action, subject="External Model Probe")
         return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
@@ -773,7 +809,22 @@ def decide_architecture_proposal_action(conversation_id: str, proposal_id: str, 
         decide_architecture_proposal(conversation_id=conversation_id, proposal_id=proposal_id,
                                      proposal_version=request.proposal_version, action=request.action,
                                      founder_feedback=request.founder_feedback)
+        from app.founder_ai.conversation_task_interaction import project_founder_decision
+        project_founder_decision(conversation_id, source_id=f"{proposal_id}:v{request.proposal_version}", action=request.action, subject="Architecture Proposal")
         return _candidate_snapshot(council_service.snapshot(conversation_id), conversation_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/conversations/{conversation_id}/tasks/current/accept", response_model=dict[str, Any])
+def accept_current_task_result(conversation_id: str):
+    conversation_id = resolve_conversation_id(conversation_id)
+    try:
+        from app.founder_ai.conversation_task_interaction import accept_task_result
+        accept_task_result(conversation_id)
+        return get_conversation_workspace(conversation_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:

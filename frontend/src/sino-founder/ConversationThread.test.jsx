@@ -1,29 +1,24 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ConversationThread, normalizeDisplayText, normalizeTextList } from "./ConversationThread.jsx";
+import { ArchitectureProposalCard, ConversationThread, normalizeDisplayText, normalizeTextList } from "./ConversationThread.jsx";
 
 const snapshot = (id, messages) => ({ conversation: { id }, messages });
 afterEach(() => cleanup());
 
 describe("ConversationThread layout", () => {
-  it("shows Architecture Proposal and never the Standard execution lane", () => {
+  it("keeps an Architecture task in Conversation and leaves its action to the right rail", () => {
     const route = { classification: "STRATEGIC_TASK", task_type: "ARCHITECTURE_TASK", current_step: "decision_readiness", architecture_proposal: { proposal_id: "proposal-v1", proposal_version: 1, status: "ready_for_founder_decision", current_problem: "Boundary unclear", proposed_boundary: "Founder owns definitions; Studio consumes Ready references.", founder_responsibilities: ["Validate"], studio_responsibilities: ["Execute Ready"], capability_lifecycle: ["candidate", "ready"], binding_contract: { reference: "id + version", consumer_rule: "ready_only" }, learning_feedback: "Return evidence", migration_impact: ["Preserve IDs"], risks: ["Drift"], recommended_decision: "Approve boundary" } };
     const value = { ...snapshot("conv-architecture", [{ message_id: "m1", role: "founder", content: "重新设计 Founder 与 Studio Capability 供给关系" }]), sino_brain: { stage: "decision_ready", active_workspace_stage: "decision_readiness", source_message_refs: ["m1"], stage_workspaces: [{ stage_key: "decision_readiness", label: "Decision Readiness", status: "active", message_refs: ["m1"] }], discovery: { task_complexity_route: route }, current_action: { title: "等待 Founder 决策", primary_label: null } } };
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
-    expect(screen.getByRole("region", { name: "Architecture Task 流程" })).toBeTruthy();
-    expect(screen.getByRole("article", { name: "Architecture Proposal" })).toBeTruthy();
-    expect(screen.getByText(/批准前禁止创建实施包/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "批准方案" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "修改方案" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "驳回方案" })).toBeTruthy();
+    expect(screen.getByText("重新设计 Founder 与 Studio Capability 供给关系")).toBeTruthy();
+    expect(screen.queryByRole("article", { name: "Architecture Proposal" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Standard Task 流程" })).toBeNull();
   });
   it("wires approve, reject and revision feedback to real proposal actions", async () => {
     const onDecision = vi.fn().mockResolvedValue(undefined);
     const proposal = { proposal_id: "proposal-actions", proposal_version: 3, status: "ready_for_founder_decision", current_problem: "Boundary", proposed_boundary: "Ready only", founder_responsibilities: [], studio_responsibilities: [], capability_lifecycle: [], binding_contract: {}, migration_impact: [], risks: [] };
-    const value = { ...snapshot("conv-actions", []), sino_brain: { active_workspace_stage: "decision_readiness", stage_workspaces: [{ stage_key: "decision_readiness", label: "Decision Readiness", status: "active", message_refs: [] }], discovery: { task_complexity_route: { classification: "STRATEGIC_TASK", architecture_proposal: proposal } } } };
-    const { rerender } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} onArchitectureDecision={onDecision} />);
+    const { rerender } = render(<ArchitectureProposalCard proposal={proposal} busy={false} onDecision={onDecision} />);
     fireEvent.click(screen.getByRole("button", { name: "批准方案" }));
     expect(onDecision).toHaveBeenCalledWith({ action: "approve", proposalId: "proposal-actions", proposalVersion: 3 });
     fireEvent.click(screen.getByRole("button", { name: "驳回方案" }));
@@ -33,29 +28,28 @@ describe("ConversationThread layout", () => {
     fireEvent.change(screen.getByLabelText("请输入希望调整的架构边界、职责或约束。"), { target: { value: "Studio 只引用 Ready Capability" } });
     fireEvent.click(screen.getByRole("button", { name: "提交修改意见" }));
     expect(onDecision).toHaveBeenCalledWith({ action: "submit_revision", proposalId: "proposal-actions", proposalVersion: 3, founderFeedback: "Studio 只引用 Ready Capability" });
-    rerender(<ConversationThread snapshot={{ ...value, sino_brain: { ...value.sino_brain, discovery: { task_complexity_route: { classification: "STRATEGIC_TASK", architecture_proposal: { ...proposal, decision_status: "approved", status: "approved" } } } } }} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} onArchitectureDecision={onDecision} />);
+    rerender(<ArchitectureProposalCard proposal={{ ...proposal, decision_status: "approved", status: "approved" }} busy={false} onDecision={onDecision} />);
     expect(screen.getByText(/方案已批准/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "批准方案" })).toBeNull();
   });
-  it("renders the Standard Task lane instead of the Strategy pipeline", () => {
+  it("keeps Standard Task messages in the Conversation instead of rendering a lane dashboard", () => {
     const value = snapshot("standard-task", [{ message_id: "m1", role: "founder", content: "给能力仓库增加搜索" }]);
     value.sino_brain = { active_workspace_stage: "execution", stage_workspaces: [{ stage_key: "execution", label: "Execution", status: "active", message_refs: ["m1"] }], discovery: { task_complexity_route: { classification: "STANDARD_TASK", standard_task_contract: { target_surface: "Capability Repository" }, current_step: "execution", execution_status: "execution" } } };
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
-    expect(screen.getByLabelText("Standard Task 流程")).toBeTruthy();
-    expect(screen.getByText("Inspect → Plan → Execution → Verification → Learning → Closure")).toBeTruthy();
+    expect(screen.getByText("给能力仓库增加搜索")).toBeTruthy();
+    expect(screen.queryByLabelText("Standard Task 流程")).toBeNull();
     expect(screen.queryByText("Strategy Meeting")).toBeNull();
     expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
   });
-  it("renders the bounded Quick Fix lane instead of the Strategy pipeline", () => {
+  it("keeps Quick Fix messages in the Conversation instead of rendering a lane dashboard", () => {
     const value = snapshot("quick-fix", [{ message_id: "m1", role: "founder", content: "修一下左边栏折叠" }]);
     value.sino_brain = { ...(value.sino_brain || {}), active_workspace_stage: "issue", stage_workspaces: [
       { stage_key: "issue", label: "问题", status: "active", message_refs: ["m1"] },
       { stage_key: "inspect", label: "定位", status: "pending", message_refs: [] },
     ], discovery: { task_complexity_route: { classification: "QUICK_FIX", evidence: { image_context_status: "unavailable" } } } };
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
-    expect(screen.getByLabelText("Quick Fix 流程")).toBeTruthy();
-    expect(screen.getByText("问题 → 定位 → 修复 → 验证 → 完成")).toBeTruthy();
-    expect(screen.getByText(/图片上下文当前不可用/)).toBeTruthy();
+    expect(screen.getByText("修一下左边栏折叠")).toBeTruthy();
+    expect(screen.queryByLabelText("Quick Fix 流程")).toBeNull();
     expect(screen.queryByText("Strategy Meeting")).toBeNull();
   });
   it("projects an autonomously completed Quick Fix at the Completed step", () => {
@@ -73,7 +67,7 @@ describe("ConversationThread layout", () => {
     ], discovery: { task_complexity_route: { classification: "QUICK_FIX", clarification_required: false, founder_gate_required: false, current_step: "inspect", execution_status: "inspecting", manual_continue_count: 0, evidence: {} } } };
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
     expect(screen.getAllByText("正在定位问题")).toHaveLength(1);
-    expect(screen.getByLabelText("实时执行详情")).toBeTruthy();
+    expect(screen.queryByLabelText("实时执行详情")).toBeNull();
     expect(screen.queryByLabelText(/任务进度/)).toBeNull();
     expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
     expect(screen.queryByText("继续理解目标")).toBeNull();
@@ -83,7 +77,8 @@ describe("ConversationThread layout", () => {
     const value = snapshot("quick-clarify", [{ message_id: "m1", role: "founder", content: "这里不对" }]);
     value.sino_brain = { active_workspace_stage: "issue", discovery: { task_complexity_route: { classification: "QUICK_FIX", clarification_required: true, quick_fix_contract: { target_area: "截图标注区域" }, evidence: {} } } };
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
-    expect(screen.getByText(/需要确认目标位置；仍保持 Quick Fix/)).toBeTruthy();
+    expect(screen.getByText("这里不对")).toBeTruthy();
+    expect(screen.queryByLabelText("实时执行详情")).toBeNull();
     expect(screen.queryByText("Strategy Meeting")).toBeNull();
   });
   it("links a Cognitive Outcome to its canonical Draft without replacing the source message", () => {

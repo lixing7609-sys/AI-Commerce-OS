@@ -52,6 +52,7 @@ def test_non_founder_conversation_is_rejected(monkeypatch):
 
 def test_missing_workspace_returns_structured_conversation_not_found(monkeypatch):
     def missing(_conversation_id): raise LookupError("Founder Conversation not found")
+    monkeypatch.setattr(api, "resolve_conversation_id", lambda value: value)
     monkeypatch.setattr(api.council_service, "snapshot", missing)
     try:
         api.get_conversation_workspace("missing")
@@ -64,6 +65,7 @@ def test_missing_workspace_returns_structured_conversation_not_found(monkeypatch
 
 def test_auto_deliberation_confirmation_starts_real_strategy_path(monkeypatch):
     calls = []
+    monkeypatch.setattr(api, "resolve_conversation_id", lambda value: value)
     monkeypatch.setattr(api.brain_runtime, "snapshot", lambda _: {"stage": "goal_review"})
     monkeypatch.setattr(api.brain_runtime, "review_intent", lambda _: "confirm_goal")
     monkeypatch.setattr(api.brain_runtime, "confirm_goal", lambda cid: calls.append(("confirm", cid)))
@@ -126,6 +128,7 @@ def test_discuss_route_accepts_and_forwards_constitution_interaction_context(mon
     monkeypatch.setattr(api, "ensure_conversation_runtime_state", lambda cid: {"conversation_id": cid})
     captured = {}
     monkeypatch.setattr(api, "resolve_conversation_id", lambda value: value)
+    monkeypatch.setattr(api.brain_runtime, "snapshot", lambda cid: {"discovery": {}})
     monkeypatch.setattr(api.brain_runtime, "process_message", lambda cid, content, interaction_context=None: captured.update({"conversation_id": cid, "content": content, "interaction_context": interaction_context}) or {"handled": True, "intent": "work_item_semantic_refresh", "message_type": "work_item_semantic_refresh", "reply": "updated", "brain": {"active_workspace_stage": "goal"}})
     monkeypatch.setattr(api.secretary, "append_message", lambda *args, **kwargs: {"conversation": {"id": args[0]}})
     monkeypatch.setattr(api.brain_runtime, "sync_message_refs", lambda _cid: None)
@@ -136,12 +139,16 @@ def test_discuss_route_accepts_and_forwards_constitution_interaction_context(mon
     assert captured["interaction_context"] == {"active_surface": "constitution_review", "selected_constitution_work_item_id": "work-1"}
 
 
-def test_clear_quick_fix_message_dispatches_autonomous_execution_without_continue(monkeypatch):
+def test_clear_quick_fix_message_stays_in_conversation_until_explicit_execution(monkeypatch):
     from app.founder_ai import quick_fix_execution
+    from app.founder_ai import conversation_task_interaction
 
     dispatched = []
     monkeypatch.setattr(api, "ensure_conversation_runtime_state", lambda cid: {"conversation_id": cid})
     monkeypatch.setattr(api, "resolve_conversation_id", lambda value: value)
+    monkeypatch.setattr(api.brain_runtime, "snapshot", lambda cid: {"discovery": {}})
+    monkeypatch.setattr(conversation_task_interaction, "persist_task_understanding", lambda *args, **kwargs: None)
+    monkeypatch.setattr(conversation_task_interaction, "pending_task_understanding", lambda cid: None)
     monkeypatch.setattr(api.brain_runtime, "process_message", lambda cid, content, interaction_context=None: {
         "handled": True, "intent": "quick_fix", "message_type": "quick_fix", "reply": "auto",
         "brain": {"active_workspace_stage": "inspect"},
@@ -154,4 +161,53 @@ def test_clear_quick_fix_message_dispatches_autonomous_execution_without_continu
     result = api.discuss_with_sino("functional-verification-v1-a", api.DiscussionMessageIn(content="修一下左边栏按钮点不了的问题"))
 
     assert result["conversation"]["id"] == "functional-verification-v1-a"
+    assert dispatched == []
+
+
+def test_explicit_execution_intent_dispatches_the_previously_discussed_quick_fix(monkeypatch):
+    from app.founder_ai import quick_fix_execution, conversation_task_interaction
+    dispatched = []
+    route = {"classification": "QUICK_FIX", "clarification_required": False, "founder_gate_required": False}
+    monkeypatch.setattr(api, "ensure_conversation_runtime_state", lambda cid: {"conversation_id": cid})
+    monkeypatch.setattr(api, "resolve_conversation_id", lambda value: value)
+    monkeypatch.setattr(api.brain_runtime, "snapshot", lambda cid: {"discovery": {}})
+    monkeypatch.setattr(conversation_task_interaction, "pending_task_understanding", lambda cid: {"goal": "修一下左边栏按钮点不了的问题", "route": route})
+    monkeypatch.setattr(quick_fix_execution, "dispatch_quick_fix", lambda **kwargs: dispatched.append(kwargs) or {})
+    monkeypatch.setattr(api.secretary, "append_message", lambda *args, **kwargs: {"conversation": {"id": args[0]}})
+    monkeypatch.setattr(api.brain_runtime, "sync_message_refs", lambda _cid: None)
+    monkeypatch.setattr(api, "_candidate_snapshot", lambda snapshot, _cid: snapshot)
+    result = api.discuss_with_sino("functional-verification-v1-a", api.DiscussionMessageIn(content="可以了，执行吧。"))
+    assert result["conversation"]["id"] == "functional-verification-v1-a"
     assert dispatched == [{"conversation_id": "functional-verification-v1-a", "goal": "修一下左边栏按钮点不了的问题"}]
+
+
+def test_strategic_topic_remains_conversation_until_founder_explicitly_executes(monkeypatch):
+    from app.founder_ai import conversation_task_interaction, strategic_task, task_complexity_router
+
+    reconciled = []
+    route = {"classification": "STRATEGIC_TASK", "task_type": "ARCHITECTURE_TASK", "clarification_required": False}
+    monkeypatch.setattr(api, "ensure_conversation_runtime_state", lambda cid: {"conversation_id": cid})
+    monkeypatch.setattr(api, "resolve_conversation_id", lambda value: value)
+    monkeypatch.setattr(api.brain_runtime, "snapshot", lambda cid: {"active_workspace_stage": "discussion", "discovery": {}})
+    monkeypatch.setattr(task_complexity_router, "route_task_complexity", lambda *args, **kwargs: route)
+    monkeypatch.setattr(conversation_task_interaction, "persist_task_understanding", lambda *args, **kwargs: None)
+    monkeypatch.setattr(conversation_task_interaction, "pending_task_understanding", lambda cid: {"goal": "重新设计 Founder 与 Studio 的职责边界", "route": route})
+    monkeypatch.setattr(strategic_task, "reconcile_architecture_task", lambda **kwargs: reconciled.append(kwargs) or route)
+    monkeypatch.setattr(api.secretary, "append_message", lambda *args, **kwargs: {"conversation": {"id": args[0]}, "reply": kwargs.get("reply_override")})
+    monkeypatch.setattr(api.brain_runtime, "sync_message_refs", lambda _cid: None)
+    monkeypatch.setattr(api, "_candidate_snapshot", lambda snapshot, _cid: snapshot)
+
+    result = api.discuss_with_sino("conv-strategy", api.DiscussionMessageIn(content="重新设计 Founder 与 Studio 的职责边界"))
+
+    assert reconciled == []
+    assert "讨论阶段" in result["reply"]
+
+    api.discuss_with_sino("conv-strategy", api.DiscussionMessageIn(content="可以了，执行吧。"))
+    assert reconciled == [{"conversation_id": "conv-strategy", "goal": "重新设计 Founder 与 Studio 的职责边界"}]
+
+
+def test_plain_positive_acknowledgement_never_dispatches(monkeypatch):
+    from app.founder_ai.conversation_task_interaction import has_explicit_execution_intent
+
+    for value in ["这个思路不错", "我理解了", "这个方向可以", "我再想想", "先这样", "继续聊", "为什么"]:
+        assert has_explicit_execution_intent(value) is False

@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { GlobalSecretaryComposer } from "./GlobalSecretaryComposer.jsx";
 import { FounderActionCard } from "./FounderActionCard.jsx";
-import { LiveExecutionDetail } from "./LiveExecutionDetail.jsx";
 import { CapabilityLifecycleCard } from "./CapabilityLifecycleCard.jsx";
 import { AssetCommitWorkspace } from "./AssetCommitWorkspace.jsx";
 import { founderConversationTitle } from "./founderConversationTitle.js";
@@ -147,7 +146,7 @@ function GoalBriefConfirmationCard({ brain, busy, onConfirm, onRevise, onReviseG
   </article>;
 }
 
-function ArchitectureProposalCard({ proposal, busy, onDecision }) {
+export function ArchitectureProposalCard({ proposal, busy, onDecision }) {
   if (!proposal) return null;
   const [editingRevision, setEditingRevision] = useState(proposal.decision_status === "revision_requested");
   const [feedback, setFeedback] = useState("");
@@ -282,7 +281,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const contextCandidate = snapshot?.context_candidate;
   const selectedStage = stages.find((item) => item.stage_key === activeStage) || stages[0];
   const selectedRefs = new Set(selectedStage?.message_refs || []);
-  const hasStageProjection = Boolean(snapshot?.sino_brain?.stage_workspaces?.length);
+  const hasStageProjection = Boolean(snapshot?.sino_brain?.stage_workspaces?.length) && !(isQuickFix || isStandardTask || isStrategicTask);
   const visibleMessages = hasStageProjection ? (snapshot?.messages || []).filter((item) => selectedRefs.has(item.message_id)) : (snapshot?.messages || []);
   const latestLifecycleEvent = [...(snapshot?.messages || [])].reverse().find((item) => item.role === "assistant" && item.message_type === "capability_lifecycle");
   const constitutionUnderstanding = snapshot?.sino_brain?.constitution_understanding;
@@ -307,8 +306,8 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
       : currentAction;
   const imageProbeDecisionVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
   const externalProbeGate = quickFixRoute?.founder_gate_contract?.gate_type === "EXTERNAL_MODEL_PROBE" ? quickFixRoute.founder_gate_contract : null;
-  const timelineAction = activeStage !== currentStage ? null : externalProbeGate
-    ? <><LiveExecutionDetail brain={snapshot?.sino_brain} snapshot={snapshot} onViewResult={onViewAssets} /><ExternalModelProbeDecisionCard gate={externalProbeGate} busy={busy} onDecision={onExternalProbeDecision} /></>
+  const timelineAction = isQuickFix || isStandardTask || isStrategicTask ? null : activeStage !== currentStage ? null : externalProbeGate
+    ? <ExternalModelProbeDecisionCard gate={externalProbeGate} busy={busy} onDecision={onExternalProbeDecision} />
     : imageProbeDecisionVisible
     ? <ImageModelProbeDecisionCard loop={autonomousLoop} busy={busy} onDecision={onImageProbeDecision} />
     : isStrategicTask
@@ -321,12 +320,10 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
       ? <><ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} reviewable={reviewableProjectDraft} /><ImplementationPlanCard plan={implementationPlan} busy={busy} onReview={onReviewImplementationPlan} /></>
     : isOutcomeReview
       ? <ProjectMaturityCard maturity={maturity} busy={busy} onReview={onReviewProjectOutcome} reviewable={reviewableProjectDraft} />
-      : isQuickFix || isStandardTask
-        ? <LiveExecutionDetail brain={snapshot?.sino_brain} snapshot={snapshot} onViewResult={onViewAssets} />
-        : <FounderActionCard action={workspaceAction} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onReviseGoal} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueProjectAnalysis={onContinueProjectAnalysis} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} />;
+      : <FounderActionCard action={workspaceAction} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onReviseGoal} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueProjectAnalysis={onContinueProjectAnalysis} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} />;
   return <section className="sino-conversation-thread" aria-label="Conversation">
     <header className="sino-conversation-header"><div><h1>{founderConversationTitle(snapshot?.conversation?.title, snapshot?.sino_brain?.goal_brief?.goal)}</h1><p>{selectedStage?.label || activeStage}</p></div><dl><div><dt>Status</dt><dd>{snapshot?.sino_brain?.current_action?.title || "讨论中"}</dd></div><div><dt>Confidence</dt><dd>{snapshot?.sino_brain?.decision?.confidence ? `${Math.round(snapshot.sino_brain.decision.confidence * 100)}%` : "—"}</dd></div></dl></header>
-    {isQuickFix ? <section className="sino-quick-fix-route" aria-label="Quick Fix 流程"><strong>Quick Fix</strong><span>问题 → 定位 → 修复 → 验证 → 完成</span>{quickFixRoute?.clarification_required ? <small>需要确认目标位置；仍保持 Quick Fix，不进入 Strategy Meeting。</small> : quickFixRoute?.evidence?.image_context_status === "unavailable" ? <small>图片上下文当前不可用；已按明确文字继续 Quick Fix。</small> : null}</section> : isStandardTask ? <section className="sino-quick-fix-route" aria-label="Standard Task 流程"><strong>Standard Task</strong><span>Inspect → Plan → Execution → Verification → Learning → Closure</span></section> : isStrategicTask ? <section className="sino-quick-fix-route" aria-label="Architecture Task 流程"><strong>Architecture Task</strong><span>Analysis → Alternatives → Proposal → Impact → Founder Decision</span><small>批准前禁止创建实施包或 Dispatch Codex。</small></section> : <StageNavigator stages={stages} activeStage={activeStage} onSelect={selectStage} />}
+    {isQuickFix || isStandardTask || isStrategicTask ? null : <StageNavigator stages={stages} activeStage={activeStage} onSelect={selectStage} />}
     <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" data-stage-workspace={selectedStage?.label || activeStage} tabIndex={0}><div className="sino-conversation-reading-column"><ReuseSuggestions items={reuseSuggestions} busy={busy} onReuse={onReuse} onDevelop={onCapabilityAction} />{activeStage === "asset_commit" ? <AssetCommitWorkspace commit={snapshot?.sino_brain?.discussion_package?.asset_commit} onViewAssets={onViewAssets} onReturnDiscussion={() => selectStage("package")} onNewGoal={onNewGoal} /> : null}{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}{activeStage === "goal" && !snapshot?.sino_brain?.current_action && !snapshot?.sino_brain?.constitution_understanding ? <GoalBriefConfirmationCard brain={snapshot?.sino_brain} busy={busy} onConfirm={onConfirmGoal} onReviseGoal={onReviseGoal} /> : null}<StageSummary stage={selectedStage} brain={snapshot?.sino_brain} currentStage={currentStage} onSelect={selectStage} />{visibleMessages.length ? visibleMessages.map((item) => {
       if (item.role === "assistant" && ["council", "auto_deliberation"].includes(item.message_type)) return null;
       if (item.role === "assistant" && ["goal_brief", "decision", "discussion_package"].includes(item.message_type)) return null;

@@ -71,6 +71,7 @@ export function getConversationWorkspace(conversationId) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/workspace`, undefined, "恢复 Sino 讨论失败");
 }
 export function cancelFounderExecution(executionId) { return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/cancel`, { method: "POST" }, "停止任务失败"); }
+export function acceptFounderTaskResult(conversationId) { return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/tasks/current/accept`, { method: "POST" }, "验收任务失败"); }
 
 export function getFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}`, undefined, "获取 Founder Object 失败"); }
 export function getFounderObjects() { return request("/founder-ai/objects", undefined, "获取 Founder Object Workspace 失败"); }

@@ -5,40 +5,36 @@ import { SinoBrainContext } from "./SinoBrainContext.jsx";
 
 describe("SinoBrainContext", () => {
   it("projects Architecture Tasks at Decision Readiness without execution", () => {
-    render(<SinoBrainContext brain={{ stage: "decision_ready", execution_progress: { current_phase: "decision_readiness", founder_action_required: true }, discovery: { task_complexity_route: { classification: "STRATEGIC_TASK", task_type: "ARCHITECTURE_TASK", current_step: "decision_readiness", architecture_analysis: { status: "completed" }, architecture_proposal: { status: "ready_for_founder_decision" } } } }} />);
-    expect(screen.getAllByText("Architecture Task")).toHaveLength(2);
-    expect(screen.getByText("Not Allowed Before Approval")).toBeTruthy();
-    expect(screen.getByText("Required")).toBeTruthy();
+    render(<SinoBrainContext brain={{ stage: "decision_ready", execution_progress: { task_id: "task-architecture", current_phase: "decision_readiness", founder_action_required: true }, discovery: { task_complexity_route: { classification: "STRATEGIC_TASK", task_type: "ARCHITECTURE_TASK", current_step: "decision_readiness", architecture_analysis: { status: "completed" }, architecture_proposal: { proposal_id: "proposal-1", status: "ready_for_founder_decision" } } } }} />);
+    expect(screen.getByRole("article", { name: "Architecture Proposal" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "批准方案" })).toBeTruthy();
     expect(screen.queryByText("Standard Task")).toBeNull();
   });
   it("projects an auto-started capability build without Continue or Strategy", () => {
     render(<SinoBrainContext brain={{ stage: "autonomous_execution", current_action: { action_id: "image_model_probe_gate", title: "Image Model Probe 需要授权边界", description: "已自动推进到 Probe。", primary_label: null }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", task_type: "CAPABILITY_BUILD_TASK" }, autonomous_main_loop: { task_type: "CAPABILITY_BUILD_TASK", status: "founder_gate_required", manual_continue_count: 0, manual_codex_instruction_count: 0, founder_gate_required: true, capability_compatibility: { status: "CAPABILITY_MISSING" }, model_candidates: [{ model_id: "image-model" }] } } }} />);
-    expect(screen.getByText("Autonomous Capability Build")).toBeTruthy();
-    expect(screen.getByText("CAPABILITY_MISSING")).toBeTruthy();
-    expect(screen.getAllByText("0").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("region", { name: "Founder Action Queue", exact: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "批准有限 Probe" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
     expect(screen.queryByText("Strategy Meeting")).toBeNull();
   });
   it("projects Quick Fix without Goal confirmation or Strategy actions", () => {
-    render(<SinoBrainContext brain={{ stage: "goal_review", discovery: { task_complexity_route: { classification: "QUICK_FIX", founder_gate_required: false, quick_fix_contract: { target_area: "Left Sidebar / AI Commerce OS Project Tree" } } } }} />);
-    expect(screen.getAllByText("Quick Fix")).toHaveLength(2);
-    expect(screen.getByText("Left Sidebar / AI Commerce OS Project Tree")).toBeTruthy();
-    expect(screen.getByText("Not Required")).toBeTruthy();
+    render(<SinoBrainContext brain={{ stage: "goal_review", execution_progress: { task_id: "task-quick", current_action: "正在定位", next_action: "Sino 自动执行" }, discovery: { task_complexity_route: { classification: "QUICK_FIX", execution_status: "inspecting", founder_gate_required: false, quick_fix_contract: { target_area: "Left Sidebar / AI Commerce OS Project Tree" } } } }} />);
+    expect(screen.getByText("正在定位")).toBeTruthy();
     expect(screen.getByText("Sino 自动执行")).toBeTruthy();
+    expect(screen.getByText("当前无需操作")).toBeTruthy();
     expect(screen.queryByText("确认后开始 Strategy Meeting。")).toBeNull();
     expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
     expect(screen.queryByRole("button", { name: "修改目标" })).toBeNull();
   });
   it("projects a Standard Task without Goal confirmation or Strategy actions", () => {
-    render(<SinoBrainContext brain={{ stage: "standard_task", discovery: { task_complexity_route: { classification: "STANDARD_TASK", current_step: "execution", execution_status: "execution", standard_task_contract: { target_surface: "Capability Repository" } } } }} />);
-    expect(screen.getAllByText("Standard Task")).toHaveLength(2);
-    expect(screen.getByText("Capability Repository")).toBeTruthy();
-    expect(screen.getByText("Not Required")).toBeTruthy();
+    render(<SinoBrainContext brain={{ stage: "standard_task", execution_progress: { task_id: "task-standard", current_action: "正在实施", next_action: "Sino 自动执行" }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", current_step: "execution", execution_status: "execution", standard_task_contract: { task_id: "task-standard", target_surface: "Capability Repository" } } } }} />);
+    expect(screen.getByText("正在实施")).toBeTruthy();
+    expect(screen.getByText("当前无需操作")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
     expect(screen.queryByText("确认后开始 Strategy Meeting。" )).toBeNull();
   });
   it("projects reuse completion without a stale Capability Repository target", () => {
-    render(<SinoBrainContext brain={{ stage: "standard_task", current_action: { action_id: "canonical_execution_progress", title: "复用验证完成", description: "等待 Founder 验收", progress_percent: 100, founder_action_required: false }, execution_progress: { current_phase: "complete", execution_status: "completed", next_action: "等待 Founder 验收", founder_action_required: false }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", reuse_lane: true, current_step: "complete", execution_status: "completed", standard_task_contract: { target_surface: "Local Development Environment" } } } }} />);
+    render(<SinoBrainContext brain={{ stage: "standard_task", current_action: { action_id: "canonical_execution_progress", title: "复用验证完成", description: "等待 Founder 验收", progress_percent: 100, founder_action_required: false }, execution_progress: { task_id: "task-reuse", current_phase: "complete", execution_status: "completed", next_action: "等待 Founder 验收", founder_action_required: false }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", reuse_lane: true, current_step: "complete", execution_status: "completed", standard_task_contract: { task_id: "task-reuse", target_surface: "Local Development Environment" } } } }} />);
     expect(screen.getByText("Local Development Environment")).toBeTruthy();
     expect(screen.getByText("复用验证完成")).toBeTruthy();
     expect(screen.queryByText("Capability Repository")).toBeNull();
@@ -50,8 +46,8 @@ describe("SinoBrainContext", () => {
     expect(screen.queryByRole("button", { name: "停止任务" })).toBeNull();
   });
   it("shows a verified visible result with a direct target action", () => {
-    render(<SinoBrainContext onViewAssets={vi.fn()} brain={{ stage: "standard_task", execution_progress: { execution_status: "completed" }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", standard_task_contract: { target_surface: "Capability Repository" }, visible_result: { title: "能力仓库搜索清除功能", target_surface: "Capability Repository", verification_status: "PASS" } } } }} />);
-    expect(screen.getByRole("region", { name: "验收结果" }).textContent).toContain("PASS");
+    render(<SinoBrainContext onViewAssets={vi.fn()} brain={{ stage: "standard_task", execution_progress: { task_id: "task-result", execution_status: "completed" }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", execution_status: "completed", standard_task_contract: { task_id: "task-result", target_surface: "Capability Repository" }, visible_result: { title: "能力仓库搜索清除功能", target_surface: "Capability Repository", verification_status: "PASS" } } } }} />);
+    expect(screen.getByRole("article", { name: "Founder Acceptance" }).textContent).toContain("PASS");
     expect(screen.getByRole("button", { name: "查看结果" })).toBeTruthy();
   });
   it.each([
@@ -61,14 +57,13 @@ describe("SinoBrainContext", () => {
     ["Technical Blocker", "Founder 需要关注", "technical_blocker"],
   ])("projects Path E technical resolution state %s", (title, nextAction, executionStatus) => {
     render(<SinoBrainContext brain={{ stage: "standard_task", current_action: { action_id: "canonical_execution_progress", title, description: nextAction, progress_percent: 55, founder_action_required: executionStatus === "technical_blocker" }, execution_progress: { current_phase: "verification", execution_status: executionStatus, next_action: nextAction, founder_action_required: executionStatus === "technical_blocker" }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", current_step: "verification", execution_status: executionStatus, standard_task_contract: { target_surface: "Local Development Environment" } } } }} />);
-    expect(screen.getByText(title)).toBeTruthy();
+    expect(screen.getAllByText(title).length).toBeGreaterThan(0);
     expect(screen.getAllByText(nextAction).length).toBeGreaterThan(0);
-    expect(screen.getByText(executionStatus === "technical_blocker" ? "Required" : "Not Required")).toBeTruthy();
+    expect(screen.getByText(executionStatus === "technical_blocker" ? "1 项待处理" : "当前无需操作")).toBeTruthy();
   });
   it("projects a screenshot-grounded removal target and action", () => {
-    render(<SinoBrainContext brain={{ discovery: { task_complexity_route: { classification: "QUICK_FIX", clarification_required: false, founder_gate_required: false, quick_fix_contract: { target_area: "Left Sidebar / Projects Header", visual_target: 'chevron immediately left of the "+" control', operation: "REMOVE_UI_ELEMENT" } } } }} />);
-    expect(screen.getByText('chevron immediately left of the "+" control')).toBeTruthy();
-    expect(screen.getByText("Remove UI Element")).toBeTruthy();
+    render(<SinoBrainContext brain={{ execution_progress: { task_id: "task-grounded", current_action: "正在定位", next_action: "Sino 自动执行" }, discovery: { task_complexity_route: { classification: "QUICK_FIX", execution_status: "inspecting", clarification_required: false, founder_gate_required: false, quick_fix_contract: { task_id: "task-grounded", target_area: "Left Sidebar / Projects Header", visual_target: 'chevron immediately left of the "+" control', operation: "REMOVE_UI_ELEMENT" } } } }} />);
+    expect(screen.getByText("正在定位")).toBeTruthy();
     expect(screen.getByText("Sino 自动执行")).toBeTruthy();
     expect(screen.queryByText("Strategy Meeting")).toBeNull();
   });
@@ -182,12 +177,11 @@ describe("SinoBrainContext", () => {
   });
   afterEach(cleanup);
   it("renders a reviewable Goal Brief and confirmation gate", () => {
-    const confirm = vi.fn();
-    render(<SinoBrainContext brain={{ stage: "goal_review", goal_readiness: "reviewable", goal_brief: { goal: "我要做AI短剧", summary: "建立生产能力" } }} onConfirmGoal={confirm} />);
+    render(<SinoBrainContext brain={{ stage: "goal_review", goal_readiness: "reviewable", goal_brief: { goal: "我要做AI短剧", summary: "建立生产能力" } }} />);
     expect(screen.getByText("目标已经明确")).toBeTruthy();
     expect(screen.getByText("我要做AI短剧")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "开始讨论" }));
-    expect(confirm).toHaveBeenCalled();
+    expect(screen.getAllByText("继续对话；只有 Founder 明确要求执行后才创建任务。")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
   });
 
   it("renders Goal Understanding and lets Founder stop clarification", () => {

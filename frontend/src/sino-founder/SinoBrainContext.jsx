@@ -2,6 +2,10 @@ import { FounderActionCard } from "./FounderActionCard.jsx";
 import { ContextSourcesDebug } from "./ContextSourcesDebug.jsx";
 import { projectMaturityProjection } from "./projectMaturityProjection.js";
 import { cancelFounderExecution } from "../services/founderAiApi.js";
+import { acceptFounderTaskResult } from "../services/founderAiApi.js";
+import { ExternalModelProbeDecisionCard } from "./ExternalModelProbeDecisionCard.jsx";
+import { ImageModelProbeDecisionCard } from "./ImageModelProbeDecisionCard.jsx";
+import { ArchitectureProposalCard } from "./ConversationThread.jsx";
 
 const STAGE_LABELS = {
   goal_discovery: "Goal Understanding · 目标理解", goal_review: "Goal Brief · 目标确认",
@@ -40,20 +44,35 @@ function PackageOverview({ pkg }) {
   </section>;
 }
 
-export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAction, capabilityAsset, selectedConstitutionWorkItemId, onReviewConstitutionWorkItem, onReviewConstitutionRouting, onConfirmFormalObject, onOpenProject, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal }) {
+export function SinoBrainContext({ brain, conversationId, contextGroundings, busy, capabilityAction, capabilityAsset, selectedConstitutionWorkItemId, onReviewConstitutionWorkItem, onReviewConstitutionRouting, onConfirmFormalObject, onOpenProject, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal, onExternalProbeDecision, onImageProbeDecision, onArchitectureDecision, onTaskAccepted }) {
   if (!brain) return null;
   const brief = brain.goal_brief || {};
   const quickFixRoute = brain.discovery?.task_complexity_route;
-  const isQuickFix = quickFixRoute?.classification === "QUICK_FIX";
-  const isStandardTask = quickFixRoute?.classification === "STANDARD_TASK" && Boolean(quickFixRoute?.standard_task_contract);
-  const isStrategicTask = quickFixRoute?.classification === "STRATEGIC_TASK";
+  const routeHasTask = Boolean(
+    quickFixRoute?.autonomous_execution?.execution_session_id
+    || quickFixRoute?.execution_status
+    || quickFixRoute?.standard_task_contract?.task_id
+    || quickFixRoute?.architecture_proposal?.proposal_id
+    || brain.execution_progress?.task_id
+    || brain.discovery?.autonomous_main_loop?.status
+  );
+  const isQuickFix = quickFixRoute?.classification === "QUICK_FIX" && routeHasTask;
+  const isStandardTask = quickFixRoute?.classification === "STANDARD_TASK" && routeHasTask;
+  const isStrategicTask = quickFixRoute?.classification === "STRATEGIC_TASK" && routeHasTask;
   const architectureDecisionStatus = quickFixRoute?.architecture_proposal?.decision_status || (quickFixRoute?.architecture_proposal?.status === "ready_for_founder_decision" ? "pending" : quickFixRoute?.architecture_proposal?.status);
   const autonomousLoop = brain.discovery?.autonomous_main_loop;
   const decision = brain.decision || {};
   const understanding = brain.discovery?.working_understanding || {};
   const risk = decision.key_risks?.[0] || "暂无关键风险";
   const question = decision.remaining_unknowns?.[0] || brief.unknowns?.[0] || "暂无待确认问题";
-  const action = capabilityAction || brain.current_action || (isQuickFix || isStandardTask ? null : brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "确认后开始 Strategy Meeting。", primary_label: "开始讨论", secondary_label: "修改目标" } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "确认后把讨论成果沉淀为候选能力。", primary_label: "批准候选能力", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
+  const taskSummaryAction = routeHasTask ? {
+    action_id: "task_status_summary",
+    title: brain.execution_progress?.current_action || (isStrategicTask ? "等待 Founder 决策" : isQuickFix ? "Quick Fix" : "Standard Task"),
+    description: brain.execution_progress?.next_action || quickFixRoute?.standard_task_contract?.objective || quickFixRoute?.quick_fix_contract?.expected_behavior || "Sino 正在处理当前任务。",
+    progress_percent: brain.execution_progress?.progress_percent,
+    founder_action_required: Boolean(brain.execution_progress?.founder_action_required),
+  } : null;
+  const action = capabilityAction || brain.current_action || taskSummaryAction || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "继续对话；只有 Founder 明确要求执行后才创建任务。", primary_label: null, secondary_label: null } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "确认后把讨论成果沉淀为候选能力。", primary_label: "批准候选能力", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
   const progress = brain.execution_progress;
   const executionId = progress?.execution_id || quickFixRoute?.autonomous_execution?.execution_session_id;
   const canStop = Boolean(executionId && ["queued", "executing", "testing", "verification", "self_healing", "retrying", "stalled", "waiting_for_founder_authorization", "cancelling"].includes(progress?.execution_status));
@@ -72,6 +91,24 @@ export function SinoBrainContext({ brain, contextGroundings, busy, capabilityAct
   const executionPackage = brain.discovery?.execution_package;
   const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
+  if (isQuickFix || isStandardTask || isStrategicTask) {
+    const externalGate = quickFixRoute?.founder_gate_contract?.gate_type === "EXTERNAL_MODEL_PROBE" ? quickFixRoute.founder_gate_contract : null;
+    const imageGateVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
+    const acceptance = quickFixRoute?.founder_acceptance;
+    const actionCount = Number(Boolean(isStrategicTask && ["pending", "ready_for_founder_decision", "revision_requested"].includes(architectureDecisionStatus))) + Number(Boolean(externalGate)) + Number(Boolean(imageGateVisible)) + Number(Boolean(visibleResult?.verification_status === "PASS" && acceptance?.status !== "accepted")) + Number(Boolean(progress?.execution_status === "technical_blocker"));
+    return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Task Status and Founder Action Queue">
+      <FounderActionCard compact action={action} busy={busy} readOnly onViewAssets={onViewAssets} />
+      {canStop ? <section className="sino-emergency-stop" aria-label="任务控制"><button type="button" disabled={busy || progress?.execution_status === "cancelling"} onClick={() => cancelFounderExecution(executionId).catch(() => {})}>{progress?.execution_status === "cancelling" ? "正在停止…" : "停止任务"}</button></section> : null}
+      <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>Founder Action Queue</h2><span>{actionCount ? `${actionCount} 项待处理` : "当前无需操作"}</span></header>
+        {isStrategicTask && quickFixRoute?.architecture_proposal ? <ArchitectureProposalCard proposal={quickFixRoute.architecture_proposal} busy={busy} onDecision={onArchitectureDecision} /> : null}
+        {externalGate ? <ExternalModelProbeDecisionCard gate={externalGate} busy={busy} onDecision={onExternalProbeDecision} /> : null}
+        {imageGateVisible ? <ImageModelProbeDecisionCard loop={autonomousLoop} busy={busy} onDecision={onImageProbeDecision} /> : null}
+        {progress?.execution_status === "technical_blocker" ? <article className="sino-founder-action-item"><span>需要关注</span><h3>Technical Blocker</h3><p>{progress.technical_blocker?.reason || progress.next_action}</p></article> : null}
+        {visibleResult?.verification_status === "PASS" ? <article className="sino-founder-action-item" aria-label="Founder Acceptance"><span>{acceptance?.status === "accepted" ? "已验收" : "等待验收"}</span><h3>{visibleResult.title}</h3><p>Verification PASS · {visibleResult.target_surface}</p><footer><button type="button" onClick={onViewAssets}>查看结果</button>{acceptance?.status !== "accepted" ? <button type="button" className="is-primary" disabled={busy} onClick={async () => { const next = await acceptFounderTaskResult(conversationId); onTaskAccepted?.(next); }}>验收通过</button> : null}</footer></article> : null}
+      </section>
+      <details className="sino-task-technical-details"><summary>查看任务详情 / 技术详情</summary><dl><div><dt>Task</dt><dd>{progress?.task_id || "—"}</dd></div><div><dt>Target</dt><dd>{quickFixRoute?.standard_task_contract?.target_surface || quickFixRoute?.quick_fix_contract?.target_area || "—"}</dd></div><div><dt>Execution</dt><dd>{executionId || "—"}</dd></div><div><dt>Phase</dt><dd>{progress?.current_phase || quickFixRoute?.current_step}</dd></div><div><dt>Status</dt><dd>{progress?.execution_status || quickFixRoute?.execution_status}</dd></div></dl><ContextSourcesDebug groundings={contextGroundings} /></details>
+    </section>;
+  }
   return <section className="sino-brain-context sino-brain-dashboard" aria-label="Brain Dashboard">
     {!projectAware ? <FounderActionCard compact action={action} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} /> : null}
     <header><h2>{constitution ? "Constitution Review Status" : "Brain Dashboard"}</h2><span>{isQuickFix ? "Quick Fix" : isStandardTask ? "Standard Task" : isStrategicTask ? "Architecture Task" : autonomousLoop ? "Autonomous Capability Build" : projectLifecycle?.rank >= 300 ? projectLifecycle.stage_label : STAGE_LABELS[brain.stage] || brain.stage}</span></header>

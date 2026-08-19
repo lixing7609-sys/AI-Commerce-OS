@@ -85,6 +85,8 @@ def begin_standard_task(*, conversation_id: str, goal: str, route: dict) -> dict
                    "manual_continue_count": 0, "manual_codex_instruction_count": 0, "current_step": "inspect",
                    "execution_status": "inspecting", "progress_log": ["inspect"]})
     result["standard_task_contract"] = build_standard_task_contract(conversation_id=conversation_id, goal=goal)
+    if route.get("discussion_context"):
+        result["standard_task_contract"]["confirmed_conversation_context"] = list(route["discussion_context"])
     return _save_route(conversation_id, result)
 
 
