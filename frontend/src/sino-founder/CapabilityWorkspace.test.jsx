@@ -134,7 +134,7 @@ describe("Draft Center", () => {
     expect(screen.getByText("7")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "批准实施" }));
     expect(approve).toHaveBeenCalledWith(draft);
-    fireEvent.click(screen.getByRole("button", { name: "查看实施方案" }));
+    fireEvent.click(screen.getByRole("button", { name: "在原讨论中查看完整实施方案" }));
     expect(viewPlan).toHaveBeenCalledWith(draft);
     expect(screen.queryByRole("button", { name: "开发" })).toBeNull();
     expect(screen.getByRole("button", { name: "返回原讨论" })).toBeTruthy();
@@ -147,5 +147,17 @@ describe("Draft Center", () => {
     render(<DraftContext selected={draft} onReviewFounderGate={open} />);
     fireEvent.click(screen.getByRole("button", { name: "审核运行环境方案" }));
     expect(open).toHaveBeenCalledWith(proposal);
+  });
+
+  it("keeps task content available for repeated review while execution is in progress", () => {
+    const draft = { draft_id: "draft-running", title: "Runtime rollout", status: "confirmed", version: 1, project_name: "Cloud", source_conversation_id: "conv-cloud", implementation: { plan_id: "plan-running", work_item_count: 2, execution_approval: "approved", implementation_goal: "完成运行环境上线", execution_package: { package_id: "package-running", preflight_status: "ready", execution_status: "executing", scope: ["runtime binding"], acceptance_criteria: ["targeted tests pass"], work_items: [{ work_item_id: "work-1", title: "绑定运行环境", purpose: "连接执行器", validation: "健康检查通过" }, { work_item_id: "work-2", scope: "运行前端验证" }] } } };
+    render(<DraftContext selected={draft} />);
+    expect(screen.getByRole("region", { name: "任务内容" })).toBeTruthy();
+    expect(screen.getByText("绑定运行环境")).toBeTruthy();
+    expect(screen.getByText("targeted tests pass")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "收起任务内容" }));
+    expect(screen.queryByText("绑定运行环境")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "查看任务内容" }));
+    expect(screen.getByText("绑定运行环境")).toBeTruthy();
   });
 });

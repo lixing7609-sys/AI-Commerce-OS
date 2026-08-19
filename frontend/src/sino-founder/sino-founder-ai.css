@@ -1182,6 +1182,21 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-lifecycle-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
 .sino-lifecycle-actions button.is-primary { border-color: var(--accent); background: var(--accent); color: #071006; }
 .sino-lifecycle-actions button:disabled { opacity: .4; cursor: not-allowed; }
+.sino-draft-task-content { margin-top: 22px; padding: 18px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-raised); }
+.sino-draft-task-content > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.sino-draft-task-content > header h3 { margin: 4px 0 0; font-size: var(--font-section-title); }
+.sino-draft-task-content > header button { flex: 0 0 auto; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 7px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.sino-draft-task-content > header button:hover { border-color: var(--accent); color: var(--text-primary); }
+.sino-draft-task-content > div { display: grid; gap: 16px; margin-top: 16px; }
+.sino-draft-task-content__goal { margin: 0; color: var(--text-primary); }
+.sino-draft-task-content ol { display: grid; gap: 10px; margin: 0; padding-left: 24px; }
+.sino-draft-task-content li { padding-left: 4px; color: var(--text-secondary); }
+.sino-draft-task-content li strong, .sino-draft-task-content li p, .sino-draft-task-content li small { display: block; }
+.sino-draft-task-content li p { margin: 4px 0; }
+.sino-draft-task-content li small { margin-top: 4px; color: var(--text-muted); }
+.sino-draft-task-content__fallback { padding: 12px 14px; border-left: 2px solid var(--accent); background: var(--surface-base); }
+.sino-draft-task-content__fallback p { margin: 5px 0 0; }
+.sino-draft-task-content > div > div > ul { margin-bottom: 0; }
 .sino-primary-center .sino-asset-list > button p, .sino-lifecycle-center .sino-asset-list > button p { margin: 0; color: #9ca69b; font-size: 13px; line-height: 1.55; }
 .sino-business-empty, .sino-inspector-empty { display: grid; align-content: center; min-height: 180px; padding: 24px; color: #9da69b; }
 .sino-business-empty strong, .sino-inspector-empty h2 { color: #dce4da; }.sino-business-empty p, .sino-inspector-empty p { color: #939d91; line-height: 1.6; }
