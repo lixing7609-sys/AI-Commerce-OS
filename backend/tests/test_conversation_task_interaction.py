@@ -1,4 +1,4 @@
-from app.founder_ai.conversation_task_interaction import _append_projection, conversation_understanding_snapshot, has_explicit_execution_intent, has_stop_intent, task_understanding_reply
+from app.founder_ai.conversation_task_interaction import _append_projection, _lifecycle_allows_semantic, conversation_understanding_snapshot, has_explicit_execution_intent, has_stop_intent, task_understanding_reply
 
 
 def test_clarification_reconciliation_enforces_founder_action_invariant(monkeypatch):
@@ -95,6 +95,15 @@ def test_founder_readable_execution_projection_is_idempotent_by_source_event():
     assert _append_projection(db, conversation_id="conv-1", task_id="task-1", source_event_id="event-1", event_type="worker_started", summary="已开始执行。") is False
     assert len(db.messages) == 1
     assert db.messages[0].grounding["visibility"] == "founder"
+
+
+def test_executor_completion_cannot_claim_task_completion_before_canonical_verification():
+    blocked = {"current_step": "verification", "execution_status": "blocked", "autonomous_execution": {"verification": {"status": "FAIL"}}}
+    assert _lifecycle_allows_semantic(blocked, "verification_completed") is False
+    assert _lifecycle_allows_semantic(blocked, "execution_completed") is False
+    complete = {"current_step": "complete", "execution_status": "completed", "autonomous_execution": {"verification": {"status": "PASS"}}}
+    assert _lifecycle_allows_semantic(complete, "verification_completed") is True
+    assert _lifecycle_allows_semantic(complete, "execution_completed") is True
 
 
 def test_one_technical_incident_projects_only_one_recovery_message(monkeypatch):

@@ -75,6 +75,7 @@ def test_stalled_worker_and_completed_projection_are_truthful():
     complete_progress = build_execution_progress(_route(completed.id))
     assert complete_progress["progress_percent"] == 100
     assert complete_progress["closure_status"] == "awaiting_founder_acceptance"
+    assert complete_progress["founder_action_required"] is True
     assert complete_progress["next_action"] == "等待 Founder 验收"
 
 

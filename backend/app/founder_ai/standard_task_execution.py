@@ -18,7 +18,7 @@ from app.founder_ai.execution_registry import create_execution_session, get_exec
 from app.founder_ai.execution_worker import enqueue_execution
 from app.founder_ai.execution_events import append_event
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
-from core.conversation_first.model import SinoBrainSessionDB
+from core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STEPS = ("inspect", "plan", "execution", "verification", "checkpoint", "learning", "closure", "complete")
@@ -106,6 +106,39 @@ def _founder_sidebar_spacing_contract(*, conversation_id: str, goal: str, task_i
     }
 
 
+def _founder_sidebar_typography_contract(*, conversation_id: str, goal: str, task_id: str | None) -> dict:
+    return {
+        "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
+        "task_type": "STANDARD_TASK", "target_surface": "Founder Sidebar",
+        "target_route": "Sino Founder shell / all Founder views",
+        "target_component": "SecretarySidebar / sino-founder-ai.css",
+        "objective": goal,
+        "acceptance_criteria": [
+            "The 会话 and 项目 group headings render at the same font size in the real Founder sidebar.",
+            "No other sidebar layout, navigation, or typography changes.",
+        ],
+        "visible_artifact_contract": {
+            "required": True, "artifact_type": "founder_sidebar_heading_typography",
+            "target_route": "Sino Founder shell / all Founder views",
+            "required_assertions": ["projects_heading_visible", "conversations_heading_visible", "matching_computed_font_size"],
+        },
+        "constraints": ["preserve_sidebar_structure", "preserve_navigation_behavior", "typography_only"],
+        "implementation_scope": [
+            "frontend/src/sino-founder/SecretarySidebar.jsx", "frontend/src/sino-founder/SecretarySidebar.test.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ],
+        "prohibited_scope": ["conversation_backend", "task_lifecycle", "capability_repository", "external_write", "production_write"],
+        "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
+        "inspect_status": "ready_for_plan",
+        "implementation_plan": [
+            "Inspect the real 项目 and 会话 group-heading DOM and computed typography.",
+            "Adjust only the bounded 会话 heading font size.",
+            "Run sidebar tests, frontend build, and real localhost computed-style verification.",
+        ],
+        "source_goal": goal,
+    }
+
+
 def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: str | None = None, discussion_context: list[str] | None = None) -> dict:
     from app.founder_ai.technical_resolution import is_local_health_check_goal
     if is_local_health_check_goal(goal):
@@ -131,6 +164,11 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
                        and any(marker in combined_context for marker in ("距离", "间距", "靠近", "调小")))
     if sidebar_spacing:
         return _founder_sidebar_spacing_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+    sidebar_typography = (("左边栏" in combined_context or "左侧栏" in combined_context or "侧边栏" in combined_context)
+                          and "项目" in combined_context and "会话" in combined_context
+                          and any(marker in combined_context for marker in ("字体", "字号", "一样大")))
+    if sidebar_typography:
+        return _founder_sidebar_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
     return {
         "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
         "task_type": "STANDARD_TASK", "target_surface": "Capability Repository",
@@ -272,6 +310,22 @@ def reconcile_standard_task_target_and_resume(*, conversation_id: str, enqueue=e
         if task:
             task.scope = {"lane": "STANDARD_TASK", "target_surface": contract["target_surface"], "target_route": contract.get("target_route"), "target_component": contract.get("target_component")}
             task.status = "in_progress"; task.execution_status = "inspecting"
+        corrections = {
+            "implementation_completed": "上一执行返回的结果与当前任务目标不一致，未计入当前任务完成证据。",
+            "verification_completed": "上一执行的验证证据不属于当前目标，当前任务仍需完成正确验证。",
+            "execution_completed": "上一执行器已经结束，但当前任务尚未完成；Sino 正在同一任务中重新对账。",
+        }
+        messages = db.scalars(select(ConversationMessageDB).where(
+            ConversationMessageDB.conversation_id == conversation_id,
+            ConversationMessageDB.message_type == "execution_update",
+        )).all()
+        for message in messages:
+            grounding = dict(message.grounding or {})
+            semantic = grounding.get("event_type")
+            if grounding.get("task_id") == task_id and semantic in corrections:
+                grounding["event_type"] = f"superseded_{semantic}"
+                grounding["superseded_execution_id"] = previous_execution_id
+                message.grounding = grounding; message.content = corrections[semantic]
         route["standard_task_contract"] = contract
         route["current_step"] = "inspect"; route["execution_status"] = "inspecting"
         route["stall_detected"] = False
@@ -300,6 +354,73 @@ def reconcile_standard_task_target_and_resume(*, conversation_id: str, enqueue=e
     return route
 
 
+def continue_standard_task_verification(
+    *, conversation_id: str, failed_evidence: dict, enqueue=enqueue_execution,
+) -> dict:
+    """Create one immutable same-task revision for a real failed/missing verification delta."""
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {}); route = dict(discovery.get("task_complexity_route") or {})
+        previous = dict(route.get("autonomous_execution") or {})
+        task_id = previous.get("task_id"); previous_execution_id = previous.get("execution_session_id")
+        contract = dict(route.get("standard_task_contract") or {})
+        if route.get("classification") != "STANDARD_TASK" or not task_id or not previous_execution_id or not contract:
+            raise LookupError("Standard Task verification lineage not found")
+        previous_record = get_execution_session(previous_execution_id)
+        if previous_record is None or previous_record[0].status != "completed":
+            raise ValueError("Verification continuation requires a terminal source execution")
+        if route.get("current_step") == "complete":
+            return route
+        task = db.get(TaskAssetDB, task_id)
+        if task:
+            task.status = "in_progress"; task.execution_status = "verifying"
+        route["current_step"] = "verification"; route["execution_status"] = "verifying"
+        route["visible_artifact_verification"] = {
+            "status": "FAIL", "completion_allowed": False, "evidence": failed_evidence,
+        }
+        route.pop("technical_blocker", None); route.pop("technical_resolution_contract", None)
+        discovery["task_complexity_route"] = route; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    draft = TaskAssetDraft(
+        title=contract["objective"][:200], description=contract["objective"], conversation_id=conversation_id,
+        scope={"goal_type": "development", "context": {
+            "standard_task_contract": contract, "verification_continuation": {
+                "supersedes_execution_id": previous_execution_id, "failed_evidence": failed_evidence,
+                "instruction": "Preserve the current task-owned implementation, correct only the verified delta, then complete real localhost verification and checkpoint.",
+            },
+            "relevant_files": [{"path": path, "reason": "Canonical task-owned scope"} for path in contract["implementation_scope"]],
+        }},
+        constraints=[f"Only modify {contract['implementation_scope']}", "Do not repeat unrelated implementation.", "Do not mark complete without required real browser evidence."],
+        risk="low", approval_required=False,
+    )
+    verification = [
+        *contract["acceptance_criteria"], "targeted frontend tests", "frontend build", "git diff --check",
+        "Use local Playwright verification when the embedded browser is unavailable.",
+        f"Write real browser evidence to .founder-execution/visible-artifact-{task_id}.json only after every required DOM assertion passes",
+    ]
+    package = ExecutionPackage(
+        goal=contract["objective"], context=dict(draft.scope["context"]), task_asset=draft,
+        constraints=list(draft.constraints), verification=verification,
+        commit_requirement="Use exact-file Autonomous Checkpoint; do not push.", approval_required=False, execution_allowed=True,
+    )
+    execution = create_execution_session(task_id, package); execution.status = "queued"; execution.queued_at = _now()
+    execution.handoff_id = f"standard-verification-handoff-{uuid4().hex[:20]}"
+    execution.readiness_contract_id = f"standard-verification-readiness-{uuid4().hex[:20]}"
+    execution.deltas.append({"type": "verification_continuation", "supersedes_execution_id": previous_execution_id, "failed_evidence": failed_evidence, "created_at": _now()})
+    save_execution_session(execution, package)
+    route = _project(conversation_id, step="verification", execution={
+        "task_id": task_id, "execution_package_id": execution.execution_package_id,
+        "readiness_contract_id": execution.readiness_contract_id, "handoff_id": execution.handoff_id,
+        "execution_session_id": execution.id, "supersedes_execution_id": previous_execution_id,
+        "executor": "codex", "dispatch_status": "queued", "dispatched_at": _now(), "manual_codex_instruction_count": 0,
+    })
+    enqueue(execution.id)
+    Thread(target=_monitor, args=(conversation_id, task_id, execution.id), daemon=True, name=f"standard-verification-{execution.id}").start()
+    return route
+
+
 def _monitor(conversation_id: str, task_id: str, execution_id: str) -> None:
     while True:
         record = get_execution_session(execution_id)
@@ -314,6 +435,64 @@ def _monitor(conversation_id: str, task_id: str, execution_id: str) -> None:
         if session.status in {"completed", "failed", "blocked", "cancelled"}: break
         time.sleep(.25)
     reconcile_standard_task_execution(conversation_id=conversation_id, task_id=task_id, execution_id=execution_id)
+
+
+def evaluate_standard_verification_evidence(
+    *,
+    implementation_complete: bool,
+    task_owned_tests_pass: bool,
+    build_pass: bool,
+    visible_artifact_pass: bool,
+    checkpoint_exists: bool,
+    task_owned_files_clean: bool,
+) -> dict:
+    """Return the canonical closure decision from task-scoped durable evidence."""
+    evidence = {
+        "implementation_complete": implementation_complete,
+        "task_owned_tests_pass": task_owned_tests_pass,
+        "build_pass": build_pass,
+        "visible_artifact_pass": visible_artifact_pass,
+        "checkpoint_exists": checkpoint_exists,
+        "task_owned_files_clean": task_owned_files_clean,
+    }
+    missing = [name for name, passed in evidence.items() if not passed]
+    return {**evidence, "verification_complete": not missing, "missing_evidence": missing}
+
+
+def refresh_completed_execution_artifacts(*, execution_id: str, repo_root: Path = REPO_ROOT) -> bool:
+    """Recover browser/checkpoint callbacks from durable task-owned evidence."""
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise LookupError("Standard execution session not found")
+    session, package = record
+    if session.status != "completed":
+        return False
+    changed = set((session.result or {}).get("changed_files") or [])
+    contract = dict((package.context or {}).get("standard_task_contract") or {})
+    updated = False
+    if contract.get("visible_artifact_contract", {}).get("required"):
+        evidence_path = repo_root / ".founder-execution" / f"visible-artifact-{contract.get('task_id')}.json"
+        if evidence_path.is_file() and dict((session.result or {}).get("browser_verification") or {}).get("status") != "PASS":
+            import json
+            try:
+                evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                evidence = None
+            if isinstance(evidence, dict) and evidence.get("status") == "PASS":
+                session.result = {**dict(session.result or {}), "browser_verification": evidence}
+                updated = True
+    if not session.commit_hash and changed:
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_root, capture_output=True, text=True).stdout.strip()
+        committed = set(subprocess.run(
+            ["git", "show", "--pretty=", "--name-only", "HEAD"], cwd=repo_root, capture_output=True, text=True,
+        ).stdout.splitlines())
+        if head and changed.issubset(committed):
+            session.commit_hash = head
+            updated = True
+    if updated:
+        append_event(session, "evidence_reconciled", status="completed", message="Missing verification callbacks reconciled from durable task evidence")
+        save_execution_session(session, package)
+    return updated
 
 
 def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, execution_id: str, repo_root: Path = REPO_ROOT) -> dict:
@@ -346,11 +525,23 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
     if contract.get("visible_artifact_contract", {}).get("required"):
         from app.founder_ai.visible_artifact import browser_gate
         visible_gate = browser_gate(browser_evidence, contract=contract.get("visible_artifact_contract"))
-    base_pass = diff_ok and clean and bool(session.commit_hash)
-    passed = base_pass and (visible_gate is None or visible_gate["completion_allowed"])
+    required_verification = list((session.result or {}).get("tests") or [])
+    executor_passed = session.subprocess_exit_status == 0
+    tests_required = any("test" in item.lower() for item in required_verification)
+    build_required = any("build" in item.lower() for item in required_verification)
+    closure_evidence = evaluate_standard_verification_evidence(
+        implementation_complete=session.status == "completed" and executor_passed,
+        task_owned_tests_pass=executor_passed and (not tests_required or bool(required_verification)),
+        build_pass=executor_passed and (not build_required or bool(required_verification)),
+        visible_artifact_pass=visible_gate is None or visible_gate["completion_allowed"],
+        checkpoint_exists=bool(session.commit_hash),
+        task_owned_files_clean=clean and diff_ok,
+    )
+    passed = closure_evidence["verification_complete"]
     verification = {"status": "PASS" if passed else "FAIL", "targeted_tests": list((session.result or {}).get("tests") or []), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": "PASS" if session.commit_hash else "FAIL",
                     "working_tree": "task_owned_clean" if clean else "task_owned_dirty", "task_owned_dirty": task_owned_dirty,
-                    "unrelated_dirty_preserved": unrelated_dirty, "browser_verification": visible_gate}
+                    "unrelated_dirty_preserved": unrelated_dirty, "browser_verification": visible_gate,
+                    "closure_evidence": closure_evidence}
     if verification["status"] != "PASS": return _project(conversation_id, step="verification", blocker={"type": "standard_task_verification_failed", "evidence": verification, "founder_gate_required": False})
     learning = {"status": "recorded", "type": "STANDARD_TASK_IMPLEMENTATION",
                 "rule": f"Keep implementation and verification bounded to {contract.get('target_surface') or 'the confirmed target surface'}."}

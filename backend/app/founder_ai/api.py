@@ -420,6 +420,21 @@ def _candidate_snapshot(snapshot: dict, conversation_id: str) -> dict:
 def get_conversation_workspace(conversation_id: str):
     try:
         conversation_id = resolve_conversation_id(conversation_id)
+        # A worker callback is not the source of truth for closure. Reconcile a
+        # terminal Standard Task from its persisted evidence on every canonical read.
+        try:
+            from app.founder_ai.standard_task_execution import reconcile_standard_task_execution, refresh_completed_execution_artifacts
+            state = brain_runtime.snapshot(conversation_id) or {}
+            route = dict((state.get("discovery") or {}).get("task_complexity_route") or {})
+            execution = dict(route.get("autonomous_execution") or {})
+            execution_id = execution.get("execution_session_id")
+            task_id = execution.get("task_id")
+            record = get_execution_session(execution_id) if execution_id else None
+            if route.get("classification") == "STANDARD_TASK" and record and record[0].status == "completed" and route.get("current_step") != "complete":
+                refresh_completed_execution_artifacts(execution_id=execution_id)
+                reconcile_standard_task_execution(conversation_id=conversation_id, task_id=task_id, execution_id=execution_id)
+        except (LookupError, ValueError):
+            pass
         snapshot = council_service.snapshot(conversation_id)
         from app.founder_ai.conversation_task_interaction import project_execution_events
         if project_execution_events(conversation_id):

@@ -41,4 +41,4 @@ def test_current_health_contract_is_not_polluted_by_previous_business_surface():
 def test_reuse_progress_is_lane_specific_and_not_generic_execution():
     progress = build_execution_progress({"classification": "STANDARD_TASK", "reuse_lane": True, "current_step": "complete", "execution_status": "completed", "standard_task_contract": {"task_id": "task-current"}, "reuse": {"lightweight_validation": {"checked_at": "2026-08-19T00:00:00+00:00"}}})
     assert progress["progress_percent"] == 100 and progress["current_action"] == "复用验证完成"
-    assert progress["execution_id"] is None and progress["founder_action_required"] is False
+    assert progress["execution_id"] is None and progress["founder_action_required"] is True

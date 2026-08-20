@@ -1,4 +1,4 @@
-from app.founder_ai.standard_task_execution import build_standard_task_contract
+from app.founder_ai.standard_task_execution import build_standard_task_contract, evaluate_standard_verification_evidence
 from app.founder_ai.task_complexity_router import QUICK_FIX, STANDARD_TASK, STRATEGIC_TASK, route_task_complexity
 
 
@@ -60,3 +60,48 @@ def test_founder_sidebar_spacing_resolves_its_own_bounded_target():
     assert "frontend/src/sino-founder/SecretarySidebar.test.jsx" in contract["implementation_scope"]
     assert "frontend/src/sino-founder/CapabilityWorkspace.jsx" not in contract["implementation_scope"]
     assert contract["visible_artifact_contract"]["required"] is True
+
+
+def test_founder_sidebar_heading_typography_does_not_inherit_capability_repository_contract():
+    contract = build_standard_task_contract(
+        conversation_id="conv-sidebar-font", task_id="task-sidebar-font",
+        goal="把左侧栏‘会话’分组标题的字体大小调整为和‘项目’一致",
+    )
+    assert contract["target_surface"] == "Founder Sidebar"
+    assert contract["target_component"] == "SecretarySidebar / sino-founder-ai.css"
+    assert contract["objective"].startswith("把左侧栏")
+    assert "frontend/src/sino-founder/CapabilityWorkspace.jsx" not in contract["implementation_scope"]
+    assert contract["visible_artifact_contract"]["required"] is True
+
+
+def test_complete_task_scoped_evidence_closes_verification_even_if_callback_was_lost():
+    result = evaluate_standard_verification_evidence(
+        implementation_complete=True, task_owned_tests_pass=True, build_pass=True,
+        visible_artifact_pass=True, checkpoint_exists=True, task_owned_files_clean=True,
+    )
+    assert result["verification_complete"] is True
+    assert result["missing_evidence"] == []
+
+
+def test_unrelated_repo_changes_are_not_part_of_task_scoped_closure_evidence():
+    result = evaluate_standard_verification_evidence(
+        implementation_complete=True, task_owned_tests_pass=True, build_pass=True,
+        visible_artifact_pass=True, checkpoint_exists=True, task_owned_files_clean=True,
+    )
+    assert "unrelated_repo_clean" not in result
+    assert result["verification_complete"] is True
+
+
+def test_missing_browser_or_failed_build_prevents_verification_completion():
+    missing_browser = evaluate_standard_verification_evidence(
+        implementation_complete=True, task_owned_tests_pass=True, build_pass=True,
+        visible_artifact_pass=False, checkpoint_exists=True, task_owned_files_clean=True,
+    )
+    failed_build = evaluate_standard_verification_evidence(
+        implementation_complete=True, task_owned_tests_pass=True, build_pass=False,
+        visible_artifact_pass=True, checkpoint_exists=True, task_owned_files_clean=True,
+    )
+    assert missing_browser["verification_complete"] is False
+    assert missing_browser["missing_evidence"] == ["visible_artifact_pass"]
+    assert failed_build["verification_complete"] is False
+    assert failed_build["missing_evidence"] == ["build_pass"]

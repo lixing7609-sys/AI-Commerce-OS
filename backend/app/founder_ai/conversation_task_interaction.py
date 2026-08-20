@@ -208,6 +208,16 @@ EVENT_SEMANTICS = {
 }
 
 
+def _lifecycle_allows_semantic(route: dict, semantic: str) -> bool:
+    """Executor completion is evidence, not canonical task completion."""
+    if semantic not in {"verification_completed", "execution_completed"}:
+        return True
+    verification = dict((route.get("autonomous_execution") or {}).get("verification") or {})
+    verified = verification.get("status") == "PASS"
+    lifecycle_complete = route.get("current_step") == "complete" and route.get("execution_status") == "completed"
+    return verified if semantic == "verification_completed" else verified and lifecycle_complete
+
+
 def _append_projection(db, *, conversation_id: str, task_id: str | None, source_event_id: str, event_type: str, summary: str, created_at: str | None = None) -> bool:
     # JSON predicates differ between SQLite/PostgreSQL; bounded per-conversation scan is portable.
     messages = db.scalars(select(ConversationMessageDB).where(
@@ -245,7 +255,7 @@ def project_execution_events(conversation_id: str) -> int:
             grouped = {}
             for event in session.events or []:
                 semantic = EVENT_SEMANTICS.get(event.get("event_name"))
-                if semantic and semantic not in projected_semantics:
+                if semantic and semantic not in projected_semantics and _lifecycle_allows_semantic(route, semantic):
                     grouped.setdefault(semantic, []).append(event)
             from app.founder_ai.conversation_core import summarize_execution_events
             for semantic, events in grouped.items():

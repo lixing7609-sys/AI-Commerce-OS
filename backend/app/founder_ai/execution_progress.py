@@ -56,11 +56,12 @@ def build_execution_progress(route: dict) -> dict | None:
         phase = route.get("current_step") or (log[-1] if log else "reuse_lookup")
         reuse = dict(route.get("reuse") or {})
         completed = route.get("execution_status") == "completed"
+        acceptance_pending = completed and dict(route.get("founder_acceptance") or {}).get("status") != "accepted"
         current_action = "复用验证完成" if completed else "正在验证当前环境" if phase in {"lightweight_verification", "verification"} else "正在复用已有经验"
         return {"task_id": (route.get("standard_task_contract") or {}).get("task_id"), "execution_id": None,
                 "task_type": classification, "current_phase": phase, "execution_status": "completed" if completed else route.get("execution_status"),
                 "verification_status": "PASS" if completed else "PENDING", "closure_status": "awaiting_founder_acceptance" if completed else "pending",
-                "founder_action_required": False, "technical_blocker": route.get("technical_blocker"), "started_at": None,
+                "founder_action_required": acceptance_pending, "technical_blocker": route.get("technical_blocker"), "started_at": None,
                 "phase_started_at": None, "updated_at": (reuse.get("lightweight_validation") or {}).get("checked_at"), "completed_at": (reuse.get("lightweight_validation") or {}).get("checked_at") if completed else None,
                 "elapsed_seconds": 0, "progress_percent": REUSE_PROGRESS.get(phase, 0), "current_action": current_action,
                 "next_action": "等待 Founder 验收" if completed else "Founder 无需操作", "stalled": False, "stall_reason": None}
@@ -85,6 +86,7 @@ def build_execution_progress(route: dict) -> dict | None:
     if exhausted:
         founder_required = True
     terminal = not founder_required and (route.get("execution_status") == "completed" or bool(session and session.status == "completed" and session.commit_hash and not blocker))
+    acceptance_pending = terminal and dict(route.get("founder_acceptance") or {}).get("status") != "accepted"
     phase = "complete" if terminal else route_step
     if blocker and phase == "complete":
         phase = "verification" if "verification" in str(blocker.get("type")) else "execution"
@@ -123,7 +125,7 @@ def build_execution_progress(route: dict) -> dict | None:
         "execution_status": "waiting_for_founder_authorization" if founder_required else "completed" if terminal else "stalled" if stalled else "blocked" if blocker else (session.status if session else route.get("execution_status")),
         "verification_status": "PASS" if terminal else "BLOCKED" if blocker and phase in {"verification", "verify"} else "PENDING",
         "closure_status": "awaiting_founder_acceptance" if terminal else "pending",
-        "founder_action_required": founder_required, "technical_blocker": blocker,
+        "founder_action_required": founder_required or acceptance_pending, "technical_blocker": blocker,
         "started_at": started_at, "phase_started_at": session.testing_at if session and phase in {"verification", "verify"} else started_at,
         "updated_at": latest_at or execution.get("dispatched_at"), "completed_at": completed_at,
         "elapsed_seconds": _elapsed(started_at, completed_at), "progress_percent": progress,
