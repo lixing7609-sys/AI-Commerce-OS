@@ -303,8 +303,18 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
     verification = {"status": "PASS" if passed else "FAIL", "targeted_tests": list((session.result or {}).get("tests") or []), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": "PASS" if session.commit_hash else "FAIL", "working_tree": "clean" if clean else "dirty", "browser_verification": visible_gate}
     if verification["status"] != "PASS": return _project(conversation_id, step="verification", blocker={"type": "standard_task_verification_failed", "evidence": verification, "founder_gate_required": False})
     learning = {"status": "recorded", "type": "STANDARD_TASK_IMPLEMENTATION", "rule": "Use existing repository data for bounded local filtering before adding a backend search service."}
-    closure = {"closure_status": "closed", "task_closed": True, "closed_by": "sino_autonomous_closure", "closed_at": _now()}
-    result = {"status": "completed", "verification": verification, "checkpoint_commit": session.commit_hash, "learning": learning, "closure": closure}
+    closure = {"closure_status": "awaiting_founder_acceptance", "task_closed": False, "completed_at": _now()}
+    visible_result = None
+    if visible_gate:
+        visible_result = {"title": contract.get("objective") or "Visible UI task result", "target_surface": contract.get("target_surface"),
+                          "target_route": contract.get("target_route"), "verification_status": "PASS", "verified_at": _now(),
+                          "browser_verification": visible_gate}
+        with SessionLocal() as db:
+            state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            discovery = dict(state.discovery or {}); current_route = dict(discovery.get("task_complexity_route") or {})
+            current_route["visible_artifact_verification"] = visible_gate; current_route["visible_result"] = visible_result
+            discovery["task_complexity_route"] = current_route; state.discovery = discovery; db.commit()
+    result = {"status": "completed", "verification": verification, "checkpoint_commit": session.commit_hash, "learning": learning, "closure": closure, "visible_result": visible_result}
     with SessionLocal() as db:
         task = db.get(TaskAssetDB, task_id); task.status = "completed"; task.execution_status = "completed"; task.result = result; db.commit()
     return _project(conversation_id, step="complete", execution={"dispatch_status": "completed", "verification": verification, "learning": learning, "closure": closure, "result": result})
