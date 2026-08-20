@@ -48,3 +48,15 @@ def test_new_discussion_three_column_contract_resolves_real_target_from_discussi
 def test_new_discussion_phrase_without_confirmed_three_columns_does_not_guess_target_contract():
     contract = build_standard_task_contract(conversation_id="conv-incomplete", goal="调整新建讨论按钮")
     assert contract["target_surface"] == "Capability Repository"
+
+
+def test_founder_sidebar_spacing_resolves_its_own_bounded_target():
+    contract = build_standard_task_contract(
+        conversation_id="conv-sidebar-spacing", task_id="task-sidebar-spacing",
+        goal="把左边栏‘+新建讨论’和‘项目’之间的距离调小",
+    )
+    assert contract["target_surface"] == "Founder Sidebar"
+    assert contract["target_component"] == "SecretarySidebar / sino-founder-ai.css"
+    assert "frontend/src/sino-founder/SecretarySidebar.test.jsx" in contract["implementation_scope"]
+    assert "frontend/src/sino-founder/CapabilityWorkspace.jsx" not in contract["implementation_scope"]
+    assert contract["visible_artifact_contract"]["required"] is True

@@ -16,6 +16,8 @@ from app.founder_ai.execution_registry import get_execution_session, list_actual
 from core.conversation_first.model import SinoBrainSessionDB
 
 STALL_THRESHOLD_SECONDS = int(os.getenv("FOUNDER_EXECUTION_STALL_SECONDS", "180"))
+LONG_RUNNING_STALL_SECONDS = int(os.getenv("FOUNDER_EXECUTION_LONG_RUNNING_STALL_SECONDS", "900"))
+HEARTBEAT_GRACE_SECONDS = int(os.getenv("FOUNDER_EXECUTION_HEARTBEAT_GRACE_SECONDS", "30"))
 DEFAULT_RETRY_BUDGET = int(os.getenv("FOUNDER_TECHNICAL_RESOLUTION_RETRY_BUDGET", "3"))
 MEANINGFUL_EVENTS = {"queued", "worker_started", "codex_started", "codex_finished", "testing_started", "testing_finished", "artifact_saved", "memory_saved", "completed", "failed"}
 
@@ -36,15 +38,39 @@ def meaningful_progress_at(session) -> str | None:
     return event.get("timestamp") if event else session.started_at or session.queued_at
 
 
-def evaluate_stall(session, *, now: datetime | None = None, threshold_seconds: int = STALL_THRESHOLD_SECONDS) -> dict:
+def _owned_subprocess_alive(session) -> bool:
+    pid = getattr(session, "subprocess_pid", None)
+    if not pid or getattr(session, "subprocess_exit_status", None) is not None:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (OSError, ProcessLookupError):
+        return False
+    return True
+
+
+def evaluate_stall(session, *, now: datetime | None = None, threshold_seconds: int = STALL_THRESHOLD_SECONDS,
+                   process_checker=None) -> dict:
     current = now or datetime.now(timezone.utc); progress = _parse(meaningful_progress_at(session)); heartbeat = _parse(getattr(session, "worker_heartbeat_at", None))
+    activity = _parse(getattr(session, "subprocess_activity_at", None))
     meaningful_age = max(0, int((current - progress).total_seconds())) if progress else None
     heartbeat_age = max(0, int((current - heartbeat).total_seconds())) if heartbeat else None
+    activity_age = max(0, int((current - activity).total_seconds())) if activity else meaningful_age
     running = session.status in {"queued", "executing", "testing"}
-    stalled = bool(running and meaningful_age is not None and meaningful_age > threshold_seconds)
+    worker_alive = bool(heartbeat_age is not None and heartbeat_age <= max(HEARTBEAT_GRACE_SECONDS, threshold_seconds))
+    subprocess_alive = bool((process_checker or _owned_subprocess_alive)(session))
+    pending_authorization = bool(getattr(session, "pending_codex_authorization", None))
+    long_running = bool(getattr(session, "expected_long_running_operation", None))
+    effective_timeout = int(getattr(session, "expected_operation_timeout_seconds", None) or (LONG_RUNNING_STALL_SECONDS if long_running else threshold_seconds))
+    no_progress = meaningful_age is not None and meaningful_age > effective_timeout
+    healthy_execution = worker_alive and subprocess_alive and activity_age is not None and activity_age <= effective_timeout
+    stalled = bool(running and no_progress and not healthy_execution and not pending_authorization)
     return {"stalled": stalled, "threshold_seconds": threshold_seconds, "worker_heartbeat_at": getattr(session, "worker_heartbeat_at", None),
             "meaningful_progress_at": meaningful_progress_at(session), "meaningful_progress_age_seconds": meaningful_age,
-            "worker_alive": bool(heartbeat_age is not None and heartbeat_age <= max(30, threshold_seconds)), "heartbeat_age_seconds": heartbeat_age}
+            "worker_alive": worker_alive, "heartbeat_age_seconds": heartbeat_age, "subprocess_alive": subprocess_alive,
+            "subprocess_activity_at": getattr(session, "subprocess_activity_at", None), "subprocess_activity_age_seconds": activity_age,
+            "expected_long_running_operation": getattr(session, "expected_long_running_operation", None),
+            "effective_timeout_seconds": effective_timeout, "pending_authorization": pending_authorization}
 
 
 def classify_subprocess_constraint(session) -> dict:
@@ -78,7 +104,8 @@ def _application_owned_health(repo_root: Path) -> dict:
 
 def build_resolution_contract(session, *, retry_budget: int = DEFAULT_RETRY_BUDGET) -> dict:
     constraint = classify_subprocess_constraint(session)
-    return {**constraint, "affected_component": "local_development_health_verification", "severity": "recoverable",
+    return {**constraint, "technical_incident_id": f"incident-{session.id}-{len(session.events or [])}",
+            "affected_component": "execution_lifecycle", "severity": "recoverable",
             "safe_auto_repair": True, "repair_plan": ["avoid_privileged_cross_app_inspection", "use_application_owned_health_evidence", "reconcile_execution_state"],
             "rollback_plan": "none_required_read_only_checks", "retry_limit": retry_budget, "attempt_count": 0,
             "last_attempt": None, "resolution_status": "pending", "created_at": _now()}
@@ -96,7 +123,8 @@ def mark_stalled_execution(*, conversation_id: str, execution_id: str, stall_evi
     if session.technical_resolution and session.technical_resolution.get("resolution_status") in {"diagnosing", "retrying", "resolved"}:
         return session.technical_resolution
     contract = build_resolution_contract(session); contract.update({"issue_type": "STALLED_EXECUTION", "resolution_status": "diagnosing", "stall_evidence": stall_evidence})
-    append_event(session, "stall_detected", status="stalled", message="Meaningful progress exceeded the execution stall threshold", metadata=stall_evidence)
+    append_event(session, "stall_detected", status="stalled", message="Meaningful progress exceeded the execution stall threshold",
+                 metadata={**stall_evidence, "technical_incident_id": contract["technical_incident_id"]})
     session.technical_resolution = contract; save_execution_session(session, package)
     with SessionLocal() as db:
         state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
@@ -105,6 +133,33 @@ def mark_stalled_execution(*, conversation_id: str, execution_id: str, stall_evi
         route.update({"stall_detected": True, "execution_status": "self_healing", "technical_resolution_contract": contract,
                       "founder_gate_required": False, "manual_continue_count": 0, "manual_codex_instruction_count": 0})
         discovery["task_complexity_route"] = route; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+    return contract
+
+
+def resolve_false_stall_after_progress(*, conversation_id: str, execution_id: str) -> dict | None:
+    """Close a stale stall incident once durable execution progress has resumed."""
+    record = get_execution_session(execution_id)
+    if record is None:
+        return None
+    session, package = record
+    contract = dict(session.technical_resolution or {})
+    if contract.get("issue_type") != "STALLED_EXECUTION" or contract.get("resolution_status") not in {"pending", "diagnosing", "retrying"}:
+        return contract or None
+    contract.update({"resolution_status": "resolved", "resolution_reason": "execution_progress_resumed", "completed_at": _now()})
+    if not any(item.get("event_name") == "technical_resolution_completed" and
+               (item.get("metadata") or {}).get("technical_incident_id") == contract.get("technical_incident_id") for item in session.events or []):
+        append_event(session, "technical_resolution_completed", status="resolved", message="Execution progress resumed",
+                     metadata={"technical_incident_id": contract.get("technical_incident_id"), "reason": "execution_progress_resumed"})
+    session.technical_resolution = contract
+    save_execution_session(session, package)
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state:
+            discovery = dict(state.discovery or {}); route = dict(discovery.get("task_complexity_route") or {})
+            route["technical_resolution_contract"] = contract
+            route["stall_detected"] = False
+            if route.get("execution_status") == "self_healing": route["execution_status"] = "executing"
+            discovery["task_complexity_route"] = route; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
     return contract
 
 

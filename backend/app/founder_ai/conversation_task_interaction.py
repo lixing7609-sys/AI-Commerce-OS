@@ -249,9 +249,15 @@ def project_execution_events(conversation_id: str) -> int:
         resolution = dict(route.get("technical_resolution_contract") or {})
         if resolution:
             status = resolution.get("resolution_status")
-            source = f"technical-resolution:{execution_id}:{status}:{resolution.get('attempt_count', 0)}"
+            incident_id = resolution.get("technical_incident_id")
+            incident_already_projected = bool(record and incident_id and any(
+                item.get("event_name") in {"stall_detected", "technical_resolution_started", "technical_resolution_completed"}
+                and (item.get("metadata") or {}).get("technical_incident_id") == incident_id
+                for item in record[0].events or []
+            ))
+            source = f"technical-resolution:{incident_id or execution_id}:{status}:{resolution.get('attempt_count', 0)}"
             summary = "当前发现执行异常，正在自动恢复。这个问题暂时不需要你处理。" if status in {"pending", "diagnosing", "retrying"} else "已恢复，继续验证。" if status == "resolved" else None
-            if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="technical_resolution", summary=summary): added += 1
+            if summary and not incident_already_projected and _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="technical_resolution", summary=summary): added += 1
         gate = dict(route.get("founder_gate_contract") or {})
         if gate and route.get("founder_gate_required"):
             source = f"founder-gate:{gate.get('gate_id') or gate.get('decision_id') or task_id}:pending"

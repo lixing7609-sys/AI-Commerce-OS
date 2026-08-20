@@ -163,8 +163,7 @@ class ExecutionWorker:
                 session, artifact_draft, memory_draft = loop.run(session, package, cwd=self.project_root, defer_completion=True)
             finally:
                 heartbeat_stop.set(); heartbeat.join(timeout=2)
-            from app.founder_ai.execution_cancel import callback_allowed
-            if not callback_allowed(execution_id):
+            if session.status in {"cancelling", "cancelled", "canceled"}:
                 logger.info("Ignoring completion callback after Founder cancellation execution_id=%s", execution_id)
                 return
             # Do not expose completion until callback assets and memories are durable.
@@ -206,7 +205,18 @@ class ExecutionWorker:
             session.status = "completed"
             append_event(session, "completed", status="completed", message="Artifact and memory persistence completed", timestamp=session.completed_at)
             save_execution_session(session, package)
+            from app.founder_ai.technical_resolution import resolve_false_stall_after_progress
+            conversation_id = package.task_asset.conversation_id
+            if conversation_id:
+                resolve_false_stall_after_progress(conversation_id=conversation_id, execution_id=execution_id)
             self.queue.transition(execution_id, "completed")
+            if conversation_id:
+                try:
+                    from app.founder_ai.standard_task_execution import reconcile_standard_task_execution
+                    reconcile_standard_task_execution(conversation_id=conversation_id, task_id=session.task_asset_id, execution_id=execution_id,
+                                                     repo_root=self.project_root)
+                except Exception:
+                    logger.exception("Standard task completion reconciliation failed execution_id=%s", execution_id)
             logger.info("Execution completed execution_id=%s", execution_id)
         except ExecutionPausedForDelta:
             save_execution_session(session, package)
@@ -240,7 +250,14 @@ class ExecutionWorker:
     def _record_subprocess(self, execution_id: str, pid: int) -> None:
         record = get_execution_session(execution_id)
         if record:
-            session, package = record; session.subprocess_pid = pid; save_execution_session(session, package)
+            session, package = record
+            started_at = _now().isoformat()
+            session.subprocess_pid = pid
+            session.subprocess_activity_at = started_at
+            session.expected_long_running_operation = "codex_execution"
+            session.expected_operation_started_at = started_at
+            session.expected_operation_timeout_seconds = 900
+            save_execution_session(session, package)
 
     def _heartbeat(self, execution_id: str, stop: Event) -> None:
         while not stop.wait(10):

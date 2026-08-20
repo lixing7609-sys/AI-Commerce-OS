@@ -72,6 +72,40 @@ def _new_discussion_three_column_contract(*, conversation_id: str, goal: str, ta
     }
 
 
+def _founder_sidebar_spacing_contract(*, conversation_id: str, goal: str, task_id: str | None) -> dict:
+    return {
+        "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
+        "task_type": "STANDARD_TASK", "target_surface": "Founder Sidebar",
+        "target_route": "Sino Founder shell / all Founder views",
+        "target_component": "SecretarySidebar / sino-founder-ai.css",
+        "objective": "Reduce only the vertical spacing between + 新建讨论 and 项目 in the Founder sidebar.",
+        "acceptance_criteria": [
+            "The real Founder sidebar renders + 新建讨论 and 项目 closer together.",
+            "Projects and Conversations remain functional and visible.",
+            "No unrelated sidebar spacing or business behavior changes.",
+        ],
+        "visible_artifact_contract": {
+            "required": True, "artifact_type": "founder_sidebar_spacing",
+            "target_route": "Sino Founder shell / all Founder views",
+            "required_assertions": ["new_discussion_visible", "projects_visible", "reduced_vertical_gap", "sidebar_actions_functional"],
+        },
+        "constraints": ["preserve_sidebar_structure", "preserve_navigation_behavior", "visual_spacing_only"],
+        "implementation_scope": [
+            "frontend/src/sino-founder/SecretarySidebar.jsx", "frontend/src/sino-founder/SecretarySidebar.test.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ],
+        "prohibited_scope": ["conversation_backend", "task_lifecycle", "capability_repository", "external_write", "production_write"],
+        "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
+        "inspect_status": "ready_for_plan",
+        "implementation_plan": [
+            "Inspect the real SecretarySidebar DOM and current spacing rule.",
+            "Adjust only the bounded gap between + 新建讨论 and 项目.",
+            "Run the sidebar tests, frontend build, and real localhost visual verification.",
+        ],
+        "source_goal": goal,
+    }
+
+
 def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: str | None = None, discussion_context: list[str] | None = None) -> dict:
     from app.founder_ai.technical_resolution import is_local_health_check_goal
     if is_local_health_check_goal(goal):
@@ -92,6 +126,11 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
     )
     if has_new_discussion and has_three_columns:
         return _new_discussion_three_column_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+    sidebar_spacing = (("左边栏" in combined_context or "左侧栏" in combined_context or "侧边栏" in combined_context)
+                       and "新建讨论" in combined_context and "项目" in combined_context
+                       and any(marker in combined_context for marker in ("距离", "间距", "靠近", "调小")))
+    if sidebar_spacing:
+        return _founder_sidebar_spacing_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
     return {
         "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
         "task_type": "STANDARD_TASK", "target_surface": "Capability Repository",
@@ -235,6 +274,7 @@ def reconcile_standard_task_target_and_resume(*, conversation_id: str, enqueue=e
             task.status = "in_progress"; task.execution_status = "inspecting"
         route["standard_task_contract"] = contract
         route["current_step"] = "inspect"; route["execution_status"] = "inspecting"
+        route["stall_detected"] = False
         route["visible_artifact_verification"] = {"status": "FAIL", "completion_allowed": False, "reason": "previous_execution_did_not_verify_target_artifact"}
         route.pop("technical_blocker", None); route.pop("technical_resolution_contract", None)
         discovery["task_complexity_route"] = route; discovery["standard_task_contract"] = contract
@@ -279,6 +319,11 @@ def _monitor(conversation_id: str, task_id: str, execution_id: str) -> None:
 def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, execution_id: str, repo_root: Path = REPO_ROOT) -> dict:
     session, package = get_execution_session(execution_id) or (None, None)
     if session is None: raise LookupError("Standard execution session not found")
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+        route = dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
+    if route.get("classification") != "STANDARD_TASK" or (route.get("autonomous_execution") or {}).get("execution_session_id") != execution_id:
+        return route
     if session.status != "completed": return _project(conversation_id, step="execution", blocker={"type": "standard_task_execution_failed", "reason": session.failure_reason, "founder_gate_required": False}, execution={"dispatch_status": session.status})
     from app.founder_ai.technical_resolution import is_local_health_check_goal, resolve_local_health_check
     if package and is_local_health_check_goal(package.goal):
@@ -289,10 +334,13 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
             state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
             return dict((state.discovery or {}).get("task_complexity_route") or {})
     diff_ok = subprocess.run(["git", "diff", "--check"], cwd=repo_root, capture_output=True, text=True).returncode == 0
-    clean = not subprocess.run(["git", "status", "--porcelain=v1"], cwd=repo_root, capture_output=True, text=True).stdout.strip()
-    with SessionLocal() as db:
-        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
-        contract = dict(((state.discovery or {}).get("task_complexity_route") or {}).get("standard_task_contract") or {}) if state else {}
+    status_lines = subprocess.run(["git", "status", "--porcelain=v1"], cwd=repo_root, capture_output=True, text=True).stdout.splitlines()
+    dirty_paths = {line[3:] for line in status_lines if len(line) > 3}
+    task_owned_paths = set((session.result or {}).get("changed_files") or [])
+    task_owned_dirty = sorted(dirty_paths & task_owned_paths)
+    unrelated_dirty = sorted(dirty_paths - task_owned_paths)
+    clean = not task_owned_dirty
+    contract = dict(route.get("standard_task_contract") or {})
     browser_evidence = dict((session.result or {}).get("browser_verification") or {})
     visible_gate = None
     if contract.get("visible_artifact_contract", {}).get("required"):
@@ -300,9 +348,12 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
         visible_gate = browser_gate(browser_evidence, contract=contract.get("visible_artifact_contract"))
     base_pass = diff_ok and clean and bool(session.commit_hash)
     passed = base_pass and (visible_gate is None or visible_gate["completion_allowed"])
-    verification = {"status": "PASS" if passed else "FAIL", "targeted_tests": list((session.result or {}).get("tests") or []), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": "PASS" if session.commit_hash else "FAIL", "working_tree": "clean" if clean else "dirty", "browser_verification": visible_gate}
+    verification = {"status": "PASS" if passed else "FAIL", "targeted_tests": list((session.result or {}).get("tests") or []), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": "PASS" if session.commit_hash else "FAIL",
+                    "working_tree": "task_owned_clean" if clean else "task_owned_dirty", "task_owned_dirty": task_owned_dirty,
+                    "unrelated_dirty_preserved": unrelated_dirty, "browser_verification": visible_gate}
     if verification["status"] != "PASS": return _project(conversation_id, step="verification", blocker={"type": "standard_task_verification_failed", "evidence": verification, "founder_gate_required": False})
-    learning = {"status": "recorded", "type": "STANDARD_TASK_IMPLEMENTATION", "rule": "Use existing repository data for bounded local filtering before adding a backend search service."}
+    learning = {"status": "recorded", "type": "STANDARD_TASK_IMPLEMENTATION",
+                "rule": f"Keep implementation and verification bounded to {contract.get('target_surface') or 'the confirmed target surface'}."}
     closure = {"closure_status": "awaiting_founder_acceptance", "task_closed": False, "completed_at": _now()}
     visible_result = None
     if visible_gate:

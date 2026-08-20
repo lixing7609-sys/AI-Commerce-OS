@@ -54,6 +54,10 @@ class ExecutionSession:
     meaningful_progress_at: str | None = None
     subprocess_pid: int | None = None
     subprocess_exit_status: int | None = None
+    subprocess_activity_at: str | None = None
+    expected_long_running_operation: str | None = None
+    expected_operation_started_at: str | None = None
+    expected_operation_timeout_seconds: int | None = None
     technical_resolution: dict[str, Any] | None = None
     authorization_envelope: dict[str, Any] | None = None
     authorization_audit: list[dict[str, Any]] = field(default_factory=list)
@@ -123,6 +127,9 @@ class FounderExecutionLoop:
                 "tests": result.tests,
                 "browser_verification": result.browser_verification,
             }
+            session.subprocess_exit_status = result.exit_code
+            session.subprocess_activity_at = datetime.now(timezone.utc).isoformat()
+            session.expected_long_running_operation = None
             append_event(
                 session,
                 "codex_finished",

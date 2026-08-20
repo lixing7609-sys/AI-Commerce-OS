@@ -97,6 +97,33 @@ def test_founder_readable_execution_projection_is_idempotent_by_source_event():
     assert db.messages[0].grounding["visibility"] == "founder"
 
 
+def test_one_technical_incident_projects_only_one_recovery_message(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from app.database.base import Base
+    from app.core.conversation.model import ConversationDB
+    from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
+    from app.founder_ai.execution_loop import ExecutionSession
+    from app.founder_ai.execution_events import append_event
+    import app.founder_ai.conversation_task_interaction as interaction
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine); factory = sessionmaker(bind=engine); monkeypatch.setattr(interaction, "SessionLocal", factory)
+    session = ExecutionSession("execution-incident", "task-incident", "package", status="executing")
+    append_event(session, "stall_detected", status="stalled", message="stalled", metadata={"technical_incident_id": "incident-1"})
+    monkeypatch.setattr(interaction, "get_execution_session", lambda _execution_id: (session, object()))
+    route = {"classification": "STANDARD_TASK", "autonomous_execution": {"task_id": "task-incident", "execution_session_id": session.id},
+             "technical_resolution_contract": {"technical_incident_id": "incident-1", "resolution_status": "diagnosing", "attempt_count": 0}}
+    with factory() as db:
+        db.add(ConversationDB(id="conv-incident", system_id="founder_ai", title="incident"))
+        db.add(SinoBrainSessionDB(conversation_id="conv-incident", discovery={"task_complexity_route": route})); db.commit()
+    assert interaction.project_execution_events("conv-incident") == 1
+    assert interaction.project_execution_events("conv-incident") == 0
+    with factory() as db:
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-incident", message_type="execution_update").all()
+        assert [item.content for item in messages] == ["当前发现执行异常，正在自动恢复。这个问题暂时不需要你处理。"]
+
+
 def test_execution_intent_uses_confirmed_multiturn_context_before_clarifying():
     pending = {"goal": "把新建讨论页面改成3列式", "route": {"classification": "QUICK_FIX", "clarification_required": True}}
     messages = [

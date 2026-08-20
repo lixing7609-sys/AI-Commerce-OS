@@ -20,13 +20,34 @@ def _package(conversation_id):
     return ExecutionPackage(goal="local health", context={}, task_asset=TaskAssetDraft(title="health", description="health", scope={}, constraints=[], risk="low", approval_required=False, conversation_id=conversation_id), constraints=[], verification=[], commit_requirement="not_required", execution_allowed=True)
 
 
-def test_worker_heartbeat_does_not_hide_stale_meaningful_progress():
+def test_worker_heartbeat_and_live_owned_subprocess_prevent_false_stall():
     now = datetime.now(timezone.utc); old = (now - timedelta(minutes=10)).isoformat()
     session = ExecutionSession(id="stall-heartbeat", task_asset_id="task", execution_package_id="package", status="executing",
-        started_at=old, meaningful_progress_at=old, worker_heartbeat_at=now.isoformat())
-    evidence = evaluate_stall(session, now=now, threshold_seconds=180)
+        started_at=old, meaningful_progress_at=old, worker_heartbeat_at=now.isoformat(), subprocess_pid=123,
+        subprocess_activity_at=now.isoformat(), expected_long_running_operation="codex_execution", expected_operation_timeout_seconds=900)
+    evidence = evaluate_stall(session, now=now, threshold_seconds=180, process_checker=lambda _: True)
     assert evidence["worker_alive"] is True
+    assert evidence["subprocess_alive"] is True
+    assert evidence["stalled"] is False
+
+
+def test_true_stall_requires_unhealthy_worker_and_missing_subprocess():
+    now = datetime.now(timezone.utc); old = (now - timedelta(minutes=10)).isoformat()
+    session = ExecutionSession(id="true-stall", task_asset_id="task", execution_package_id="package", status="executing",
+        started_at=old, meaningful_progress_at=old, worker_heartbeat_at=old, subprocess_pid=123)
+    evidence = evaluate_stall(session, now=now, threshold_seconds=180, process_checker=lambda _: False)
+    assert evidence["worker_alive"] is False
+    assert evidence["subprocess_alive"] is False
     assert evidence["stalled"] is True
+
+
+def test_pending_authorization_is_not_a_stall():
+    now = datetime.now(timezone.utc); old = (now - timedelta(minutes=10)).isoformat()
+    session = ExecutionSession(id="auth-wait", task_asset_id="task", execution_package_id="package", status="executing",
+        started_at=old, meaningful_progress_at=old, worker_heartbeat_at=old, pending_codex_authorization={"decision": "escalate"})
+    evidence = evaluate_stall(session, now=now, threshold_seconds=180, process_checker=lambda _: False)
+    assert evidence["pending_authorization"] is True
+    assert evidence["stalled"] is False
 
 
 def test_permission_denied_is_a_technical_environment_constraint():
