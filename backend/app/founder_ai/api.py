@@ -522,8 +522,7 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         ensure_conversation_runtime_state(conversation_id)
         interaction_context = dict(request.interaction_context or {})
         from app.founder_ai.conversation_task_interaction import (
-            has_explicit_execution_intent, has_stop_intent, pending_task_understanding,
-            persist_task_understanding, record_runtime_intervention, task_understanding_reply,
+            persist_task_understanding, record_runtime_intervention,
         )
         current_brain = brain_runtime.snapshot(conversation_id)
         current_route = dict((current_brain.get("discovery") or {}).get("task_complexity_route") or {})
@@ -540,45 +539,46 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
                 image_context_status = "available"
             except (ValueError, LLMGatewayError):
                 image_context_status = "unavailable"
-        if interaction_context.get("active_surface") != "constitution_review":
-            interaction_context["task_complexity_route"] = route_task_complexity(request.content, image_understanding=interaction_context.get("grounded_multimodal_context") or interaction_context.get("image_understanding"), image_context_status=image_context_status)
-        route = dict(interaction_context.get("task_complexity_route") or {})
-        explicit_execution = has_explicit_execution_intent(request.content)
-        pending = pending_task_understanding(conversation_id) if explicit_execution else None
-        execution_goal = (pending or {}).get("goal") or request.content
-        if pending and pending.get("route"):
-            route = dict(pending["route"])
-            route["discussion_context"] = list(pending.get("discussion_turns") or [execution_goal])
-        awaiting_clarification = False
-        if explicit_execution and pending and route.get("clarification_required"):
-            from app.founder_ai.conversation_task_interaction import reconcile_conversation_understanding
-            reconciled_context = reconcile_conversation_understanding(conversation_id, execution_text=request.content)
-            if reconciled_context["snapshot"]["context_sufficient"]:
-                route["clarification_required"] = False
-                route["discussion_context"] = list(reconciled_context["snapshot"].get("discussion_turns") or [])
-                route["confirmed_decisions"] = list(reconciled_context["snapshot"].get("confirmed_decisions") or [])
-            else:
-                awaiting_clarification = True
+        from app.founder_ai.conversation_core import persist_conversation_decision, reason_about_message
+        decision = reason_about_message(conversation_id, request.content, interaction_context=interaction_context)
+        persist_conversation_decision(conversation_id, decision)
+        semantic_intent = decision["semantic_intent"]
+        explicit_execution = semantic_intent == "execute_current_task"
+        task_candidate = dict(decision.get("task_candidate") or {})
+        execution_goal = str(task_candidate.get("goal") or "").strip()
+        if task_candidate:
+            route = route_task_complexity(execution_goal,
+                image_understanding=interaction_context.get("grounded_multimodal_context") or interaction_context.get("image_understanding"),
+                image_context_status=image_context_status)
+            requested_type = task_candidate.get("task_type")
+            if requested_type in {"QUICK_FIX", "STANDARD_TASK", "STRATEGIC_TASK"}:
+                route["classification"] = requested_type
+            route["discussion_context"] = [item.get("content") for item in decision["context"].get("conversation_history") or [] if item.get("content")]
+            route["confirmed_decisions"] = list(task_candidate.get("confirmed_decisions") or [])
+        else:
+            route = dict(current_route)
+        awaiting_clarification = bool(explicit_execution and decision.get("founder_action_intent") and
+                                      (decision.get("founder_action_intent") or {}).get("type") == "CLARIFICATION")
         is_strategic_architecture = route.get("classification") == "STRATEGIC_TASK" and not route.get("clarification_required")
         is_standard_development = route.get("classification") == "STANDARD_TASK" and route.get("task_type") != "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required")
         if awaiting_clarification:
             brain_turn = {"handled": True, "intent": "awaiting_founder_clarification", "message_type": "clarification",
-                          "reply": "开始执行前还有一个会直接影响结果的问题需要确认。详细问题和当前理解已放在右侧；你也可以直接在这里继续讨论。",
+                          "reply": decision["response"],
                           "brain": brain_runtime.snapshot(conversation_id)}
-        elif task_bound and has_stop_intent(request.content):
+        elif task_bound and semantic_intent == "stop_current_task":
             from app.founder_ai.execution_cancel import request_founder_cancel
             request_founder_cancel((current_route.get("autonomous_execution") or {}).get("execution_session_id"))
-            brain_turn = {"handled": True, "intent": "founder_emergency_stop", "message_type": "runtime_intervention", "reply": "收到，正在安全停止当前任务。", "brain": brain_runtime.snapshot(conversation_id)}
+            brain_turn = {"handled": True, "intent": "founder_emergency_stop", "message_type": "runtime_intervention", "reply": decision["response"], "brain": brain_runtime.snapshot(conversation_id)}
             route = current_route
-        elif task_bound:
-            reply = record_runtime_intervention(conversation_id, request.content, current_route)
-            brain_turn = {"handled": True, "intent": "runtime_intervention", "message_type": "runtime_intervention", "reply": reply, "brain": brain_runtime.snapshot(conversation_id)}
+        elif task_bound and semantic_intent == "runtime_intervention":
+            record_runtime_intervention(conversation_id, request.content, current_route)
+            brain_turn = {"handled": True, "intent": "runtime_intervention", "message_type": "runtime_intervention", "reply": decision["response"], "brain": brain_runtime.snapshot(conversation_id)}
             route = current_route
         elif is_strategic_architecture and explicit_execution:
             from app.founder_ai.strategic_task import reconcile_architecture_task
             route = reconcile_architecture_task(conversation_id=conversation_id, goal=execution_goal)
             brain_turn = {"handled": True, "intent": "architecture_task", "message_type": "architecture_proposal",
-                          "reply": "已识别为 Architecture Task。Sino 已完成当前架构检查、边界分析与影响评估，并形成待 Founder 决策的 Proposal；批准前不会创建实施包或 Dispatch Codex。",
+                          "reply": decision["response"],
                           "brain": brain_runtime.snapshot(conversation_id)}
         elif is_standard_development and explicit_execution:
             from app.founder_ai.standard_task_execution import begin_standard_task, dispatch_standard_task
@@ -588,25 +588,26 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
                 route = execute_reuse_health_check(conversation_id=conversation_id, goal=execution_goal, route=route)
             else:
                 route = dispatch_standard_task(conversation_id=conversation_id, goal=execution_goal)
-            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": "收到。已经根据当前讨论生成任务，开始执行。", "brain": brain_runtime.snapshot(conversation_id)}
+            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": decision["response"], "brain": brain_runtime.snapshot(conversation_id)}
         elif explicit_execution and route.get("classification") == "QUICK_FIX" and not route.get("clarification_required") and not route.get("founder_gate_required"):
-            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": "收到。已经根据当前讨论生成任务，开始执行。", "brain": current_brain}
-        elif not explicit_execution and route.get("classification") in {"STANDARD_TASK", "QUICK_FIX", "STRATEGIC_TASK"}:
-            persist_task_understanding(conversation_id, request.content, route)
-            brain_turn = {"handled": True, "intent": "task_discussion", "message_type": "discussion", "reply": task_understanding_reply(request.content, route), "brain": brain_runtime.snapshot(conversation_id)}
+            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": decision["response"], "brain": current_brain}
+        elif not explicit_execution:
+            if task_candidate:
+                persist_task_understanding(conversation_id, execution_goal, route)
+            brain_turn = {"handled": True, "intent": "conversation", "message_type": "discussion", "reply": decision["response"], "brain": brain_runtime.snapshot(conversation_id)}
         else:
-            brain_turn = brain_runtime.process_message(conversation_id, request.content, interaction_context=interaction_context or None)
+            brain_turn = {"handled": True, "intent": "conversation", "message_type": "discussion", "reply": decision["response"], "brain": brain_runtime.snapshot(conversation_id)}
         if explicit_execution and route.get("classification") == "QUICK_FIX" and not route.get("clarification_required") and not route.get("founder_gate_required"):
             from app.founder_ai.quick_fix_execution import dispatch_quick_fix
             dispatch_quick_fix(conversation_id=conversation_id, goal=execution_goal)
-            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": "收到。已经根据当前讨论生成任务，开始执行。", "brain": brain_runtime.snapshot(conversation_id)}
+            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": decision["response"], "brain": brain_runtime.snapshot(conversation_id)}
         if explicit_execution and route.get("task_type") == "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required"):
             from app.founder_ai.capability_build_loop import run_capability_build_loop
             loop = run_capability_build_loop(conversation_id=conversation_id, goal=execution_goal)
             projected = brain_runtime.attach_autonomous_main_loop(conversation_id, route, loop)
             brain_turn = {
                 "handled": True, "intent": "capability_build_task", "message_type": "autonomous_main_loop",
-                "reply": "Sino 已自动启动 Capability Build 主链。" + ("当前已推进到 Image Model Probe 授权边界；没有执行未授权的外部生成调用。" if loop["status"] == "founder_gate_required" else "正在自动推进 Capability Build 与验证。"),
+                "reply": decision["response"],
                 "brain": projected,
             }
         snapshot = secretary.append_message(conversation_id, request.content, intent=brain_turn.get("intent") or request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"), attachment_ids=request.attachment_ids)

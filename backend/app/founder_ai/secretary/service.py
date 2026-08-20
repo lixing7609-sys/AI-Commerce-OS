@@ -12,8 +12,6 @@ from app.core.memory.model import MemoryAssetDB
 from app.core.project.service import apply_project_distillation
 from app.database.db import SessionLocal
 from app.llm.exceptions import InvalidResponseError
-from app.llm.gateway import llm_gateway
-from app.llm.models import LLMRequest
 from .state_machine import advance_discussion
 
 
@@ -278,66 +276,28 @@ class SinoSecretaryService:
 
     @staticmethod
     def _provider_reply(conversation_id: str, text: str) -> str:
-        with SessionLocal() as session:
-            conversation = session.get(ConversationDB, conversation_id)
-            messages = list(session.scalars(select(ConversationMessageDB).where(ConversationMessageDB.conversation_id == conversation_id).order_by(ConversationMessageDB.created_at.desc()).limit(10)))
-        from app.core.project.service import assemble_project_context, get_project_intelligence
-        project_context = assemble_project_context(conversation.project_id) if conversation and conversation.project_id else {}
-        project_intelligence = get_project_intelligence(conversation.project_id) if conversation and conversation.project_id else {}
+        # Retry and legacy callers use the same LLM-first conversation core as the
+        # primary message endpoint. This keeps one natural-language owner and
+        # prevents Secretary from assembling a second, workflow-shaped reply.
+        from app.founder_ai.conversation_core import reason_about_message
+        decision = reason_about_message(conversation_id, text)
+        if not decision.get("model_decision"):
+            raise InvalidResponseError()
+        context = decision.get("context") or {}
+        project_context = dict(context.get("project_context") or {})
         try:
-            from app.core.founder_object.service import get_conversation_context_object
-            context_object = get_conversation_context_object(conversation_id)
+            from app.core.project.service import get_project_intelligence
+            project_intelligence = get_project_intelligence(project_context.get("project_id")) if project_context.get("project_id") else {}
         except Exception:
-            context_object = None
-        recent_messages = [{"role": item.role, "content": item.content} for item in reversed(messages)]
-        from app.core.model_center.service import resolve_runtime_config
-        dialogue_runtime = resolve_runtime_config(role="sino_conversation")
-        if dialogue_runtime is None:
-            raise InvalidResponseError()
-        request = LLMRequest(
-            system_prompt="""你是 Sino Founder AI。Founder 不负责 Prompt Engineering。围绕当前 Project 与 Conversation 给出简洁、具体、可继续推进的中文回复。
-如果 project_context 包含 parent_confirmed_context 与 child_project_context，必须把短指令（如“继续”“下一步呢”“你怎么看”）理解为推进当前 Project：先判断已有状态和最重要缺口，再主动给出专业下一步。不得要求 Founder 重复提供已继承的 Constitution、Parent、Architecture Role、Initial Positioning 或 Initial Scope。
-回复应说明：你如何理解当前 Project、最重要缺口及优先原因、建议下一步、你可以先完成的分析、真正需要 Founder 判断的少量问题。不要机械复述 Context。
-必须先自行分析职责、边界、父子关系、输入输出和能力需求；这些属于 Sino 的专业工作，不得反问 Founder“它应该负责什么”“与上层如何交互”或要求 Founder 排能力清单。只有无法从 confirmed Context 推断、且会实质改变系统方向的偏好，才能列为 founder_questions，最多 1–2 个；其余使用可修正的暂定判断。
-普通讨论不得自动创建 Goal、Candidate、Capability、Task 或 Execution。只返回 JSON。优先使用 {"reply":"完整回复"}；如需结构化思考，可使用 understanding、gap、priority_reason、next_step、analysis、founder_questions 字段。""",
-            user_prompt=json.dumps({"current_message": text, "recent_messages": recent_messages, "project_context": project_context, "context_object": context_object}, ensure_ascii=False),
-            temperature=0.3,
-            max_tokens=1200,
-            response_format="json",
-            metadata={"answer_grounding": True, "runtime_role": "sino_conversation"},
-        )
-        # Use the concrete model selected for Sino's Conversation skill.  Passing
-        # only a provider (or no provider) lets legacy defaults select a different
-        # model and previously routed ordinary replies through the reasoner.
-        response = llm_gateway.generate_for_model(dialogue_runtime.provider_key, dialogue_runtime.model, request)
-        try:
-            payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
-            reply = str(payload.get("reply", "")).strip()
-            if not reply and any(payload.get(key) for key in ("understanding", "gap", "next_step", "analysis")):
-                sections = [
-                    ("我目前如何理解", payload.get("understanding")),
-                    ("当前最重要的缺口", payload.get("gap")),
-                    ("为什么优先处理", payload.get("priority_reason")),
-                    ("建议下一步", payload.get("next_step")),
-                    ("Sino 可以先完成", payload.get("analysis")),
-                ]
-                reply = "\n\n".join(f"**{title}**\n{value}" for title, value in sections if value)
-                questions = [str(item).strip() for item in payload.get("founder_questions") or [] if str(item).strip()]
-                if questions:
-                    reply += "\n\n**真正需要 Founder 判断**\n" + "\n".join(f"{index}. {item}" for index, item in enumerate(questions, 1))
-        except (AttributeError, TypeError, ValueError, json.JSONDecodeError) as error:
-            raise InvalidResponseError() from error
-        if not reply:
-            raise InvalidResponseError()
+            project_intelligence = {}
         grounding = SinoSecretaryService._answer_grounding(
-            conversation_id=conversation_id,
-            project_context=project_context,
+            conversation_id=conversation_id, project_context=project_context,
             project_intelligence=project_intelligence,
-            recent_messages=recent_messages,
-            provider=response.provider,
-            model=response.model,
+            recent_messages=list(context.get("conversation_history") or []),
+            provider=decision.get("provider"), model=decision.get("model"),
         )
-        return reply, grounding
+        grounding.update({"conversation_core": "LLM_FIRST", "runtime_role": decision.get("model_role")})
+        return decision["response"], grounding
 
     @staticmethod
     def _normalize_reply(generated):

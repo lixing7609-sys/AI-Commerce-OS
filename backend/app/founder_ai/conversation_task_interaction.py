@@ -198,19 +198,13 @@ def task_understanding_reply(goal: str, route: dict) -> str:
             "现在仍处于讨论阶段，不会创建执行任务。如果理解不完整，我们可以继续讨论；确认后请明确告诉我“执行吧”。")
 
 
-EVENT_SUMMARIES = {
-    "worker_started": "已开始执行。",
-    "codex_started": "已完成执行准备，正在实施已确认的修改。",
-    "codex_finished": "代码修改已经完成，正在进入验证。",
-    "testing_started": "正在验证本次修改是否满足验收条件。",
-    "testing_finished": "自动测试已经完成，正在核对可见结果与任务状态。",
-    "stall_detected": "当前发现执行异常，正在自动恢复。这个问题暂时不需要你处理。",
-    "technical_resolution_started": "已开始自动诊断并恢复原执行流程，暂时不需要 Founder 操作。",
-    "technical_resolution_completed": "已恢复，继续验证。",
-    "technical_resolution_exhausted": "自动恢复尝试已经用尽，需要 Founder 关注。详细证据已放在右侧。",
-    "founder_stop_requested": "收到，正在安全停止当前任务。",
-    "cancelled_by_founder": "任务已停止，执行证据已保留。",
-    "completed": "任务已经完成，验证结果正在收口。",
+EVENT_SEMANTICS = {
+    "queued": "execution_started", "worker_started": "execution_started", "codex_started": "execution_started",
+    "codex_finished": "implementation_completed", "testing_started": "verification_started",
+    "testing_finished": "verification_completed", "stall_detected": "technical_incident",
+    "technical_resolution_started": "technical_incident", "technical_resolution_completed": "technical_incident_resolved",
+    "technical_resolution_exhausted": "technical_incident_exhausted", "founder_stop_requested": "cancellation_started",
+    "cancelled_by_founder": "cancelled", "completed": "execution_completed",
 }
 
 
@@ -242,9 +236,23 @@ def project_execution_events(conversation_id: str) -> int:
         added = 0
         if record:
             session, _ = record
+            existing = db.scalars(select(ConversationMessageDB).where(
+                ConversationMessageDB.conversation_id == conversation_id,
+                ConversationMessageDB.message_type == "execution_update",
+            )).all()
+            projected_semantics = {(item.grounding or {}).get("event_type") for item in existing
+                                   if (item.grounding or {}).get("task_id") == task_id}
+            grouped = {}
             for event in session.events or []:
-                summary = EVENT_SUMMARIES.get(event.get("event_name"))
-                if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=event["event_id"], event_type=event["event_name"], summary=summary, created_at=event.get("timestamp")):
+                semantic = EVENT_SEMANTICS.get(event.get("event_name"))
+                if semantic and semantic not in projected_semantics:
+                    grouped.setdefault(semantic, []).append(event)
+            from app.founder_ai.conversation_core import summarize_execution_events
+            for semantic, events in grouped.items():
+                summary = summarize_execution_events(conversation_id, events)
+                source = "semantic-events:" + ":".join(item["event_id"] for item in events)
+                if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id,
+                        source_event_id=source, event_type=semantic, summary=summary, created_at=events[-1].get("timestamp")):
                     added += 1
         resolution = dict(route.get("technical_resolution_contract") or {})
         if resolution:
@@ -256,17 +264,26 @@ def project_execution_events(conversation_id: str) -> int:
                 for item in record[0].events or []
             ))
             source = f"technical-resolution:{incident_id or execution_id}:{status}:{resolution.get('attempt_count', 0)}"
-            summary = "当前发现执行异常，正在自动恢复。这个问题暂时不需要你处理。" if status in {"pending", "diagnosing", "retrying"} else "已恢复，继续验证。" if status == "resolved" else None
+            summary = None
+            if not incident_already_projected:
+                from app.founder_ai.conversation_core import summarize_execution_events
+                summary = summarize_execution_events(conversation_id, [{"event_name": "technical_resolution", "status": status,
+                    "issue_type": resolution.get("issue_type"), "attempt_count": resolution.get("attempt_count"), "retry_limit": resolution.get("retry_limit")}])
             if summary and not incident_already_projected and _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="technical_resolution", summary=summary): added += 1
         gate = dict(route.get("founder_gate_contract") or {})
         if gate and route.get("founder_gate_required"):
             source = f"founder-gate:{gate.get('gate_id') or gate.get('decision_id') or task_id}:pending"
-            summary = f"{gate.get('reason') or '下一步操作'}需要 Founder 批准，详细授权范围已经放在右侧。"
-            if _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="founder_action_required", summary=summary): added += 1
+            from app.founder_ai.conversation_core import summarize_execution_events
+            summary = summarize_execution_events(conversation_id, [{"event_name": "founder_action_required", "reason": gate.get("reason"),
+                "gate_type": gate.get("gate_type"), "scope": gate.get("scope"), "action_queue_location": "right_panel"}])
+            if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="founder_action_required", summary=summary): added += 1
         visible = dict(route.get("visible_result") or {})
         if visible.get("verification_status") == "PASS":
             source = f"visible-result:{task_id}:{visible.get('verified_at') or 'pass'}"
-            if _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="founder_acceptance_required", summary="任务已经完成，验证通过，等待你验收。详细结果已放在右侧。"): added += 1
+            from app.founder_ai.conversation_core import summarize_execution_events
+            summary = summarize_execution_events(conversation_id, [{"event_name": "founder_acceptance_required", "verification_status": "PASS",
+                "target_surface": visible.get("target_surface"), "action_queue_location": "right_panel"}])
+            if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="founder_acceptance_required", summary=summary): added += 1
         if added:
             conversation = db.get(ConversationDB, conversation_id)
             if conversation: conversation.updated_at = datetime.now(timezone.utc)

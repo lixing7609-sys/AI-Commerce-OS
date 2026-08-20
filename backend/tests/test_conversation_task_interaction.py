@@ -107,11 +107,13 @@ def test_one_technical_incident_projects_only_one_recovery_message(monkeypatch):
     from app.founder_ai.execution_loop import ExecutionSession
     from app.founder_ai.execution_events import append_event
     import app.founder_ai.conversation_task_interaction as interaction
+    import app.founder_ai.conversation_core as conversation_core
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine); factory = sessionmaker(bind=engine); monkeypatch.setattr(interaction, "SessionLocal", factory)
     session = ExecutionSession("execution-incident", "task-incident", "package", status="executing")
     append_event(session, "stall_detected", status="stalled", message="stalled", metadata={"technical_incident_id": "incident-1"})
     monkeypatch.setattr(interaction, "get_execution_session", lambda _execution_id: (session, object()))
+    monkeypatch.setattr(conversation_core, "summarize_execution_events", lambda _conversation_id, _events: "当前发现执行异常，正在自动恢复。")
     route = {"classification": "STANDARD_TASK", "autonomous_execution": {"task_id": "task-incident", "execution_session_id": session.id},
              "technical_resolution_contract": {"technical_incident_id": "incident-1", "resolution_status": "diagnosing", "attempt_count": 0}}
     with factory() as db:
@@ -121,7 +123,7 @@ def test_one_technical_incident_projects_only_one_recovery_message(monkeypatch):
     assert interaction.project_execution_events("conv-incident") == 0
     with factory() as db:
         messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-incident", message_type="execution_update").all()
-        assert [item.content for item in messages] == ["当前发现执行异常，正在自动恢复。这个问题暂时不需要你处理。"]
+        assert [item.content for item in messages] == ["当前发现执行异常，正在自动恢复。"]
 
 
 def test_execution_intent_uses_confirmed_multiturn_context_before_clarifying():

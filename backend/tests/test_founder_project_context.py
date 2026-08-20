@@ -18,12 +18,16 @@ from app.llm.models import LLMResponse
 
 
 def _database(monkeypatch):
+    import app.founder_ai.conversation_core as conversation_core
+    import app.founder_ai.attachments as attachments
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(project_service, "SessionLocal", factory)
     monkeypatch.setattr(conversation_service, "SessionLocal", factory)
     monkeypatch.setattr(secretary_service, "SessionLocal", factory)
+    monkeypatch.setattr(conversation_core, "SessionLocal", factory)
+    monkeypatch.setattr(attachments, "SessionLocal", factory)
     return factory
 
 
@@ -317,6 +321,7 @@ def test_project_context_assembly_is_bounded_founder_intelligence(monkeypatch):
 
 
 def test_answer_grounding_records_request_context_and_persists(monkeypatch):
+    import app.founder_ai.conversation_core as conversation_core
     _database(monkeypatch)
     project = project_service.create_project(name="AI Commerce OS")
     monkeypatch.setattr(conversation_service, "get_project", lambda _project_id: project)
@@ -327,10 +332,10 @@ def test_answer_grounding_records_request_context_and_persists(monkeypatch):
     def generate(provider, model, request):
         captured["target"] = (provider, model)
         captured["request"] = request
-        return LLMResponse(content='{"reply":"基于项目上下文继续推进。"}', provider="deepseek", model="deepseek-chat", usage=None, latency_ms=12)
+        return LLMResponse(content='{"response":"基于项目上下文继续推进。","semantic_intent":"conversation","conversation_state":"discussion"}', provider="deepseek", model="deepseek-chat", usage=None, latency_ms=12)
 
-    monkeypatch.setattr(model_center_service, "resolve_runtime_config", lambda **kwargs: type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})())
-    monkeypatch.setattr(secretary_service.llm_gateway, "generate_for_model", generate)
+    monkeypatch.setattr(conversation_core, "resolve_runtime_config", lambda **kwargs: type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})())
+    monkeypatch.setattr(conversation_core.llm_gateway, "generate_for_model", generate)
     snapshot = secretary_service.SinoSecretaryService().append_message(conversation.id, "下一步应该做什么？")
     assistant = snapshot["messages"][-1]
     sources = {item["key"]: item for item in assistant["grounding"]["sources"]}
@@ -349,6 +354,7 @@ def test_answer_grounding_records_request_context_and_persists(monkeypatch):
 
 
 def test_child_project_short_instruction_inherits_confirmed_parent_context(monkeypatch):
+    import app.founder_ai.conversation_core as conversation_core
     factory = _database(monkeypatch)
     parent = project_service.create_project(name="AI Commerce OS")
     monkeypatch.setattr(conversation_service, "get_project", lambda _project_id: parent)
@@ -378,10 +384,10 @@ def test_child_project_short_instruction_inherits_confirmed_parent_context(monke
 
     def generate(provider, model, request):
         captured["request"] = request
-        return LLMResponse(content='{"reply":"基于继承的 Constitution 与当前 Initial Scope，我建议先完成系统职责和边界定义。"}', provider="deepseek", model="deepseek-chat", usage=None, latency_ms=8)
+        return LLMResponse(content='{"response":"基于继承的 Constitution 与当前 Initial Scope，我建议先完成系统职责和边界定义。","semantic_intent":"conversation","conversation_state":"discussion"}', provider="deepseek", model="deepseek-chat", usage=None, latency_ms=8)
 
-    monkeypatch.setattr(model_center_service, "resolve_runtime_config", lambda **kwargs: type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})())
-    monkeypatch.setattr(secretary_service.llm_gateway, "generate_for_model", generate)
+    monkeypatch.setattr(conversation_core, "resolve_runtime_config", lambda **kwargs: type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})())
+    monkeypatch.setattr(conversation_core.llm_gateway, "generate_for_model", generate)
     snapshot = secretary_service.SinoSecretaryService().append_message(child_conversation.id, "下一步怎么做？", intent="discussion", message_type="project_planning", skip_object_recognition=True)
     injected = json.loads(captured["request"].user_prompt)["project_context"]
     assert injected["parent_confirmed_context"]["project_name"] == "AI Commerce OS"
@@ -400,16 +406,16 @@ def test_child_project_short_instruction_inherits_confirmed_parent_context(monke
 
 
 def test_project_aware_structured_provider_judgment_is_rendered_as_reply(monkeypatch):
+    import app.founder_ai.conversation_core as conversation_core
     _database(monkeypatch)
     project = project_service.create_project(name="Intelligence Evolution Layer")
     monkeypatch.setattr(conversation_service, "get_project", lambda _project_id: project)
     conversation = conversation_service.create_conversation(project_id=project.id)
-    monkeypatch.setattr(model_center_service, "resolve_runtime_config", lambda **kwargs: type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})())
-    monkeypatch.setattr(secretary_service.llm_gateway, "generate_for_model", lambda *_args: LLMResponse(content=json.dumps({"understanding": "这是 Foundation Layer 项目。", "gap": "尚未明确职责边界。", "priority_reason": "边界决定后续能力设计。", "next_step": "先形成职责与边界分析。", "analysis": "Sino 可以先完成第一版分析。", "founder_questions": ["是否认可这条边界？"]}, ensure_ascii=False), provider="deepseek", model="deepseek-chat", usage=None, latency_ms=5))
+    monkeypatch.setattr(conversation_core, "resolve_runtime_config", lambda **kwargs: type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})())
+    natural_reply = "我建议先把 Foundation Layer 的职责边界梳理清楚，再比较它对后续能力设计的影响。"
+    monkeypatch.setattr(conversation_core.llm_gateway, "generate_for_model", lambda *_args: LLMResponse(content=json.dumps({"response": natural_reply, "semantic_intent": "conversation", "conversation_state": "discussion"}, ensure_ascii=False), provider="deepseek", model="deepseek-chat", usage=None, latency_ms=5))
     reply, _grounding = secretary_service.SinoSecretaryService._provider_reply(conversation.id, "下一步怎么做？")
-    assert "我目前如何理解" in reply
-    assert "尚未明确职责边界" in reply
-    assert "真正需要 Founder 判断" in reply
+    assert reply == natural_reply
 
 
 def test_project_planning_reply_triggers_maturity_judgment_on_same_conversation(monkeypatch):
