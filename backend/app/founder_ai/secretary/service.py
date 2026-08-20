@@ -1,8 +1,10 @@
 """Conversation-first AI Secretary persistence and structured digest service."""
 
 import json
+import hashlib
 from datetime import datetime, timezone
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
@@ -19,28 +21,65 @@ def _iso(value):
     return value.isoformat() if value else None
 
 
+def _client_message_db_ids(conversation_id: str, client_message_id: str) -> tuple[str, str]:
+    digest = hashlib.sha256(f"{conversation_id}:{client_message_id}".encode()).hexdigest()[:20]
+    return f"message-client-{digest}", f"reply-client-{digest}"
+
+
 class SinoSecretaryService:
     """Turns an append-only discussion into traceable structured Founder assets."""
 
     def __init__(self, *, reply_generator=None):
         self._reply_generator = reply_generator or self._provider_reply
 
-    def append_message(self, conversation_id: str, content: str, *, intent: str | None = None, message_type: str = "discussion", reply_override: str | None = None, skip_object_recognition: bool = False, brain_stage: str | None = None, attachment_ids: list[str] | None = None) -> dict:
+    def completed_client_exchange(self, conversation_id: str, client_message_id: str | None) -> dict | None:
+        if not client_message_id:
+            return None
+        _, reply_id = _client_message_db_ids(conversation_id, client_message_id)
+        with SessionLocal() as session:
+            if session.get(ConversationMessageDB, reply_id) is None:
+                return None
+        return self.snapshot(conversation_id)
+
+    def persist_founder_message(self, conversation_id: str, content: str, *, intent: str | None = None,
+                                message_type: str = "discussion", brain_stage: str | None = None,
+                                attachment_ids: list[str] | None = None, client_message_id: str | None = None) -> str:
         text = (content or "").strip()
         if not text:
             raise ValueError("message must not be empty")
+        message_id = None
+        if client_message_id:
+            message_id, _ = _client_message_db_ids(conversation_id, client_message_id)
         with SessionLocal() as session:
             conversation = session.scalar(select(ConversationDB).where(ConversationDB.id == conversation_id, ConversationDB.system_id == "founder_ai"))
             if conversation is None:
                 raise LookupError("Founder AI conversation not found")
+            if message_id and session.get(ConversationMessageDB, message_id):
+                return message_id
             stage_grounding = {"brain_stage": brain_stage} if brain_stage else {}
-            message = ConversationMessageDB(conversation_id=conversation_id, role="founder", content=text, intent=intent, message_type=message_type, grounding=stage_grounding)
+            grounding = {**stage_grounding, **({"client_message_id": client_message_id} if client_message_id else {})}
+            message = ConversationMessageDB(**({"id": message_id} if message_id else {}), conversation_id=conversation_id,
+                role="founder", content=text, intent=intent, message_type=message_type, grounding=grounding)
             session.add(message); session.flush()
-            project_id = conversation.project_id
             conversation.updated_at = datetime.now(timezone.utc)
-            session.commit()
-            message_id = message.id
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                if not message_id or session.get(ConversationMessageDB, message_id) is None:
+                    raise
+            message_id = message_id or message.id
         bind_attachments(conversation_id, message_id, list(attachment_ids or []))
+        return message_id
+
+    def append_message(self, conversation_id: str, content: str, *, intent: str | None = None, message_type: str = "discussion", reply_override: str | None = None, skip_object_recognition: bool = False, brain_stage: str | None = None, attachment_ids: list[str] | None = None, client_message_id: str | None = None) -> dict:
+        text = (content or "").strip()
+        stage_grounding = {"brain_stage": brain_stage} if brain_stage else {}
+        message_id = self.persist_founder_message(conversation_id, text, intent=intent, message_type=message_type,
+            brain_stage=brain_stage, attachment_ids=attachment_ids, client_message_id=client_message_id)
+        with SessionLocal() as session:
+            conversation = session.get(ConversationDB, conversation_id)
+            project_id = conversation.project_id
         # Persist recognition before provider latency so the homepage can poll
         # and show a real Draft while Sino is still composing the reply.
         if not skip_object_recognition:
@@ -55,9 +94,20 @@ class SinoSecretaryService:
         reply, grounding = self._normalize_reply(reply_override if reply_override is not None else self._reply_generator(conversation_id, text))
         with SessionLocal() as session:
             conversation = session.get(ConversationDB, conversation_id)
-            session.add(ConversationMessageDB(conversation_id=conversation_id, role="assistant", content=reply, message_type=message_type, grounding={**grounding, **stage_grounding}))
+            reply_id = _client_message_db_ids(conversation_id, client_message_id)[1] if client_message_id else None
+            if reply_id and session.get(ConversationMessageDB, reply_id):
+                return self.snapshot(conversation_id)
+            assistant_grounding = {**grounding, **stage_grounding,
+                **({"response_to_client_message_id": client_message_id} if client_message_id else {})}
+            session.add(ConversationMessageDB(**({"id": reply_id} if reply_id else {}), conversation_id=conversation_id,
+                role="assistant", content=reply, message_type=message_type, grounding=assistant_grounding))
             conversation.updated_at = datetime.now(timezone.utc)
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                if not reply_id or session.get(ConversationMessageDB, reply_id) is None:
+                    raise
         if message_type == "project_planning":
             try:
                 from app.founder_ai.brain_runtime import brain_runtime

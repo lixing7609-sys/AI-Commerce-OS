@@ -86,9 +86,12 @@ export function archiveFounderObject(objectId) { return request(`/founder-ai/obj
 export function reviewFounderCandidate(candidateId, action) { return request(`/founder-ai/candidates/${encodeURIComponent(candidateId)}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "审核候选变更失败"); }
 export function continueFounderCandidateDiscussion(candidateId, conversationId) { return request(`/founder-ai/candidates/${encodeURIComponent(candidateId)}/continue-discussion`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversation_id: conversationId }) }, "继续讨论候选变更失败"); }
 
-export function discussWithSino(conversationId, content, intent, interactionContext, attachmentIds = []) {
+export function discussWithSino(conversationId, content, intent, interactionContext, attachmentIds = [], clientMessageId) {
+  const payload = { content, intent, interaction_context: interactionContext };
+  if (attachmentIds.length) payload.attachment_ids = attachmentIds;
+  if (clientMessageId) payload.client_message_id = clientMessageId;
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/messages`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, intent, interaction_context: interactionContext, attachment_ids: attachmentIds }),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   }, "发送讨论消息失败");
 }
 

@@ -113,3 +113,40 @@ def test_execution_event_batch_gets_one_model_authored_summary(monkeypatch):
     ], generator=lambda context, events, runtime: calls.append(events) or {"summary": "我开始处理这项任务。"})
     assert summary == "我开始处理这项任务。"
     assert len(calls) == 1
+
+
+def test_client_message_id_persists_one_founder_message_and_one_reply(monkeypatch):
+    import app.founder_ai.secretary.service as secretary_service
+    import app.founder_ai.attachments as attachments
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    monkeypatch.setattr(secretary_service, "SessionLocal", factory)
+    monkeypatch.setattr(attachments, "SessionLocal", factory)
+    monkeypatch.setattr(secretary_service, "bind_attachments", lambda *args: None)
+    service = secretary_service.SinoSecretaryService(reply_generator=lambda *_: "自然回复")
+    first_id = service.persist_founder_message("conv-llm", "只发送一次", client_message_id="client-message-123")
+    assert service.persist_founder_message("conv-llm", "只发送一次", client_message_id="client-message-123") == first_id
+    service.append_message("conv-llm", "只发送一次", client_message_id="client-message-123")
+    service.append_message("conv-llm", "只发送一次", client_message_id="client-message-123")
+    with factory() as db:
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-llm").all()
+        assert [item.role for item in messages].count("founder") == 1
+        assert [item.role for item in messages].count("assistant") == 1
+
+
+def test_context_selection_is_bounded_but_keeps_referenced_history():
+    messages = [SimpleNamespace(id=f"m-{index}") for index in range(50)]
+    selected = core.select_relevant_history(messages, {"m-2"})
+    assert selected[0].id == "m-2"
+    assert len(selected) == core.MAX_RECENT_CONVERSATION_MESSAGES + 1
+    assert selected[-1].id == "m-49"
+
+
+def test_current_capabilities_come_from_persisted_state_not_a_static_answer(monkeypatch):
+    task = SimpleNamespace(id="task-1", title="Conversation-first", status="completed", execution_status="completed")
+    asset = SimpleNamespace(status="ready", asset_type="skill", name="检索能力")
+    monkeypatch.setattr("app.founder_ai.execution_registry.list_execution_sessions", lambda: [])
+    context = core.current_system_capabilities_context(tasks=[task], assets=[asset], discovery={"conversation_core": {"mode": "LLM_FIRST"}})
+    assert context["source"] == "persisted_system_state"
+    assert context["recent_tasks"][0]["title"] == "Conversation-first"
+    assert context["capability_repository"]["by_status"]["ready"] == 1
+    assert "conversation_core" in context["current_conversation_features"]

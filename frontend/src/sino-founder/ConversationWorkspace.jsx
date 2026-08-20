@@ -61,6 +61,17 @@ export const conversationResponseMatches = (requestedId, activeId, response) => 
   return Boolean(requestedId && requestedId === activeId && responseId === requestedId);
 };
 
+export const mergeConversationSnapshot = (current, incoming) => {
+  if (!incoming) return current;
+  const canonical = incoming.messages || [];
+  const canonicalClientIds = new Set(canonical.map((item) => item.grounding?.client_message_id).filter(Boolean));
+  const pending = (current?.messages || []).filter((item) => item.optimistic && !canonicalClientIds.has(item.grounding?.client_message_id));
+  return { ...incoming, messages: [...canonical, ...pending] };
+};
+
+export const hasConversationReply = (workspace, clientMessageId) => Boolean(clientMessageId &&
+  (workspace?.messages || []).some((item) => item.role === "assistant" && item.grounding?.response_to_client_message_id === clientMessageId));
+
 export const conversationListRecord = (item) => ({
   id: item.id || item.conversation_id,
   title: item.title || "新讨论",
@@ -122,6 +133,7 @@ export function ConversationWorkspace() {
   const [selectedSystemAsset, setSelectedSystemAsset] = useState(null);
   const [selectedLifecycleAsset, setSelectedLifecycleAsset] = useState(null);
   const [selectedLifecycleExecution, setSelectedLifecycleExecution] = useState(null);
+  const [pendingClientMessageId, setPendingClientMessageId] = useState(null);
   const [activeCapabilityAsset, setActiveCapabilityAsset] = useState(null);
   useEffect(() => { setSelectedConstitutionWorkItemId(null); }, [conversationId]);
   useEffect(() => { getFounderDrafts().then((data) => setDrafts(data.drafts || [])).catch(() => setDrafts([])); }, [snapshot?.sino_brain?.cognitive_outcomes?.length, view]);
@@ -324,6 +336,28 @@ export function ConversationWorkspace() {
   }, [executionId, execution?.status]);
   const liveProgressStatus = snapshot?.sino_brain?.execution_progress?.execution_status;
   useEffect(() => {
+    if (hasConversationReply(snapshot, pendingClientMessageId)) {
+      setReplyPending(false); setPendingClientMessageId(null);
+    }
+  }, [pendingClientMessageId, snapshot]);
+  useEffect(() => {
+    if (!conversationId || !pendingClientMessageId || view !== "conversation") return undefined;
+    let active = true;
+    const refreshReply = async () => {
+      try {
+        const restored = await getConversationWorkspace(conversationId);
+        if (!active || !conversationResponseMatches(conversationId, activeConversationRef.current, restored)) return;
+        setSnapshot((current) => mergeConversationSnapshot(current, restored));
+        if (hasConversationReply(restored, pendingClientMessageId)) {
+          setReplyPending(false); setPendingClientMessageId(null);
+        }
+      } catch { /* the in-flight POST or next poll remains authoritative */ }
+    };
+    refreshReply();
+    const timer = window.setInterval(refreshReply, 700);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [conversationId, pendingClientMessageId, view]);
+  useEffect(() => {
     if (!conversationId || view !== "conversation" || !shouldPollWorkspace(liveProgressStatus)) return undefined;
     let active = true;
     const timer = window.setInterval(async () => {
@@ -354,8 +388,11 @@ export function ConversationWorkspace() {
     sendLockRef.current = true;
     setBusy(true); setError("");
     let id = conversationId;
+    const clientMessageId = globalThis.crypto?.randomUUID?.() || `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setPendingClientMessageId(clientMessageId);
     const effectiveMode = discussionMode === "auto" && snapshot?.sino_brain?.active_workspace_stage !== "strategy" ? "sino" : discussionMode;
     let progressTimer;
+    let isFirstSubmit = false;
     try {
       if (!id && view === "project" && activeProjectId) {
         const currentProjectConversation = conversations.find((item) => item.project_id === activeProjectId);
@@ -363,7 +400,14 @@ export function ConversationWorkspace() {
           id = currentProjectConversation.id; activeConversationRef.current = id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id);
         }
       }
-      const isFirstSubmit = !id;
+      isFirstSubmit = !id;
+      const messageType = effectiveMode === "auto" ? "auto_deliberation" : effectiveMode === "council" ? "council" : "discussion";
+      const optimisticMessage = { message_id: `optimistic-${clientMessageId}`, role: "founder", content,
+        message_type: messageType, optimistic: true, grounding: { client_message_id: clientMessageId } };
+      if (isFirstSubmit) {
+        setSnapshot({ conversation: { id: `pending-${clientMessageId}`, project_id: activeProjectId, title: "新讨论", state: "exploring" }, messages: [optimisticMessage] });
+        setDiscussionMessage(""); setReplyPending(true); setView("conversation");
+      }
       if (isFirstSubmit) {
         setConversationInitializing(true);
         const conversation = await createFounderConversation("新讨论", activeProjectId, { conversation_type: "TEMPORARY_CONVERSATION", created_by: "FOUNDER" });
@@ -372,25 +416,24 @@ export function ConversationWorkspace() {
       }
       const uploadedAttachments = [];
       for (const attachment of pendingAttachments) uploadedAttachments.push(await uploadFounderImage(id, attachment.file));
-      if (effectiveMode === "council" || effectiveMode === "auto") {
-        const messageType = effectiveMode === "auto" ? "auto_deliberation" : "council";
-        setSnapshot((current) => ({ ...(current || {}), conversation: current?.conversation || { id, project_id: activeProjectId, title: "新讨论", state: "exploring" }, messages: [...(current?.messages || []), { message_id: `optimistic-${Date.now()}`, role: "founder", content, message_type: messageType }], council_runs: [...(current?.council_runs || []), { council_run_id: `pending-${Date.now()}`, question: content, discussion_mode: messageType, status: "running", participants: [], model_runs: [] }] }));
-        setDiscussionMessage(""); setView("conversation");
-      }
+      setSnapshot((current) => ({ ...(current || {}), conversation: { ...(current?.conversation || {}), id, project_id: activeProjectId },
+        messages: (current?.messages || []).some((item) => item.grounding?.client_message_id === clientMessageId) ? current.messages : [...(current?.messages || []), optimisticMessage],
+        ...(effectiveMode === "council" || effectiveMode === "auto" ? { council_runs: [...(current?.council_runs || []), { council_run_id: `pending-${clientMessageId}`, question: content, discussion_mode: messageType, status: "running", participants: [], model_runs: [] }] } : {}) }));
+      setDiscussionMessage(""); setReplyPending(true); setView("conversation");
       const pollProgress = async () => {
-        try { const polled = await getConversationWorkspace(id); if (conversationResponseMatches(id, activeConversationRef.current, polled)) setSnapshot(polled); } catch { /* final request owns errors */ }
+        try { const polled = await getConversationWorkspace(id); if (conversationResponseMatches(id, activeConversationRef.current, polled)) setSnapshot((current) => mergeConversationSnapshot(current, polled)); } catch { /* final request owns errors */ }
         if (sendLockRef.current) progressTimer = window.setTimeout(pollProgress, 700);
       };
       progressTimer = window.setTimeout(pollProgress, 150);
       const interactionContext = selectedConstitutionWorkItemId ? { active_surface: "constitution_review", selected_constitution_work_item_id: selectedConstitutionWorkItemId } : undefined;
       if (uploadedAttachments.length && effectiveMode !== "sino") throw new Error("图片消息当前仅支持 Sino 模式");
       const submittedContent = content || "请结合附件理解这个需求。";
-      const nextSnapshot = effectiveMode === "council" ? await discussWithCouncil(id, submittedContent) : effectiveMode === "auto" ? await discussWithAutoDeliberation(id, submittedContent) : await discussWithSino(id, submittedContent, undefined, interactionContext, uploadedAttachments.map((item) => item.attachment_id));
+      const nextSnapshot = effectiveMode === "council" ? await discussWithCouncil(id, submittedContent) : effectiveMode === "auto" ? await discussWithAutoDeliberation(id, submittedContent) : await discussWithSino(id, submittedContent, undefined, interactionContext, uploadedAttachments.map((item) => item.attachment_id), clientMessageId);
       const activatedConversation = isFirstSubmit ? await activateFounderConversation(id) : nextSnapshot.conversation;
       if (!conversationResponseMatches(id, activeConversationRef.current, nextSnapshot)) return;
       const activatedSnapshot = isFirstSubmit ? { ...nextSnapshot, conversation: { ...nextSnapshot.conversation, ...activatedConversation } } : nextSnapshot;
       if (isFirstSubmit) remember(WORKSPACE_VIEW_KEY, "conversation");
-      setSnapshot(activatedSnapshot); setDiscussionMessage(""); setReplyPending(false); setSinoHealthy(true); rememberConversation(id, founderConversationTitle(activatedSnapshot.conversation?.title || activatedSnapshot.messages?.[0]?.content || submittedContent, activatedSnapshot.sino_brain?.goal_brief?.goal), activatedSnapshot.conversation);
+      setSnapshot((current) => mergeConversationSnapshot(current, activatedSnapshot)); setDiscussionMessage(""); setSinoHealthy(true); rememberConversation(id, founderConversationTitle(activatedSnapshot.conversation?.title || activatedSnapshot.messages?.[0]?.content || submittedContent, activatedSnapshot.sino_brain?.goal_brief?.goal), activatedSnapshot.conversation);
       setPendingAttachments((items) => { items.forEach((item) => URL.revokeObjectURL(item.preview)); return []; });
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
@@ -406,6 +449,9 @@ export function ConversationWorkspace() {
       setError(`${requestError.message || "Sino 回复失败"}，可重试`);
       setReplyPending(Boolean(id));
       setPendingReplyMode(effectiveMode);
+      if (isFirstSubmit && !id) {
+        setSnapshot(null); setDiscussionMessage(content); setReplyPending(false); setPendingClientMessageId(null); setView("draft");
+      }
       if (id) {
         try {
           const persisted = await getConversationWorkspace(id);
@@ -947,7 +993,7 @@ export function ConversationWorkspace() {
   const openDraft = (draft) => { setSelectedDraft(draft); setRepositorySection("drafts"); setView("capability-center"); };
   if (view === "draft") { main = <DraftDiscussion message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={selectProjectContext} onCreateProject={createProject} onFiles={openConversationFiles} mode={discussionMode} onModeChange={setDiscussionMode} pendingAttachments={pendingAttachments} onAddImages={addPendingImages} onRemoveImage={removePendingImage} />; context = <DraftDiscussionContext />; }
   if (view === "project") { main = <ProjectWorkspace intelligence={projectIntelligence} drafts={drafts.filter((item) => item.project_id === activeProjectId)} loading={projectLoading} error={projectLoadError} onOpenConversation={selectConversation} onOpenDraft={openDraft} onOpenFounderGate={openFounderGateProposal} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} healthy={sinoHealthy} mode={discussionMode} onModeChange={setDiscussionMode} />; context = <ProjectIntelligenceContext intelligence={projectIntelligence} onNavigate={setView} onOpenConversation={selectConversation} />; }
-  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = selectedFounderGateProposal ? <FounderGateProposalReview proposal={selectedFounderGateProposal} busy={busy} onReview={reviewCurrentFounderGateProposal} onReturnDiscussion={() => setSelectedFounderGateProposal(null)} /> : <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} drafts={drafts} onOpenDraft={openDraft} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} capabilityAction={capabilityAction} capabilityAsset={activeCapabilityAsset} capabilityError={capabilityLifecycleError} onCapabilityAction={handleCapabilityAction} reuseSuggestions={reuseSuggestions} onReuse={handleReuseAsset} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onReviewConstitution={reviewConstitution} onReviewProjectOutcome={reviewPlanningOutcome} onReviewImplementationPlan={reviewCurrentImplementationPlan} onContinueProjectAnalysis={continueProjectPlanning} onReviewFounderGate={openFounderGateProposal} onImageProbeDecision={decideCurrentImageProbeGate} onExternalProbeDecision={decideCurrentExternalProbeGate} onArchitectureDecision={decideCurrentArchitectureProposal} selectedConstitutionWorkItemId={selectedConstitutionWorkItemId} onSelectConstitutionWorkItem={selectConstitutionWorkItem} onContinueDiscussion={continueBrainDiscussion} onViewAssets={viewTaskResult} onNewGoal={newConversation} pendingAttachments={pendingAttachments} onAddImages={addPendingImages} onRemoveImage={removePendingImage} /></section>; context = capabilityContext; }
+  if (view === "conversation") { const contextControls = <ComposerContextControls healthy={sinoHealthy} projects={projects} activeProjectId={snapshot?.conversation?.project_id || null} onSelectProject={bindCurrentConversationProject} onCreateProject={createProject} onFiles={openConversationFiles} />; main = selectedFounderGateProposal ? <FounderGateProposalReview proposal={selectedFounderGateProposal} busy={busy} onReview={reviewCurrentFounderGateProposal} onReturnDiscussion={() => setSelectedFounderGateProposal(null)} /> : <section className="sino-conversation-page"><ConversationThread snapshot={snapshot} drafts={drafts} onOpenDraft={openDraft} message={discussionMessage} onMessage={setDiscussionMessage} onSend={sendDiscussion} busy={busy} replyPending={replyPending} capabilityAction={capabilityAction} capabilityAsset={activeCapabilityAsset} capabilityError={capabilityLifecycleError} onCapabilityAction={handleCapabilityAction} reuseSuggestions={reuseSuggestions} onReuse={handleReuseAsset} healthy={sinoHealthy} contextControls={contextControls} mode={discussionMode} onModeChange={setDiscussionMode} onExitObjectDiscussion={exitObjectDiscussion} onConfirmGoal={confirmBrainGoal} onReviseGoal={() => setDiscussionMessage("这里需要修正：")} onAdvanceStage={advanceBrainStage} onReviewPackage={reviewBrainPackage} onReviewConstitution={reviewConstitution} onReviewProjectOutcome={reviewPlanningOutcome} onReviewImplementationPlan={reviewCurrentImplementationPlan} onContinueProjectAnalysis={continueProjectPlanning} onReviewFounderGate={openFounderGateProposal} onImageProbeDecision={decideCurrentImageProbeGate} onExternalProbeDecision={decideCurrentExternalProbeGate} onArchitectureDecision={decideCurrentArchitectureProposal} selectedConstitutionWorkItemId={selectedConstitutionWorkItemId} onSelectConstitutionWorkItem={selectConstitutionWorkItem} onContinueDiscussion={continueBrainDiscussion} onViewAssets={viewTaskResult} onNewGoal={newConversation} pendingAttachments={pendingAttachments} onAddImages={addPendingImages} onRemoveImage={removePendingImage} /></section>; context = capabilityContext; }
   if (view === "capability-center") { main = <CapabilityCenter selected={selectedCapabilityAsset} onSelect={setSelectedCapabilityAsset} section={repositorySection} onSectionChange={(next) => { setRepositorySection(next); if (next !== "drafts") setSelectedDraft(null); }} selectedDraft={selectedDraft} onSelectDraft={setSelectedDraft} />; context = repositorySection === "drafts" ? <DraftContext selected={selectedDraft} busy={busy} onApproveImplementation={approveDraftImplementation} onViewImplementationPlan={(draft) => selectConversation(draft.source_conversation_id)} onReviewFounderGate={openFounderGateProposal} onReturnConversation={selectConversation} /> : <CapabilityContext selected={selectedCapabilityAsset} onContinue={continueAsset} onChanged={setSelectedCapabilityAsset} conversationId={conversationId} />; }
   if (view === "object") { main = <CapabilityObjectWorkspace object={selectedWorkspaceObject} onContinue={continueObject} onOpenExecution={openObjectExecution} />; context = capabilityContext; }
   if (view === "execution") { main = executionId ? executionView : <LifecycleExecutionCenter selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} />; context = executionId ? executionContext : <ExecutionContext selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} onOpenExecution={openLifecycleExecution} />; }

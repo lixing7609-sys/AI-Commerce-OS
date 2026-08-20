@@ -231,6 +231,7 @@ class DiscussionMessageIn(BaseModel):
     intent: str | None = None
     interaction_context: dict[str, Any] | None = None
     attachment_ids: list[str] = Field(default_factory=list, max_length=8)
+    client_message_id: str | None = Field(default=None, min_length=8, max_length=100)
 
 
 class CouncilDiscussionIn(BaseModel):
@@ -520,7 +521,17 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
     conversation_id = resolve_conversation_id(conversation_id)
     try:
         ensure_conversation_runtime_state(conversation_id)
+        completed_exchange = secretary.completed_client_exchange(conversation_id, request.client_message_id)
+        if completed_exchange is not None:
+            return _candidate_snapshot(completed_exchange, conversation_id)
+        secretary.persist_founder_message(
+            conversation_id, request.content, intent=request.intent,
+            message_type="discussion", client_message_id=request.client_message_id,
+            attachment_ids=request.attachment_ids,
+        )
         interaction_context = dict(request.interaction_context or {})
+        if request.client_message_id:
+            interaction_context["client_message_id"] = request.client_message_id
         from app.founder_ai.conversation_task_interaction import (
             persist_task_understanding, record_runtime_intervention,
         )
@@ -610,7 +621,7 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
                 "reply": decision["response"],
                 "brain": projected,
             }
-        snapshot = secretary.append_message(conversation_id, request.content, intent=brain_turn.get("intent") or request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"), attachment_ids=request.attachment_ids)
+        snapshot = secretary.append_message(conversation_id, request.content, intent=brain_turn.get("intent") or request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"), attachment_ids=request.attachment_ids, client_message_id=request.client_message_id)
         brain_runtime.sync_message_refs(conversation_id)
         return _candidate_snapshot(snapshot, conversation_id)
     except LookupError as error:

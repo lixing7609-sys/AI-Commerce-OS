@@ -11,6 +11,8 @@ from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationAttachmentDB, ConversationMessageDB, SecretaryDigestDB, SinoBrainSessionDB
 from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
+from app.core.task_asset.model import TaskAssetDB
+from app.core.asset_lifecycle.model import AssetCatalogDB
 from app.core.model_center.service import resolve_runtime_config
 from app.database.db import SessionLocal
 from app.llm.gateway import llm_gateway
@@ -20,6 +22,49 @@ SEMANTIC_INTENTS = {
     "conversation", "execute_current_task", "stop_current_task", "runtime_intervention",
     "founder_decision", "founder_authorization", "founder_acceptance",
 }
+
+MAX_RECENT_CONVERSATION_MESSAGES = 32
+
+
+def select_relevant_history(messages: list, source_message_ids: set[str] | None = None) -> list:
+    """Keep recent dialogue plus explicitly referenced older evidence, without dumping all history."""
+    source_message_ids = source_message_ids or set()
+    recent = messages[-MAX_RECENT_CONVERSATION_MESSAGES:]
+    selected_ids = {item.id for item in recent}
+    older_referenced = [item for item in messages[:-MAX_RECENT_CONVERSATION_MESSAGES]
+                        if item.id in source_message_ids and item.id not in selected_ids]
+    return older_referenced + recent
+
+
+def current_system_capabilities_context(*, tasks: list, assets: list, discovery: dict) -> dict:
+    """Project real persisted system evidence; do not maintain a parallel feature checklist."""
+    status_counts = {}
+    type_counts = {}
+    for item in assets:
+        status_counts[item.status] = status_counts.get(item.status, 0) + 1
+        type_counts[item.asset_type] = type_counts.get(item.asset_type, 0) + 1
+    try:
+        from app.founder_ai.execution_registry import list_execution_sessions
+        executions = sorted(list_execution_sessions(), key=lambda item: str(item.updated_at or item.created_at or ""), reverse=True)[:20]
+    except Exception:
+        executions = []
+    event_types = sorted({event.get("event_name") for item in executions for event in (item.events or []) if event.get("event_name")})
+    try:
+        from app.founder_ai.system_builder import ApplicationRegistry
+        applications = [{"key": item.key, "name": item.name, "status": item.status} for item in ApplicationRegistry().list()]
+    except Exception:
+        applications = []
+    return {
+        "source": "persisted_system_state",
+        "applications": applications,
+        "recent_tasks": [{"task_id": item.id, "title": item.title, "status": item.status,
+                          "execution_status": item.execution_status} for item in tasks[:12]],
+        "capability_repository": {"total": len(assets), "by_status": status_counts, "by_type": type_counts,
+                                  "ready_examples": [item.name for item in assets if item.status == "ready"][:8]},
+        "execution_runtime": {"recent_count": len(executions), "statuses": sorted({item.status for item in executions}),
+                              "observed_event_types": event_types},
+        "current_conversation_features": sorted(key for key, value in discovery.items() if value not in (None, {}, [], False)),
+    }
 
 
 def configured_model_roles() -> dict:
@@ -58,7 +103,7 @@ def build_conversation_context(conversation_id: str, current_message: str, *, in
         conversation = db.get(ConversationDB, conversation_id)
         if conversation is None:
             raise LookupError("Founder AI conversation not found")
-        messages = list(db.scalars(select(ConversationMessageDB).where(
+        all_messages = list(db.scalars(select(ConversationMessageDB).where(
             ConversationMessageDB.conversation_id == conversation_id).order_by(ConversationMessageDB.created_at)))
         brain = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
         digest = db.scalar(select(SecretaryDigestDB).where(SecretaryDigestDB.conversation_id == conversation_id))
@@ -68,6 +113,9 @@ def build_conversation_context(conversation_id: str, current_message: str, *, in
             MemoryAssetDB.conversation_id == conversation_id, MemoryAssetDB.status == "active").order_by(MemoryAssetDB.updated_at.desc()).limit(12)))
         attachments = list(db.scalars(select(ConversationAttachmentDB).where(
             ConversationAttachmentDB.conversation_id == conversation_id).order_by(ConversationAttachmentDB.created_at)))
+        tasks = list(db.scalars(select(TaskAssetDB).where(TaskAssetDB.system_id == "founder_ai")
+                                .order_by(TaskAssetDB.updated_at.desc()).limit(20)))
+        assets = list(db.scalars(select(AssetCatalogDB).order_by(AssetCatalogDB.updated_at.desc()).limit(200)))
     project_context = {}
     if conversation.project_id:
         try:
@@ -76,6 +124,12 @@ def build_conversation_context(conversation_id: str, current_message: str, *, in
         except Exception:
             project_context = {"project_id": conversation.project_id, "temporarily_unavailable": True}
     discovery = dict(brain.discovery or {}) if brain else {}
+    source_ids = {source_id for item in decisions for source_id in (item.source_message_ids or [])}
+    source_ids.update((discovery.get("conversation_understanding_snapshot") or {}).get("source_message_ids") or [])
+    messages = select_relevant_history(all_messages, source_ids)
+    current_client_message_id = str((interaction_context or {}).get("client_message_id") or "")
+    if current_client_message_id:
+        messages = [item for item in messages if str((item.grounding or {}).get("client_message_id") or "") != current_client_message_id]
     route = dict(discovery.get("task_complexity_route") or {})
     return {
         "sino_identity": "Sino Founder AI",
@@ -95,6 +149,9 @@ def build_conversation_context(conversation_id: str, current_message: str, *, in
         "attachments": [{"attachment_id": item.id, "type": item.attachment_type, "mime_type": item.mime_type,
                          "interpreted_context": (interaction_context or {}).get("grounded_multimodal_context") or (interaction_context or {}).get("image_understanding")} for item in attachments],
         "interaction_context": interaction_context or {},
+        "current_system_capabilities": current_system_capabilities_context(tasks=tasks, assets=assets, discovery=discovery),
+        "context_selection": {"history_total": len(all_messages), "history_selected": len(messages),
+                              "recent_limit": MAX_RECENT_CONVERSATION_MESSAGES},
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -128,7 +185,9 @@ def reason_about_message(conversation_id: str, current_message: str, *, interact
                          generator: Callable | None = None) -> dict:
     context = build_conversation_context(conversation_id, current_message, interaction_context=interaction_context)
     roles = configured_model_roles()
-    prompt = """You are the conversation intelligence of Sino Founder AI. Respond naturally to the Founder using the complete supplied context. Do not follow a fixed response template and do not mechanically restate the request. Discussion, exploration, correction and agreement are not tasks by default. Decide execution only when the current message semantically authorizes executing an already mature understanding in the preceding context; negation, hypotheticals, questions and deferred consent never authorize execution. If executing, task_candidate.goal/scope/constraints/acceptance_criteria must be derived from the preceding conversation rather than the confirmation phrase. You may propose a Founder action only when Founder input is genuinely required. Return JSON with: response, semantic_intent, conversation_state, task_candidate, tool_intent, founder_action_intent, context_updates. semantic_intent is one of conversation, execute_current_task, stop_current_task, runtime_intervention, founder_decision, founder_authorization, founder_acceptance. The response is the exact Founder-visible natural answer."""
+    prompt = """You are the conversation intelligence of Sino Founder AI and the Founder's long-term AI partner. Use the supplied relevant evidence to understand the Founder's real purpose, reason with judgment, surface overlooked implications, and offer a better direction or respectful disagreement when useful. Calibrate depth to the question. Respond naturally; do not follow a fixed structure, mechanically restate the request, or turn every answer into a report. Preserve useful Markdown chosen naturally by the model.
+
+Discussion, exploration, correction and agreement are not tasks by default. Decide execution only when the current message semantically authorizes executing an already mature understanding in the preceding context; negation, hypotheticals, questions and deferred consent never authorize execution. If executing, task_candidate.goal/scope/constraints/acceptance_criteria must be derived from the preceding conversation rather than the confirmation phrase. You may propose a Founder action only when Founder input is genuinely required. Return JSON with: response, semantic_intent, conversation_state, task_candidate, tool_intent, founder_action_intent, context_updates. semantic_intent is one of conversation, execute_current_task, stop_current_task, runtime_intervention, founder_decision, founder_authorization, founder_acceptance. The response is the exact Founder-visible natural answer."""
 
     def invoke(runtime):
         if generator:

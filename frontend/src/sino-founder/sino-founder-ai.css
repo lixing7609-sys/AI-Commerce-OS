@@ -246,6 +246,11 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-message-body h1 { font-size: 22px; }.sino-message-body h2 { font-size: 18px; }.sino-message-body h3 { font-size: 16px; }
 .sino-message-body ol, .sino-message-body ul { margin: .55em 0 1em; padding-left: 1.65em; }
 .sino-message-body li { margin: .42em 0; padding-left: .22em; }
+.sino-message-body code { padding: .08em .32em; border-radius: 4px; background: rgba(255,255,255,.06); font: .92em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.sino-conversation-log article[data-role="founder"] .sino-message-body p { white-space: pre-wrap; }
+.sino-thinking-indicator { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--text-secondary); font-size: 13px; }
+.sino-thinking-indicator > span:first-child { color: #d6b94f; font-size: 8px; animation: sino-thinking-pulse 1.2s ease-in-out infinite; }
+@keyframes sino-thinking-pulse { 50% { opacity: .35; } }
 .sino-conversation-log .sino-message-body strong { color: inherit; font: inherit; font-weight: 700; }
 .sino-conversation-log article[data-role="founder"].is-longform { justify-self: stretch; border-color: transparent; background: transparent; }
 .sino-constitution-understanding { display: grid; gap: 16px; margin-bottom: 26px; padding: 20px 0; border-block: 1px solid var(--line); }
