@@ -65,6 +65,9 @@ describe("Founder sidebar information architecture", () => {
 
     expect(document.querySelectorAll(".sino-project-heading")).toHaveLength(1);
     expect(document.querySelectorAll(".sino-sidebar__conversation-title")).toHaveLength(1);
+    const headingLabels = [...document.querySelectorAll(".sino-sidebar-primary-title__label")];
+    expect(headingLabels.map((label) => label.textContent)).toEqual(["项目", "会话"]);
+    expect(headingLabels.every((label) => label.className === headingLabels[0].className)).toBe(true);
     expect(document.querySelector(".sino-project-item .sino-conversation-list")).toBeNull();
     const section = document.querySelector(".sino-sidebar__conversation-section");
     const title = section.querySelector(":scope > .sino-sidebar__conversation-title");
