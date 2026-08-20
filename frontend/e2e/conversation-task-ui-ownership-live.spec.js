@@ -30,3 +30,32 @@ test("real clarification keeps Conversation in the center and Founder Action Que
   await expect(page.getByText("Brain Dashboard", { exact: true })).toHaveCount(0);
   await expect(page.locator(".sino-task-technical-details")).not.toHaveAttribute("open", "");
 });
+
+test("real long Conversation keeps its composer and side panels inside a short viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 560 });
+  await page.goto("/");
+  await page.evaluate(() => window.localStorage.setItem("sino-founder-active-conversation", "conv-a0aaac4688b949569438"));
+  await page.reload();
+  await page.locator('button.sino-conversation-item__open[title="把新建讨论页面改成3列式"]').click();
+  const composer = page.locator(".sino-conversation-composer-dock");
+  const log = page.locator(".sino-conversation-log");
+  const right = page.locator(".sino-founder-task-sidebar");
+  await expect(composer).toBeVisible({ timeout: 20_000 });
+  const layout = await page.evaluate(() => {
+    const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+    const logElement = document.querySelector(".sino-conversation-log");
+    return { composer: box(".sino-conversation-composer-dock"), log: box(".sino-conversation-log"), right: box(".sino-founder-task-sidebar"),
+      logScrollHeight: logElement.scrollHeight, logClientHeight: logElement.clientHeight,
+      bodyHeight: document.body.scrollHeight, viewportHeight: window.innerHeight,
+      logOverflow: getComputedStyle(logElement).overflowY, rightOverflow: getComputedStyle(document.querySelector(".sino-founder-task-sidebar")).overflowY };
+  });
+  expect(layout.composer.bottom).toBeLessThanOrEqual(layout.viewportHeight);
+  expect(layout.composer.top).toBeGreaterThanOrEqual(layout.log.bottom - 1);
+  expect(layout.logScrollHeight).toBeGreaterThan(layout.logClientHeight);
+  expect(layout.logOverflow).toBe("auto");
+  expect(layout.right.bottom).toBeLessThanOrEqual(layout.viewportHeight);
+  expect(layout.rightOverflow).toBe("auto");
+  expect(layout.bodyHeight).toBeLessThanOrEqual(layout.viewportHeight);
+  await expect(log).toBeVisible();
+  await expect(right).toBeVisible();
+});

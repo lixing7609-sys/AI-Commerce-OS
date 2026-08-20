@@ -31,19 +31,32 @@ describe("Conversation Composer layout", () => {
     expect(thread).toContain("min-height: 0");
   });
 
-  it("places the dock in its own workspace row above a ten-pixel safe area", () => {
-    const thread = [...css.matchAll(/\.sino-conversation-thread\s*\{([^}]*)\}/g)].map((match) => match[1]).find((rule) => rule.includes("grid-template-rows:")) || "";
+  it("keeps the dock outside the only flexible scroll region", () => {
+    const thread = [...css.matchAll(/\.sino-conversation-thread\s*\{([^}]*)\}/g)].map((match) => match[1]).find((rule) => rule.includes("flex-direction: column")) || "";
     const rule = css.match(/\.sino-conversation-composer-dock\s*\{([^}]*)\}/)?.[1] || "";
-    expect(thread).toContain("grid-template-rows: auto auto minmax(0, 1fr) auto 10px");
+    const fixedChildren = css.match(/\.sino-conversation-thread > \.sino-conversation-header,[^{]+\{([^}]*)\}/)?.[1] || "";
+    expect(thread).toContain("display: flex");
+    expect(thread).toContain("flex-direction: column");
+    expect(fixedChildren).toContain("flex: 0 0 auto");
     expect(rule).not.toMatch(/(?:margin-bottom|bottom:|position:)/);
     expect(css).toContain(".sino-conversation-workspace-safe-area { min-height: 10px");
   });
 
   it("keeps the message region independently scrollable above the dock", () => {
     const rule = css.match(/\.sino-conversation-thread \.sino-conversation-log\s*\{([^}]*)\}/)?.[1] || "";
+    expect(rule).toContain("flex: 1 1 0");
     expect(rule).toContain("min-height: 0");
     expect(rule).toContain("overflow-y: auto");
     expect(rule).not.toContain("max-height: 360px");
+  });
+
+  it("keeps the right Founder Action panel inside the viewport with independent scrolling", () => {
+    const context = css.match(/\.sino-founder-context:has\(> \.sino-founder-task-sidebar\)\s*\{([^}]*)\}/)?.[1] || "";
+    const panel = css.match(/\.sino-founder-task-sidebar\s*\{([^}]*)\}/)?.[1] || "";
+    expect(context).toContain("overflow: hidden");
+    expect(panel).toContain("height: 100%");
+    expect(panel).toContain("min-height: 0");
+    expect(panel).toContain("overflow-y: auto");
   });
 
   it("centers one reading column and gives every AI message its full width", () => {
