@@ -1,6 +1,7 @@
 """Codex CLI boundary. This module is only invoked after approval checks."""
 
 from dataclasses import dataclass
+import json
 import hashlib
 import logging
 import os
@@ -36,6 +37,7 @@ class CodexExecutionResult:
     changed_files: list[str] | None = None
     tests: list[str] | None = None
     commit_hash: str | None = None
+    browser_verification: dict | None = None
 
 
 class SubprocessCodexAdapter:
@@ -66,6 +68,10 @@ class SubprocessCodexAdapter:
     def execute(self, package: ExecutionPackage, *, cwd: Path) -> CodexExecutionResult:
         instruction_path = self.task_package_builder.write(package, cwd / ".founder-execution")
         instruction = instruction_path.read_text(encoding="utf-8")
+        contract = dict(package.context.get("standard_task_contract") or {})
+        evidence_path = cwd / ".founder-execution" / f"visible-artifact-{contract.get('task_id')}.json"
+        if contract.get("visible_artifact_contract", {}).get("required") and evidence_path.is_file():
+            evidence_path.unlink()
         before = self._working_tree_snapshot(cwd)
         before_head = self._git_head(cwd)
         started = time.monotonic()
@@ -105,7 +111,24 @@ class SubprocessCodexAdapter:
             changed_files=changed,
             tests=list(package.verification),
             commit_hash=commit_hash,
+            browser_verification=self._browser_verification(cwd, package),
         )
+
+    @staticmethod
+    def _browser_verification(cwd: Path, package: ExecutionPackage) -> dict | None:
+        contract = dict(package.context.get("standard_task_contract") or {})
+        task_id = contract.get("task_id")
+        if not task_id or not contract.get("visible_artifact_contract", {}).get("required"):
+            return None
+        evidence_path = cwd / ".founder-execution" / f"visible-artifact-{task_id}.json"
+        if not evidence_path.is_file():
+            return {"status": "MISSING", "evidence_path": str(evidence_path.relative_to(cwd))}
+        try:
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            return {"status": "INVALID", "error": str(error), "evidence_path": str(evidence_path.relative_to(cwd))}
+        evidence["evidence_path"] = str(evidence_path.relative_to(cwd))
+        return evidence
 
     @staticmethod
     def _stop_process_group(process: subprocess.Popen, error: subprocess.TimeoutExpired) -> tuple[str, str]:

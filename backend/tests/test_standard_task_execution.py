@@ -26,3 +26,25 @@ def test_standard_task_contract_is_inspected_and_bounded():
 def test_standard_lane_does_not_consume_quick_fix_or_strategic_tasks():
     assert route_task_complexity("修一下按钮样式")["classification"] == QUICK_FIX
     assert route_task_complexity("进行 Founder 与 Studio 的架构变更和跨模块重大改造")["classification"] == STRATEGIC_TASK
+
+
+def test_new_discussion_three_column_contract_resolves_real_target_from_discussion_context():
+    contract = build_standard_task_contract(
+        conversation_id="conv-three-columns",
+        goal="是 + 新建讨论 这个页面，不是其他页面",
+        task_id="task-three-columns",
+        discussion_context=[
+            "把新建讨论页面改成3列式",
+            "左侧 Projects / Conversations，中间 Founder ↔ Sino Conversation，右侧 Task Status + Founder Action Queue",
+        ],
+    )
+    assert contract["target_surface"] == "New Discussion"
+    assert contract["target_route"] == "DRAFT_DISCUSSION via + 新建讨论"
+    assert contract["target_component"] == "ConversationWorkspace / DraftDiscussion / SinoFounderShell"
+    assert contract["visible_artifact_contract"]["required"] is True
+    assert "frontend/src/sino-founder/FounderHome.jsx" in contract["implementation_scope"]
+
+
+def test_new_discussion_phrase_without_confirmed_three_columns_does_not_guess_target_contract():
+    contract = build_standard_task_contract(conversation_id="conv-incomplete", goal="调整新建讨论按钮")
+    assert contract["target_surface"] == "Capability Repository"

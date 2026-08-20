@@ -5,9 +5,10 @@ from app.core.task_asset.model import TaskAssetDB
 from app.database.db import SessionLocal
 from core.conversation_first.model import SinoBrainSessionDB
 
-def browser_gate(evidence: dict | None) -> dict:
+def browser_gate(evidence: dict | None, *, contract: dict | None = None) -> dict:
     evidence = dict(evidence or {})
-    passed = evidence.get("status") == "PASS" and all(evidence.get(key) is True for key in ("hidden_without_query", "visible_with_query", "clears_input", "restores_full_list"))
+    required = list((contract or {}).get("required_assertions") or ("hidden_without_query", "visible_with_query", "clears_input", "restores_full_list"))
+    passed = evidence.get("status") == "PASS" and all(evidence.get(key) is True for key in required)
     return {"status": "PASS" if passed else "BLOCKED", "completion_allowed": passed, "evidence": evidence}
 
 def complete_visible_ui_task(*, conversation_id: str, task_id: str, evidence: dict, checkpoint: str) -> dict:

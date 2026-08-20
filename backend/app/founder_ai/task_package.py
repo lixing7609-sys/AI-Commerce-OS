@@ -59,10 +59,18 @@ class TaskPackageBuilder:
 
     def build(self, package: ExecutionPackage) -> TaskPackage:
         context = _mapping(package.context)
+        standard_contract = _mapping(context.get("standard_task_contract"))
         reasoning = _mapping(context.get("reasoning"))
         evidence_source = reasoning.get("evidence", context.get("evidence", []))
         evidence = []
         relevant_files = []
+
+        if standard_contract:
+            evidence.append({
+                "source": "standard_task_contract",
+                "fact": standard_contract,
+                "relevance": "Canonical target, scope and visible-artifact acceptance contract for this execution",
+            })
 
         for reference in _items(context.get("intelligence_references")):
             item = _mapping(reference)

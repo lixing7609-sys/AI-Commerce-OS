@@ -121,6 +121,7 @@ class FounderExecutionLoop:
                 "exit_code": result.exit_code,
                 "changed_files": result.changed_files,
                 "tests": result.tests,
+                "browser_verification": result.browser_verification,
             }
             append_event(
                 session,
