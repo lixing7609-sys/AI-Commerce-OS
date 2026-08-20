@@ -41,6 +41,16 @@ describe("AI Capability Center IA", () => {
     expect(screen.queryByRole("button", { name: /电商/ })).toBeNull();
     expect(screen.getByRole("button", { name: /营销/ })).toBeTruthy();
   });
+  it("normalizes case and whitespace and shows a bounded no-results state", async () => {
+    getCapabilityDomains.mockResolvedValue({ domains: [{ domain_id: "growth-ops", name: "Growth Ops", counts: {} }] });
+    render(<Harness />);
+    const search = await screen.findByRole("searchbox", { name: "搜索能力名称或 Domain" });
+    fireEvent.change(search, { target: { value: "  GROWTH   OPS  " } });
+    expect(screen.getByRole("button", { name: /Growth Ops/ })).toBeTruthy();
+    fireEvent.change(search, { target: { value: "不存在" } });
+    const empty = await screen.findByText("没有匹配的 Domain 或能力");
+    expect(empty.closest(".sino-business-empty")?.classList.contains("sino-business-empty--repository")).toBe(true);
+  });
   it("shows Clear only for a search term and restores the full Domain list", async () => {
     getCapabilityDomains.mockResolvedValue({ domains: [{ domain_id: "commerce", name: "电商", counts: {} }, { domain_id: "marketing", name: "营销", counts: {} }] });
     render(<Harness />);
@@ -59,7 +69,7 @@ describe("AI Capability Center IA", () => {
     const search = await screen.findByRole("searchbox", { name: "搜索能力名称或 Domain" });
     fireEvent.change(search, { target: { value: "商品分镜生成" } });
     const match = await screen.findByRole("button", { name: /商品分镜生成 Skill/ });
-    expect(screen.queryByText("没有匹配的 Domain")).toBeNull();
+    expect(screen.queryByText("没有匹配的 Domain 或能力")).toBeNull();
     expect(screen.getByRole("region", { name: "匹配的能力" })).toBeTruthy();
     fireEvent.click(match);
     await waitFor(() => expect(getLifecycleAsset).toHaveBeenCalledWith("asset-skill"));
