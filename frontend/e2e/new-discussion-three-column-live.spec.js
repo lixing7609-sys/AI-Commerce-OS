@@ -32,3 +32,13 @@ test("real + New Discussion route renders the confirmed three-column workspace",
     expect(column.bottom).toBeLessThanOrEqual(layout.viewport.height);
   }
 });
+
+test("the current task View Result opens the verified New Discussion route", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('button.sino-conversation-item__open[title="把新建讨论页面改成3列式"]').click();
+  const acceptance = page.getByRole("article", { name: "Founder Acceptance" });
+  await expect(acceptance).toContainText("Verification PASS", { timeout: 20_000 });
+  await acceptance.getByRole("button", { name: "查看结果" }).click();
+  await expect(page.getByRole("region", { name: "Draft Discussion" })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "当前上下文" }).getByRole("region", { name: "Founder Action Queue", exact: true })).toBeVisible();
+});
