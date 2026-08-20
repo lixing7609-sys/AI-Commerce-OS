@@ -644,6 +644,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-home__center { max-width: 850px; }
 .sino-draft-discussion { display: flex; flex: 1 1 0; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: 0; padding: clamp(112px, 28vh, 220px) 0 0; box-sizing: border-box; }
 .sino-draft-discussion > .sino-home__center { align-self: center; width: 100%; }
+.sino-draft-discussion-context { height: 100%; }
+.sino-draft-discussion-context__hint { margin: 14px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
 .sino-conversation-page { display: flex; flex: 1 1 0; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; padding: 0; overflow: hidden; box-sizing: border-box; }
 .sino-asset-center--global { height: 100%; padding-top: 30px; }
 .sino-asset-center--global .sino-library-list-pane { height: 100%; }

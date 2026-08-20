@@ -65,6 +65,21 @@ export function DraftDiscussion({ message, onMessage, onSend, busy, healthy, pro
   </section>;
 }
 
+export function DraftDiscussionContext() {
+  return <section className="sino-founder-task-sidebar sino-draft-discussion-context" aria-label="Task Status and Founder Action Queue">
+    <section className="sino-task-status-empty" aria-label="Task Status">
+      <header><h2>任务状态</h2></header>
+      <strong>新讨论</strong>
+      <p>尚未形成执行任务</p>
+      <small>Founder：无需操作</small>
+    </section>
+    <section className="sino-founder-action-queue" aria-label="Founder Action Queue">
+      <header><h2>需要你处理</h2><span>暂无需要你处理的事项</span></header>
+      <p className="sino-draft-discussion-context__hint">提交第一条有效消息后，Sino 会在这里同步任务状态与需要你处理的事项。</p>
+    </section>
+  </section>;
+}
+
 export function ProjectIntelligenceContext({ intelligence, onNavigate, onOpenConversation }) {
   const previousRef = useRef(null);
   const [changed, setChanged] = useState([]);

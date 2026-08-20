@@ -137,6 +137,10 @@ describe("Sino Founder AI interaction responsibilities", () => {
     const draft = screen.getByRole("region", { name: "Draft Discussion" });
     expect(draft.classList.contains("sino-draft-discussion")).toBe(true);
     expect(draft.querySelector(":scope > .sino-home__center .sino-global-composer")).toBeTruthy();
+    expect(document.querySelector(".sino-sidebar")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Task Status" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Founder Action Queue", exact: true })).toBeTruthy();
+    expect(document.querySelector(".sino-founder-shell").classList.contains("sino-founder-shell--no-context")).toBe(false);
     expect(screen.getByLabelText("Founder AI 工作区内容").classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
     expect(createFounderConversation).not.toHaveBeenCalled();
     const input = await screen.findByPlaceholderText("和 Sino 讨论任何想法、问题、战略或设计……");
