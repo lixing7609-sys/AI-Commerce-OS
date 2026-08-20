@@ -73,7 +73,7 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
     progress_percent: brain.execution_progress?.progress_percent,
     founder_action_required: Boolean(brain.execution_progress?.founder_action_required),
   } : null;
-  const action = capabilityAction || brain.current_action || taskSummaryAction || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "继续对话；只有 Founder 明确要求执行后才创建任务。", primary_label: null, secondary_label: null } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "确认后把讨论成果沉淀为候选能力。", primary_label: "批准候选能力", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
+  const action = capabilityAction || taskSummaryAction || brain.current_action || (brain.stage === "goal_review" ? { action_id: "confirm_goal", title: "目标已经明确", description: "继续对话；只有 Founder 明确要求执行后才创建任务。", primary_label: null, secondary_label: null } : brain.stage === "package_ready" ? { action_id: "approve_package", title: "等待 Founder 批准成果包", description: "确认后把讨论成果沉淀为候选能力。", primary_label: "批准候选能力", secondary_label: "继续讨论", danger_label: "退回修改" } : null);
   const progress = brain.execution_progress;
   const executionId = progress?.execution_id || quickFixRoute?.autonomous_execution?.execution_session_id;
   const canStop = Boolean(executionId && ["queued", "executing", "testing", "verification", "self_healing", "retrying", "stalled", "waiting_for_founder_authorization", "cancelling"].includes(progress?.execution_status));
@@ -92,23 +92,35 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
   const executionPackage = brain.discovery?.execution_package;
   const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
+  if (!routeHasTask) {
+    return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Task Status and Founder Action Queue">
+      <section className="sino-task-status-empty" aria-label="Task Status"><header><h2>任务状态</h2></header><strong>讨论中</strong><p>尚未形成执行任务</p><small>Founder：无需操作</small></section>
+      <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>需要你处理</h2><span>暂无需要你处理的事项</span></header></section>
+      <details className="sino-task-technical-details"><summary>查看讨论详情 / 技术详情</summary><dl><div><dt>Current Stage</dt><dd>{STAGE_LABELS[brain.stage] || brain.stage}</dd></div><div><dt>Goal</dt><dd>{brief.goal || understanding.interpreted_goal || "正在理解"}</dd></div><div><dt>Goal Status</dt><dd>{READINESS_LABELS[brain.goal_readiness] || brain.goal_readiness}</dd></div><div><dt>Decision</dt><dd>{decision.final_recommendation || "尚未形成"}</dd></div><div><dt>Confidence</dt><dd>{decision.confidence ? `${Math.round(decision.confidence * 100)}%` : "—"}</dd></div><div><dt>Current Risk</dt><dd>{risk}</dd></div><div><dt>Remaining Question</dt><dd>{question}</dd></div></dl><ContextSourcesDebug groundings={contextGroundings} /></details>
+    </section>;
+  }
   if (isQuickFix || isStandardTask || isStrategicTask) {
     const externalGate = quickFixRoute?.founder_gate_contract?.gate_type === "EXTERNAL_MODEL_PROBE" ? quickFixRoute.founder_gate_contract : null;
     const imageGateVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
     const acceptance = quickFixRoute?.founder_acceptance;
     const codexBoundary = progress?.codex_authorization_boundary;
     const actionCount = Number(Boolean(isStrategicTask && ["pending", "ready_for_founder_decision", "revision_requested"].includes(architectureDecisionStatus))) + Number(Boolean(externalGate)) + Number(Boolean(imageGateVisible)) + Number(Boolean(codexBoundary)) + Number(Boolean(visibleResult?.verification_status === "PASS" && acceptance?.status !== "accepted")) + Number(Boolean(progress?.execution_status === "technical_blocker"));
+    const architecturePending = isStrategicTask && ["pending", "ready_for_founder_decision", "revision_requested"].includes(architectureDecisionStatus);
+    const accepted = acceptance?.status === "accepted";
+    const hasHandledActions = accepted || ["approved", "rejected"].includes(architectureDecisionStatus);
     return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Task Status and Founder Action Queue">
+      <header className="sino-task-status-heading"><h2>任务状态</h2></header>
       <FounderActionCard compact action={action} busy={busy} readOnly onViewAssets={onViewAssets} />
       {canStop ? <section className="sino-emergency-stop" aria-label="任务控制"><button type="button" disabled={busy || progress?.execution_status === "cancelling"} onClick={() => cancelFounderExecution(executionId).catch(() => {})}>{progress?.execution_status === "cancelling" ? "正在停止…" : "停止任务"}</button></section> : null}
-      <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>Founder Action Queue</h2><span>{actionCount ? `${actionCount} 项待处理` : "当前无需操作"}</span></header>
-        {isStrategicTask && quickFixRoute?.architecture_proposal ? <ArchitectureProposalCard proposal={quickFixRoute.architecture_proposal} busy={busy} onDecision={onArchitectureDecision} /> : null}
+      <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>需要你处理</h2><span>{actionCount ? `${actionCount} 项待处理` : "暂无需要你处理的事项"}</span></header>
+        {architecturePending && quickFixRoute?.architecture_proposal ? <ArchitectureProposalCard proposal={quickFixRoute.architecture_proposal} busy={busy} onDecision={onArchitectureDecision} /> : null}
         {externalGate ? <ExternalModelProbeDecisionCard gate={externalGate} busy={busy} onDecision={onExternalProbeDecision} /> : null}
         {imageGateVisible ? <ImageModelProbeDecisionCard loop={autonomousLoop} busy={busy} onDecision={onImageProbeDecision} /> : null}
         {codexBoundary ? <article className="sino-founder-action-item" aria-label="Codex Founder Boundary"><span>待授权</span><h3>{codexBoundary.operation_type}</h3><p>{codexBoundary.decision_reason}</p><dl><div><dt>Scope</dt><dd>{Array.isArray(codexBoundary.resource_scope) ? codexBoundary.resource_scope.join(" · ") : codexBoundary.resource_scope}</dd></div><div><dt>Risk</dt><dd>{codexBoundary.risk_level}</dd></div><div><dt>External Effect</dt><dd>{codexBoundary.external_effect || "none"}</dd></div></dl><footer><button type="button" className="is-primary" disabled={busy} onClick={() => decideCodexAuthorization(executionId, "approve", codexBoundary.requested_scope || {})}>批准</button><button type="button" disabled={busy} onClick={() => decideCodexAuthorization(executionId, "modify", codexBoundary.requested_scope || {})}>修改范围</button><button type="button" disabled={busy} onClick={() => decideCodexAuthorization(executionId, "reject")}>驳回</button></footer></article> : null}
         {progress?.execution_status === "technical_blocker" ? <article className="sino-founder-action-item"><span>需要关注</span><h3>Technical Blocker</h3><p>{progress.technical_blocker?.reason || progress.next_action}</p></article> : null}
-        {visibleResult?.verification_status === "PASS" ? <article className="sino-founder-action-item" aria-label="Founder Acceptance"><span>{acceptance?.status === "accepted" ? "已验收" : "等待验收"}</span><h3>{visibleResult.title}</h3><p>Verification PASS · {visibleResult.target_surface}</p><footer><button type="button" onClick={onViewAssets}>查看结果</button>{acceptance?.status !== "accepted" ? <button type="button" className="is-primary" disabled={busy} onClick={async () => { const next = await acceptFounderTaskResult(conversationId); onTaskAccepted?.(next); }}>验收通过</button> : null}</footer></article> : null}
+        {visibleResult?.verification_status === "PASS" && !accepted ? <article className="sino-founder-action-item" aria-label="Founder Acceptance"><span>等待验收</span><h3>{visibleResult.title}</h3><p>Verification PASS · {visibleResult.target_surface}</p><footer><button type="button" onClick={onViewAssets}>查看结果</button><button type="button" className="is-primary" disabled={busy} onClick={async () => { const next = await acceptFounderTaskResult(conversationId); onTaskAccepted?.(next); }}>验收通过</button></footer></article> : null}
       </section>
+      {hasHandledActions ? <details className="sino-founder-action-history"><summary>已处理</summary>{accepted ? <p>Founder Acceptance · Accepted</p> : null}{["approved", "rejected"].includes(architectureDecisionStatus) ? <p>Architecture Proposal · {architectureDecisionStatus === "approved" ? "Approved" : "Rejected"}</p> : null}</details> : null}
       <details className="sino-task-technical-details"><summary>查看任务详情 / 技术详情</summary><dl><div><dt>Task</dt><dd>{progress?.task_id || "—"}</dd></div><div><dt>Target</dt><dd>{quickFixRoute?.standard_task_contract?.target_surface || quickFixRoute?.quick_fix_contract?.target_area || "—"}</dd></div><div><dt>Execution</dt><dd>{executionId || "—"}</dd></div><div><dt>Phase</dt><dd>{progress?.current_phase || quickFixRoute?.current_step}</dd></div><div><dt>Status</dt><dd>{progress?.execution_status || quickFixRoute?.execution_status}</dd></div></dl><ContextSourcesDebug groundings={contextGroundings} /></details>
     </section>;
   }
