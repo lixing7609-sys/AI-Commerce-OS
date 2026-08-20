@@ -227,7 +227,7 @@ def reconcile_standard_task_target_and_resume(*, conversation_id: str, enqueue=e
             old_session.source_status = old_session.status
             old_session.status = "cancelled"
             old_session.failure_reason = "task_target_resolution_misclassification"
-            append_event(old_session, "cancelled", status="cancelled", message="Execution superseded after canonical target reconciliation", metadata={"cancellation_reason": "task_target_resolution_misclassification"})
+            append_event(old_session, "cancelled_due_to_route_misclassification", status="cancelled", message="Execution superseded after canonical target reconciliation", metadata={"cancellation_reason": "task_target_resolution_misclassification"})
             save_execution_session(old_session, old_package)
         task = db.get(TaskAssetDB, task_id)
         if task:
