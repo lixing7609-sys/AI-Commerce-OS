@@ -289,7 +289,9 @@ def project_execution_events(conversation_id: str) -> int:
             if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="founder_action_required", summary=summary): added += 1
         visible = dict(route.get("visible_result") or {})
         if visible.get("verification_status") == "PASS":
-            source = f"visible-result:{task_id}:{visible.get('verified_at') or 'pass'}"
+            # Reconciliation can refresh verified_at, but one task has only one
+            # semantic Founder-acceptance transition. Keep its idempotency key stable.
+            source = f"visible-result:{task_id}:pass"
             from app.founder_ai.conversation_core import summarize_execution_events
             summary = summarize_execution_events(conversation_id, [{"event_name": "founder_acceptance_required", "verification_status": "PASS",
                 "target_surface": visible.get("target_surface"), "action_queue_location": "right_panel"}])

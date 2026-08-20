@@ -135,6 +135,37 @@ def test_one_technical_incident_projects_only_one_recovery_message(monkeypatch):
         assert [item.content for item in messages] == ["当前发现执行异常，正在自动恢复。"]
 
 
+def test_visible_result_projection_is_idempotent_when_verified_at_changes(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from app.database.base import Base
+    from app.core.conversation.model import ConversationDB
+    from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
+    import app.founder_ai.conversation_task_interaction as interaction
+    import app.founder_ai.conversation_core as conversation_core
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine); factory = sessionmaker(bind=engine); monkeypatch.setattr(interaction, "SessionLocal", factory)
+    monkeypatch.setattr(interaction, "get_execution_session", lambda _execution_id: None)
+    monkeypatch.setattr(conversation_core, "summarize_execution_events", lambda _conversation_id, _events: "验证已通过。")
+    route = {"classification": "STANDARD_TASK", "standard_task_contract": {"task_id": "task-visible"},
+             "visible_result": {"verification_status": "PASS", "verified_at": "first"}}
+    with factory() as db:
+        db.add(ConversationDB(id="conv-visible", system_id="founder_ai", title="visible"))
+        db.add(SinoBrainSessionDB(conversation_id="conv-visible", discovery={"task_complexity_route": route})); db.commit()
+    assert interaction.project_execution_events("conv-visible") == 1
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-visible").one()
+        discovery = dict(state.discovery); current = dict(discovery["task_complexity_route"])
+        current["visible_result"] = {**current["visible_result"], "verified_at": "second"}
+        discovery["task_complexity_route"] = current; state.discovery = discovery; db.commit()
+    assert interaction.project_execution_events("conv-visible") == 0
+    with factory() as db:
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-visible", message_type="execution_update").all()
+        assert len(messages) == 1
+        assert messages[0].grounding["source_event_id"] == "visible-result:task-visible:pass"
+
+
 def test_execution_intent_uses_confirmed_multiturn_context_before_clarifying():
     pending = {"goal": "把新建讨论页面改成3列式", "route": {"classification": "QUICK_FIX", "clarification_required": True}}
     messages = [
