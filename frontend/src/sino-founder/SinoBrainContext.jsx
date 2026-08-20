@@ -4,6 +4,7 @@ import { projectMaturityProjection } from "./projectMaturityProjection.js";
 import { cancelFounderExecution } from "../services/founderAiApi.js";
 import { acceptFounderTaskResult } from "../services/founderAiApi.js";
 import { decideCodexAuthorization } from "../services/founderAiApi.js";
+import { decideFounderClarification } from "../services/founderAiApi.js";
 import { ExternalModelProbeDecisionCard } from "./ExternalModelProbeDecisionCard.jsx";
 import { ImageModelProbeDecisionCard } from "./ImageModelProbeDecisionCard.jsx";
 import { ArchitectureProposalCard } from "./ConversationThread.jsx";
@@ -45,7 +46,7 @@ function PackageOverview({ pkg }) {
   </section>;
 }
 
-export function SinoBrainContext({ brain, conversationId, contextGroundings, busy, capabilityAction, capabilityAsset, selectedConstitutionWorkItemId, onReviewConstitutionWorkItem, onReviewConstitutionRouting, onConfirmFormalObject, onOpenProject, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal, onExternalProbeDecision, onImageProbeDecision, onArchitectureDecision, onTaskAccepted }) {
+export function SinoBrainContext({ brain, conversationId, contextGroundings, busy, capabilityAction, capabilityAsset, selectedConstitutionWorkItemId, onReviewConstitutionWorkItem, onReviewConstitutionRouting, onConfirmFormalObject, onOpenProject, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal, onExternalProbeDecision, onImageProbeDecision, onArchitectureDecision, onTaskAccepted, onClarificationResolved }) {
   if (!brain) return null;
   const brief = brain.goal_brief || {};
   const quickFixRoute = brain.discovery?.task_complexity_route;
@@ -93,9 +94,13 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
   const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
   if (!routeHasTask) {
+    const clarificationActions = (brain.discovery?.founder_action_queue || []).filter((item) => item.type === "CLARIFICATION" && item.status === "pending");
+    const clarificationRequired = clarificationActions.length > 0 || brain.discovery?.clarification_state?.founder_action_required === true;
     return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Task Status and Founder Action Queue">
-      <section className="sino-task-status-empty" aria-label="Task Status"><header><h2>任务状态</h2></header><strong>讨论中</strong><p>尚未形成执行任务</p><small>Founder：无需操作</small></section>
-      <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>需要你处理</h2><span>暂无需要你处理的事项</span></header></section>
+      <section className="sino-task-status-empty" aria-label="Task Status"><header><h2>任务状态</h2></header><strong>{clarificationRequired ? "等待确认" : "讨论中"}</strong><p>尚未形成执行任务</p><small>{clarificationRequired ? "Founder：需要操作" : "Founder：无需操作"}</small></section>
+      <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>需要你处理</h2><span>{clarificationActions.length ? `${clarificationActions.length} 项待处理` : "暂无需要你处理的事项"}</span></header>
+        {clarificationActions.map((item) => { const confirmable = Boolean(item.current_understanding?.confirmed_decisions?.length); return <article className="sino-founder-action-item" aria-label="Clarification Required" key={item.action_id}><span>待确认</span><h3>{item.title}</h3><p>{item.summary}</p>{confirmable ? <dl>{Object.entries(item.current_understanding.confirmed_decisions[0]).filter(([key]) => key !== "type").map(([key, value]) => <div key={key}><dt>{{ left: "左", center: "中", right: "右" }[key] || key}</dt><dd>{value}</dd></div>)}</dl> : null}<footer>{confirmable ? <button type="button" className="is-primary" disabled={busy} onClick={async () => { const value = await decideFounderClarification(conversationId, "confirm"); onClarificationResolved?.(value); }}>确认当前理解</button> : null}<button type="button" disabled={busy} onClick={async () => { const value = await decideFounderClarification(conversationId, "continue_discussion"); onClarificationResolved?.(value); onContinueDiscussion?.(); }}>继续讨论</button></footer></article>; })}
+      </section>
       <details className="sino-task-technical-details"><summary>查看讨论详情 / 技术详情</summary><dl><div><dt>Current Stage</dt><dd>{STAGE_LABELS[brain.stage] || brain.stage}</dd></div><div><dt>Goal</dt><dd>{brief.goal || understanding.interpreted_goal || "正在理解"}</dd></div><div><dt>Goal Status</dt><dd>{READINESS_LABELS[brain.goal_readiness] || brain.goal_readiness}</dd></div><div><dt>Decision</dt><dd>{decision.final_recommendation || "尚未形成"}</dd></div><div><dt>Confidence</dt><dd>{decision.confidence ? `${Math.round(decision.confidence * 100)}%` : "—"}</dd></div><div><dt>Current Risk</dt><dd>{risk}</dd></div><div><dt>Remaining Question</dt><dd>{question}</dd></div></dl><ContextSourcesDebug groundings={contextGroundings} /></details>
     </section>;
   }

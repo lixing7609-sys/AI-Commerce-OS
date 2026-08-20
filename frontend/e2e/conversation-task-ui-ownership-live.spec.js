@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("real discussion keeps Conversation in the center and quiet Task Status on the right", async ({ page }) => {
+test("real clarification keeps Conversation in the center and Founder Action Queue consistent", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => window.localStorage.setItem("sino-founder-active-conversation", "conv-a0aaac4688b949569438"));
   await page.reload();
@@ -17,9 +17,14 @@ test("real discussion keeps Conversation in the center and quiet Task Status on 
   await expect(conversation.getByText("Confidence", { exact: true })).toHaveCount(0);
 
   const taskStatus = page.getByRole("region", { name: "Task Status" });
-  await expect(taskStatus.getByText("讨论中", { exact: true })).toBeVisible();
+  await expect(taskStatus.getByText("等待确认", { exact: true })).toBeVisible();
   await expect(taskStatus.getByText("尚未形成执行任务", { exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Founder Action Queue", exact: true })).toContainText("暂无需要你处理的事项");
+  await expect(taskStatus.getByText("Founder：需要操作", { exact: true })).toBeVisible();
+  const queue = page.getByRole("region", { name: "Founder Action Queue", exact: true });
+  await expect(queue).toContainText("1 项待处理");
+  await expect(queue.getByRole("article", { name: "Clarification Required" })).toContainText("三栏职责需要确认");
+  await expect(queue.getByRole("button", { name: "确认当前理解" })).toHaveCount(0);
+  await expect(queue.getByRole("button", { name: "继续讨论" })).toBeVisible();
   await expect(page.locator(".sino-execution-progress")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "停止任务" })).toHaveCount(0);
   await expect(page.getByText("Brain Dashboard", { exact: true })).toHaveCount(0);

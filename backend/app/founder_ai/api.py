@@ -262,6 +262,9 @@ class ArchitectureProposalDecisionIn(BaseModel):
     proposal_version: int = Field(ge=1)
     founder_feedback: str | None = Field(default=None, max_length=10000)
 
+class ClarificationDecisionIn(BaseModel):
+    action: str
+
 class ConstitutionWorkItemReviewIn(BaseModel):
     work_item_id: str
     decision: str
@@ -546,9 +549,23 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         if pending and pending.get("route"):
             route = dict(pending["route"])
             route["discussion_context"] = list(pending.get("discussion_turns") or [execution_goal])
+        awaiting_clarification = False
+        if explicit_execution and pending and route.get("clarification_required"):
+            from app.founder_ai.conversation_task_interaction import reconcile_conversation_understanding
+            reconciled_context = reconcile_conversation_understanding(conversation_id, execution_text=request.content)
+            if reconciled_context["snapshot"]["context_sufficient"]:
+                route["clarification_required"] = False
+                route["discussion_context"] = list(reconciled_context["snapshot"].get("discussion_turns") or [])
+                route["confirmed_decisions"] = list(reconciled_context["snapshot"].get("confirmed_decisions") or [])
+            else:
+                awaiting_clarification = True
         is_strategic_architecture = route.get("classification") == "STRATEGIC_TASK" and not route.get("clarification_required")
         is_standard_development = route.get("classification") == "STANDARD_TASK" and route.get("task_type") != "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required")
-        if task_bound and has_stop_intent(request.content):
+        if awaiting_clarification:
+            brain_turn = {"handled": True, "intent": "awaiting_founder_clarification", "message_type": "clarification",
+                          "reply": "开始执行前还有一个会直接影响结果的问题需要确认。详细问题和当前理解已放在右侧；你也可以直接在这里继续讨论。",
+                          "brain": brain_runtime.snapshot(conversation_id)}
+        elif task_bound and has_stop_intent(request.content):
             from app.founder_ai.execution_cancel import request_founder_cancel
             request_founder_cancel((current_route.get("autonomous_execution") or {}).get("execution_session_id"))
             brain_turn = {"handled": True, "intent": "founder_emergency_stop", "message_type": "runtime_intervention", "reply": "收到，正在安全停止当前任务。", "brain": brain_runtime.snapshot(conversation_id)}
@@ -602,6 +619,37 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         raise HTTPException(status_code=status, detail=str(error)) from error
     except LLMGatewayError as error:
         raise HTTPException(status_code=503, detail="Sino 回复失败，可重试") from error
+
+
+@router.post("/conversations/{conversation_id}/clarification/decision", response_model=dict[str, Any])
+def decide_conversation_clarification(conversation_id: str, request: ClarificationDecisionIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    from app.founder_ai.conversation_task_interaction import pending_task_understanding, resolve_clarification
+    try:
+        result = resolve_clarification(conversation_id, request.action)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    if request.action == "continue_discussion":
+        return {"status": "discussion", "sino_brain": brain_runtime.snapshot(conversation_id)}
+    pending = pending_task_understanding(conversation_id) or {}
+    route = dict(pending.get("route") or {}); route["clarification_required"] = False
+    goal = pending.get("goal") or result["snapshot"].get("goal")
+    if route.get("classification") == "STANDARD_TASK":
+        from app.founder_ai.standard_task_execution import begin_standard_task, dispatch_standard_task
+        begin_standard_task(conversation_id=conversation_id, goal=goal, route=route)
+        dispatch_standard_task(conversation_id=conversation_id, goal=goal)
+    elif route.get("classification") == "QUICK_FIX":
+        from app.founder_ai.quick_fix_execution import dispatch_quick_fix
+        dispatch_quick_fix(conversation_id=conversation_id, goal=goal)
+    else:
+        raise HTTPException(status_code=409, detail="clarification_route_not_executable")
+    with SessionLocal() as db:
+        from app.core.conversation_first.model import ConversationMessageDB
+        db.add(ConversationMessageDB(conversation_id=conversation_id, role="assistant", message_type="task_started",
+                                     intent="founder_explicit_execution", content="收到，任务理解已确认，开始执行。",
+                                     grounding={"visibility": "founder", "source_event_id": f"clarification-confirmed:{conversation_id}"}))
+        db.commit()
+    return {"status": "executing", "sino_brain": brain_runtime.snapshot(conversation_id)}
 
 
 @router.post("/conversations/{conversation_id}/attachments", response_model=dict[str, Any])

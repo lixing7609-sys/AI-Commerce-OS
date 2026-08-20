@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
-from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
+from app.core.conversation_first.model import ConversationAttachmentDB, ConversationMessageDB, SinoBrainSessionDB
 from app.core.task_asset.model import TaskAssetDB
 from app.database.db import SessionLocal
 from app.founder_ai.execution_registry import get_execution_session, save_execution_session
@@ -52,6 +52,138 @@ def pending_task_understanding(conversation_id: str) -> dict | None:
         if state is None:
             return None
         return dict((state.discovery or {}).get("pending_task_understanding") or {}) or None
+
+
+def _message_value(message) -> dict:
+    if isinstance(message, dict):
+        return message
+    return {"message_id": message.id, "role": message.role, "content": message.content,
+            "message_type": message.message_type, "intent": message.intent,
+            "grounding": dict(message.grounding or {}), "created_at": message.created_at.isoformat()}
+
+
+def conversation_understanding_snapshot(messages: list, pending: dict | None = None) -> dict:
+    """Build current semantic context before asking Founder to repeat information."""
+    values = [_message_value(item) for item in messages]
+    intent_indexes = [index for index, item in enumerate(values)
+                      if item.get("role") == "founder" and has_explicit_execution_intent(item.get("content", ""))]
+    intent_index = intent_indexes[-1] if intent_indexes else len(values)
+    context_values = values[:intent_index]
+    founder_turns = [item["content"].strip() for item in context_values
+                     if item.get("role") == "founder" and item.get("content", "").strip()]
+    sino_turns = [item["content"].strip() for item in context_values
+                  if item.get("role") == "assistant" and item.get("content", "").strip()]
+    semantic_text = "\n".join(founder_turns + sino_turns)
+    role_patterns = {
+        "left": r"(?:左侧|左栏|左边)\s*[：:]?\s*([^\n，。；;]+)",
+        "center": r"(?:中间|中栏|中央)\s*[：:]?\s*([^\n，。；;]+)",
+        "right": r"(?:右侧|右栏|右边)\s*[：:]?\s*([^\n，。；;]+)",
+    }
+    column_roles = {}
+    for key, pattern in role_patterns.items():
+        matches = re.findall(pattern, semantic_text, re.I)
+        if matches: column_roles[key] = matches[-1].strip()
+    confirmed_decisions = []
+    if len(column_roles) == 3:
+        confirmed_decisions.append({"type": "three_column_responsibilities", **column_roles})
+    route = dict((pending or {}).get("route") or {})
+    context_sufficient = bool(not route.get("clarification_required") or len(column_roles) == 3)
+    goal = (pending or {}).get("goal") or (founder_turns[-1] if founder_turns else "")
+    attachments = [ref for item in context_values for ref in (item.get("attachment_refs") or [])]
+    return {
+        "goal": goal,
+        "scope": list((route.get("quick_fix_contract") or route.get("standard_task_contract") or {}).get("allowed_files_or_paths") or []),
+        "confirmed_decisions": confirmed_decisions,
+        "constraints": list((route.get("quick_fix_contract") or route.get("standard_task_contract") or {}).get("constraints") or []),
+        "acceptance_criteria": list((route.get("standard_task_contract") or {}).get("acceptance_criteria") or []),
+        "open_questions": [] if context_sufficient else ["三栏内容与职责分配尚未在当前 Conversation 中确认。"],
+        "rejected_interpretations": [], "relevant_artifacts": attachments,
+        "discussion_turns": founder_turns + sino_turns,
+        "source_message_ids": [item.get("message_id") for item in context_values if item.get("message_id")],
+        "context_sufficient": context_sufficient, "explicit_execution_intent": bool(intent_indexes),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def reconcile_conversation_understanding(conversation_id: str, *, execution_text: str | None = None) -> dict:
+    """Persist execution intent and a consistent clarification action when context is incomplete."""
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None: raise LookupError("Sino Brain state not found")
+        messages = db.scalars(select(ConversationMessageDB).where(
+            ConversationMessageDB.conversation_id == conversation_id).order_by(ConversationMessageDB.created_at, ConversationMessageDB.id)).all()
+        values = [_message_value(item) for item in messages]
+        if execution_text and not any(item.get("role") == "founder" and has_explicit_execution_intent(item.get("content", "")) for item in values):
+            values.append({"role": "founder", "content": execution_text, "created_at": now.isoformat()})
+        discovery = dict(state.discovery or {}); pending = dict(discovery.get("pending_task_understanding") or {})
+        snapshot = conversation_understanding_snapshot(values, pending)
+        attachments = db.scalars(select(ConversationAttachmentDB).where(
+            ConversationAttachmentDB.conversation_id == conversation_id).order_by(ConversationAttachmentDB.created_at)).all()
+        snapshot["relevant_artifacts"] = [{"attachment_id": item.id, "attachment_type": item.attachment_type,
+                                            "interpretation_status": (pending.get("route") or {}).get("evidence", {}).get("image_context_status", "not_present")}
+                                           for item in attachments]
+        if execution_text and has_explicit_execution_intent(execution_text): snapshot["explicit_execution_intent"] = True
+        discovery["conversation_understanding_snapshot"] = snapshot
+        previous_intent = dict(discovery.get("execution_intent") or {})
+        persisted_source_text = execution_text or previous_intent.get("source_text") or next(
+            (item.get("content") for item in reversed(values)
+             if item.get("role") == "founder" and has_explicit_execution_intent(item.get("content", ""))), None)
+        discovery["execution_intent"] = {
+            "status": "pending" if snapshot["explicit_execution_intent"] else "not_requested",
+            "intent": "EXECUTE_CURRENT_CONFIRMED_UNDERSTANDING", "source_text": persisted_source_text,
+            "updated_at": now.isoformat(),
+        }
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or []
+                 if item.get("type") != "CLARIFICATION" or item.get("status") != "pending"]
+        if snapshot["explicit_execution_intent"] and not snapshot["context_sufficient"]:
+            question = (discovery.get("working_understanding") or {}).get("next_question") or ["请确认当前任务的关键范围与职责分配。"]
+            if isinstance(question, list): question = question[0] if question else "请确认当前任务理解。"
+            action = {
+                "action_id": f"clarification-{conversation_id}", "conversation_id": conversation_id,
+                "task_id": None, "type": "CLARIFICATION", "status": "pending",
+                "title": "三栏职责需要确认" if "三列" in snapshot["goal"] or "3列" in snapshot["goal"] else "任务理解需要确认",
+                "summary": question, "required_input": "CONFIRM_CURRENT_TASK_UNDERSTANDING",
+                "current_understanding": snapshot, "created_at": now.isoformat(),
+                "resolved_at": None, "resolution": None,
+            }
+            queue.append(action)
+            discovery["clarification_state"] = {"status": "awaiting_founder_clarification", "clarification_required": True,
+                                                   "founder_action_required": True, "action_id": action["action_id"]}
+        else:
+            discovery["clarification_state"] = {"status": "resolved", "clarification_required": False,
+                                                   "founder_action_required": False}
+        discovery["founder_action_queue"] = queue
+        state.discovery = discovery; state.updated_at = now; db.commit()
+        return {"snapshot": snapshot, "founder_action_queue": queue,
+                "founder_action_required": any(item.get("status") == "pending" for item in queue),
+                "clarification_required": not snapshot["context_sufficient"]}
+
+
+def resolve_clarification(conversation_id: str, action: str) -> dict:
+    if action not in {"confirm", "continue_discussion"}: raise ValueError("invalid_clarification_action")
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None: raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {}); queue = [dict(item) for item in discovery.get("founder_action_queue") or []]
+        pending_action = next((item for item in queue if item.get("type") == "CLARIFICATION" and item.get("status") == "pending"), None)
+        if pending_action is None: raise ValueError("clarification_action_not_pending")
+        snapshot = dict(discovery.get("conversation_understanding_snapshot") or {})
+        if action == "confirm" and not snapshot.get("confirmed_decisions"):
+            raise ValueError("current_understanding_not_confirmable")
+        pending_action.update({"status": "resolved" if action == "confirm" else "continued_discussion",
+                               "resolved_at": now.isoformat(), "resolution": action})
+        if action == "confirm": snapshot["context_sufficient"] = True; snapshot["open_questions"] = []
+        discovery["conversation_understanding_snapshot"] = snapshot; discovery["founder_action_queue"] = queue
+        discovery["clarification_state"] = {"status": "resolved" if action == "confirm" else "discussion",
+                                               "clarification_required": False, "founder_action_required": False}
+        if action == "continue_discussion":
+            discovery["execution_intent"] = {**dict(discovery.get("execution_intent") or {}), "status": "paused_for_discussion", "updated_at": now.isoformat()}
+        state.discovery = discovery; state.updated_at = now; db.commit()
+        return {"action": pending_action, "snapshot": snapshot,
+                "reuse_execution_intent": action == "confirm" and (discovery.get("execution_intent") or {}).get("status") == "pending"}
 
 
 def task_understanding_reply(goal: str, route: dict) -> str:

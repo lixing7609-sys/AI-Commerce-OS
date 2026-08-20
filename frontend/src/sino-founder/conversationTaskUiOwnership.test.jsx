@@ -35,6 +35,20 @@ describe("Conversation / Task UI ownership", () => {
     expect(screen.getByText("查看讨论详情 / 技术详情").closest("details").open).toBe(false);
   });
 
+  it("projects clarification as a Founder action instead of saying no action is required", () => {
+    const brain = { ...discussionBrain, discovery: { ...discussionBrain.discovery,
+      clarification_state: { status: "awaiting_founder_clarification", founder_action_required: true },
+      founder_action_queue: [{ action_id: "clarification-1", type: "CLARIFICATION", status: "pending", title: "三栏职责需要确认", summary: "请确认三栏内容分配。", current_understanding: { confirmed_decisions: [{ type: "three_column_responsibilities", left: "Projects", center: "Conversation", right: "Task Queue" }] } }],
+    } };
+    render(<SinoBrainContext brain={brain} conversationId="conv-1" />);
+    expect(screen.getByText("等待确认")).toBeTruthy();
+    expect(screen.getByText("Founder：需要操作")).toBeTruthy();
+    expect(screen.getByRole("article", { name: "Clarification Required" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "确认当前理解" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "继续讨论" })).toBeTruthy();
+    expect(screen.queryByText("Founder：无需操作")).toBeNull();
+  });
+
   it("owns the only task progress and stop control in the right sidebar", () => {
     render(<SinoBrainContext brain={taskBrain()} />);
     expect(screen.getByLabelText("任务进度 35%")).toBeTruthy();
