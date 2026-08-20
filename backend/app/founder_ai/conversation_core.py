@@ -192,9 +192,30 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
     def invoke(runtime):
         if generator:
             return generator(context, runtime)
-        response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, LLMRequest(
+        request = LLMRequest(
             system_prompt=prompt, user_prompt=json.dumps(context, ensure_ascii=False), temperature=.45,
-            max_tokens=1800, response_format="json", metadata={"runtime_role": "sino_conversation", "conversation_core": "llm_first", "answer_grounding": True}))
+            max_tokens=1800, response_format="json", metadata={"runtime_role": "sino_conversation", "conversation_core": "llm_first", "answer_grounding": True})
+        from app.founder_ai.conversation_streaming import partial_json_string, publisher_for
+        publisher = publisher_for((interaction_context or {}).get("client_message_id"))
+        if publisher:
+            try:
+                raw = ""
+                published = ""
+                for chunk in llm_gateway.stream_for_model(runtime.provider_key, runtime.model, request):
+                    raw += chunk
+                    visible = partial_json_string(raw)
+                    if visible and visible != published:
+                        publisher(visible); published = visible
+                return json.loads(raw.strip().removeprefix("```json").removesuffix("```").strip())
+            except Exception:
+                # A provider stream may fail independently of ordinary completion. Reuse the
+                # same idempotent message round and publish only its complete fallback result.
+                response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
+                payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
+                if str(payload.get("response") or "").strip():
+                    publisher(str(payload["response"]))
+                return payload
+        response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
         return json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
 
     for role in ("conversation", "fallback"):

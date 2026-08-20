@@ -127,6 +127,20 @@ class LLMGateway:
             raise ConfigurationError("explicit_model_not_available")
         return self._generate(self._provider_from_runtime(center_config), request)
 
+    def stream_for_model(self, provider_name: str, model: str, request: LLMRequest):
+        """Yield native provider chunks, or the provider's safe complete-response fallback."""
+        try:
+            from app.core.model_center.service import resolve_runtime_config
+            center_config = resolve_runtime_config(provider_key=provider_name, model=model)
+        except Exception:
+            logger.exception("explicit streaming model center runtime resolution failed")
+            center_config = None
+        if center_config is None:
+            raise ConfigurationError("explicit_model_not_available")
+        provider = self._provider_from_runtime(center_config)
+        logger.info("llm stream requested: provider=%s", type(provider).__name__)
+        yield from provider.stream(request)
+
     @staticmethod
     def _provider_from_runtime(center_config) -> LLMProvider:
         timeout_seconds = get_llm_timeout_seconds()

@@ -95,6 +95,37 @@ export function discussWithSino(conversationId, content, intent, interactionCont
   }, "发送讨论消息失败");
 }
 
+export async function discussWithSinoStream(conversationId, content, intent, interactionContext, attachmentIds = [], clientMessageId, onChunk) {
+  const payload = { content, intent, interaction_context: interactionContext, client_message_id: clientMessageId };
+  if (attachmentIds.length) payload.attachment_ids = attachmentIds;
+  const response = await fetch(`${BASE_URL}/founder-ai/conversations/${encodeURIComponent(conversationId)}/messages/stream`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  if (!response.ok || !response.body) {
+    if (!response.ok) throw new Error(`发送讨论消息失败（状态码 ${response.status}）`);
+    return discussWithSino(conversationId, content, intent, interactionContext, attachmentIds, clientMessageId);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalSnapshot = null;
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split("\n"); buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.type === "chunk" && event.client_message_id === clientMessageId) onChunk?.(event.content);
+      if (event.type === "final" && event.client_message_id === clientMessageId) finalSnapshot = event.snapshot;
+      if (event.type === "error") throw new Error(event.message || "Sino 回复失败");
+    }
+    if (done) break;
+  }
+  if (!finalSnapshot) throw new Error("Sino 回复流未完成");
+  return finalSnapshot;
+}
+
 export function uploadFounderImage(conversationId, file) {
   return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/attachments`, { method: "POST", headers: { "Content-Type": file.type, "X-Original-Filename": encodeURIComponent(file.name || "image") }, body: file }, "上传截图失败");
 }

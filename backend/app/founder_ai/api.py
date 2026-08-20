@@ -1,9 +1,12 @@
 from dataclasses import asdict, replace
+import json
+from queue import Empty, Queue
+from threading import Thread
 from typing import Any
 from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.context.service import get_founder_context
@@ -631,6 +634,47 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         raise HTTPException(status_code=status, detail=str(error)) from error
     except LLMGatewayError as error:
         raise HTTPException(status_code=503, detail="Sino 回复失败，可重试") from error
+
+
+@router.post("/conversations/{conversation_id}/messages/stream")
+def stream_discussion_with_sino(conversation_id: str, request: DiscussionMessageIn):
+    """Stream one transient response while the normal message pipeline persists one canonical reply."""
+    if not request.client_message_id:
+        raise HTTPException(status_code=422, detail="client_message_id_required")
+
+    def events():
+        from app.founder_ai.conversation_streaming import register_publisher, unregister_publisher
+        queue: Queue = Queue()
+        client_id = request.client_message_id
+
+        def publish(content: str) -> None:
+            queue.put({"type": "chunk", "client_message_id": client_id, "content": content})
+
+        def run() -> None:
+            try:
+                queue.put({"type": "started", "client_message_id": client_id})
+                queue.put({"type": "final", "client_message_id": client_id,
+                           "snapshot": discuss_with_sino(conversation_id, request)})
+            except Exception as error:
+                queue.put({"type": "error", "client_message_id": client_id,
+                           "message": str(getattr(error, "detail", None) or "Sino 回复失败")})
+            finally:
+                unregister_publisher(client_id)
+
+        register_publisher(client_id, publish)
+        Thread(target=run, daemon=True).start()
+        while True:
+            try:
+                item = queue.get(timeout=8)
+            except Empty:
+                yield json.dumps({"type": "heartbeat", "client_message_id": client_id}) + "\n"
+                continue
+            yield json.dumps(item, ensure_ascii=False) + "\n"
+            if item["type"] in {"final", "error"}:
+                break
+
+    return StreamingResponse(events(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.post("/conversations/{conversation_id}/clarification/decision", response_model=dict[str, Any])

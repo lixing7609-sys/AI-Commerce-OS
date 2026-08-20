@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 from app.llm.models import LLMRequest, LLMResponse
+from collections.abc import Iterator
 
 
 class LLMProvider(ABC):
@@ -13,3 +14,7 @@ class LLMProvider(ABC):
     @abstractmethod
     def generate(self, request: LLMRequest) -> LLMResponse:
         raise NotImplementedError
+
+    def stream(self, request: LLMRequest) -> Iterator[str]:
+        """Provider-independent fallback for providers without native streaming."""
+        yield self.generate(request).content

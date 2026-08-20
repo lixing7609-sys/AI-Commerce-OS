@@ -1,3 +1,4 @@
+import json
 import time
 import httpx
 
@@ -40,3 +41,24 @@ class AnthropicProvider(LLMProvider):
         input_tokens, output_tokens = usage_raw.get("input_tokens"), usage_raw.get("output_tokens")
         total = input_tokens + output_tokens if isinstance(input_tokens, int) and isinstance(output_tokens, int) else None
         return LLMResponse(content=content, provider="anthropic", model=self._model, usage=LLMUsage(input_tokens, output_tokens, total), latency_ms=latency)
+
+    def stream(self, request: LLMRequest):
+        images = list(request.metadata.get("images") or [])
+        content = [{"type": "image", "source": {"type": "base64", "media_type": item["mime_type"], "data": item["base64"]}} for item in images] + [{"type": "text", "text": request.user_prompt}] if images else request.user_prompt
+        payload = {"model": self._model, "system": request.system_prompt, "messages": [{"role": "user", "content": content}], "temperature": request.temperature, "max_tokens": request.max_tokens, "stream": True}
+        try:
+            with httpx.stream("POST", f"{self._base_url}/messages", json=payload, headers={"x-api-key": self._api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}, timeout=self._timeout_seconds) as response:
+                if response.status_code in (401, 403): raise AuthenticationError()
+                if response.status_code == 429: raise RateLimitedError()
+                if response.status_code >= 500: raise ProviderUnavailableError()
+                if response.status_code != 200: raise InvalidResponseError()
+                for line in response.iter_lines():
+                    if not line.startswith("data: "): continue
+                    try:
+                        event = json.loads(line[6:]); delta = event.get("delta") or {}
+                        chunk = delta.get("text") if event.get("type") == "content_block_delta" else None
+                    except (ValueError, TypeError): chunk = None
+                    if chunk: yield chunk
+        except httpx.TimeoutException as error: raise LLMTimeoutError() from error
+        except (httpx.ConnectError, httpx.ConnectTimeout) as error: raise ProviderUnavailableError() from error
+        except httpx.HTTPError as error: raise NetworkError() from error

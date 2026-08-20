@@ -20,10 +20,25 @@ describe("Sino Conversation experience", () => {
     expect(hasConversationReply(snapshot([]), "client-1")).toBe(false);
   });
 
+  it("retains a newer canonical reply when an older poll snapshot arrives", () => {
+    const founder = { message_id: "f2", role: "founder", content: "第二轮", grounding: { client_message_id: "client-2" } };
+    const reply = { message_id: "a2", role: "assistant", content: "第二轮回复", grounding: { response_to_client_message_id: "client-2" } };
+    const merged = mergeConversationSnapshot(snapshot([founder, reply]), snapshot([founder]));
+    expect(merged.messages.map((item) => item.message_id)).toEqual(["f2", "a2"]);
+    expect(hasConversationReply(merged, "client-2")).toBe(true);
+  });
+
   it("shows a transient thinking state without creating a Conversation message", () => {
     render(<ConversationThread snapshot={snapshot([{ message_id: "f1", role: "founder", content: "问题" }])} message="" onMessage={vi.fn()} onSend={vi.fn()} busy replyPending />);
     expect(screen.getByRole("status", { name: "Sino 正在思考" })).toBeTruthy();
     expect(screen.getAllByText("Founder")).toHaveLength(1);
+  });
+
+  it("replaces thinking with one transient streaming reply", () => {
+    const { container } = render(<ConversationThread snapshot={snapshot([{ message_id: "f1", role: "founder", content: "问题" }])} message="" onMessage={vi.fn()} onSend={vi.fn()} busy replyPending streamingReply={{ clientMessageId: "client-1", content: "正在增量回答 **重点**" }} />);
+    expect(container.querySelector('[aria-label="Sino 正在思考"]')).toBeNull();
+    expect(container.querySelectorAll('[data-streaming="true"]')).toHaveLength(1);
+    expect(screen.getByText("重点").tagName).toBe("STRONG");
   });
 
   it("renders model Markdown as paragraphs, list, emphasis, strong and inline code", () => {

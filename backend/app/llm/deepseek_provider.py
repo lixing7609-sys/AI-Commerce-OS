@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 
@@ -109,3 +110,26 @@ class DeepSeekProvider(LLMProvider):
             usage=usage,
             latency_ms=latency_ms,
         )
+
+    def stream(self, request: LLMRequest):
+        payload = {
+            "model": self._model,
+            "messages": [{"role": "system", "content": request.system_prompt}, {"role": "user", "content": request.user_prompt}],
+            "temperature": request.temperature, "max_tokens": request.max_tokens, "stream": True,
+        }
+        if request.response_format == "json": payload["response_format"] = {"type": "json_object"}
+        try:
+            with httpx.stream("POST", f"{self._base_url}/chat/completions", json=payload,
+                              headers={"Authorization": f"Bearer {self._api_key}"}, timeout=self._timeout_seconds) as response:
+                if response.status_code in (401, 403): raise AuthenticationError()
+                if response.status_code == 429: raise RateLimitedError()
+                if response.status_code >= 500: raise ProviderUnavailableError()
+                if response.status_code != 200: raise InvalidResponseError()
+                for line in response.iter_lines():
+                    if not line.startswith("data: ") or line == "data: [DONE]": continue
+                    try: chunk = (json.loads(line[6:]).get("choices") or [{}])[0].get("delta", {}).get("content")
+                    except (ValueError, TypeError, IndexError): chunk = None
+                    if chunk: yield chunk
+        except httpx.TimeoutException as error: raise LLMTimeoutError() from error
+        except (httpx.ConnectError, httpx.ConnectTimeout) as error: raise ProviderUnavailableError() from error
+        except httpx.HTTPError as error: raise NetworkError() from error
