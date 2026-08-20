@@ -156,13 +156,37 @@ def build_conversation_context(conversation_id: str, current_message: str, *, in
     }
 
 
+def _safe_mapping(value) -> dict:
+    """Normalize provider structured fields without sacrificing a valid natural reply."""
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _safe_string_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if isinstance(item, (str, int, float)) and str(item).strip()]
+
+
+def _normalize_task_candidate(value) -> dict:
+    candidate = _safe_mapping(value)
+    if not candidate:
+        return {}
+    normalized = dict(candidate)
+    for field in ("constraints", "acceptance_criteria", "confirmed_decisions"):
+        normalized[field] = _safe_string_list(candidate.get(field))
+    for field in ("goal", "scope", "task_type"):
+        if field in normalized and not isinstance(normalized[field], str):
+            normalized[field] = str(normalized[field]) if isinstance(normalized[field], (int, float)) else ""
+    return normalized
+
+
 def _validate_decision(payload: dict, *, current_message: str) -> dict:
     if not isinstance(payload, dict) or not str(payload.get("response") or "").strip():
         raise ValueError("invalid_conversation_decision")
     intent = str(payload.get("semantic_intent") or "conversation")
     if intent not in SEMANTIC_INTENTS:
         intent = "conversation"
-    candidate = dict(payload.get("task_candidate") or {})
+    candidate = _normalize_task_candidate(payload.get("task_candidate"))
     if intent == "execute_current_task":
         goal = str(candidate.get("goal") or "").strip()
         # Execution confirmation is never allowed to become its own task goal.
@@ -174,9 +198,9 @@ def _validate_decision(payload: dict, *, current_message: str) -> dict:
         "semantic_intent": intent,
         "conversation_state": str(payload.get("conversation_state") or "discussion"),
         "task_candidate": candidate or None,
-        "tool_intent": payload.get("tool_intent"),
-        "founder_action_intent": payload.get("founder_action_intent"),
-        "context_updates": dict(payload.get("context_updates") or {}),
+        "tool_intent": payload.get("tool_intent") if isinstance(payload.get("tool_intent"), str) else None,
+        "founder_action_intent": _safe_mapping(payload.get("founder_action_intent")) or None,
+        "context_updates": _safe_mapping(payload.get("context_updates")),
         "model_decision": True,
     }
 
@@ -251,8 +275,8 @@ def persist_conversation_decision(conversation_id: str, decision: dict) -> None:
             "context_updates": decision.get("context_updates") or {}, "model_role": decision.get("model_role"),
             "provider": decision.get("provider"), "model": decision.get("model"), "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        requested_action = dict(decision.get("founder_action_intent") or {})
-        queue = [dict(item) for item in discovery.get("founder_action_queue") or []]
+        requested_action = _safe_mapping(decision.get("founder_action_intent"))
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]
         if requested_action.get("type") == "CLARIFICATION" and requested_action.get("required_input"):
             action_id = str(requested_action.get("action_id") or f"clarification-{conversation_id}-{len(queue) + 1}")
             if not any(item.get("action_id") == action_id and item.get("status") == "pending" for item in queue):

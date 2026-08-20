@@ -114,13 +114,18 @@ def _founder_sidebar_typography_contract(*, conversation_id: str, goal: str, tas
         "target_component": "SecretarySidebar / sino-founder-ai.css",
         "objective": goal,
         "acceptance_criteria": [
-            "The 会话 and 项目 group headings render at the same font size in the real Founder sidebar.",
+            "The actual 项目 and 会话 text elements both have computed font-size 15px and identical font-weight, line-height, letter-spacing, and font-family.",
+            "The two heading text elements have no different transform/scale, flex shrink, min-width, width constraint, gap, or text-rendering container rule that can compress one title differently.",
+            "A real localhost screenshot shows both headings as visually equal peers under the same typography/layout principle.",
             "No other sidebar layout, navigation, or typography changes.",
         ],
         "visible_artifact_contract": {
             "required": True, "artifact_type": "founder_sidebar_heading_typography",
             "target_route": "Sino Founder shell / all Founder views",
-            "required_assertions": ["projects_heading_visible", "conversations_heading_visible", "matching_computed_font_size"],
+            "required_assertions": [
+                "projects_heading_visible", "conversations_heading_visible", "both_headings_15px", "matching_computed_typography",
+                "matching_layout_constraints", "no_differential_scale_or_shrink", "visual_heading_parity", "screenshot_evidence_exists",
+            ],
         },
         "constraints": ["preserve_sidebar_structure", "preserve_navigation_behavior", "typography_only"],
         "implementation_scope": [
@@ -131,9 +136,9 @@ def _founder_sidebar_typography_contract(*, conversation_id: str, goal: str, tas
         "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
         "inspect_status": "ready_for_plan",
         "implementation_plan": [
-            "Inspect the real 项目 and 会话 group-heading DOM and computed typography.",
-            "Adjust only the bounded 会话 heading font size.",
-            "Run sidebar tests, frontend build, and real localhost computed-style verification.",
+            "Inspect the actual 项目 and 会话 text elements plus their immediate heading containers, not only inherited outer font-size.",
+            "Unify the bounded typography, icon/text spacing, flex and width constraints so neither title is compressed differently.",
+            "Run sidebar tests, frontend build, real localhost computed-style verification, and screenshot comparison.",
         ],
         "source_goal": goal,
     }
@@ -371,15 +376,28 @@ def continue_standard_task_verification(
         previous_record = get_execution_session(previous_execution_id)
         if previous_record is None or previous_record[0].status != "completed":
             raise ValueError("Verification continuation requires a terminal source execution")
-        if route.get("current_step") == "complete":
-            return route
         task = db.get(TaskAssetDB, task_id)
         if task:
             task.status = "in_progress"; task.execution_status = "verifying"
+        corrections = {
+            "verification_completed": "Founder 已补充更完整的排版验收标准；此前仅比较外层 font-size 的验证不再构成 PASS。",
+            "execution_completed": "当前任务尚未完成，Sino 正按同级标题的完整排版规则继续修正和验证。",
+            "founder_acceptance_required": "此前验收入口已撤回；完整 computed typography、布局约束和截图尚需重新验证。",
+        }
+        for message in db.scalars(select(ConversationMessageDB).where(
+            ConversationMessageDB.conversation_id == conversation_id,
+            ConversationMessageDB.message_type == "execution_update",
+        )).all():
+            grounding = dict(message.grounding or {}); semantic = grounding.get("event_type")
+            if grounding.get("task_id") == task_id and semantic in corrections:
+                grounding["event_type"] = f"superseded_{semantic}"
+                grounding["superseded_execution_id"] = previous_execution_id
+                message.grounding = grounding; message.content = corrections[semantic]
         route["current_step"] = "verification"; route["execution_status"] = "verifying"
         route["visible_artifact_verification"] = {
             "status": "FAIL", "completion_allowed": False, "evidence": failed_evidence,
         }
+        route.pop("founder_acceptance", None); route.pop("visible_result", None)
         route.pop("technical_blocker", None); route.pop("technical_resolution_contract", None)
         discovery["task_complexity_route"] = route; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc)
         db.commit()
@@ -419,6 +437,26 @@ def continue_standard_task_verification(
     enqueue(execution.id)
     Thread(target=_monitor, args=(conversation_id, task_id, execution.id), daemon=True, name=f"standard-verification-{execution.id}").start()
     return route
+
+
+def reconcile_standard_task_acceptance_contract(*, conversation_id: str) -> dict:
+    """Rebuild the current bounded contract after Founder corrects its acceptance meaning."""
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {}); route = dict(discovery.get("task_complexity_route") or {})
+        current = dict(route.get("standard_task_contract") or {})
+        if current.get("target_surface") != "Founder Sidebar" or current.get("visible_artifact_contract", {}).get("artifact_type") != "founder_sidebar_heading_typography":
+            raise ValueError("Current task is not the Sidebar Typography task")
+        contract = _founder_sidebar_typography_contract(
+            conversation_id=conversation_id, goal=current.get("source_goal") or current.get("objective") or "",
+            task_id=current.get("task_id"),
+        )
+        route["standard_task_contract"] = contract; discovery["standard_task_contract"] = contract
+        discovery["task_complexity_route"] = route; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return contract
 
 
 def _monitor(conversation_id: str, task_id: str, execution_id: str) -> None:

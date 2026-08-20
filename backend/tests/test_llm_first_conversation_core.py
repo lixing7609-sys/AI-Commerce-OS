@@ -89,6 +89,35 @@ def test_clarification_action_is_structured_but_response_remains_model_authored(
         assert discovery["clarification_state"]["founder_action_required"] is True
 
 
+def test_malformed_structured_fields_do_not_discard_the_natural_model_response(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    decision = core.reason_about_message("conv-llm", "继续说明", generator=lambda *_: {
+        "response": "我会继续结合当前任务说明，不需要你重新输入。",
+        "semantic_intent": "conversation",
+        "task_candidate": ["not", "a", "mapping"],
+        "context_updates": ["malformed"],
+        "founder_action_intent": "not-a-mapping",
+        "tool_intent": {"unexpected": True},
+    })
+    assert decision["response"] == "我会继续结合当前任务说明，不需要你重新输入。"
+    assert decision["task_candidate"] is None
+    assert decision["context_updates"] == {}
+    assert decision["founder_action_intent"] is None
+    assert decision["tool_intent"] is None
+    core.persist_conversation_decision("conv-llm", decision)
+
+
+def test_malformed_nested_task_candidate_lists_are_safely_normalized(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    decision = core.reason_about_message("conv-llm", "执行当前方案", generator=lambda *_: {
+        "response": "我会按当前方案继续。", "semantic_intent": "execute_current_task",
+        "task_candidate": {"goal": "调整当前样式", "constraints": "not-a-list", "acceptance_criteria": ["视觉一致", {"bad": True}]},
+    })
+    assert decision["semantic_intent"] == "execute_current_task"
+    assert decision["task_candidate"]["constraints"] == []
+    assert decision["task_candidate"]["acceptance_criteria"] == ["视觉一致"]
+
+
 def test_model_roles_resolve_from_configuration_without_provider_binding(monkeypatch):
     calls = []
     configured = {

@@ -72,6 +72,13 @@ def test_founder_sidebar_heading_typography_does_not_inherit_capability_reposito
     assert contract["objective"].startswith("把左侧栏")
     assert "frontend/src/sino-founder/CapabilityWorkspace.jsx" not in contract["implementation_scope"]
     assert contract["visible_artifact_contract"]["required"] is True
+    assertions = contract["visible_artifact_contract"]["required_assertions"]
+    assert "both_headings_15px" in assertions
+    assert "matching_computed_typography" in assertions
+    assert "matching_layout_constraints" in assertions
+    assert "no_differential_scale_or_shrink" in assertions
+    assert "visual_heading_parity" in assertions
+    assert "screenshot_evidence_exists" in assertions
 
 
 def test_complete_task_scoped_evidence_closes_verification_even_if_callback_was_lost():

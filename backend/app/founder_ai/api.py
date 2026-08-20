@@ -573,7 +573,7 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         persist_conversation_decision(conversation_id, decision)
         semantic_intent = decision["semantic_intent"]
         explicit_execution = semantic_intent == "execute_current_task"
-        task_candidate = dict(decision.get("task_candidate") or {})
+        task_candidate = decision.get("task_candidate") if isinstance(decision.get("task_candidate"), dict) else {}
         execution_goal = str(task_candidate.get("goal") or "").strip()
         if task_candidate:
             route = route_task_complexity(execution_goal,
