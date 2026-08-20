@@ -954,6 +954,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-sidebar > .sino-new-conversation b, .sino-new-conversation { font-size: var(--font-sidebar); font-weight: var(--weight-medium); }
 .sino-sidebar-section__toggle, .sino-conversation-navigation > span { font-size: var(--font-label); font-weight: var(--weight-medium); line-height: var(--line-label); }
 .sino-sidebar .sino-sidebar-primary-title { font-size: var(--font-label); font-weight: var(--weight-medium); line-height: var(--line-label); color: #757d73; }
+.sino-sidebar .sino-sidebar__conversation-title { font-size: var(--font-label); }
 .sino-project-list button, .sino-conversation-list button { font-size: var(--font-sidebar); line-height: var(--line-label); }
 .sino-sidebar footer, .sino-sidebar nav button small { font-size: var(--font-metadata); line-height: var(--line-metadata); }
 
