@@ -395,6 +395,11 @@ class TaskConfirmationDecisionIn(BaseModel):
     action: str
 
 
+class TaskFocusIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_ref: str
+
+
 router = APIRouter(prefix="/founder-ai", tags=["Founder AI"])
 brain = SinoBrain()
 state_analyzer = SinoStateAnalyzer()
@@ -417,6 +422,11 @@ def _candidate_snapshot(snapshot: dict, conversation_id: str) -> dict:
         snapshot["object_recognition"] = {"status": "unavailable", "error": type(error).__name__}
     try:
         snapshot["sino_brain"] = brain_runtime.snapshot(conversation_id)
+        from app.founder_ai.conversation_task_collection import build_conversation_tasks
+        task_collection = build_conversation_tasks(conversation_id)
+        discovery = dict((snapshot["sino_brain"] or {}).get("discovery") or {})
+        discovery.update(task_collection)
+        snapshot["sino_brain"]["discovery"] = discovery
     except Exception:
         snapshot["sino_brain"] = None
     return snapshot
@@ -445,6 +455,8 @@ def get_conversation_workspace(conversation_id: str):
         # contain a mature semantic decision but predate canonical candidates.
         from app.founder_ai.conversation_task_interaction import reconcile_discussion_task_candidate
         reconcile_discussion_task_candidate(conversation_id)
+        from app.founder_ai.conversation_task_collection import resolve_task_navigation
+        resolve_task_navigation(conversation_id)
         snapshot = council_service.snapshot(conversation_id)
         from app.founder_ai.conversation_task_interaction import project_execution_events
         if project_execution_events(conversation_id):
@@ -752,6 +764,17 @@ def decide_conversation_task_candidate(conversation_id: str, request: TaskConfir
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     return {**result, "sino_brain": brain_runtime.snapshot(conversation_id)}
+
+
+@router.post("/conversations/{conversation_id}/tasks/focus", response_model=dict[str, Any])
+def focus_conversation_task(conversation_id: str, request: TaskFocusIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    from app.founder_ai.conversation_task_collection import focus_task
+    try:
+        result = focus_task(conversation_id, request.task_ref)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {**result, "sino_brain": _candidate_snapshot({}, conversation_id).get("sino_brain")}
 
 
 @router.post("/conversations/{conversation_id}/attachments", response_model=dict[str, Any])

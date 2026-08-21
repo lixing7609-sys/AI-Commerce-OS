@@ -71,7 +71,14 @@ def persist_task_candidate(conversation_id: str, candidate: dict, *, source_mess
             raise LookupError("Sino Brain state not found")
         discovery = dict(state.discovery or {})
         existing = dict(discovery.get("task_candidate") or {})
-        if existing.get("status") in {"pending_founder_confirmation", "needs_revision", "discussion_continues"} and existing.get("goal") == goal:
+        candidates = [dict(item) for item in discovery.get("task_candidates") or [] if isinstance(item, dict)]
+        if existing and not any(item.get("candidate_id") == existing.get("candidate_id") for item in candidates):
+            candidates.append(existing)
+        matching = next((item for item in candidates
+                         if item.get("status") in {"pending_founder_confirmation", "needs_revision", "discussion_continues"}
+                         and item.get("goal") == goal), None)
+        if matching:
+            existing = matching
             candidate_id = existing["candidate_id"]
             created_at = existing.get("created_at") or now.isoformat()
         else:
@@ -100,6 +107,7 @@ def persist_task_candidate(conversation_id: str, candidate: dict, *, source_mess
             "task_candidate": record, "created_at": created_at, "resolved_at": None, "resolution": None,
         })
         discovery["task_candidate"] = record
+        discovery["task_candidates"] = [item for item in candidates if item.get("candidate_id") != candidate_id] + [record]
         if record["derivation"].get("source") == "conversation_llm":
             discovery["task_candidate_reconciliation"] = {
                 "status": "completed", "candidate_id": candidate_id,
@@ -109,6 +117,7 @@ def persist_task_candidate(conversation_id: str, candidate: dict, *, source_mess
         discovery["task_projection"] = {"status": "pending_founder_confirmation", "candidate_id": candidate_id,
                                          "title": record["title"], "founder_action_required": True}
         discovery["founder_action_queue"] = queue
+        discovery["focused_task_id"] = f"candidate:{candidate_id}"
         discovery["founder_action_required"] = True
         state.discovery = discovery; state.updated_at = now; db.commit()
         return record
@@ -181,6 +190,9 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
             raise LookupError("Sino Brain state not found")
         discovery = dict(state.discovery or {}); candidate = dict(discovery.get("task_candidate") or {})
         if candidate.get("candidate_id") != candidate_id:
+            candidate = next((dict(item) for item in discovery.get("task_candidates") or []
+                              if item.get("candidate_id") == candidate_id), {})
+        if candidate.get("candidate_id") != candidate_id:
             raise ValueError("task_candidate_not_found")
         if candidate.get("status") == "confirmed":
             return {"status": "confirmed", "task_candidate": candidate, "route": discovery.get("task_complexity_route") or {}}
@@ -192,6 +204,8 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
             candidate["status"] = "needs_revision" if action == "modify" else "discussion_continues"
             candidate["updated_at"] = now.isoformat(); item.update({"status": candidate["status"], "resolution": action, "resolved_at": now.isoformat()})
             discovery["task_candidate"] = candidate; discovery["founder_action_queue"] = queue
+            discovery["task_candidates"] = [candidate if item.get("candidate_id") == candidate_id else item
+                                              for item in discovery.get("task_candidates") or []]
             discovery["task_projection"] = {"status": candidate["status"], "candidate_id": candidate_id, "title": candidate["title"], "founder_action_required": False}
             discovery["founder_action_required"] = False; state.discovery = discovery; state.updated_at = now; db.commit()
             return {"status": candidate["status"], "task_candidate": candidate, "route": discovery.get("task_complexity_route") or {}}
@@ -212,6 +226,8 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
             state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
             discovery = dict(state.discovery or {}); restored = dict(discovery.get("task_candidate") or {})
             restored["status"] = "pending_founder_confirmation"; discovery["task_candidate"] = restored
+            discovery["task_candidates"] = [restored if item.get("candidate_id") == candidate_id else item
+                                              for item in discovery.get("task_candidates") or []]
             state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
         raise
     execution = dict(route.get("autonomous_execution") or {})
@@ -226,6 +242,9 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
             if entry.get("type") == "TASK_CONFIRMATION" and entry.get("candidate_id") == candidate_id:
                 entry.update({"status": "confirmed", "task_id": confirmed.get("task_id"), "resolution": "confirm", "resolved_at": datetime.now(timezone.utc).isoformat()})
         discovery["task_candidate"] = confirmed; discovery["founder_action_queue"] = queue
+        discovery["task_candidates"] = [confirmed if item.get("candidate_id") == candidate_id else item
+                                          for item in discovery.get("task_candidates") or []]
+        discovery["focused_task_id"] = confirmed.get("task_id") or f"candidate:{candidate_id}"
         discovery["task_projection"] = {"status": "confirmed", "candidate_id": candidate_id, "task_id": confirmed.get("task_id"),
                                          "title": confirmed["title"], "founder_action_required": False}
         discovery["founder_action_required"] = False; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()

@@ -6,6 +6,7 @@ import { acceptFounderTaskResult } from "../services/founderAiApi.js";
 import { decideCodexAuthorization } from "../services/founderAiApi.js";
 import { decideFounderClarification } from "../services/founderAiApi.js";
 import { decideFounderTaskCandidate } from "../services/founderAiApi.js";
+import { focusFounderTask } from "../services/founderAiApi.js";
 import { ExternalModelProbeDecisionCard } from "./ExternalModelProbeDecisionCard.jsx";
 import { ImageModelProbeDecisionCard } from "./ImageModelProbeDecisionCard.jsx";
 import { ArchitectureProposalCard } from "./ConversationThread.jsx";
@@ -44,6 +45,42 @@ function PackageOverview({ pkg }) {
       <p>{item.purpose}</p>
       <dl><div><dt>Confidence</dt><dd>{Math.round((item.confidence || 0) * 100)}%</dd></div><div><dt>Creator</dt><dd>Sino Brain</dd></div><div><dt>Dependency</dt><dd>{item.dependencies?.length ? item.dependencies.join(" · ") : "暂无"}</dd></div>{item.asset_id ? <div><dt>Asset ID</dt><dd>{item.asset_id}</dd></div> : null}</dl>
     </details>)}</div>
+  </section>;
+}
+
+const TASK_STATUS_LABELS = {
+  pending_founder_confirmation: "待确认", needs_revision: "待修改", discussion_continues: "讨论中",
+  queued: "排队中", inspecting: "检查中", executing: "执行中", testing: "测试中",
+  verification: "验证中", blocked: "验证受阻", self_healing: "正在自愈", retrying: "重新验证",
+  completed: "已完成", accepted: "已验收", closed: "已关闭", cancelled: "已停止",
+};
+
+export function FounderWorkQueue({ tasks = [], focusedTaskId, conversationId, busy, onFocused, onCandidateResolved, onContinueDiscussion }) {
+  const active = tasks.filter((item) => !item.is_completed && !item.is_archived);
+  const completed = tasks.filter((item) => item.is_completed && !item.is_archived);
+  const choose = async (taskRef) => {
+    const result = await focusFounderTask(conversationId, taskRef);
+    onFocused?.(result);
+  };
+  const card = (task) => {
+    const focused = task.task_ref === focusedTaskId;
+    const candidate = task.details || {};
+    const candidateAction = (task.founder_actions || []).find((item) => item.type === "TASK_CONFIRMATION" && item.status === "pending");
+    const list = (value) => Array.isArray(value) ? value : value ? [value] : [];
+    return <article key={task.task_ref} aria-label={`Task Card: ${task.title}`} aria-current={focused ? "true" : undefined}
+      aria-expanded={focused} className={`sino-work-queue-card${focused ? " is-focused" : ""}`} onClick={() => choose(task.task_ref)}>
+      <header><div><h3>{task.title}</h3><span>{TASK_STATUS_LABELS[task.status] || task.status}</span></div><small>{task.founder_action_required ? "Founder：需要操作" : "Founder：无需操作"}</small></header>
+      {Number.isFinite(task.progress) ? <div className="sino-work-queue-progress" aria-label={`${task.title} progress`}><i style={{ width: `${task.progress}%` }} /><span>{task.progress}%</span></div> : null}
+      {focused ? <section className="sino-work-queue-card__details"><p>{candidate.goal || candidate.description || "任务详情已记录。"}</p>
+        {task.is_candidate ? <dl><div><dt>范围</dt><dd>{list(candidate.scope).join(" · ") || "按当前讨论"}</dd></div><div><dt>约束</dt><dd>{list(candidate.constraints).join(" · ") || "按当前讨论"}</dd></div><div><dt>验收标准</dt><dd>{list(candidate.acceptance_criteria).join(" · ") || "按当前讨论"}</dd></div></dl> : null}
+        {candidateAction ? <footer onClick={(event) => event.stopPropagation()}><button type="button" className="is-primary" disabled={busy} onClick={async () => onCandidateResolved?.(await decideFounderTaskCandidate(conversationId, task.candidate_id, "confirm"))}>确认执行</button><button type="button" disabled={busy} onClick={async () => { onCandidateResolved?.(await decideFounderTaskCandidate(conversationId, task.candidate_id, "modify")); onContinueDiscussion?.(); }}>修改任务</button><button type="button" disabled={busy} onClick={async () => { onCandidateResolved?.(await decideFounderTaskCandidate(conversationId, task.candidate_id, "continue_discussion")); onContinueDiscussion?.(); }}>继续讨论</button></footer> : null}
+      </section> : null}
+    </article>;
+  };
+  return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Founder Work Queue">
+    <header className="sino-work-queue-heading"><div><h2>Founder工作队列</h2><span>任务 {tasks.length}</span></div><small>{tasks.some((item) => item.founder_action_required) ? "有事项需要处理" : "暂无需要处理的事项"}</small></header>
+    <section className="sino-work-queue-list" aria-label="Conversation Tasks">{active.map(card)}</section>
+    {completed.length ? <details className="sino-work-queue-completed"><summary>已完成（{completed.length}）</summary>{completed.map(card)}</details> : null}
   </section>;
 }
 
@@ -94,6 +131,10 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
   const executionPackage = brain.discovery?.execution_package;
   const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
+  const conversationTasks = brain.discovery?.conversation_tasks || [];
+  if (conversationTasks.length > 1) return <FounderWorkQueue tasks={conversationTasks} focusedTaskId={brain.discovery?.focused_task_id}
+    conversationId={conversationId} busy={busy} onFocused={onTaskCandidateResolved} onCandidateResolved={onTaskCandidateResolved}
+    onContinueDiscussion={onContinueDiscussion} />;
   if (!routeHasTask) {
     const clarificationActions = (brain.discovery?.founder_action_queue || []).filter((item) => item.type === "CLARIFICATION" && item.status === "pending");
     const taskConfirmationActions = (brain.discovery?.founder_action_queue || []).filter((item) => item.type === "TASK_CONFIRMATION" && item.status === "pending");

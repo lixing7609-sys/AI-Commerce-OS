@@ -1050,6 +1050,33 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-brain-context button.is-primary { border-color: var(--accent); background: var(--accent); color: #071008; font-weight: 650; }
 .sino-founder-context:has(> .sino-founder-task-sidebar) { overflow: hidden; }
 .sino-founder-task-sidebar { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 18px 14px 32px; }
+.sino-work-queue-heading { display: grid; gap: 5px; margin-bottom: 12px; }
+.sino-work-queue-heading > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sino-work-queue-heading h2 { margin: 0; font: 600 15px/1.4 var(--font-sans); }
+.sino-work-queue-heading span, .sino-work-queue-heading small { color: var(--text-muted); font-size: 11px; }
+.sino-work-queue-list { display: grid; gap: 9px; }
+.sino-work-queue-card { padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-raised); cursor: pointer; }
+.sino-work-queue-card.is-focused { border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+.sino-work-queue-card > header { display: grid; gap: 5px; }
+.sino-work-queue-card > header > div { display: flex; align-items: flex-start; justify-content: space-between; gap: 9px; }
+.sino-work-queue-card h3 { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.45; }
+.sino-work-queue-card header span { flex: 0 0 auto; color: var(--accent); font-size: 11px; }
+.sino-work-queue-card header small { color: var(--text-muted); font-size: 11px; }
+.sino-work-queue-card__details { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.sino-work-queue-card__details p { margin: 0 0 9px; color: var(--text-secondary); font-size: 12px; line-height: 1.55; }
+.sino-work-queue-card__details dl { display: grid; gap: 7px; margin: 0; }
+.sino-work-queue-card__details dl div { display: grid; gap: 2px; }
+.sino-work-queue-card__details dt { color: var(--text-muted); font-size: 10px; }
+.sino-work-queue-card__details dd { margin: 0; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.sino-work-queue-card__details footer { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.sino-work-queue-card__details button { min-height: 29px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text-secondary); }
+.sino-work-queue-card__details button.is-primary { border-color: var(--accent); background: var(--accent); color: #071008; }
+.sino-work-queue-progress { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; margin-top: 8px; }
+.sino-work-queue-progress::before { content: ""; grid-column: 1; grid-row: 1; height: 3px; border-radius: 2px; background: var(--line); }
+.sino-work-queue-progress i { z-index: 1; grid-column: 1; grid-row: 1; height: 3px; border-radius: 2px; background: var(--accent); }
+.sino-work-queue-progress span { color: var(--text-muted); font-size: 10px; }
+.sino-work-queue-completed { margin-top: 14px; color: var(--text-muted); font-size: 11px; }
+.sino-work-queue-completed .sino-work-queue-card { margin-top: 8px; }
 .sino-task-status-heading h2, .sino-task-status-empty h2 { margin: 0; font: 600 15px/1.4 var(--font-sans); }
 .sino-task-status-heading { margin-bottom: 10px; }
 .sino-task-status-empty { display: grid; gap: 6px; padding: 4px 0 16px; border-bottom: 1px solid var(--line); }
