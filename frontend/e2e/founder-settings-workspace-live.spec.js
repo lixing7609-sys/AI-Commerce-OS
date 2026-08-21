@@ -9,7 +9,16 @@ const provider = {
   selected_models: ["deepseek-chat"],
 };
 const center = {
-  provider_catalog: [], providers: [provider], roles: [], agents: [], skills: [], applications: [], execution_engines: [],
+  provider_catalog: [], providers: [provider], roles: [
+    { role_key: "sino_conversation", label: "Sino 对话", provider_key: "deepseek", model: "deepseek-chat" },
+    { role_key: "deep_thinking", label: "深度思考", provider_key: "deepseek", model: "deepseek-chat" },
+    { role_key: "goal_reasoning", label: "目标推理", provider_key: "deepseek", model: "deepseek-chat" },
+    { role_key: "project_analysis", label: "项目分析", provider_key: "deepseek", model: "deepseek-chat" },
+    { role_key: "system_builder", label: "系统构建", provider_key: "deepseek", model: "deepseek-chat" },
+    { role_key: "solution_review", label: "方案评审", provider_key: "deepseek", model: "deepseek-chat" },
+    { role_key: "multi_model_discussion", label: "多模型讨论", models: [{ provider_key: "deepseek", model: "deepseek-chat" }] },
+    { role_key: "code_execution", label: "代码执行", provider_key: "deepseek", model: "deepseek-chat", execution_engine_id: "codex" },
+  ], agents: [], skills: [], applications: [], execution_engines: [{ engine_id: "codex", display_name: "Codex", status: "available" }],
   health_cost: [{ ...provider, usage: { calls: 3, tokens: 1200, cost: 0.03, average_latency_ms: 280, quota: null } }],
   model_capability_registry: {
     models: [{ provider_id: "deepseek", model_id: "deepseek-chat", display_name: "deepseek-chat", enabled: true, selected: true, healthy: true, capabilities: {
@@ -19,7 +28,7 @@ const center = {
     routing_policies: [{ capability: "TEXT_REASONING", preferred_primary: { provider_id: "deepseek", model_id: "deepseek-chat" }, active_primary: { provider_id: "deepseek", model_id: "deepseek-chat", display_name: "deepseek-chat" }, configured_fallback: null, status: "ACTIVE", preferred_status: "VERIFIED" }],
   },
 };
-const runtime = { environments: [{ environment_type: "LOCAL", status: "ACTIVE", services: [], database: {}, iam: {}, network: {} }, { environment_type: "NAS", status: "PLANNED" }, { environment_type: "COMMERCIAL_CLOUD", status: "NOT_CONFIGURED" }] };
+const runtime = { environments: [{ environment_type: "LOCAL", status: "ACTIVE", services: [{ service_id: "founder_frontend", protocol: "http", host: "127.0.0.1", port: 5173, status: "ACTIVE", health: "healthy" }, { service_id: "founder_backend", protocol: "http", host: "127.0.0.1", port: 8000, status: "ACTIVE", health: "healthy" }], database: { type: "PostgreSQL", connectivity_status: "verified", health_status: "healthy", credential_reference_exists: true }, iam: { type: "HTTP Bearer RBAC", verification_status: "verified" }, network: { boundary: "loopback", verification_status: "verified" } }, { environment_type: "NAS", status: "PLANNED" }, { environment_type: "COMMERCIAL_CLOUD", status: "NOT_CONFIGURED" }] };
 
 test("Settings removes the Founder sidebar, expands its workspace, and keeps the configuration inspector", async ({ page }) => {
   mkdirSync(evidenceDirectory, { recursive: true });
@@ -85,6 +94,22 @@ test("Settings removes the Founder sidebar, expands its workspace, and keeps the
   await expect(page.getByRole("region", { name: "模型能力" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "模型路由策略" })).toBeVisible();
   await page.screenshot({ path: `${evidenceDirectory}/settings-model-routing.png`, fullPage: true });
+
+  await page.getByRole("button", { name: "Sino AI" }).click();
+  await expect(page.getByRole("region", { name: "Sino AI" })).toBeVisible();
+  await page.screenshot({ path: `${evidenceDirectory}/settings-sino-ai.png`, fullPage: true });
+
+  await page.getByRole("button", { name: "执行器" }).click();
+  await expect(page.getByRole("region", { name: "执行器" })).toBeVisible();
+  await page.screenshot({ path: `${evidenceDirectory}/settings-executor.png`, fullPage: true });
+
+  await page.getByRole("button", { name: "讨论配置" }).click();
+  await expect(page.getByRole("region", { name: "讨论配置" })).toBeVisible();
+  await page.screenshot({ path: `${evidenceDirectory}/settings-discussion.png`, fullPage: true });
+
+  await page.getByRole("button", { name: "运行环境" }).click();
+  await expect(page.getByRole("region", { name: "运行环境" })).toBeVisible();
+  await page.screenshot({ path: `${evidenceDirectory}/settings-runtime.png`, fullPage: true });
 
   await page.getByRole("button", { name: "关闭设置并返回 Sino 首页" }).click();
   await expect(page.getByLabel("Founder Navigation")).toBeVisible();

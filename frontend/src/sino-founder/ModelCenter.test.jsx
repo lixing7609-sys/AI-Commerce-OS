@@ -42,7 +42,7 @@ describe("Founder Settings", () => {
   beforeEach(() => { vi.clearAllMocks(); getModelCenter.mockResolvedValue(center); getRuntimeEnvironmentRegistry.mockResolvedValue(runtimeRegistry); });
   afterEach(cleanup);
 
-  it("uses the Settings identity and four configuration categories", async () => {
+  it("uses the Settings identity and five configuration categories", async () => {
     const onContextChange = vi.fn();
     render(<ModelCenter onContextChange={onContextChange} />);
     expect(await screen.findByRole("heading", { name: "设置" })).toBeTruthy();
@@ -56,6 +56,26 @@ describe("Founder Settings", () => {
     expect(screen.queryByRole("button", { name: "← 返回 Founder" })).toBeNull();
     expect(screen.queryByRole("button", { name: "关闭设置" })).toBeNull();
     expect(document.querySelector(".sino-settings-tabs")).toBeTruthy();
+  });
+
+  it("uses one Settings design system across all five primary pages", async () => {
+    const { container } = render(<ModelCenter />);
+    await screen.findByRole("heading", { name: "设置" });
+    const primaryTabs = screen.getByRole("navigation", { name: "设置分类" });
+    expect(primaryTabs.querySelectorAll("button")).toHaveLength(5);
+    expect(container.querySelector(".sino-settings-content")).toBeTruthy();
+    expect(container.querySelector(".sino-settings-page--models")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Sino AI" }));
+    expect(screen.getByRole("region", { name: "Sino AI" }).classList.contains("sino-settings-page")).toBe(true);
+    expect(container.querySelector(".sino-settings-section-card.sino-settings-object-list")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "执行器" }));
+    expect(screen.getByRole("region", { name: "执行器" }).classList.contains("sino-settings-page")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "讨论配置" }));
+    expect(screen.getByRole("region", { name: "讨论配置" }).classList.contains("sino-settings-page")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "运行环境" }));
+    const runtime = await screen.findByRole("region", { name: "运行环境" });
+    expect(runtime.classList.contains("sino-settings-page")).toBe(true);
+    expect(runtime.querySelectorAll(".sino-settings-section-card").length).toBeGreaterThanOrEqual(3);
   });
 
   it("shows capability badges and separates preferred from active routing", async () => {
@@ -126,8 +146,8 @@ describe("Founder Settings", () => {
     expect(screen.getByText("application-level HTTP Bearer RBAC")).toBeTruthy();
     expect(screen.getByText("loopback")).toBeTruthy();
     expect(screen.getByText("已配置 / 引用存在")).toBeTruthy();
-    expect(screen.getByText("PLANNED")).toBeTruthy();
-    expect(screen.getAllByText("NOT_CONFIGURED").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/PLANNED/)).toBeTruthy();
+    expect(screen.getAllByText(/NOT_CONFIGURED/).length).toBeGreaterThanOrEqual(1);
     expect(document.body.textContent).not.toContain("credential-reference://");
   });
 
@@ -240,7 +260,7 @@ describe("Founder Settings", () => {
     fireEvent.click(screen.getByRole("button", { name: /DeepSeek Chat/ }));
     expect(screen.getByText("****1234")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "更新 API Key" }));
-    const input = screen.getByLabelText("新的 API Key");
+    const input = await screen.findByLabelText("新的 API Key");
     expect(input.value).toBe("");
     fireEvent.change(input, { target: { value: "replacement-key" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
