@@ -136,7 +136,7 @@ function RuntimeEnvironmentSettings({ registry }) {
 
 export function SettingsContext({ detail, onClose }) {
   const provider = detail?.provider;
-  return <div className="sino-context-summary sino-settings-context"><header><div><h3>Sino Founder AI 系统配置</h3><p>配置当前模型及相关连接参数。</p></div><button type="button" onClick={onClose} aria-label="关闭设置并返回 Sino 首页">×</button></header><article>{provider ? <ProviderSettingsContext detail={detail} /> : detail?.role ? <RoleSettingsContext detail={detail} /> : detail?.section === "executor" && detail.engines ? <ExecutorSettingsContext detail={detail} /> : detail?.section === "discussion" && detail.roles ? <DiscussionSettingsContext detail={detail} /> : <><span className="sino-kicker">设置上下文</span><h3>设置详情</h3><p>选择一个服务商、模型或配置项查看详情。</p></>}</article></div>;
+  return <div className="sino-context-summary sino-settings-context"><header className="sino-settings-context-header"><div><h3>Sino Founder AI 系统配置</h3><p>配置当前模型及相关连接参数。</p></div><button type="button" onClick={onClose} aria-label="关闭设置并返回 Sino 首页">×</button></header><article>{provider ? <ProviderSettingsContext detail={detail} /> : detail?.role ? <RoleSettingsContext detail={detail} /> : detail?.section === "executor" && detail.engines ? <ExecutorSettingsContext detail={detail} /> : detail?.section === "discussion" && detail.roles ? <DiscussionSettingsContext detail={detail} /> : <><span className="sino-kicker">设置上下文</span><h3>设置详情</h3><p>选择一个服务商、模型或配置项查看详情。</p></>}</article></div>;
 }
 
 function ProviderSettingsContext({ detail }) {

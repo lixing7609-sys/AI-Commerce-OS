@@ -84,7 +84,7 @@ describe("Founder Settings", () => {
   it("shows selected Provider details in the shared Settings Context", async () => {
     const onClose = vi.fn();
     const { rerender } = render(<SettingsContext detail={{ section: "models", provider: deepseek, model: deepseek.available_models[0] }} onClose={onClose} />);
-    expect(screen.getByText("Sino Founder AI 系统配置")).toBeTruthy();
+    expect(screen.getByText("Sino Founder AI 系统配置").closest("header")?.classList.contains("sino-settings-context-header")).toBe(true);
     expect(screen.getByText("配置当前模型及相关连接参数。")).toBeTruthy();
     expect(screen.getByText(/DeepSeek \/ deepseek/)).toBeTruthy();
     expect(screen.getByText("****1234")).toBeTruthy();

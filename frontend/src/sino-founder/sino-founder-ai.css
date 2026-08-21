@@ -688,10 +688,11 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-summary div { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; }
 .sino-settings-summary dt { color: var(--text-label); font-size: 12px; }
 .sino-settings-summary dd { margin: 0; color: var(--text-primary); font-size: 14px; }
-.sino-settings-context > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
-.sino-settings-context > header h3 { margin: 0; color: var(--text-primary); font-size: 15px; }
-.sino-settings-context > header p { margin: 7px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
-.sino-settings-context > header button { flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); font-size: 21px; line-height: 1; cursor: pointer; }
+.sino-settings-context > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.sino-settings-context > header > div { display: grid; min-width: 0; gap: 2px; }
+.sino-settings-context > header h3 { margin: 0; color: var(--text-primary); font-size: 15px; font-weight: 600; line-height: 21px; }
+.sino-settings-context > header p { margin: 0; overflow: hidden; color: var(--text-secondary); font-size: 12px; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.sino-settings-context > header button { flex: 0 0 30px; width: 30px; height: 30px; margin-top: -4px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--text-secondary); font-size: 19px; font-weight: 300; line-height: 1; cursor: pointer; }
 .sino-settings-context > header button:hover { background: var(--surface-raised); color: var(--text-primary); }
 .sino-settings-context > article { padding-top: 20px; }
 .sino-settings-provider-name { margin: 5px 0 18px; color: var(--text-secondary); font-size: 13px; }
