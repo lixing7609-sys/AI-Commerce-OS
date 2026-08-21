@@ -37,8 +37,9 @@ describe("Founder workspace visual language", () => {
 
   it("keeps both side panels rounded above the full-width top bar", () => {
     expect(workspaceCss).toContain("border-radius: var(--workspace-radius-panel)");
-    expect(workspaceCss).toContain(".founder-navigation-panel { grid-template-rows: auto minmax(0, 1fr) auto; height: auto; margin: 8px 0 8px 8px;");
-    expect(workspaceCss).toContain(".founder-execution-center { width: auto; height: auto; margin: 8px 8px 8px 0;");
+    expect(workspaceCss).toContain("--workspace-topbar-height: 60px");
+    expect(workspaceCss).toContain(".founder-navigation-panel { grid-template-rows: auto minmax(0, 1fr) auto; height: auto; margin: var(--workspace-panel-inset) 0 var(--workspace-panel-inset) var(--workspace-panel-inset);");
+    expect(workspaceCss).toContain(".founder-execution-center { width: auto; height: auto; margin: var(--workspace-panel-inset) var(--workspace-panel-inset) var(--workspace-panel-inset) 0;");
     expect(workspaceCss).toContain(".founder-workspace > .founder-workspace-topbar { grid-column: 1 / -1;");
   });
 });

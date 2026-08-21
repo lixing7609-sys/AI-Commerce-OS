@@ -1590,6 +1590,9 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   --workspace-hover: rgba(255, 255, 255, .055);
   --workspace-active: rgba(255, 255, 255, .075);
   --workspace-divider: rgba(255, 255, 255, .075);
+  --workspace-topbar-height: 60px;
+  --workspace-panel-inset: 8px;
+  --workspace-panel-border: 1px;
   --workspace-radius-panel: 16px;
   --workspace-radius-row: 8px;
   --workspace-radius-control: 10px;
@@ -1606,7 +1609,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   --workspace-meta-size: 13px;
   display: grid;
   grid-template-columns: var(--founder-nav-width, 244px) minmax(420px, 1fr) var(--execution-center-width, 336px);
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-rows: var(--workspace-topbar-height) minmax(0, 1fr);
   gap: 0;
   box-sizing: border-box;
   width: 100%;
@@ -1643,14 +1646,14 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  border: 1px solid var(--workspace-divider);
+  border: var(--workspace-panel-border) solid var(--workspace-divider);
   border-radius: var(--workspace-radius-panel);
   background: var(--workspace-surface-panel);
   box-shadow: 0 10px 34px rgba(0, 0, 0, .18);
 }
-.founder-navigation-panel { grid-template-rows: auto minmax(0, 1fr) auto; height: auto; margin: 8px 0 8px 8px; padding: 10px 8px 8px; }
+.founder-navigation-panel { grid-template-rows: auto minmax(0, 1fr) auto; height: auto; margin: var(--workspace-panel-inset) 0 var(--workspace-panel-inset) var(--workspace-panel-inset); padding: 10px 8px 8px; }
 .founder-navigation-panel .sino-sidebar__header { min-width: 0; }
-.founder-navigation-panel .sino-sidebar-top-actions { display: flex; align-items: center; gap: 2px; height: 36px; margin: 0 0 6px; }
+.founder-navigation-panel .sino-sidebar-top-actions { display: flex; align-items: flex-start; gap: 2px; box-sizing: border-box; height: calc(var(--workspace-topbar-height) - var(--workspace-panel-inset) - var(--workspace-panel-border) - 10px); margin: 0; border-bottom: 1px solid var(--workspace-divider); }
 .founder-navigation-panel .sino-sidebar-top-actions button { display: grid; place-items: center; flex: 0 0 36px; width: 36px; min-width: 36px; height: 36px; min-height: 36px; margin: 0; padding: 0; border: 0; border-radius: var(--workspace-radius-control); background: transparent; color: var(--workspace-text-secondary); cursor: pointer; }
 .founder-navigation-panel .sino-sidebar-top-actions button:hover { background: var(--workspace-hover); color: var(--workspace-text); }
 .founder-navigation-panel .sino-sidebar-search { display: grid; grid-template-columns: var(--workspace-icon-size) minmax(0, 1fr); align-items: center; gap: 8px; min-height: 34px; margin: 2px 1px 6px; padding: 0 9px; border-radius: var(--workspace-radius-row); background: rgba(255,255,255,.045); color: var(--workspace-text-secondary); }
@@ -1808,14 +1811,14 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-model-selector__menu > button i { flex: none; color: var(--accent); font-size: 11px; font-style: normal; }
 .sino-model-selector__error { position: absolute; top: 44px; left: 0; width: max-content; max-width: 280px; padding: 8px 10px; border-radius: 9px; background: #33221f; color: #dcc1ba; font-size: 12px; }
 
-.founder-execution-center { width: auto; height: auto; margin: 8px 8px 8px 0; }
+.founder-execution-center { width: auto; height: auto; margin: var(--workspace-panel-inset) var(--workspace-panel-inset) var(--workspace-panel-inset) 0; }
 .founder-execution-resize-handle { position: absolute; z-index: 10; top: 24px; bottom: 24px; left: 0; width: 12px; cursor: col-resize; touch-action: none; }
 .founder-execution-resize-handle::after { content: ""; position: absolute; top: 0; bottom: 0; left: 1px; width: 1px; background: transparent; transition: background .15s ease; }
 .founder-execution-resize-handle:hover::after,
 .founder-workspace.is-resizing .founder-execution-resize-handle::after { background: rgba(163, 184, 147, .34); }
 .founder-workspace.is-resizing { cursor: col-resize; user-select: none; }
 .founder-execution-center > .sino-founder-task-sidebar { height: 100%; padding: 14px 9px 18px; overflow: auto; font-family: var(--workspace-font); scrollbar-color: rgba(255,255,255,.14) transparent; scrollbar-width: thin; }
-.founder-execution-center .sino-work-queue-heading { padding: 3px 6px 10px; border-bottom: 1px solid var(--workspace-divider); }
+.founder-execution-center .sino-work-queue-heading { display: flex; align-items: center; box-sizing: border-box; height: calc(var(--workspace-topbar-height) - var(--workspace-panel-inset) - var(--workspace-panel-border) - 14px); padding: 0 6px; border-bottom: 1px solid var(--workspace-divider); }
 .founder-execution-center .sino-work-queue-heading h2 { font-family: var(--workspace-font); font-size: 14px; font-weight: 500; line-height: 20px; }
 .founder-execution-center .sino-work-queue-heading small,
 .founder-execution-center .sino-work-queue-heading span { color: var(--workspace-text-secondary); font-size: 13px; font-weight: 400; line-height: 18px; }
