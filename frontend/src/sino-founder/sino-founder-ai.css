@@ -667,6 +667,12 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-tabs button:hover { color: var(--text-primary); }
 .sino-settings-tabs button.is-active { border-bottom-color: var(--accent); color: var(--text-primary); }
 .sino-settings-content { min-width: 0; width: 100%; }
+.sino-model-section-tabs { display: flex; gap: 4px; margin-bottom: 18px; }
+.sino-model-section-tabs button { padding: 7px 11px; border: 0; border-radius: 8px; background: transparent; color: var(--text-secondary); font-size: 14px; cursor: pointer; }
+.sino-model-section-tabs button:hover { background: var(--surface-raised); color: var(--text-primary); }
+.sino-model-section-tabs button.is-active { background: var(--surface-selected); color: var(--text-primary); }
+.sino-model-section-panel { min-width: 0; }
+.sino-model-section-description { margin: 0 0 16px; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
 .sino-runtime-stage-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0 24px; }
 .sino-runtime-stage-grid article, .sino-runtime-binding-list article { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-raised); padding: 16px; }
 .sino-runtime-stage-grid small, .sino-runtime-stage-grid strong, .sino-runtime-stage-grid span { display: block; }
@@ -803,10 +809,11 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-capability-tabs button, .sino-capability-section-heading button, .sino-provider-install button, .sino-model-library-card footer button { font-size: 14px; }
 .sino-capability-section-heading h3 { font-size: 21px; font-weight: 600; }
 .sino-capability-section { padding-block: 10px 28px; }
-.sino-my-models { min-width: 0; display: grid; border-top: 1px solid var(--line); overflow-x: auto; }
-.sino-my-models__header, .sino-my-models > button { display: grid; grid-template-columns: minmax(170px, 1.7fr) minmax(100px, 1fr) repeat(6, minmax(62px, .7fr)); align-items: center; gap: 12px; }
-.sino-my-models__header { min-width: 820px; min-height: 34px; padding: 0 10px; border-bottom: 1px solid var(--line); color: var(--text-label); font-size: 11px; }
-.sino-my-models > button { min-width: 820px; width: 100%; min-height: 52px; padding: 8px 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.sino-my-models { min-width: 0; display: grid; border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.sino-my-models::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.sino-my-models__header, .sino-my-models > button { display: grid; grid-template-columns: minmax(150px, 2fr) minmax(86px, 1fr) minmax(78px, max-content) repeat(5, minmax(48px, max-content)); align-items: center; gap: 8px; }
+.sino-my-models__header { min-width: 680px; min-height: 32px; padding: 0 8px; border-bottom: 1px solid var(--line); color: var(--text-label); font-size: 11px; }
+.sino-my-models > button { min-width: 680px; width: 100%; min-height: 48px; padding: 7px 8px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .sino-my-models > button:hover { background: var(--surface-raised); }
 .sino-my-models > button.is-selected { box-shadow: inset 2px 0 var(--accent); background: var(--surface-selected); }
 .sino-my-models > button strong { min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -1894,7 +1901,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-founder-asset-inspector { border-left: 1px solid var(--line); }
 .sino-founder-asset-route:not(:has(.sino-founder-asset-inspector)) { grid-template-columns: 244px minmax(0, 1fr); }
 .sino-founder-asset-route.is-settings { position: relative; display: block; }
-.sino-founder-asset-route.is-settings > .sino-founder-asset-page { width: 100%; height: 100%; }
+.sino-founder-asset-route.is-settings > .sino-founder-asset-page { box-sizing: border-box; width: 100%; height: 100%; }
+.sino-founder-asset-route.is-settings.has-settings-inspector .sino-settings { padding-right: calc(var(--settings-inspector-width, 340px) + 24px); }
 .sino-scrollbar-hidden { scrollbar-width: none; -ms-overflow-style: none; }
 .sino-scrollbar-hidden::-webkit-scrollbar,
 .sino-scrollbar-hidden *::-webkit-scrollbar { display: none; width: 0; height: 0; }

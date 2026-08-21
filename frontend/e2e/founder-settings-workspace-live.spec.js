@@ -16,7 +16,7 @@ const center = {
       supports_text_reasoning: { status: "VERIFIED" }, supports_vision_understanding: { status: "UNVERIFIED" },
       supports_image_generation: { status: "UNSUPPORTED" }, supports_tool_use: { status: "VERIFIED" }, supports_structured_output: { status: "VERIFIED" },
     } }],
-    routing_policies: [],
+    routing_policies: [{ capability: "TEXT_REASONING", preferred_primary: { provider_id: "deepseek", model_id: "deepseek-chat" }, active_primary: { provider_id: "deepseek", model_id: "deepseek-chat", display_name: "deepseek-chat" }, configured_fallback: null, status: "ACTIVE", preferred_status: "VERIFIED" }],
   },
 };
 const runtime = { environments: [{ environment_type: "LOCAL", status: "ACTIVE", services: [], database: {}, iam: {}, network: {} }, { environment_type: "NAS", status: "PLANNED" }, { environment_type: "COMMERCIAL_CLOUD", status: "NOT_CONFIGURED" }] };
@@ -34,13 +34,19 @@ test("Settings removes the Founder sidebar, expands its workspace, and keeps the
   await expect(settings).toBeVisible();
   expect((await settings.boundingBox()).x).toBeLessThan(4);
   expect((await settings.boundingBox()).width).toBeGreaterThan(1430);
-  await expect(page.getByText("Sino Founder AI 系统配置")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "模型能力" })).toBeVisible();
+  await expect(page.getByLabel("功能页详情")).toHaveCount(0);
   await expect(page.getByText("Model Capabilities")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "运行环境" })).toBeVisible();
   await expect(page.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "我的模型" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("table", { name: "模型状态列表" })).toBeVisible();
+  await page.screenshot({ path: `${evidenceDirectory}/settings-models-inspector-closed.png`, fullPage: true });
 
+  const table = page.getByRole("table", { name: "模型状态列表" });
+  const tableWidthClosed = (await table.boundingBox()).width;
+  await page.getByRole("button", { name: /deepseek-chat DeepSeek/ }).click();
   const inspector = page.getByLabel("功能页详情");
+  await expect(page.getByText("Sino Founder AI 系统配置")).toBeVisible();
   await expect(inspector).toHaveCSS("position", "fixed");
   await expect(inspector).toHaveCSS("scrollbar-width", "none");
   await expect(inspector.locator(".sino-settings-context")).toHaveCSS("overflow-y", "auto");
@@ -49,6 +55,9 @@ test("Settings removes the Founder sidebar, expands its workspace, and keeps the
   const initialInspector = await inspector.boundingBox();
   const handle = page.getByRole("separator", { name: "调整系统配置面板宽度" });
   await expect(handle).toHaveCSS("cursor", "col-resize");
+  const tableWithInspector = await table.boundingBox();
+  expect(tableWithInspector.x + tableWithInspector.width).toBeLessThanOrEqual(initialInspector.x - 6);
+  expect(tableWithInspector.width).toBeLessThan(tableWidthClosed - 300);
   const handleBox = await handle.boundingBox();
   await page.mouse.move(handleBox.x + 4, handleBox.y + 80);
   await page.mouse.down();
@@ -58,16 +67,29 @@ test("Settings removes the Founder sidebar, expands its workspace, and keeps the
   expect(widerInspector.width).toBeGreaterThan(initialInspector.width + 100);
   expect(Math.abs(widerInspector.x + widerInspector.width - (initialInspector.x + initialInspector.width))).toBeLessThan(2);
   expect(Math.abs((await settings.boundingBox()).width - mainWidth)).toBeLessThan(2);
+  const narrowerTable = await table.boundingBox();
+  expect(narrowerTable.x + narrowerTable.width).toBeLessThanOrEqual(widerInspector.x - 6);
+  expect(narrowerTable.width).toBeLessThan(tableWithInspector.width - 100);
 
-  await page.getByRole("button", { name: /deepseek-chat DeepSeek/ }).click();
   const availableModels = page.locator(".sino-settings-context .sino-model-choices");
   await expect(availableModels).toHaveCSS("overflow-y", "auto");
   await expect(availableModels).toHaveCSS("scrollbar-width", "none");
   await availableModels.evaluate((element) => { element.scrollTop = 120; });
   expect(await availableModels.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-  await page.screenshot({ path: `${evidenceDirectory}/settings-expanded.png`, fullPage: true });
+  await page.screenshot({ path: `${evidenceDirectory}/settings-models-inspector-open.png`, fullPage: true });
 
   await page.getByRole("button", { name: "关闭设置" }).click();
-  await expect(page.getByLabel("Founder Navigation")).toBeVisible();
-  await expect(page.getByRole("main", { name: "Sino Natural Conversation" })).toBeVisible();
+  await expect(page.getByLabel("功能页详情")).toHaveCount(0);
+  await expect(page.getByRole("main", { name: "Founder AI 功能页面" })).toBeVisible();
+  expect((await table.boundingBox()).width).toBeGreaterThan(narrowerTable.width + 400);
+
+  await page.getByRole("button", { name: "模型能力" }).click();
+  await expect(page.getByRole("table", { name: "模型状态列表" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "模型能力" })).toBeVisible();
+  await page.screenshot({ path: `${evidenceDirectory}/settings-model-capabilities.png`, fullPage: true });
+
+  await page.getByRole("button", { name: "模型路由策略" }).click();
+  await expect(page.getByRole("region", { name: "模型能力" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "模型路由策略" })).toBeVisible();
+  await page.screenshot({ path: `${evidenceDirectory}/settings-model-routing.png`, fullPage: true });
 });

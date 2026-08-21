@@ -11,6 +11,7 @@ const actionFailure = (action) => `${action}失败，请检查服务商授权或
 export function ModelCenter({ onContextChange }) {
   const [center, setCenter] = useState(empty);
   const [section, setSection] = useState("models");
+  const [modelSection, setModelSection] = useState("list");
   const [adding, setAdding] = useState(false);
   const [installStep, setInstallStep] = useState(1);
   const [installProviderKey, setInstallProviderKey] = useState(null);
@@ -25,7 +26,7 @@ export function ModelCenter({ onContextChange }) {
   const installed = useMemo(() => center.providers.filter((item) => item.installed), [center.providers]);
 
   async function reload() { const value = await getModelCenter(); setCenter(value); return value; }
-  useEffect(() => { reload().catch((error) => setMessage(error.message)); getRuntimeEnvironmentRegistry().then(setRuntimeRegistry).catch((error) => setMessage(error.message)); onContextChange?.({ section: "models" }); }, []);
+  useEffect(() => { reload().catch((error) => setMessage(error.message)); getRuntimeEnvironmentRegistry().then(setRuntimeRegistry).catch((error) => setMessage(error.message)); onContextChange?.(null); }, []);
 
   function providerState(providerKey) { return providerActionState[providerKey] || {}; }
   function updateProviderState(providerKey, patch) { setProviderActionState((current) => ({ ...current, [providerKey]: { ...(current[providerKey] || {}), ...patch } })); }
@@ -78,7 +79,7 @@ export function ModelCenter({ onContextChange }) {
   }));
   useEffect(() => {
     if (section === "models" && selectedProvider && selectedModelMeta) onContextChange?.({ section, provider: selectedProvider, model: selectedModelMeta, action: providerState(selectedProvider.provider_key), onCredentialSave: (values) => updateCredentials(selectedProvider, values), onRefresh: () => refresh(selectedProvider), onHealth: () => health(selectedProvider), onChoose: (model, checked) => choose(selectedProvider, model, checked) });
-    else onContextChange?.({ section });
+    else onContextChange?.(null);
   }, [section, editing, selectedModel, center, providerActionState]);
   return <section className="sino-model-center sino-settings" aria-label="设置">
     <header><div><span className="sino-kicker">设置</span><h2>设置</h2></div></header>
@@ -86,10 +87,10 @@ export function ModelCenter({ onContextChange }) {
     <div className="sino-settings-content">
     {message && <p className="sino-model-center-message" role="status">{message}</p>}
     {section === "models" && <section className="sino-capability-section" aria-label="模型与 API">
-      <div className="sino-capability-section-heading"><div><h3>我的模型</h3><p>管理已经接入 AI Commerce OS 的模型与服务。</p></div><button type="button" onClick={() => { setEditing(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></div>
-      <div className="sino-my-models" role="table" aria-label="模型状态列表"><div className="sino-my-models__header" role="row"><strong>模型</strong><strong>服务商</strong><strong>健康状态</strong><strong>调用</strong><strong>Token</strong><strong>成本</strong><strong>延迟</strong><strong>额度</strong></div>{modelRows.map(({ provider, selected, meta, health: healthState, usage }) => { const active = editing === provider.provider_key && selectedModel === selected; return <button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} key={`${provider.provider_key}-${selected}`} onClick={() => selectModel(provider, selected)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span><span>{usage.calls ?? "—"}</span><span>{usage.tokens ?? "—"}</span><span>{usage.cost ?? "—"}</span><span>{usage.average_latency_ms == null ? "—" : `${usage.average_latency_ms} ms`}</span><span>{usage.quota ?? "—"}</span></button>; })}</div>
-      <ModelCapabilities registry={center.model_capability_registry} />
-      <RoutingPolicies registry={center.model_capability_registry} models={center.model_capability_registry?.models || []} busy={busy} onSave={savePreferred} />
+      <nav className="sino-model-section-tabs" aria-label="模型与 API 内容">{[["list", "我的模型"], ["capabilities", "模型能力"], ["routing", "模型路由策略"]].map(([key, label]) => <button type="button" key={key} className={modelSection === key ? "is-active" : ""} aria-pressed={modelSection === key} onClick={() => setModelSection(key)}>{label}</button>)}</nav>
+      {modelSection === "list" ? <div className="sino-model-section-panel" data-model-section="list"><div className="sino-capability-section-heading"><p>管理已经接入 AI Commerce OS 的模型与服务。</p><button type="button" onClick={() => { setEditing(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></div><div className="sino-my-models" role="table" aria-label="模型状态列表"><div className="sino-my-models__header" role="row"><strong>模型</strong><strong>服务商</strong><strong>健康状态</strong><strong>调用</strong><strong>Token</strong><strong>成本</strong><strong>延迟</strong><strong>额度</strong></div>{modelRows.map(({ provider, selected, meta, health: healthState, usage }) => { const active = editing === provider.provider_key && selectedModel === selected; return <button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} key={`${provider.provider_key}-${selected}`} onClick={() => selectModel(provider, selected)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span><span>{usage.calls ?? "—"}</span><span>{usage.tokens ?? "—"}</span><span>{usage.cost ?? "—"}</span><span>{usage.average_latency_ms == null ? "—" : `${usage.average_latency_ms} ms`}</span><span>{usage.quota ?? "—"}</span></button>; })}</div></div> : null}
+      {modelSection === "capabilities" ? <ModelCapabilities registry={center.model_capability_registry} /> : null}
+      {modelSection === "routing" ? <RoutingPolicies registry={center.model_capability_registry} models={center.model_capability_registry?.models || []} busy={busy} onSave={savePreferred} /> : null}
     </section>}
 
     {adding && <AddModelModal step={installStep} center={center} install={install} editing={editing} busy={busy} providerKey={installProviderKey} onSelectProvider={beginProviderConnection} onInstallChange={setInstall} onConnect={addProvider} onChoose={choose} onClose={() => { setAdding(false); setInstallStep(1); setInstallProviderKey(null); }} />}
@@ -107,13 +108,13 @@ const capabilityStatus = (value) => ({ VERIFIED: "已验证", UNVERIFIED: "未�
 function ModelCapabilities({ registry }) {
   if (!registry) return null;
   const fields = [["supports_text_reasoning", "文本"], ["supports_vision_understanding", "视觉"], ["supports_image_generation", "图像生成"], ["supports_tool_use", "工具调用"], ["supports_structured_output", "结构化输出"]];
-  return <section className="sino-model-capabilities" aria-label="模型能力"><div className="sino-capability-section-heading"><div><h3>模型能力</h3><p>只有服务商元数据、真实探测或人工配置可进入启用路由。</p></div></div><div>{registry.models.filter((model) => model.selected).map((model) => <article key={`${model.provider_id}:${model.model_id}`}><header><strong>{model.display_name}</strong><span>{model.healthy ? "正常" : "不可用"}</span></header><div>{fields.map(([field, label]) => <span key={field} data-status={model.capabilities[field].status}><b>{label}</b>{capabilityStatus(model.capabilities[field].status)}</span>)}</div></article>)}</div></section>;
+  return <section className="sino-model-capabilities sino-model-section-panel" aria-label="模型能力"><p className="sino-model-section-description">只有服务商元数据、真实探测或人工配置可进入启用路由。</p><div>{registry.models.filter((model) => model.selected).map((model) => <article key={`${model.provider_id}:${model.model_id}`}><header><strong>{model.display_name}</strong><span>{model.healthy ? "正常" : "不可用"}</span></header><div>{fields.map(([field, label]) => <span key={field} data-status={model.capabilities[field].status}><b>{label}</b>{capabilityStatus(model.capabilities[field].status)}</span>)}</div></article>)}</div></section>;
 }
 function RoutingPolicies({ registry, models, busy, onSave }) {
   if (!registry) return null;
   const options = models.filter((model) => model.enabled && model.selected);
   const name = (ref) => ref?.display_name || ref?.model_id || "无";
-  return <section className="sino-routing-policies" aria-label="模型路由策略"><div className="sino-capability-section-heading"><div><h3>模型路由策略</h3><p>首选项表达偏好；当前启用模型始终由已验证且健康的约束决定。</p></div></div><div>{registry.routing_policies.map((policy) => <article key={policy.capability}><header><strong>{CAPABILITY_LABELS[policy.capability]}</strong><span data-status={policy.status}>{policy.status === "MISSING" ? "缺失" : "已启用"}</span></header><label><span>首选模型</span><select aria-label={`${CAPABILITY_LABELS[policy.capability]} 首选模型`} value={policy.preferred_primary ? `${policy.preferred_primary.provider_id}::${policy.preferred_primary.model_id}` : ""} disabled={busy === `routing:${policy.capability}`} onChange={(event) => onSave(policy.capability, event.target.value)}><option value="">自动</option>{options.map((model) => <option key={`${policy.capability}-${model.provider_id}:${model.model_id}`} value={`${model.provider_id}::${model.model_id}`}>{model.display_name}</option>)}</select></label><dl><div><dt>当前启用</dt><dd>{name(policy.active_primary)}</dd></div><div><dt>回退模型</dt><dd>{name(policy.configured_fallback)}</dd></div><div><dt>首选状态</dt><dd>{policy.preferred_status}</dd></div></dl></article>)}</div></section>;
+  return <section className="sino-routing-policies sino-model-section-panel" aria-label="模型路由策略"><p className="sino-model-section-description">首选项表达偏好；当前启用模型始终由已验证且健康的约束决定。</p><div>{registry.routing_policies.map((policy) => <article key={policy.capability}><header><strong>{CAPABILITY_LABELS[policy.capability]}</strong><span data-status={policy.status}>{policy.status === "MISSING" ? "缺失" : "已启用"}</span></header><label><span>首选模型</span><select aria-label={`${CAPABILITY_LABELS[policy.capability]} 首选模型`} value={policy.preferred_primary ? `${policy.preferred_primary.provider_id}::${policy.preferred_primary.model_id}` : ""} disabled={busy === `routing:${policy.capability}`} onChange={(event) => onSave(policy.capability, event.target.value)}><option value="">自动</option>{options.map((model) => <option key={`${policy.capability}-${model.provider_id}:${model.model_id}`} value={`${model.provider_id}::${model.model_id}`}>{model.display_name}</option>)}</select></label><dl><div><dt>当前启用</dt><dd>{name(policy.active_primary)}</dd></div><div><dt>回退模型</dt><dd>{name(policy.configured_fallback)}</dd></div><div><dt>首选状态</dt><dd>{policy.preferred_status}</dd></div></dl></article>)}</div></section>;
 }
 
 function RuntimeEnvironmentSettings({ registry }) {

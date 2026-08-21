@@ -144,6 +144,14 @@ describe("formal Sino Founder workspace shell", () => {
     expect(screen.getByRole("main", { name: "Founder AI 功能页面" }).classList.contains("sino-scrollbar-hidden")).toBe(true);
     expect(screen.getByLabelText("功能页详情").classList.contains("sino-settings-floating-inspector")).toBe(true);
     expect(screen.getByLabelText("功能页详情").classList.contains("sino-scrollbar-hidden")).toBe(true);
+    expect(container.querySelector(".sino-founder-asset-route.is-settings").classList.contains("has-settings-inspector")).toBe(true);
+  });
+
+  it("uses the full Settings width when its floating inspector is closed", () => {
+    const { container } = render(<SinoFounderShell {...props} active="settings" main={<section>设置</section>} context={null} />);
+    const route = container.querySelector(".sino-founder-asset-route.is-settings");
+    expect(route.classList.contains("has-settings-inspector")).toBe(false);
+    expect(screen.queryByLabelText("功能页详情")).toBeNull();
   });
 
   it("resizes the floating Settings inspector without adding a layout track", () => {
