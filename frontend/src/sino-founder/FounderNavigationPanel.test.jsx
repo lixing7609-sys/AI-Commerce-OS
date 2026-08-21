@@ -84,6 +84,18 @@ describe("Founder sidebar information architecture", () => {
     expect(onNavigate).toHaveBeenCalledWith("conversation");
   });
 
+  it("keeps every Project and Recent Conversation in one continuous navigation scroll region", () => {
+    const projects = ["AI Commerce OS", "Sino Operator AI", "Sino Studio AI", "AI短剧生产系统"].map((name, index) => ({ id: `project-${index}`, name }));
+    render(<FounderNavigationPanel projects={projects} conversations={[{ id: "recent", title: "最近讨论", updatedAt: 20 }]} />);
+    const scroll = document.querySelector(".sino-sidebar__navigation-scroll");
+    const projectItems = [...scroll.querySelectorAll(".sino-project-item__open span")];
+    expect(projectItems.map((item) => item.textContent)).toEqual(projects.map((item) => item.name));
+    const recent = scroll.querySelector(".sino-sidebar__conversation-section");
+    expect(projectItems.at(-1).compareDocumentPosition(recent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.querySelector(".founder-navigation-panel > footer")).toBeTruthy();
+    expect(scroll.contains(document.querySelector(".founder-navigation-panel > footer"))).toBe(false);
+  });
+
   it("uses created time and conversation id as deterministic tie breakers", () => {
     const timestamp = "2026-08-18T10:27:00.000000+08:00";
     const conversations = [

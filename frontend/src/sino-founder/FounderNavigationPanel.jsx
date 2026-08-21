@@ -88,11 +88,12 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   }
 
   return <aside className="founder-navigation-panel" aria-label="Founder Navigation">
-    <div className="sino-sidebar__fixed-top">
     <div className="sino-sidebar-top-actions" aria-label="Workspace navigation controls">
       {onCollapse ? <button type="button" className="sino-sidebar-toggle" onClick={onCollapse} title="收起侧边栏" aria-label="收起侧边栏"><SidebarIcon /></button> : null}
       <button type="button" className="sino-new-conversation" onClick={onNewConversation} title="新建讨论" aria-label="新建讨论"><ComposeIcon /></button>
     </div>
+    <div className="sino-sidebar__navigation-scroll">
+    <div className="sino-sidebar__fixed-top">
     <button type="button" className={`sino-sidebar-home${active === "conversation" ? " is-active" : ""}`} onClick={() => onNavigate("conversation")} title="Sino AI" aria-label="Sino AI"><span className="sino-brand-mark">S</span><b>Sino AI</b></button>
     <button type="button" title="库" aria-label="库" className={`sino-sidebar-library${active === "capability-center" ? " is-active" : ""}`} onClick={() => onNavigate("capability-center")}><LibraryIcon /><span>库</span></button>
     <section className="sino-sidebar-section sino-project-workspace"><div className="sino-project-heading sino-sidebar-primary-title"><span className="sino-sidebar-primary-title__label"><FolderIcon />项目</span></div><div className="sino-project-list"><button type="button" className="sino-project-create-entry" aria-label="新建项目" title="新建项目" onClick={() => setCreatingProject(true)}><span aria-hidden="true">＋</span>新建项目</button>{creatingProject ? <form className="sino-project-create" onSubmit={createProject}><input autoFocus aria-label="Project 名称" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="Project 名称" /><button type="submit">创建</button><button type="button" onClick={() => setCreatingProject(false)}>取消</button></form> : null}{sortedProjects.map((project) => <div className="sino-project-item" key={project.id}><div className={`sino-project-item__row${project.id === activeProjectId ? " is-active" : ""}`}>{editingProject === project.id ? <input autoFocus aria-label={`重命名 ${project.name}`} defaultValue={project.name} onBlur={(event) => renameProject(project, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") renameProject(project, event.currentTarget.value); if (event.key === "Escape") setEditingProject(null); }} /> : <button type="button" className="sino-project-item__open" onClick={() => onSelectProject(project.id)} title={project.description || project.name}><FolderIcon /><span>{businessAssetName({ ...project, asset_type: "project" })}</span></button>}<button type="button" className="sino-project-item__menu" aria-label={`Project 操作 ${project.name}`} onClick={() => setProjectMenu(projectMenu === project.id ? null : project.id)}>···</button>{projectMenu === project.id ? <div className="sino-sidebar-popover"><button type="button" onClick={() => { setEditingProject(project.id); setProjectMenu(null); }}>Rename</button><button type="button" onClick={() => archiveProject(project)}>Archive</button><button type="button" onClick={() => removeProject(project)}>Delete</button></div> : null}</div></div>)}{projectError ? <p role="alert">{projectError}</p> : null}</div></section>
@@ -105,6 +106,7 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
         </div>
       </div>
     </section>
+    </div>
     <footer><button type="button" className="sino-sidebar-settings" title="设置" aria-label="设置" onClick={() => onNavigate("settings")} aria-current={active === "settings" ? "page" : undefined}><SettingsIcon /><span>设置</span></button></footer>
     {resizeHandle}
   </aside>;

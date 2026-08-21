@@ -1634,11 +1634,11 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-sidebar-home:hover,
 .founder-navigation-panel .sino-sidebar-home.is-active { background: var(--workspace-active); }
 .founder-navigation-panel .sino-sidebar-home .sino-brand-mark { width: var(--workspace-icon-size); min-width: var(--workspace-icon-size); max-width: var(--workspace-icon-size); height: var(--workspace-icon-size); min-height: var(--workspace-icon-size); max-height: var(--workspace-icon-size); border: 0; border-radius: 5px; background: transparent; box-shadow: none; font-size: 11px; font-weight: 600; }
-.founder-navigation-panel .sino-sidebar__fixed-top { min-height: 0; max-height: 58%; overflow: auto; scrollbar-width: none; }
-.founder-navigation-panel .sino-sidebar__fixed-top::-webkit-scrollbar,
-.founder-navigation-panel .sino-sidebar__scroll-region::-webkit-scrollbar { display: none; }
-.founder-navigation-panel .sino-sidebar__conversation-section { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
-.founder-navigation-panel .sino-sidebar__scroll-region { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.founder-navigation-panel .sino-sidebar__navigation-scroll { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.founder-navigation-panel .sino-sidebar__navigation-scroll::-webkit-scrollbar { display: none; }
+.founder-navigation-panel .sino-sidebar__fixed-top { min-height: 0; overflow: visible; }
+.founder-navigation-panel .sino-sidebar__conversation-section { display: block; min-height: 0; margin-top: 12px; }
+.founder-navigation-panel .sino-sidebar__scroll-region { min-height: 0; overflow: visible; }
 .founder-navigation-panel > footer { margin: 0; padding: 6px 0 0; border-top: 1px solid var(--workspace-divider); background: transparent; }
 .founder-navigation-panel .sino-new-conversation,
 .founder-navigation-panel .sino-sidebar-library,
