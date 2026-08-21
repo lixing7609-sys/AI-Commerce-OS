@@ -122,6 +122,7 @@ describe("Founder sidebar information architecture", () => {
     const headingLabels = [...document.querySelectorAll(".sino-sidebar-primary-title__label")];
     expect(headingLabels.map((label) => label.textContent)).toEqual(["项目", "最近"]);
     expect(headingLabels.every((label) => label.className === headingLabels[0].className)).toBe(true);
+    expect(headingLabels.every((label) => label.querySelector("svg") === null)).toBe(true);
     expect(document.querySelector(".sino-project-item .sino-conversation-list")).toBeNull();
     const section = document.querySelector(".sino-sidebar__conversation-section");
     const title = section.querySelector(":scope > .sino-sidebar__conversation-title");
