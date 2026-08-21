@@ -71,9 +71,11 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     const [topbarBounds, navigationPanelBounds, conversationBounds, executionBounds] = await Promise.all([
       topbar.boundingBox(), navigation.boundingBox(), conversationSurface.boundingBox(), executionCenter.boundingBox(),
     ]);
-    expect(topbarBounds.x).toBeGreaterThanOrEqual(navigationPanelBounds.x + navigationPanelBounds.width);
-    expect(topbarBounds.x + topbarBounds.width).toBeLessThanOrEqual(executionBounds.x);
+    expect(topbarBounds.x).toBe(0);
+    expect(topbarBounds.x + topbarBounds.width).toBe(1440);
     expect(topbarBounds.y + topbarBounds.height).toBeLessThanOrEqual(conversationBounds.y);
+    expect(navigationPanelBounds.x).toBe(0);
+    expect(executionBounds.x + executionBounds.width).toBe(1440);
     expect(executionBounds.y).toBe(navigationPanelBounds.y);
     expect(executionBounds.height).toBe(navigationPanelBounds.height);
     await expect(topbar.getByRole("button", { name: "重置执行中心宽度" })).toHaveCount(0);

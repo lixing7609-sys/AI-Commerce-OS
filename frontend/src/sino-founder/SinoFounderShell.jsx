@@ -129,11 +129,13 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
   >
     {!navCollapsed ? navigation : null}
     <header className="founder-workspace-topbar" aria-label="Workspace top bar">
+      <div className="founder-workspace-topbar__main">
       {navCollapsed ? <div className="founder-collapsed-controls" aria-label="Collapsed navigation controls">
         <button type="button" title="展开侧边栏" aria-label="展开侧边栏" onClick={() => setNavigationCollapsed(false)}><SidebarIcon expanded /></button>
         <button type="button" title="新建讨论" aria-label="新建讨论" onClick={sidebarProps?.onNewConversation}><ComposeIcon /></button>
       </div> : null}
       {conversationSelector}
+      </div>
     </header>
     <main ref={surfaceRef} className="founder-conversation-surface" tabIndex={0} aria-label="Sino Natural Conversation">
       {main}
