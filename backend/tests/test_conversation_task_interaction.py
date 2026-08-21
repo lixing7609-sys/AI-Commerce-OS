@@ -1,6 +1,132 @@
 from app.founder_ai.conversation_task_interaction import _append_projection, _lifecycle_allows_semantic, conversation_understanding_snapshot, has_explicit_execution_intent, has_stop_intent, task_understanding_reply
 
 
+def _candidate_factory(monkeypatch, conversation_id="conv-candidate"):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from app.database.base import Base
+    from app.core.conversation.model import ConversationDB
+    from app.core.conversation_first.model import SinoBrainSessionDB
+    import app.founder_ai.conversation_task_interaction as interaction
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine); factory = sessionmaker(bind=engine); monkeypatch.setattr(interaction, "SessionLocal", factory)
+    with factory() as db:
+        db.add(ConversationDB(id=conversation_id, system_id="founder_ai", title="Mini Operator"))
+        db.add(SinoBrainSessionDB(conversation_id=conversation_id, discovery={})); db.commit()
+    return interaction, factory
+
+
+def _mature_candidate():
+    return {"title": "AI Commerce Mini Operator V1", "goal": "搭建最小 AI 电商经营系统",
+            "scope": ["商品理解", "广告创意", "投放优化"], "constraints": ["一个广告平台", "一个广告账户", "一个真实商品"],
+            "acceptance_criteria": ["完成一轮数据回流"], "confirmed_decisions": ["先完成三角闭环"],
+            "dependencies": [], "risks": ["真实广告预算"], "task_type": "STANDARD_TASK"}
+
+
+def test_incomplete_structured_candidate_is_never_persisted(monkeypatch):
+    interaction, _factory = _candidate_factory(monkeypatch)
+    try:
+        interaction.persist_task_candidate("conv-candidate", {"goal": "只有目标"})
+        assert False
+    except ValueError as error:
+        assert str(error) == "task_candidate_incomplete"
+
+
+def test_discussion_candidate_is_derived_from_conversation_model_before_persistence(monkeypatch):
+    interaction, factory = _candidate_factory(monkeypatch)
+    from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
+    import app.founder_ai.conversation_core as conversation_core
+    monkeypatch.setattr(conversation_core, "SessionLocal", factory)
+    runtime = type("Runtime", (), {"provider_key": "configured-provider", "model": "configured-model"})()
+    monkeypatch.setattr(conversation_core, "configured_model_roles", lambda: {"conversation": runtime, "fallback": None})
+    with factory() as db:
+        db.add(ConversationMessageDB(conversation_id="conv-candidate", role="founder", content="讨论中的真实目标"))
+        db.add(ConversationMessageDB(conversation_id="conv-candidate", role="assistant", content="讨论形成的真实范围和验收标准"))
+        db.commit()
+    seen = {}
+    def derive(context, _runtime):
+        seen["history"] = [item["content"] for item in context["conversation_history"]]
+        return {"task_readiness": "sufficient", "task_candidate": _mature_candidate()}
+    candidate = interaction.derive_and_persist_task_candidate("conv-candidate", generator=derive)
+    assert seen["history"] == ["讨论中的真实目标", "讨论形成的真实范围和验收标准"]
+    assert candidate["derivation"]["source"] == "conversation_llm"
+    assert candidate["derivation"]["provider"] == "configured-provider"
+    with factory() as db:
+        discovery = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-candidate").one().discovery
+        assert discovery["task_candidate"]["goal"] == "搭建最小 AI 电商经营系统"
+        assert len([item for item in discovery["founder_action_queue"] if item["status"] == "pending"]) == 1
+
+
+def test_mature_legacy_llm_decision_reconciles_without_founder_resubmission(monkeypatch):
+    interaction, factory = _candidate_factory(monkeypatch)
+    import app.founder_ai.conversation_core as conversation_core
+    monkeypatch.setattr(conversation_core, "SessionLocal", factory)
+    runtime = type("Runtime", (), {"provider_key": "configured-provider", "model": "configured-model"})()
+    monkeypatch.setattr(conversation_core, "configured_model_roles", lambda: {"conversation": runtime, "fallback": None})
+    with factory() as db:
+        from app.core.conversation_first.model import SinoBrainSessionDB
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-candidate").one()
+        state.discovery = {"conversation_core": {"conversation_state": "task_established",
+            "context_updates": {"task_created": True}, "updated_at": "decision-1"}}
+        db.commit()
+    candidate = interaction.reconcile_discussion_task_candidate(
+        "conv-candidate", generator=lambda _context, _runtime: {
+            "task_readiness": "sufficient", "task_candidate": _mature_candidate()})
+    assert candidate["status"] == "pending_founder_confirmation"
+    assert interaction.reconcile_discussion_task_candidate("conv-candidate", generator=lambda *_: (_ for _ in ()).throw(
+        AssertionError("must be idempotent")))["candidate_id"] == candidate["candidate_id"]
+
+
+def test_mature_discussion_persists_task_candidate_and_confirmation_action(monkeypatch):
+    interaction, factory = _candidate_factory(monkeypatch)
+    candidate = interaction.persist_task_candidate("conv-candidate", _mature_candidate(), source_message_id="client-1")
+    assert candidate["status"] == "pending_founder_confirmation"
+    with factory() as db:
+        from app.core.conversation_first.model import SinoBrainSessionDB
+        discovery = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-candidate").one().discovery
+        assert discovery["task_projection"]["status"] == "pending_founder_confirmation"
+        assert discovery["founder_action_required"] is True
+        actions = [item for item in discovery["founder_action_queue"] if item["type"] == "TASK_CONFIRMATION" and item["status"] == "pending"]
+        assert len(actions) == 1
+
+
+def test_task_confirmation_creates_one_task_package_and_is_idempotent(monkeypatch):
+    interaction, _factory = _candidate_factory(monkeypatch)
+    candidate = interaction.persist_task_candidate("conv-candidate", _mature_candidate())
+    calls = []
+    def dispatch(_conversation_id, _candidate):
+        calls.append(_candidate["candidate_id"])
+        return {"classification": "STANDARD_TASK", "autonomous_execution": {"task_id": "task-1", "execution_session_id": "execution-1", "execution_package_id": "package-1"}}
+    first = interaction.decide_task_candidate("conv-candidate", candidate["candidate_id"], "confirm", dispatch=dispatch)
+    second = interaction.decide_task_candidate("conv-candidate", candidate["candidate_id"], "confirm", dispatch=dispatch)
+    assert calls == [candidate["candidate_id"]]
+    assert first["task_candidate"]["task_id"] == second["task_candidate"]["task_id"] == "task-1"
+    assert first["task_candidate"]["execution_package_id"] == "package-1"
+
+
+def test_modify_and_continue_discussion_never_dispatch(monkeypatch):
+    for action, expected in (("modify", "needs_revision"), ("continue_discussion", "discussion_continues")):
+        interaction, _factory = _candidate_factory(monkeypatch, conversation_id=f"conv-{action}")
+        candidate = interaction.persist_task_candidate(f"conv-{action}", _mature_candidate())
+        result = interaction.decide_task_candidate(f"conv-{action}", candidate["candidate_id"], action,
+                                                   dispatch=lambda *_: (_ for _ in ()).throw(AssertionError("must not dispatch")))
+        assert result["status"] == expected
+
+
+def test_task_creation_failure_restores_pending_candidate(monkeypatch):
+    interaction, _factory = _candidate_factory(monkeypatch)
+    candidate = interaction.persist_task_candidate("conv-candidate", _mature_candidate())
+    try:
+        interaction.decide_task_candidate("conv-candidate", candidate["candidate_id"], "confirm",
+                                          dispatch=lambda *_: (_ for _ in ()).throw(RuntimeError("package failed")))
+        assert False
+    except RuntimeError:
+        pass
+    result = interaction.persist_task_candidate("conv-candidate", _mature_candidate())
+    assert result["status"] == "pending_founder_confirmation"
+
+
 def test_clarification_reconciliation_enforces_founder_action_invariant(monkeypatch):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker

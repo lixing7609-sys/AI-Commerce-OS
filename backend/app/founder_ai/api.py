@@ -389,6 +389,12 @@ class ExecutionResultOut(ExecutionSessionOut):
     execution_logs: list[dict[str, str]] = Field(default_factory=list)
 
 
+class TaskConfirmationDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    candidate_id: str
+    action: str
+
+
 router = APIRouter(prefix="/founder-ai", tags=["Founder AI"])
 brain = SinoBrain()
 state_analyzer = SinoStateAnalyzer()
@@ -435,6 +441,10 @@ def get_conversation_workspace(conversation_id: str):
                 reconcile_standard_task_execution(conversation_id=conversation_id, task_id=task_id, execution_id=execution_id)
         except (LookupError, ValueError):
             pass
+        # Lazy compatibility reconciliation: older LLM-first conversations may
+        # contain a mature semantic decision but predate canonical candidates.
+        from app.founder_ai.conversation_task_interaction import reconcile_discussion_task_candidate
+        reconcile_discussion_task_candidate(conversation_id)
         snapshot = council_service.snapshot(conversation_id)
         from app.founder_ai.conversation_task_interaction import project_execution_events
         if project_execution_events(conversation_id):
@@ -551,7 +561,7 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         if request.client_message_id:
             interaction_context["client_message_id"] = request.client_message_id
         from app.founder_ai.conversation_task_interaction import (
-            persist_task_understanding, record_runtime_intervention,
+            derive_and_persist_task_candidate, persist_task_understanding, record_runtime_intervention,
         )
         current_brain = brain_runtime.snapshot(conversation_id)
         current_route = dict((current_brain.get("discovery") or {}).get("task_complexity_route") or {})
@@ -586,6 +596,16 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
             route["confirmed_decisions"] = list(task_candidate.get("confirmed_decisions") or [])
         else:
             route = dict(current_route)
+        candidate_ready = bool(task_candidate and not explicit_execution and (
+            (decision.get("context_updates") or {}).get("task_created") is True
+            or decision.get("conversation_state") in {"task_candidate_ready", "task_established"}
+            or semantic_intent == "founder_acceptance"
+        ))
+        if candidate_ready:
+            try:
+                derive_and_persist_task_candidate(conversation_id, source_message_id=request.client_message_id)
+            except ValueError:
+                decision["response"] = "当前讨论成果还没有可靠固化为待确认任务；讨论内容已经保留，我不会在任务结构完整前开始执行。"
         awaiting_clarification = bool(explicit_execution and decision.get("founder_action_intent") and
                                       (decision.get("founder_action_intent") or {}).get("type") == "CLARIFICATION")
         is_strategic_architecture = route.get("classification") == "STRATEGIC_TASK" and not route.get("clarification_required")
@@ -721,6 +741,17 @@ def decide_conversation_clarification(conversation_id: str, request: Clarificati
                                      grounding={"visibility": "founder", "source_event_id": f"clarification-confirmed:{conversation_id}"}))
         db.commit()
     return {"status": "executing", "sino_brain": brain_runtime.snapshot(conversation_id)}
+
+
+@router.post("/conversations/{conversation_id}/task-candidate/decision", response_model=dict[str, Any])
+def decide_conversation_task_candidate(conversation_id: str, request: TaskConfirmationDecisionIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    from app.founder_ai.conversation_task_interaction import decide_task_candidate
+    try:
+        result = decide_task_candidate(conversation_id, request.candidate_id, request.action)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {**result, "sino_brain": brain_runtime.snapshot(conversation_id)}
 
 
 @router.post("/conversations/{conversation_id}/attachments", response_model=dict[str, Any])

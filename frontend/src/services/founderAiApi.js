@@ -73,6 +73,7 @@ export function getConversationWorkspace(conversationId) {
 export function cancelFounderExecution(executionId) { return request(`/founder-ai/executions/${encodeURIComponent(executionId)}/cancel`, { method: "POST" }, "停止任务失败"); }
 export function acceptFounderTaskResult(conversationId) { return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/tasks/current/accept`, { method: "POST" }, "验收任务失败"); }
 export function decideFounderClarification(conversationId, action) { return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/clarification/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "处理任务理解确认失败"); }
+export function decideFounderTaskCandidate(conversationId, candidateId, action) { return request(`/founder-ai/conversations/${encodeURIComponent(conversationId)}/task-candidate/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ candidate_id: candidateId, action }) }, "处理待确认任务失败"); }
 
 export function getFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}`, undefined, "获取 Founder Object 失败"); }
 export function getFounderObjects() { return request("/founder-ai/objects", undefined, "获取 Founder Object Workspace 失败"); }

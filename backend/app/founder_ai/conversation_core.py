@@ -172,12 +172,98 @@ def _normalize_task_candidate(value) -> dict:
     if not candidate:
         return {}
     normalized = dict(candidate)
-    for field in ("constraints", "acceptance_criteria", "confirmed_decisions"):
+    for field in ("constraints", "acceptance_criteria", "confirmed_decisions", "dependencies", "risks"):
         normalized[field] = _safe_string_list(candidate.get(field))
-    for field in ("goal", "scope", "task_type"):
+    scope = candidate.get("scope")
+    normalized["scope"] = _safe_string_list(scope) if isinstance(scope, list) else str(scope or "").strip()
+    for field in ("title", "goal", "task_type"):
         if field in normalized and not isinstance(normalized[field], str):
             normalized[field] = str(normalized[field]) if isinstance(normalized[field], (int, float)) else ""
     return normalized
+
+
+def task_candidate_is_complete(candidate: dict | None) -> bool:
+    """A discussion outcome is actionable only when the model supplied its full contract."""
+    if not isinstance(candidate, dict):
+        return False
+    required_text = ("title", "goal")
+    required_lists = ("constraints", "acceptance_criteria", "confirmed_decisions")
+    if any(not str(candidate.get(field) or "").strip() for field in required_text):
+        return False
+    scope = candidate.get("scope")
+    if not ((isinstance(scope, str) and scope.strip()) or (isinstance(scope, list) and scope)):
+        return False
+    if any(field not in candidate or not isinstance(candidate.get(field), list) for field in required_lists):
+        return False
+    return bool(candidate["acceptance_criteria"] and candidate["confirmed_decisions"])
+
+
+def derive_task_candidate_from_conversation(conversation_id: str, *, generator: Callable | None = None) -> dict:
+    """Ask the configured Conversation Model to structure the existing discussion, without inventing business content."""
+    roles = configured_model_roles()
+    # Use a dedicated bounded read path. The general Conversation context also
+    # assembles capability/runtime inventories, which are irrelevant here and
+    # can starve a live polling reconciliation before model resolution.
+    with SessionLocal() as db:
+        conversation = db.get(ConversationDB, conversation_id)
+        if conversation is None:
+            raise LookupError("Founder AI conversation not found")
+        messages = list(db.scalars(select(ConversationMessageDB).where(
+            ConversationMessageDB.conversation_id == conversation_id).order_by(ConversationMessageDB.created_at)))
+        digest = db.scalar(select(SecretaryDigestDB).where(SecretaryDigestDB.conversation_id == conversation_id))
+        decisions = list(db.scalars(select(DecisionAssetDB).where(
+            DecisionAssetDB.conversation_id == conversation_id,
+            DecisionAssetDB.confirmed.is_(True)).order_by(DecisionAssetDB.updated_at.desc()).limit(12)))
+        brain = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+    selected = select_relevant_history(messages)
+    discovery = dict(brain.discovery or {}) if brain else {}
+    context = {
+        "sino_identity": "Sino Founder AI",
+        "conversation": {"id": conversation.id, "title": conversation.title, "project_id": conversation.project_id},
+        "conversation_history": [{"message_id": item.id, "role": item.role, "content": item.content,
+                                  "message_type": item.message_type, "created_at": item.created_at.isoformat()}
+                                 for item in selected],
+        "conversation_digest": {"summary": digest.summary, "constraints": list(digest.constraints or []),
+                                "terminology": list(digest.terminology or [])} if digest else {},
+        "confirmed_decisions": [{"title": item.title, "decision": item.decision} for item in decisions],
+        "conversation_understanding": discovery.get("conversation_understanding_snapshot")
+                                      or discovery.get("pending_task_understanding"),
+        "prior_structured_decision": discovery.get("conversation_core"),
+    }
+    prompt = """Using only the supplied Sino Conversation evidence, decide whether the discussion has reached a mature task candidate. Do not invent missing business decisions. Return JSON with task_readiness (sufficient or insufficient), missing_information, and task_candidate. When sufficient, task_candidate must contain title, goal, scope, constraints, acceptance_criteria, confirmed_decisions, dependencies, risks, and task_type. Preserve the meaning of the Founder and Sino discussion; this output is backend structure and is not a Founder-visible response."""
+    failures = []
+    for role in ("conversation", "fallback"):
+        runtime = roles.get(role)
+        if runtime is None:
+            continue
+        try:
+            if generator:
+                payload = generator(context, runtime)
+            else:
+                response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, LLMRequest(
+                    system_prompt=prompt, user_prompt=json.dumps(context, ensure_ascii=False), temperature=.2,
+                    max_tokens=1500, response_format="json",
+                    metadata={"runtime_role": "sino_conversation", "purpose": "task_candidate_derivation"}))
+                payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
+            raw_candidate = _safe_mapping(_safe_mapping(payload).get("task_candidate"))
+            for field in ("constraints", "acceptance_criteria", "confirmed_decisions", "dependencies", "risks"):
+                if isinstance(raw_candidate.get(field), str):
+                    raw_candidate[field] = [raw_candidate[field]]
+            candidate = _normalize_task_candidate(raw_candidate)
+            readiness = str(_safe_mapping(payload).get("task_readiness") or "").lower()
+            if readiness in {"sufficient", "ready", "mature"} and task_candidate_is_complete(candidate):
+                return {**candidate, "derivation": {"source": "conversation_llm", "model_role": role,
+                                                       "provider": runtime.provider_key, "model": runtime.model,
+                                                       "context_message_ids": [item["message_id"] for item in context["conversation_history"]],
+                                                       "derivation_version": "conversation-task-candidate-v6",
+                                                       "derived_at": datetime.now(timezone.utc).isoformat()}}
+            missing = [field for field in ("title", "goal", "scope", "constraints", "acceptance_criteria", "confirmed_decisions")
+                       if field not in candidate or candidate.get(field) in (None, "", [])]
+            failures.append(f"{role}:schema_not_ready:{readiness or 'missing'}:{','.join(missing) or 'unknown'}")
+        except Exception as error:
+            failures.append(f"{role}:{type(error).__name__}")
+            continue
+    raise ValueError("conversation_task_candidate_not_ready:" + ",".join(failures or ["no_configured_model"]))
 
 
 def _validate_decision(payload: dict, *, current_message: str) -> dict:

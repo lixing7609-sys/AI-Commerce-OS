@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from sqlalchemy import select
 
@@ -52,6 +53,183 @@ def pending_task_understanding(conversation_id: str) -> dict | None:
         if state is None:
             return None
         return dict((state.discovery or {}).get("pending_task_understanding") or {}) or None
+
+
+def persist_task_candidate(conversation_id: str, candidate: dict, *, source_message_id: str | None = None) -> dict:
+    """Persist a mature discussion outcome and its Founder confirmation action atomically."""
+    from app.founder_ai.conversation_core import task_candidate_is_complete
+    if not task_candidate_is_complete(candidate):
+        raise ValueError("task_candidate_incomplete")
+    goal = str(candidate.get("goal") or "").strip()
+    if not goal:
+        raise ValueError("task_candidate_goal_required")
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {})
+        existing = dict(discovery.get("task_candidate") or {})
+        if existing.get("status") in {"pending_founder_confirmation", "needs_revision", "discussion_continues"} and existing.get("goal") == goal:
+            candidate_id = existing["candidate_id"]
+            created_at = existing.get("created_at") or now.isoformat()
+        else:
+            candidate_id = f"task-candidate-{uuid4().hex[:20]}"
+            created_at = now.isoformat()
+        record = {
+            "candidate_id": candidate_id, "conversation_id": conversation_id,
+            "title": str(candidate.get("title") or goal[:120]).strip(), "goal": goal,
+            "scope": candidate.get("scope") or [], "constraints": list(candidate.get("constraints") or []),
+            "acceptance_criteria": list(candidate.get("acceptance_criteria") or []),
+            "confirmed_decisions": list(candidate.get("confirmed_decisions") or []),
+            "dependencies": list(candidate.get("dependencies") or []), "risks": list(candidate.get("risks") or []),
+            "task_type": candidate.get("task_type"), "source_message_id": source_message_id,
+            "derivation": dict(candidate.get("derivation") or {}),
+            "created_at": created_at, "updated_at": now.isoformat(), "status": "pending_founder_confirmation",
+            "task_id": existing.get("task_id"), "execution_id": existing.get("execution_id"),
+            "execution_package_id": existing.get("execution_package_id"),
+        }
+        action_id = f"task-confirmation:{candidate_id}"
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or []
+                 if not (item.get("type") == "TASK_CONFIRMATION" and item.get("candidate_id") == candidate_id)]
+        queue.append({
+            "action_id": action_id, "conversation_id": conversation_id, "task_id": None,
+            "candidate_id": candidate_id, "type": "TASK_CONFIRMATION", "status": "pending",
+            "title": record["title"], "summary": record["goal"], "required_input": "CONFIRM_TASK_CANDIDATE",
+            "task_candidate": record, "created_at": created_at, "resolved_at": None, "resolution": None,
+        })
+        discovery["task_candidate"] = record
+        if record["derivation"].get("source") == "conversation_llm":
+            discovery["task_candidate_reconciliation"] = {
+                "status": "completed", "candidate_id": candidate_id,
+                "derivation_version": record["derivation"].get("derivation_version"),
+                "completed_at": now.isoformat(),
+            }
+        discovery["task_projection"] = {"status": "pending_founder_confirmation", "candidate_id": candidate_id,
+                                         "title": record["title"], "founder_action_required": True}
+        discovery["founder_action_queue"] = queue
+        discovery["founder_action_required"] = True
+        state.discovery = discovery; state.updated_at = now; db.commit()
+        return record
+
+
+def derive_and_persist_task_candidate(conversation_id: str, *, source_message_id: str | None = None,
+                                      generator=None) -> dict:
+    """Canonical Discussion -> Candidate transition, entirely sourced from Conversation Model output."""
+    from app.founder_ai.conversation_core import derive_task_candidate_from_conversation
+    candidate = derive_task_candidate_from_conversation(conversation_id, generator=generator)
+    return persist_task_candidate(conversation_id, candidate, source_message_id=source_message_id)
+
+
+def reconcile_discussion_task_candidate(conversation_id: str, *, generator=None) -> dict | None:
+    """Repair an older LLM decision that announced a candidate before the canonical transition existed."""
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {})
+        existing = dict(discovery.get("task_candidate") or {})
+        if existing.get("status") in {"pending_founder_confirmation", "needs_revision", "discussion_continues", "confirmed"}:
+            return existing
+        core = dict(discovery.get("conversation_core") or {})
+        updates = dict(core.get("context_updates") or {})
+        mature = bool(core.get("conversation_state") in {"task_candidate_ready", "task_established"}
+                      or updates.get("task_created") is True)
+        if not mature:
+            return None
+        core_version = str(core.get("updated_at") or "")
+        attempt = dict(discovery.get("task_candidate_reconciliation") or {})
+        derivation_version = "conversation-task-candidate-v6"
+        if (attempt.get("source_decision_updated_at") == core_version
+                and attempt.get("derivation_version") == derivation_version
+                and attempt.get("status") in {"deriving", "not_ready"}):
+            return None
+        discovery["task_candidate_reconciliation"] = {
+            "status": "deriving", "source_decision_updated_at": core_version,
+            "derivation_version": derivation_version,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
+        state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+    try:
+        return derive_and_persist_task_candidate(conversation_id, generator=generator)
+    except ValueError as error:
+        with SessionLocal() as db:
+            state = db.scalar(select(SinoBrainSessionDB).where(
+                SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            discovery = dict(state.discovery or {})
+            discovery["task_candidate_reconciliation"] = {
+                "status": "not_ready", "source_decision_updated_at": core_version,
+                "derivation_version": derivation_version,
+                "failure": str(error),
+                "attempted_at": datetime.now(timezone.utc).isoformat(),
+            }
+            state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+        return None
+
+
+def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, *, dispatch=None) -> dict:
+    """Resolve one candidate exactly once; only confirmation may create an executable task."""
+    if action not in {"confirm", "modify", "continue_discussion"}:
+        raise ValueError("invalid_task_confirmation_action")
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {}); candidate = dict(discovery.get("task_candidate") or {})
+        if candidate.get("candidate_id") != candidate_id:
+            raise ValueError("task_candidate_not_found")
+        if candidate.get("status") == "confirmed":
+            return {"status": "confirmed", "task_candidate": candidate, "route": discovery.get("task_complexity_route") or {}}
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or []]
+        item = next((entry for entry in queue if entry.get("type") == "TASK_CONFIRMATION" and entry.get("candidate_id") == candidate_id), None)
+        if item is None or item.get("status") != "pending":
+            raise ValueError("task_confirmation_not_pending")
+        if action != "confirm":
+            candidate["status"] = "needs_revision" if action == "modify" else "discussion_continues"
+            candidate["updated_at"] = now.isoformat(); item.update({"status": candidate["status"], "resolution": action, "resolved_at": now.isoformat()})
+            discovery["task_candidate"] = candidate; discovery["founder_action_queue"] = queue
+            discovery["task_projection"] = {"status": candidate["status"], "candidate_id": candidate_id, "title": candidate["title"], "founder_action_required": False}
+            discovery["founder_action_required"] = False; state.discovery = discovery; state.updated_at = now; db.commit()
+            return {"status": candidate["status"], "task_candidate": candidate, "route": discovery.get("task_complexity_route") or {}}
+        candidate["status"] = "confirming"; candidate["updated_at"] = now.isoformat()
+        discovery["task_candidate"] = candidate; state.discovery = discovery; state.updated_at = now; db.commit()
+    try:
+        if dispatch is None:
+            from app.founder_ai.standard_task_execution import begin_standard_task, dispatch_standard_task
+            from app.founder_ai.task_complexity_router import route_task_complexity
+            route = route_task_complexity(candidate["goal"])
+            route["discussion_context"] = [candidate["goal"], str(candidate.get("scope") or "")]
+            begin_standard_task(conversation_id=conversation_id, goal=candidate["goal"], route=route)
+            route = dispatch_standard_task(conversation_id=conversation_id, goal=candidate["goal"])
+        else:
+            route = dispatch(conversation_id, candidate)
+    except Exception:
+        with SessionLocal() as db:
+            state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            discovery = dict(state.discovery or {}); restored = dict(discovery.get("task_candidate") or {})
+            restored["status"] = "pending_founder_confirmation"; discovery["task_candidate"] = restored
+            state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+        raise
+    execution = dict(route.get("autonomous_execution") or {})
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        discovery = dict(state.discovery or {}); confirmed = dict(discovery.get("task_candidate") or {})
+        confirmed.update({"status": "confirmed", "task_id": execution.get("task_id"),
+                          "execution_id": execution.get("execution_session_id"),
+                          "execution_package_id": execution.get("execution_package_id"), "updated_at": datetime.now(timezone.utc).isoformat()})
+        queue = [dict(entry) for entry in discovery.get("founder_action_queue") or []]
+        for entry in queue:
+            if entry.get("type") == "TASK_CONFIRMATION" and entry.get("candidate_id") == candidate_id:
+                entry.update({"status": "confirmed", "task_id": confirmed.get("task_id"), "resolution": "confirm", "resolved_at": datetime.now(timezone.utc).isoformat()})
+        discovery["task_candidate"] = confirmed; discovery["founder_action_queue"] = queue
+        discovery["task_projection"] = {"status": "confirmed", "candidate_id": candidate_id, "task_id": confirmed.get("task_id"),
+                                         "title": confirmed["title"], "founder_action_required": False}
+        discovery["founder_action_required"] = False; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+        return {"status": "confirmed", "task_candidate": confirmed, "route": route}
 
 
 def _message_value(message) -> dict:

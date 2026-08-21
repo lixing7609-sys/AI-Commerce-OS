@@ -49,6 +49,27 @@ describe("Conversation / Task UI ownership", () => {
     expect(screen.queryByText("Founder：无需操作")).toBeNull();
   });
 
+  it("projects a mature discussion as a pending task confirmation", () => {
+    const candidate = { candidate_id: "candidate-1", title: "AI Commerce Mini Operator V1", goal: "搭建最小 AI 电商经营系统",
+      scope: ["商品理解", "广告创意", "投放优化"], constraints: ["一个广告平台", "一个广告账户", "一个真实商品"],
+      acceptance_criteria: ["完成一轮数据回流"], status: "pending_founder_confirmation" };
+    const brain = { ...discussionBrain, discovery: { ...discussionBrain.discovery, task_candidate: candidate,
+      founder_action_required: true, task_projection: { status: "pending_founder_confirmation", candidate_id: candidate.candidate_id },
+      founder_action_queue: [{ action_id: "task-confirmation:candidate-1", candidate_id: candidate.candidate_id,
+        type: "TASK_CONFIRMATION", status: "pending", title: candidate.title, summary: candidate.goal, task_candidate: candidate }] } };
+    render(<SinoBrainContext brain={brain} conversationId="conv-1" />);
+    const status = screen.getByRole("region", { name: "Task Status" });
+    expect(within(status).getByText("待确认")).toBeTruthy();
+    expect(within(status).getByText("Founder：需要操作")).toBeTruthy();
+    const action = screen.getByRole("article", { name: "Task Confirmation" });
+    expect(within(action).getByText("AI Commerce Mini Operator V1")).toBeTruthy();
+    expect(within(action).getByRole("button", { name: "确认执行" })).toBeTruthy();
+    expect(within(action).getByRole("button", { name: "修改任务" })).toBeTruthy();
+    expect(within(action).getByRole("button", { name: "继续讨论" })).toBeTruthy();
+    expect(screen.queryByText("Founder：无需操作")).toBeNull();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
   it("owns the only task progress and stop control in the right sidebar", () => {
     render(<SinoBrainContext brain={taskBrain()} />);
     expect(screen.getByLabelText("任务进度 35%")).toBeTruthy();
