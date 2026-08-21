@@ -3,7 +3,6 @@ import { GlobalSecretaryComposer } from "./GlobalSecretaryComposer.jsx";
 import { FounderActionCard } from "./FounderActionCard.jsx";
 import { CapabilityLifecycleCard } from "./CapabilityLifecycleCard.jsx";
 import { AssetCommitWorkspace } from "./AssetCommitWorkspace.jsx";
-import { founderConversationTitle } from "./founderConversationTitle.js";
 import { objectTypeLabel, statusLabel } from "./founderTerminology.js";
 import { MessageBody } from "./MessageBody.jsx";
 import { ConstitutionUnderstandingCard } from "./ConstitutionUnderstandingCard.jsx";
@@ -304,8 +303,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
       : currentAction;
   const imageProbeDecisionVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
   const externalProbeGate = quickFixRoute?.founder_gate_contract?.gate_type === "EXTERNAL_MODEL_PROBE" ? quickFixRoute.founder_gate_contract : null;
-  return <section className="sino-conversation-thread" aria-label="Conversation">
-    <header className="sino-conversation-header"><div><h1>{founderConversationTitle(snapshot?.conversation?.title, snapshot?.sino_brain?.goal_brief?.goal)}</h1></div></header>
+  return <section className={`sino-conversation-thread${visibleMessages.length ? "" : " is-empty"}`} aria-label="Conversation">
     <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}{!visibleMessages.length && !replyPending && !streamingReply?.content ? <p className="sino-conversation-empty-prompt">和 Sino 讨论任何想法、问题或计划……</p> : null}{visibleMessages.length ? visibleMessages.map((item) => {
       if (item.role === "assistant" && ["council", "auto_deliberation"].includes(item.message_type)) return null;
       if (item.role === "assistant" && ["goal_brief", "decision", "discussion_package"].includes(item.message_type)) return null;

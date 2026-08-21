@@ -8,7 +8,9 @@ test("Founder home and New Discussion are the same unified three-column workspac
   await page.goto("/");
 
   const assertWorkspace = async () => {
-    await expect(page.locator(".sino-sidebar")).toBeVisible();
+    await expect(page.getByLabel("Founder Navigation")).toBeVisible();
+    await expect(page.getByRole("main", { name: "Sino Natural Conversation" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "执行中心", exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "Conversation" })).toBeVisible();
     await expect(page.getByRole("region", { name: "Execution Center" })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "讨论内容" })).toBeVisible();
@@ -20,14 +22,14 @@ test("Founder home and New Discussion are the same unified three-column workspac
   };
 
   await assertWorkspace();
-  const before = await page.locator(".sino-founder-shell").evaluate((node) => ({
+  const before = await page.locator(".founder-workspace").evaluate((node) => ({
     columns: getComputedStyle(node).gridTemplateColumns,
     childCount: node.children.length,
   }));
 
   await page.getByRole("button", { name: /新建讨论/ }).click();
   await assertWorkspace();
-  const after = await page.locator(".sino-founder-shell").evaluate((node) => ({
+  const after = await page.locator(".founder-workspace").evaluate((node) => ({
     columns: getComputedStyle(node).gridTemplateColumns,
     childCount: node.children.length,
   }));
@@ -39,9 +41,9 @@ test("Founder home and New Discussion are the same unified three-column workspac
       return box && { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width };
     };
     return {
-      left: rect(".sino-sidebar"),
+      left: rect(".founder-navigation-panel"),
       center: rect('[aria-label="Conversation"]'),
-      right: rect('.sino-founder-context[aria-label="当前上下文"]'),
+      right: rect('.founder-execution-center'),
       viewportHeight: window.innerHeight,
     };
   });
@@ -56,10 +58,41 @@ test("Founder home and New Discussion are the same unified three-column workspac
   expect(await (await request.get(`${API}/conversations`)).json()).toEqual([]);
 });
 
+test("the formal execution center resizes and persists without changing the three-region DOM", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 800 });
+  await page.goto("/");
+  await page.evaluate(() => localStorage.removeItem("sino-founder-execution-center-width"));
+  await page.reload();
+  const panel = page.getByRole("complementary", { name: "执行中心", exact: true });
+  const handle = page.getByRole("separator", { name: "调整执行中心宽度" });
+  const initial = await panel.boundingBox();
+  const handleBox = await handle.boundingBox();
+  await page.mouse.move(handleBox.x + 4, handleBox.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x - 120, handleBox.y + 40);
+  await page.mouse.up();
+  const wider = await panel.boundingBox();
+  expect(wider.width).toBeGreaterThan(initial.width + 80);
+
+  const movedHandle = await handle.boundingBox();
+  await page.mouse.move(movedHandle.x + 4, movedHandle.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(movedHandle.x + 180, movedHandle.y + 40);
+  await page.mouse.up();
+  const narrower = await panel.boundingBox();
+  expect(narrower.width).toBeLessThan(wider.width - 100);
+  expect(narrower.width).toBeGreaterThanOrEqual(279);
+
+  await page.reload();
+  const restored = await panel.boundingBox();
+  expect(Math.abs(restored.width - narrower.width)).toBeLessThan(2);
+  await expect(page.locator(".founder-workspace").locator(":scope > *")).toHaveCount(3);
+});
+
 test("asset pages remain independent and returning home restores the unified workspace", async ({ page }) => {
   await page.addInitScript(() => localStorage.clear());
   await page.goto("/");
-  await page.getByRole("button", { name: "能力仓库", exact: true }).click();
+  await page.getByRole("button", { name: "库", exact: true }).click();
   await expect(page.getByRole("heading", { name: "草案中心" })).toBeVisible();
   await page.getByTitle("Sino Founder AI 首页").click();
   await expect(page.getByRole("region", { name: "Conversation" })).toBeVisible();

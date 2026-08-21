@@ -15,7 +15,7 @@ import { ExecutionDeltaPanel } from "./ExecutionDeltaPanel.jsx";
 import { ExecutionTimeline } from "./ExecutionTimeline.jsx";
 import { FounderGateProposalReview } from "./FounderGateProposalReview.jsx";
 import { SinoFounderShell } from "./SinoFounderShell.jsx";
-import { stableConversationOrder } from "./SecretarySidebar.jsx";
+import { stableConversationOrder } from "./FounderNavigationPanel.jsx";
 import { SolutionCard } from "./SolutionCard.jsx";
 import { SystemBuilderPanel, SystemContext } from "./SystemBuilderPanel.jsx";
 import { TaskPlanCard } from "./TaskPlanCard.jsx";

@@ -3,7 +3,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SinoFounderShell } from "./SinoFounderShell.jsx";
 
-const props = { active: "home", onNavigate: vi.fn(), sidebarProps: { conversations: [], onNewConversation: vi.fn(), onSelectConversation: vi.fn() }, main: <p>Main</p>, context: <p>Context</p> };
+const props = {
+  active: "conversation",
+  onNavigate: vi.fn(),
+  sidebarProps: { conversations: [], projects: [], onNewConversation: vi.fn(), onSelectConversation: vi.fn() },
+  main: <section aria-label="Conversation content">Main</section>,
+  context: <section aria-label="Execution content">Execution</section>,
+};
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -12,120 +18,70 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-describe("SinoFounderShell resizable dividers", () => {
-  it("keeps the Sidebar brand free of workspace status", () => {
+describe("formal Sino Founder workspace shell", () => {
+  it("has exactly the navigation, conversation, and execution visual regions", () => {
+    const { container } = render(<SinoFounderShell {...props} />);
+    const workspace = container.querySelector(".founder-workspace");
+    expect(workspace.dataset.workspaceStructure).toBe("navigation conversation execution");
+    expect(workspace.children).toHaveLength(3);
+    expect(screen.getByLabelText("Founder Navigation")).toBeTruthy();
+    expect(screen.getByRole("main", { name: "Sino Natural Conversation" })).toBeTruthy();
+    expect(screen.getByLabelText("执行中心")).toBeTruthy();
+    expect(container.querySelector(".sino-founder-main")).toBeNull();
+    expect(container.querySelector(".sino-founder-context")).toBeNull();
+    expect(container.querySelector(".sino-founder-topbar")).toBeNull();
+  });
+
+  it("exposes the GPT-style navigation capabilities without a management topbar", () => {
     render(<SinoFounderShell {...props} />);
-    expect(screen.queryByLabelText("Sino 正常")).toBeNull();
-    expect(screen.queryByLabelText("Sino 服务异常")).toBeNull();
-    expect(screen.queryByText("Sino 在线")).toBeNull();
-  });
-  it("keeps Settings in the shared fixed workspace shell", () => {
-    render(<SinoFounderShell {...props} active="settings" main={<p>Model settings</p>} context={null} />);
-    expect(screen.getByRole("main", { name: "Founder AI 工作区内容" }).classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "⚙ 设置" }));
-    expect(props.onNavigate).toHaveBeenCalledWith("settings");
-  });
-  it("gives Draft Discussion a full-height fixed workspace without changing Home", () => {
-    const { rerender } = render(<SinoFounderShell {...props} active="draft" main={<section aria-label="Draft Discussion" />} context={null} />);
-    expect(screen.getByRole("main", { name: "Founder AI 工作区内容" }).classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
-    rerender(<SinoFounderShell {...props} active="home" main={<section aria-label="Home" />} context={null} />);
-    expect(screen.getByRole("main", { name: "Founder AI 工作区内容" }).classList.contains("sino-founder-main--fixed-workspace")).toBe(false);
-  });
-  it("resizes both panes within min/max constraints and persists widths", () => {
-    render(<SinoFounderShell {...props} />);
-    const left = screen.getByRole("separator", { name: "调整左侧栏宽度" });
-    fireEvent.mouseDown(left, { clientX: 244 });
-    fireEvent.mouseMove(window, { clientX: 500 });
-    fireEvent.mouseUp(window);
-    expect(left.getAttribute("aria-valuenow")).toBe("320");
-    expect(window.localStorage.getItem("sino-founder-sidebar-width")).toBe("320");
-    fireEvent.mouseDown(left, { clientX: 320 });
-    fireEvent.mouseMove(window, { clientX: 0 });
-    fireEvent.mouseUp(window);
-    expect(left.getAttribute("aria-valuenow")).toBe("180");
-
-    const right = screen.getByRole("separator", { name: "调整右侧上下文宽度" });
-    fireEvent.mouseDown(right, { clientX: 700 });
-    fireEvent.mouseMove(window, { clientX: 1000 });
-    fireEvent.mouseUp(window);
-    expect(right.getAttribute("aria-valuenow")).toBe("260");
-    expect(window.localStorage.getItem("sino-founder-context-width")).toBe("260");
-    fireEvent.mouseDown(right, { clientX: 700 });
-    fireEvent.mouseMove(window, { clientX: 0 });
-    fireEvent.mouseUp(window);
-    expect(right.getAttribute("aria-valuenow")).toBe("520");
-  });
-
-  it("restores persisted widths and resets them on double click", () => {
-    window.localStorage.setItem("sino-founder-sidebar-width", "300");
-    window.localStorage.setItem("sino-founder-context-width", "440");
-    render(<SinoFounderShell {...props} />);
-    const left = screen.getByRole("separator", { name: "调整左侧栏宽度" });
-    const right = screen.getByRole("separator", { name: "调整右侧上下文宽度" });
-    expect(left.getAttribute("aria-valuenow")).toBe("300");
-    expect(right.getAttribute("aria-valuenow")).toBe("440");
-    fireEvent.doubleClick(left);
-    fireEvent.doubleClick(right);
-    expect(left.getAttribute("aria-valuenow")).toBe("244");
-    expect(right.getAttribute("aria-valuenow")).toBe("320");
-  });
-
-  it("keeps resized widths when the active view changes", () => {
-    const { rerender } = render(<SinoFounderShell {...props} />);
-    const left = screen.getByRole("separator", { name: "调整左侧栏宽度" });
-    fireEvent.mouseDown(left, { clientX: 244 });
-    fireEvent.mouseMove(window, { clientX: 280 });
-    fireEvent.mouseUp(window);
-    rerender(<SinoFounderShell {...props} active="assets" main={<p>Assets</p>} />);
-    expect(screen.getByRole("separator", { name: "调整左侧栏宽度" }).getAttribute("aria-valuenow")).toBe("280");
-    expect(document.querySelector(".sino-founder-shell").style.getPropertyValue("--sidebar-width")).toBe("280px");
-  });
-
-  it("resets the shared workspace scroll position when the active view changes", () => {
-    const { rerender } = render(<SinoFounderShell {...props} main={<div style={{ height: 2000 }}>Long</div>} />);
-    const main = screen.getByRole("main", { name: "Founder AI 工作区内容" });
-    main.scrollTop = 900;
-    rerender(<SinoFounderShell {...props} active="execution" main={<p>Empty execution</p>} />);
-    expect(main.scrollTop).toBe(0);
-  });
-
-  it("uses the S logo as the persistent collapse toggle and retains core icon actions", () => {
-    const { unmount } = render(<SinoFounderShell {...props} />);
-    const logo = document.querySelector(".sino-brand-mark");
-    fireEvent.click(screen.getByTitle("Sino Founder AI 首页"));
-    expect(props.onNavigate).toHaveBeenCalledWith("home");
-    expect(document.querySelector(".sino-sidebar").classList.contains("sino-sidebar--collapsed")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    expect(document.querySelector(".sino-sidebar").classList.contains("sino-sidebar--collapsed")).toBe(true);
-    expect(document.querySelector(".sino-brand-mark")).toBe(logo);
-    expect(document.querySelector(".sino-brand-mark").textContent).toBe("S");
-    expect(document.querySelector(".sino-brand div").textContent).toBe("SinoFounder AI");
     expect(screen.getByTitle("新建讨论")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "项目" })).toBeTruthy();
-    expect(window.localStorage.getItem("sino-founder-sidebar-collapsed")).toBe("true");
-    fireEvent.click(screen.getByTitle("Sino Founder AI 首页"));
-    expect(props.onNavigate).toHaveBeenLastCalledWith("home");
-    expect(document.querySelector(".sino-sidebar").classList.contains("sino-sidebar--collapsed")).toBe(true);
+    expect(screen.getByRole("button", { name: "库" })).toBeTruthy();
+    expect(screen.getByText("项目")).toBeTruthy();
+    expect(screen.getByText("会话")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "⚙ 设置" })).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "能力管理主导航" })).toBeNull();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "项目" }));
-    expect(document.querySelector(".sino-sidebar").classList.contains("sino-sidebar--collapsed")).toBe(false);
-    expect(screen.getByRole("button", { name: "项目⌄" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    unmount();
+  it("resizes only the execution center within its limits and persists the width", () => {
     render(<SinoFounderShell {...props} />);
-    expect(document.querySelector(".sino-sidebar").classList.contains("sino-sidebar--collapsed")).toBe(true);
-    const collapsedBrand = screen.getByTitle("Sino Founder AI 首页");
-    expect(collapsedBrand.querySelector(".sino-brand-mark").textContent).toBe("S");
-    expect(document.querySelector(".sino-sidebar-toggle--expand")).toBeNull();
-    fireEvent.mouseEnter(collapsedBrand);
-    expect(collapsedBrand.title).toBe("展开侧边栏");
-    expect(collapsedBrand.querySelector(".sino-brand-mark--expand svg")).toBeTruthy();
-    expect(collapsedBrand.querySelector(".sino-brand-mark").textContent).toBe("");
-    fireEvent.mouseLeave(collapsedBrand);
-    expect(collapsedBrand.querySelector(".sino-brand-mark").textContent).toBe("S");
-    fireEvent.mouseEnter(collapsedBrand);
-    fireEvent.click(collapsedBrand);
-    expect(window.localStorage.getItem("sino-founder-sidebar-collapsed")).toBe("false");
-    expect(screen.getByText("Sino")).toBeTruthy();
+    const handle = screen.getByRole("separator", { name: "调整执行中心宽度" });
+    fireEvent.pointerDown(handle, { clientX: 1000, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 1300 });
+    fireEvent.pointerUp(window);
+    expect(handle.getAttribute("aria-valuenow")).toBe("280");
+    expect(window.localStorage.getItem("sino-founder-execution-center-width")).toBe("280");
+
+    fireEvent.pointerDown(handle, { clientX: 1000, pointerId: 2 });
+    fireEvent.pointerMove(window, { clientX: 300 });
+    fireEvent.pointerUp(window);
+    expect(handle.getAttribute("aria-valuenow")).toBe("640");
+  });
+
+  it("restores and resets the execution center width", () => {
+    window.localStorage.setItem("sino-founder-execution-center-width", "440");
+    render(<SinoFounderShell {...props} />);
+    const handle = screen.getByRole("separator", { name: "调整执行中心宽度" });
+    expect(handle.getAttribute("aria-valuenow")).toBe("440");
+    fireEvent.doubleClick(handle);
+    expect(handle.getAttribute("aria-valuenow")).toBe("336");
+    fireEvent.click(screen.getByRole("button", { name: "重置执行中心宽度" }));
+    expect(window.localStorage.getItem("sino-founder-execution-center-width")).toBe("336");
+  });
+
+  it("uses an independent asset-page layout outside the formal conversation workspace", () => {
+    const { container } = render(<SinoFounderShell {...props} active="capability-center" main={<p>Library</p>} context={<p>Detail</p>} />);
+    expect(container.querySelector(".founder-workspace")).toBeNull();
+    expect(container.querySelector(".sino-founder-asset-route")).toBeTruthy();
+    expect(screen.getByRole("main", { name: "Founder AI 功能页面" }).textContent).toContain("Library");
+    expect(screen.getByLabelText("功能页详情").textContent).toContain("Detail");
+  });
+
+  it("keeps library and settings navigation wired", () => {
+    const onNavigate = vi.fn();
+    render(<SinoFounderShell {...props} onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole("button", { name: "库" }));
+    fireEvent.click(screen.getByRole("button", { name: "⚙ 设置" }));
+    expect(onNavigate).toHaveBeenNthCalledWith(1, "capability-center");
+    expect(onNavigate).toHaveBeenNthCalledWith(2, "settings");
   });
 });

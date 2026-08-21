@@ -1,79 +1,98 @@
 import { useEffect, useRef, useState } from "react";
-import { CapabilityNavigation } from "./CapabilityNavigation.jsx";
-import { SecretarySidebar } from "./SecretarySidebar.jsx";
+import { FounderNavigationPanel } from "./FounderNavigationPanel.jsx";
 
-const SIDEBAR_KEY = "sino-founder-sidebar-width";
-const CONTEXT_KEY = "sino-founder-context-width";
-const DEFAULT_SIDEBAR = 244;
-const DEFAULT_CONTEXT = 320;
-const MIN_SIDEBAR = 180;
-const MAX_SIDEBAR = 320;
-const MIN_CONTEXT = 260;
-const MAX_CONTEXT = 520;
-const MIN_MAIN = 420;
+const EXECUTION_WIDTH_KEY = "sino-founder-execution-center-width";
+const DEFAULT_EXECUTION_WIDTH = 336;
+const MIN_EXECUTION_WIDTH = 280;
+const MAX_EXECUTION_WIDTH = 640;
+const MIN_CONVERSATION_WIDTH = 420;
 
-const restoredWidth = (key, fallback, min, max) => {
+const restoredWidth = () => {
   try {
-    const value = Number(window.localStorage.getItem(key));
-    return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
-  } catch { return fallback; }
+    const value = Number(window.localStorage.getItem(EXECUTION_WIDTH_KEY));
+    return Number.isFinite(value) && value >= MIN_EXECUTION_WIDTH && value <= MAX_EXECUTION_WIDTH
+      ? value
+      : DEFAULT_EXECUTION_WIDTH;
+  } catch { return DEFAULT_EXECUTION_WIDTH; }
 };
+
 const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
 
 export function SinoFounderShell({ active, onNavigate, sidebarProps, main, context }) {
-  const shellRef = useRef(null);
-  const mainRef = useRef(null);
-  const [sidebarWidth, setSidebarWidth] = useState(() => restoredWidth(SIDEBAR_KEY, DEFAULT_SIDEBAR, MIN_SIDEBAR, MAX_SIDEBAR));
-  const [contextWidth, setContextWidth] = useState(() => restoredWidth(CONTEXT_KEY, DEFAULT_CONTEXT, MIN_CONTEXT, MAX_CONTEXT));
-  const [dragging, setDragging] = useState("");
+  const workspaceRef = useRef(null);
+  const surfaceRef = useRef(null);
+  const [executionWidth, setExecutionWidth] = useState(restoredWidth);
+  const [resizing, setResizing] = useState(false);
+  const isWorkspace = active === "conversation";
 
   useEffect(() => {
-    if (mainRef.current) mainRef.current.scrollTop = 0;
+    if (surfaceRef.current) surfaceRef.current.scrollTop = 0;
   }, [active]);
 
-  function persist(key, value, setter) {
-    setter(value);
-    try { window.localStorage.setItem(key, String(value)); } catch { /* unavailable */ }
+  function persistWidth(value) {
+    setExecutionWidth(value);
+    try { window.localStorage.setItem(EXECUTION_WIDTH_KEY, String(value)); } catch { /* unavailable */ }
   }
 
-  function startResize(side, event) {
+  function resizeExecutionCenter(event) {
     if (window.matchMedia?.("(max-width: 900px)").matches) return;
     event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     const startX = event.clientX;
-    const startWidth = side === "sidebar" ? sidebarWidth : contextWidth;
-    setDragging(side);
+    const startWidth = executionWidth;
+    setResizing(true);
     const move = (moveEvent) => {
-      const shellWidth = shellRef.current?.clientWidth || window.innerWidth;
-      if (side === "sidebar") {
-        const maximum = Math.min(MAX_SIDEBAR, shellWidth - contextWidth - MIN_MAIN - 8);
-        persist(SIDEBAR_KEY, clamp(startWidth + moveEvent.clientX - startX, MIN_SIDEBAR, maximum), setSidebarWidth);
-      } else {
-        const maximum = Math.min(MAX_CONTEXT, shellWidth - sidebarWidth - MIN_MAIN - 8);
-        persist(CONTEXT_KEY, clamp(startWidth - moveEvent.clientX + startX, MIN_CONTEXT, maximum), setContextWidth);
-      }
+      const workspaceWidth = workspaceRef.current?.clientWidth || window.innerWidth;
+      const maxWidth = Math.min(MAX_EXECUTION_WIDTH, Math.floor(workspaceWidth * .45), workspaceWidth - MIN_CONVERSATION_WIDTH - 260);
+      persistWidth(clamp(startWidth + startX - moveEvent.clientX, MIN_EXECUTION_WIDTH, maxWidth));
     };
     const stop = () => {
-      setDragging("");
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", stop);
+      setResizing(false);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
     };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", stop);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
   }
 
-  function reset(side) {
-    if (side === "sidebar") persist(SIDEBAR_KEY, DEFAULT_SIDEBAR, setSidebarWidth);
-    else persist(CONTEXT_KEY, DEFAULT_CONTEXT, setContextWidth);
+  const navigation = <FounderNavigationPanel active={active} onNavigate={onNavigate} {...sidebarProps} />;
+
+  if (!isWorkspace) {
+    return <div className="sino-founder-asset-route">
+      {navigation}
+      <main ref={surfaceRef} className="sino-founder-asset-page" tabIndex={0} aria-label="Founder AI 功能页面">{main}</main>
+      {context ? <aside className="sino-founder-asset-inspector" aria-label="功能页详情">{context}</aside> : null}
+    </div>;
   }
 
-  const hasContext = Boolean(context);
-  return <div ref={shellRef} className={`sino-founder-shell${dragging ? " is-resizing" : ""}${hasContext ? "" : " sino-founder-shell--no-context"}`} style={{ "--sidebar-width": `${sidebarWidth}px`, "--context-width": `${contextWidth}px` }}>
-    <SecretarySidebar active={active} onNavigate={onNavigate} {...sidebarProps} />
-    <div className={`sino-shell-divider sino-shell-divider--left${dragging === "sidebar" ? " is-active" : ""}`} role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" aria-valuemin={MIN_SIDEBAR} aria-valuemax={MAX_SIDEBAR} aria-valuenow={sidebarWidth} onMouseDown={(event) => startResize("sidebar", event)} onDoubleClick={() => reset("sidebar")} />
-    <header className="sino-founder-topbar">
-      <CapabilityNavigation active={active} onNavigate={onNavigate} />
-    </header>
-    <main ref={mainRef} className={`sino-founder-main${["draft", "conversation", "project", "object", "capability-center", "execution", "assets", "builder", "learning", "lifecycle", "settings"].includes(active) ? " sino-founder-main--fixed-workspace" : ""}`} tabIndex={0} aria-label="Founder AI 工作区内容">{main}</main>
-    {hasContext && <><div className={`sino-shell-divider sino-shell-divider--right${dragging === "context" ? " is-active" : ""}`} role="separator" aria-label="调整右侧上下文宽度" aria-orientation="vertical" aria-valuemin={MIN_CONTEXT} aria-valuemax={MAX_CONTEXT} aria-valuenow={contextWidth} onMouseDown={(event) => startResize("context", event)} onDoubleClick={() => reset("context")} /><aside className={`sino-founder-context${active === "objects" ? " sino-founder-context--object-inspector" : ""}`} aria-label="当前上下文">{context}</aside></>}
+  return <div
+    ref={workspaceRef}
+    className={`founder-workspace${resizing ? " is-resizing" : ""}`}
+    style={{ "--execution-center-width": `${executionWidth}px` }}
+    data-workspace-structure="navigation conversation execution"
+  >
+    {navigation}
+    <main ref={surfaceRef} className="founder-conversation-surface" tabIndex={0} aria-label="Sino Natural Conversation">
+      <div className="founder-conversation-actions" aria-label="Conversation controls">
+        <button type="button" title="重置执行中心宽度" aria-label="重置执行中心宽度" onClick={() => persistWidth(DEFAULT_EXECUTION_WIDTH)}>↔</button>
+      </div>
+      {main}
+    </main>
+    <aside className="founder-execution-center" aria-label="执行中心">
+      <div
+        className="founder-execution-resize-handle"
+        role="separator"
+        aria-label="调整执行中心宽度"
+        aria-orientation="vertical"
+        aria-valuemin={MIN_EXECUTION_WIDTH}
+        aria-valuemax={MAX_EXECUTION_WIDTH}
+        aria-valuenow={executionWidth}
+        onPointerDown={resizeExecutionCenter}
+        onDoubleClick={() => persistWidth(DEFAULT_EXECUTION_WIDTH)}
+      />
+      {context}
+    </aside>
   </div>;
 }

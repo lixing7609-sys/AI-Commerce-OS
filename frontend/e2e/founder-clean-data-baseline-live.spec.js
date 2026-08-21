@@ -31,7 +31,7 @@ test("Founder opens on the clean data baseline without recreating history", asyn
   await expect(page.locator(".sino-project-item")).toHaveCount(4);
   await expect(page.getByRole("article", { name: /Task Card:/ })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "能力仓库", exact: true }).click();
+  await page.getByRole("button", { name: "库", exact: true }).click();
   await expect(page.getByRole("heading", { name: "草案中心" })).toBeVisible();
   await expect(page.getByText("还没有草案")).toBeVisible();
   await page.getByRole("button", { name: "能力周期", exact: true }).click();

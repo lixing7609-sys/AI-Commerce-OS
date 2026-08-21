@@ -2,8 +2,9 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SecretarySidebar, stableConversationOrder } from "./SecretarySidebar.jsx";
+import { FounderNavigationPanel, stableConversationOrder } from "./FounderNavigationPanel.jsx";
 import { bindFounderConversationProject, createFounderProject, deleteFounderProject, updateFounderProject } from "../services/founderAiApi.js";
+
 
 vi.mock("../services/founderAiApi.js", () => ({ bindFounderConversationProject: vi.fn(), createFounderProject: vi.fn(), deleteFounderProject: vi.fn(), updateFounderProject: vi.fn() }));
 
@@ -12,7 +13,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 describe("Founder sidebar information architecture", () => {
   it("uses one fixed Settings entry and navigates to the existing settings view", () => {
     const onNavigate = vi.fn();
-    render(<SecretarySidebar conversations={[]} projects={[]} onNavigate={onNavigate} />);
+    render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={onNavigate} />);
     expect(screen.queryByText("AI Commerce OS")).toBeNull();
     expect(screen.queryByText("Founder AI Secretary")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "⚙ 设置" }));
@@ -21,7 +22,7 @@ describe("Founder sidebar information architecture", () => {
 
   it("uses governance metadata rather than titles to hide non-Founder runs", () => {
     const now = Date.now();
-    render(<SecretarySidebar
+    render(<FounderNavigationPanel
       conversations={[
         { id: "real", title: "AI短剧生产系统", updatedAt: now },
         { id: "test", title: "Runtime probe", updatedAt: now, conversation_type: "VERIFICATION_RUN", visibility: "hidden_from_conversation_list", created_by: "VERIFICATION" },
@@ -35,7 +36,7 @@ describe("Founder sidebar information architecture", () => {
 
   it("renders one updated-at ordered list with time metadata and no groups", () => {
     const now = Date.now();
-    render(<SecretarySidebar conversations={[{ id: "old", title: "旧工作", updatedAt: now - 86400000 * 8 }, { id: "latest", title: "最新工作", updatedAt: now }]} />);
+    render(<FounderNavigationPanel conversations={[{ id: "old", title: "旧工作", updatedAt: now - 86400000 * 8 }, { id: "latest", title: "最新工作", updatedAt: now }]} />);
     const titles = [...document.querySelectorAll(".sino-conversation-item__open b")].map((item) => item.textContent);
     expect(titles).toEqual(["最新工作", "旧工作"]);
     expect(screen.queryByText("最近 7 天")).toBeNull();
@@ -51,7 +52,7 @@ describe("Founder sidebar information architecture", () => {
     ];
     expect(stableConversationOrder(conversations).map((item) => item.id)).toEqual(["conv-c", "conv-b", "conv-a"]);
     expect(stableConversationOrder(conversations).map((item) => item.id)).toEqual(["conv-c", "conv-b", "conv-a"]);
-    render(<SecretarySidebar conversations={conversations} projects={[]} />);
+    render(<FounderNavigationPanel conversations={conversations} projects={[]} />);
     expect([...document.querySelectorAll(".sino-conversation-item")].map((item) => item.dataset.conversationId)).toEqual(["conv-c", "conv-b", "conv-a"]);
   });
 
@@ -61,7 +62,7 @@ describe("Founder sidebar information architecture", () => {
       { id: "general-work", project_id: null, title: "普通工作", updatedAt: 10 },
     ];
     const projects = [{ id: "project-1", name: "AI 电商" }];
-    const { rerender } = render(<SecretarySidebar conversations={conversations} projects={projects} onSelectConversation={vi.fn()} />);
+    const { rerender } = render(<FounderNavigationPanel conversations={conversations} projects={projects} onSelectConversation={vi.fn()} />);
 
     expect(document.querySelectorAll(".sino-project-heading")).toHaveLength(1);
     expect(document.querySelectorAll(".sino-sidebar__conversation-title")).toHaveLength(1);
@@ -76,7 +77,7 @@ describe("Founder sidebar information architecture", () => {
     expect(title.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect([...list.querySelectorAll("b")].map((item) => item.textContent)).toEqual(["普通工作"]);
 
-    rerender(<SecretarySidebar conversations={conversations} projects={projects} activeProjectId="project-1" onSelectConversation={vi.fn()} />);
+    rerender(<FounderNavigationPanel conversations={conversations} projects={projects} activeProjectId="project-1" onSelectConversation={vi.fn()} />);
     expect([...document.querySelectorAll(".sino-sidebar__scroll-region .sino-conversation-item__open b")].map((item) => item.textContent)).toEqual(["普通工作"]);
     expect([...document.querySelectorAll(".sino-project-item .sino-conversation-item__open b")].map((item) => item.textContent)).toEqual(["Project 内工作"]);
     expect(document.querySelectorAll(".sino-sidebar__conversation-title")).toHaveLength(1);
@@ -89,11 +90,11 @@ describe("Founder sidebar information architecture", () => {
       { id: "older", title: "较早讨论", updatedAt: 10 },
     ];
     const projects = [{ id: "studio", name: "Sino Studio AI" }];
-    const { rerender } = render(<SecretarySidebar conversations={conversations} projects={projects} onSelectConversation={vi.fn()} />);
+    const { rerender } = render(<FounderNavigationPanel conversations={conversations} projects={projects} onSelectConversation={vi.fn()} />);
     const titles = () => [...document.querySelectorAll(".sino-sidebar__scroll-region .sino-conversation-item__open b")].map((item) => item.textContent);
 
     expect(titles()).toEqual(["最近讨论", "较早讨论"]);
-    rerender(<SecretarySidebar conversations={conversations} projects={projects} activeProjectId="studio" onSelectConversation={vi.fn()} />);
+    rerender(<FounderNavigationPanel conversations={conversations} projects={projects} activeProjectId="studio" onSelectConversation={vi.fn()} />);
     expect(titles()).toEqual(["最近讨论", "较早讨论"]);
   });
 
@@ -102,13 +103,13 @@ describe("Founder sidebar information architecture", () => {
     const onSelectConversation = vi.fn();
     const conversation = { id: "conv-active", title: "Active filing", conversation_type: "USER_CONVERSATION", project_id: null, updatedAt: 20 };
     const projects = [{ id: "project-a", name: "Project A" }];
-    const { rerender } = render(<SecretarySidebar conversations={[conversation]} projects={projects} activeConversationId="conv-active" onSelectConversation={onSelectConversation} />);
+    const { rerender } = render(<FounderNavigationPanel conversations={[conversation]} projects={projects} activeConversationId="conv-active" onSelectConversation={onSelectConversation} />);
     fireEvent.click(screen.getByRole("button", { name: /会话操作 Active filing/ }));
     fireEvent.click(screen.getByRole("button", { name: "Project A" }));
     await waitFor(() => expect(bindFounderConversationProject).toHaveBeenCalledWith("conv-active", "project-a"));
     expect(onSelectConversation).toHaveBeenCalledWith("conv-active");
 
-    rerender(<SecretarySidebar conversations={[{ ...conversation, project_id: "project-a", conversation_type: "PROJECT_CONVERSATION" }]} projects={projects} activeProjectId="project-a" activeConversationId="conv-active" onSelectConversation={onSelectConversation} />);
+    rerender(<FounderNavigationPanel conversations={[{ ...conversation, project_id: "project-a", conversation_type: "PROJECT_CONVERSATION" }]} projects={projects} activeProjectId="project-a" activeConversationId="conv-active" onSelectConversation={onSelectConversation} />);
     expect(document.querySelector('.sino-project-item .sino-conversation-item[data-conversation-id="conv-active"].is-active')).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /会话操作 Active filing/ }));
     fireEvent.click(screen.getByRole("button", { name: "移出 Project" }));
@@ -116,7 +117,7 @@ describe("Founder sidebar information architecture", () => {
   });
 
   it("never renders governed System, Verification, or ephemeral records", () => {
-    render(<SecretarySidebar conversations={[
+    render(<FounderNavigationPanel conversations={[
       { id: "user", title: "Founder", conversation_type: "USER_CONVERSATION", visibility: "conversation_list", lifecycle_status: "active" },
       { id: "system", title: "System", conversation_type: "SYSTEM_RUN", visibility: "hidden_from_conversation_list", lifecycle_status: "active" },
       { id: "verify", title: "Verify", conversation_type: "VERIFICATION_RUN", visibility: "hidden_from_conversation_list", lifecycle_status: "active" },
@@ -129,7 +130,7 @@ describe("Founder sidebar information architecture", () => {
   });
 
   it("renders a System Project beneath its persisted parent Project", () => {
-    render(<SecretarySidebar conversations={[]} projects={[{ id: "parent", name: "AI Commerce OS" }, { id: "child", name: "Intelligence Evolution Layer", parent_project_id: "parent", project_type: "system_project" }]} activeProjectId="parent" onSelectProject={vi.fn()} />);
+    render(<FounderNavigationPanel conversations={[]} projects={[{ id: "parent", name: "AI Commerce OS" }, { id: "child", name: "Intelligence Evolution Layer", parent_project_id: "parent", project_type: "system_project" }]} activeProjectId="parent" onSelectProject={vi.fn()} />);
     const items = [...document.querySelectorAll(".sino-project-item")];
     expect(items.map((item) => item.textContent)).toEqual(expect.arrayContaining([expect.stringContaining("AI Commerce OS"), expect.stringContaining("Intelligence Evolution Layer")]));
     expect(items[1].classList.contains("is-child")).toBe(true);
@@ -138,7 +139,7 @@ describe("Founder sidebar information architecture", () => {
 
   it("collapses and expands only the selected parent project subtree", async () => {
     const projects = [{ id: "commerce", name: "AI Commerce OS" }, { id: "intel", name: "Intelligence Evolution Layer", parent_project_id: "commerce" }, { id: "cloud", name: "AI Commerce OS Cloud", parent_project_id: "commerce" }, { id: "operator", name: "Sino Operator AI" }];
-    render(<SecretarySidebar conversations={[]} projects={projects} activeProjectId="commerce" onSelectProject={vi.fn()} />);
+    render(<FounderNavigationPanel conversations={[]} projects={projects} activeProjectId="commerce" onSelectProject={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("Intelligence Evolution Layer")).toBeTruthy());
     const parent = document.querySelector('.sino-project-item__open[title="AI Commerce OS"]');
     fireEvent.click(parent);
@@ -152,7 +153,7 @@ describe("Founder sidebar information architecture", () => {
   });
 
   it("removes the Projects heading chevron, preserves plus, and keeps section toggling", () => {
-    render(<SecretarySidebar conversations={[]} projects={[{ id: "commerce", name: "AI Commerce OS" }]} />);
+    render(<FounderNavigationPanel conversations={[]} projects={[{ id: "commerce", name: "AI Commerce OS" }]} />);
     const heading = document.querySelector(".sino-project-heading");
     const toggle = heading.querySelector("button:first-child");
     expect(toggle.querySelector("i")).toBeNull();
@@ -172,7 +173,7 @@ describe("Founder sidebar information architecture", () => {
     function Harness() {
       const [projects, setProjects] = useState([]);
       const refresh = async () => setProjects([{ id: "project-commerce", name: updateFounderProject.mock.calls.length ? "AI电商系统" : "AI电商", status: "active" }]);
-      return <SecretarySidebar conversations={[{ id: "conv-1", title: "商品讨论", updatedAt: Date.now() }]} projects={projects} onProjectsChanged={refresh} onSelectProject={onSelectProject} onSelectConversation={vi.fn()} />;
+      return <FounderNavigationPanel conversations={[{ id: "conv-1", title: "商品讨论", updatedAt: Date.now() }]} projects={projects} onProjectsChanged={refresh} onSelectProject={onSelectProject} onSelectConversation={vi.fn()} />;
     }
     render(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: "新建 Project" }));
@@ -192,9 +193,9 @@ describe("Founder sidebar information architecture", () => {
 
   it("drops a deleted Project from the authoritative list and keeps its Conversations unassigned", () => {
     const conversation = { id: "conv-1", project_id: "deleted-project", title: "仍然保留的讨论", updatedAt: Date.now() };
-    const { rerender } = render(<SecretarySidebar conversations={[conversation]} projects={[{ id: "deleted-project", name: "已删除 Demo Project" }]} activeProjectId="deleted-project" onSelectConversation={vi.fn()} />);
+    const { rerender } = render(<FounderNavigationPanel conversations={[conversation]} projects={[{ id: "deleted-project", name: "已删除 Demo Project" }]} activeProjectId="deleted-project" onSelectConversation={vi.fn()} />);
     expect(screen.getByText("已删除 Demo Project")).toBeTruthy();
-    rerender(<SecretarySidebar conversations={[conversation]} projects={[]} activeProjectId={null} onSelectConversation={vi.fn()} />);
+    rerender(<FounderNavigationPanel conversations={[conversation]} projects={[]} activeProjectId={null} onSelectConversation={vi.fn()} />);
     expect(screen.queryByText("已删除 Demo Project")).toBeNull();
     expect(screen.getByText("仍然保留的讨论")).toBeTruthy();
     expect(document.querySelector(".sino-project-list")?.children.length || 0).toBe(0);
@@ -205,7 +206,7 @@ describe("Founder sidebar information architecture", () => {
     const onNavigate = vi.fn();
     const onProjectsChanged = vi.fn().mockResolvedValue([]);
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    render(<SecretarySidebar projects={[{ id: "project-delete", name: "待删除 Project" }]} activeProjectId="project-delete" conversations={[]} onNavigate={onNavigate} onProjectsChanged={onProjectsChanged} />);
+    render(<FounderNavigationPanel projects={[{ id: "project-delete", name: "待删除 Project" }]} activeProjectId="project-delete" conversations={[]} onNavigate={onNavigate} onProjectsChanged={onProjectsChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "Project 操作 待删除 Project" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(deleteFounderProject).toHaveBeenCalledWith("project-delete"));

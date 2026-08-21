@@ -12,17 +12,16 @@ describe("Conversation Composer layout", () => {
   });
 
   it("keeps the complete desktop ancestor chain at a calculable full height", () => {
-    const app = css.match(/\.sino-app\s*\{([^}]*)\}/)?.[1] || "";
-    const shell = css.match(/\.sino-founder-shell\s*\{([^}]*)\}/)?.[1] || "";
-    const fixedMain = css.match(/\.sino-founder-main--fixed-workspace\s*\{([^}]*)\}/)?.[1] || "";
-    const pageRules = [...css.matchAll(/\.sino-conversation-page\s*\{([^}]*)\}/g)];
-    const page = pageRules.at(-1)?.[1] || "";
+    const shell = css.match(/\.founder-workspace\s*\{([^}]*)\}/)?.[1] || "";
+    const surface = css.match(/\.founder-conversation-surface\s*\{([^}]*)\}/)?.[1] || "";
+    const page = [...css.matchAll(/\.sino-conversation-page\s*\{([^}]*)\}/g)].map((match) => match[1]).find((rule) => rule.includes("height: 100%")) || "";
     const thread = [...css.matchAll(/\.sino-conversation-thread\s*\{([^}]*)\}/g)].map((match) => match[1]).find((rule) => rule.includes("height: 100%")) || "";
-    expect(app).toContain("height: 100dvh");
-    expect(shell).toContain("grid-template-rows: 66px minmax(0, 1fr)");
+    expect(shell).toContain("grid-template-columns: 244px minmax(420px, 1fr) var(--execution-center-width, 336px)");
     expect(shell).toContain("height: 100dvh");
-    expect(fixedMain).toContain("height: 100%");
-    expect(fixedMain).toContain("padding-bottom: 0");
+    expect(shell).toContain("overflow: hidden");
+    expect(surface).toContain("height: 100%");
+    expect(surface).toContain("min-height: 0");
+    expect(surface).toContain("overflow: hidden");
     expect(page).toContain("height: 100%");
     expect(page).toContain("min-height: 0");
     expect(page).toContain("padding: 0");
@@ -51,12 +50,11 @@ describe("Conversation Composer layout", () => {
   });
 
   it("keeps the right Founder Action panel inside the viewport with independent scrolling", () => {
-    const context = css.match(/\.sino-founder-context:has\(> \.sino-founder-task-sidebar\)\s*\{([^}]*)\}/)?.[1] || "";
-    const panel = css.match(/\.sino-founder-task-sidebar\s*\{([^}]*)\}/)?.[1] || "";
-    expect(context).toContain("overflow: hidden");
+    const context = [...css.matchAll(/\.founder-execution-center\s*\{([^}]*)\}/g)].map((match) => match[1]).find((rule) => rule.includes("--execution-center-width")) || "";
+    const panel = css.match(/\.founder-execution-center > \.sino-founder-task-sidebar\s*\{([^}]*)\}/)?.[1] || "";
+    expect(context).toContain("width: var(--execution-center-width, 336px)");
     expect(panel).toContain("height: 100%");
-    expect(panel).toContain("min-height: 0");
-    expect(panel).toContain("overflow-y: auto");
+    expect(panel).toContain("overflow: auto");
   });
 
   it("centers one reading column and gives every AI message its full width", () => {
