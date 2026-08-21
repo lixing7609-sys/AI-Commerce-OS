@@ -58,5 +58,7 @@ describe("Founder workspace visual language", () => {
     expect(workspaceCss).toContain(".founder-conversation-surface > .sino-project-workspace > .sino-conversation-composer-dock { position: sticky; bottom: 0;");
     expect(workspaceCss).toContain(".founder-conversation-surface > .sino-project-workspace .sino-global-composer { min-height: 88px;");
     expect(workspaceCss).toContain(".sino-project-conversation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto;");
+    expect(workspaceCss).toContain(".sino-project-workspace > header { flex: 0 0 auto; padding-bottom: 6px; border-bottom: 0; }");
+    expect(workspaceCss).toContain(".sino-model-selector__trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }");
   });
 });

@@ -67,6 +67,9 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
   const selectedKey = conversation?.conversation_model_provider && conversation?.conversation_model
     ? `${conversation.conversation_model_provider}::${conversation.conversation_model}`
     : preselected?.key || defaultKey;
+  const triggerLabel = conversation?.id && !String(conversation.id).startsWith("pending-") && conversation?.title
+    ? conversation.title
+    : "Sino AI";
 
   async function selectModel(option) {
     if (!option.available || option.key === selectedKey || saving) { setOpen(false); return; }
@@ -84,9 +87,22 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
     } finally { setSaving(false); }
   }
 
+  function toggleMenu() {
+    if (!open) {
+      const bounds = triggerRef.current?.getBoundingClientRect();
+      if (bounds) {
+        const anchorCenter = bounds.left + bounds.width / 2;
+        const menuWidth = Math.min(340, window.innerWidth - 24);
+        const menuLeft = Math.max(12, Math.min(anchorCenter - menuWidth / 2, window.innerWidth - menuWidth - 12));
+        setPopoverPosition({ top: bounds.bottom + 12, left: menuLeft, arrowLeft: anchorCenter - menuLeft });
+      }
+    }
+    setOpen((value) => !value);
+  }
+
   return <div className="sino-model-selector" ref={rootRef}>
-    <button ref={triggerRef} type="button" className="sino-model-selector__trigger sino-model-selector__trigger--pill" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-      <span>Sino AI</span><svg className="sino-model-selector__chevron-right" aria-hidden="true" viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5" /></svg>
+    <button ref={triggerRef} type="button" className="sino-model-selector__trigger sino-model-selector__trigger--pill" aria-label={`${triggerLabel} · 选择模型`} title={triggerLabel} aria-haspopup="menu" aria-expanded={open} onClick={toggleMenu}>
+      <span>{triggerLabel}</span><svg className="sino-model-selector__chevron-right" aria-hidden="true" viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5" /></svg>
     </button>
     {open && typeof document !== "undefined" ? createPortal(<div ref={menuRef} className="sino-model-selector__menu sino-model-selector__menu--floating" role="menu" aria-label="Conversation Models" style={{ top: `${popoverPosition.top}px`, left: `${popoverPosition.left}px`, "--popover-arrow-left": `${popoverPosition.arrowLeft}px` }}>
       <span className="sino-model-selector__arrow" data-popover-arrow aria-hidden="true" />

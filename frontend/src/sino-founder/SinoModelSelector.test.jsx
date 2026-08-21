@@ -58,6 +58,17 @@ describe("Sino AI Conversation Model selector", () => {
     expect(screen.queryByRole("menu", { name: "Conversation Models" })).toBeNull();
   });
 
+  it("projects the current Conversation title into the same ellipsized model trigger", async () => {
+    getModelCenter.mockResolvedValue(center);
+    const title = "供应链金融模式分析与跨区域长期运营策略讨论";
+    render(<SinoModelSelector conversation={{ id: "conv-project", title }} />);
+    const trigger = screen.getByRole("button", { name: `${title} · 选择模型` });
+    expect(trigger.title).toBe(title);
+    expect(trigger.querySelector("span").textContent).toBe(title);
+    fireEvent.click(trigger);
+    expect(await screen.findByRole("menu", { name: "Conversation Models" })).toBeTruthy();
+  });
+
   it("persists an existing conversation override and safely retains the previous model on failure", async () => {
     getModelCenter.mockResolvedValue(center);
     setFounderConversationModel.mockResolvedValue({ id: "conv-1", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro" });

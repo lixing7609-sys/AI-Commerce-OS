@@ -184,7 +184,7 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
 
     await navigation.getByRole("button", { name: "AI Commerce OS", exact: true }).click();
     const projectWorkspace = page.getByRole("region", { name: "项目工作区" });
-    await expect(projectWorkspace.getByRole("heading", { name: "AI Commerce OS" })).toBeVisible();
+    await expect(projectWorkspace.getByRole("heading", { name: "AI Commerce OS" })).toHaveCount(0);
     await expect(projectWorkspace.getByRole("button", { name: "聊天" })).toBeVisible();
     await expect(projectWorkspace.getByRole("button", { name: "数据源" })).toBeVisible();
     await expect(projectWorkspace.getByText("AI Commerce OS 项目讨论", { exact: true })).toBeVisible();
@@ -200,6 +200,26 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     expect(projectComposerBounds.height).toBeLessThanOrEqual(150);
     expect(projectComposerBounds.y + projectComposerBounds.height).toBeGreaterThan(projectWorkspaceBounds.y + projectWorkspaceBounds.height - 130);
     await page.screenshot({ path: `${EVIDENCE}/project-workspace.png`, fullPage: true });
+
+    await projectWorkspace.getByRole("button", { name: /供应链金融业务解析/ }).click();
+    const conversationTitleTrigger = topbar.getByRole("button", { name: "供应链金融业务解析 · 选择模型" });
+    await expect(conversationTitleTrigger).toBeVisible();
+    await expect(navigation.locator(".sino-project-item__row.is-active").getByRole("button", { name: "AI Commerce OS", exact: true })).toBeVisible();
+    await page.screenshot({ path: `${EVIDENCE}/project-conversation.png`, fullPage: true });
+    await conversationTitleTrigger.click();
+    const conversationModelPopover = page.getByRole("menu", { name: "Conversation Models" });
+    await expect(conversationModelPopover).toBeVisible();
+    const [conversationTriggerBounds, conversationArrowBounds] = await Promise.all([
+      conversationTitleTrigger.boundingBox(), conversationModelPopover.locator("[data-popover-arrow]").boundingBox(),
+    ]);
+    expect(Math.abs((conversationTriggerBounds.x + conversationTriggerBounds.width / 2) - (conversationArrowBounds.x + conversationArrowBounds.width / 2))).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: `${EVIDENCE}/project-conversation-model-popover.png`, fullPage: true });
+    await page.keyboard.press("Escape");
+
+    await navigation.getByRole("button", { name: "AI Commerce OS", exact: true }).click();
+    await expect(topbar.getByRole("button", { name: "Sino AI · 选择模型" })).toBeVisible();
+    await navigation.getByText("Codex 终端操作建议", { exact: true }).click();
+    await expect(topbar.getByRole("button", { name: "Codex 终端操作建议 · 选择模型" })).toBeVisible();
 
     await navigation.getByRole("button", { name: "Sino AI" }).click();
     await expect(page.getByRole("region", { name: "项目工作区" })).toHaveCount(0);

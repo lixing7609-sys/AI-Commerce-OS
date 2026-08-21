@@ -30,7 +30,7 @@ describe("System Project workspace context", () => {
   it("renders the Project name, tabs, and canonical Project Conversations", () => {
     const openConversation = vi.fn();
     render(<ProjectWorkspace intelligence={{ project_name: "Foundation System", conversation_refs: [{ conversation_id: "conv-new", title: "最新讨论", summary: "最近一条内容摘要", updated_at: "2026-08-21T10:00:00Z" }, { conversation_id: "conv-old", title: "较早讨论", updated_at: "2026-08-20T10:00:00Z" }] }} onOpenConversation={openConversation} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: "Foundation System" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Foundation System" })).toBeNull();
     expect(screen.getByRole("button", { name: "聊天" }).classList.contains("is-active")).toBe(true);
     expect(screen.getByRole("button", { name: "聊天" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "数据源" })).toBeTruthy();

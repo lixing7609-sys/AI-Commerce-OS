@@ -186,7 +186,7 @@ export function ProjectWorkspace({ intelligence, loading, error, onOpenConversat
   if (!intelligence) return <section className="sino-project-workspace" aria-label="项目工作区"><p className="sino-project-workspace__state" role="status">{loading ? "正在加载项目…" : error || "项目暂时不可用"}</p></section>;
   const conversations = [...(intelligence.conversation_refs || [])].sort((left, right) => new Date(right.updated_at || 0) - new Date(left.updated_at || 0));
   return <section className="sino-project-workspace" aria-label="项目工作区">
-    <header><h1>{intelligence.project_name}</h1><nav className="sino-project-tabs" aria-label="项目内容"><button type="button" className={tab === "chats" ? "is-active" : ""} aria-pressed={tab === "chats"} onClick={() => setTab("chats")}>聊天</button><button type="button" className={tab === "sources" ? "is-active" : ""} aria-pressed={tab === "sources"} onClick={() => setTab("sources")}>数据源</button></nav></header>
+    <header><nav className="sino-project-tabs" aria-label="项目内容"><button type="button" className={tab === "chats" ? "is-active" : ""} aria-pressed={tab === "chats"} onClick={() => setTab("chats")}>聊天</button><button type="button" className={tab === "sources" ? "is-active" : ""} aria-pressed={tab === "sources"} onClick={() => setTab("sources")}>数据源</button></nav></header>
     {tab === "chats" ? <div className="sino-project-conversations" role="region" aria-label={`${intelligence.project_name} 项目会话`}>
       {conversations.length ? conversations.map((item) => <button type="button" className="sino-project-conversation-row" key={item.conversation_id} onClick={() => onOpenConversation(item.conversation_id)}>
         <strong>{item.title || "新讨论"}</strong>
