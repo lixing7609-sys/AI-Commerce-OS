@@ -45,6 +45,7 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
   const [resizing, setResizing] = useState(false);
   const isWorkspace = active === "conversation";
   const isLibrary = active === "library";
+  const isSettings = active === "settings";
 
   useEffect(() => {
     if (surfaceRef.current) surfaceRef.current.scrollTop = 0;
@@ -115,8 +116,8 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
   const navigation = <FounderNavigationPanel active={active} onNavigate={onNavigate} onCollapse={isWorkspace || isLibrary ? () => setNavigationCollapsed(true) : undefined} resizeHandle={isWorkspace || isLibrary ? navResizeHandle : undefined} {...sidebarProps} />;
 
   if (!isWorkspace && !isLibrary) {
-    return <div className="sino-founder-asset-route">
-      {navigation}
+    return <div className={`sino-founder-asset-route${isSettings ? " is-settings" : ""}`}>
+      {!isSettings ? navigation : null}
       <main ref={surfaceRef} className="sino-founder-asset-page" tabIndex={0} aria-label="Founder AI 功能页面">{main}</main>
       {context ? <aside className="sino-founder-asset-inspector" aria-label="功能页详情">{context}</aside> : null}
     </div>;

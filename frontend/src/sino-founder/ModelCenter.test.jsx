@@ -52,7 +52,7 @@ describe("Founder Settings", () => {
     expect(screen.queryByText("API Key ****1234")).toBeNull();
     expect(screen.queryByText(/secret-value/)).toBeNull();
     expect(screen.queryByRole("region", { name: "连接状态" })).toBeNull();
-    for (const name of ["模型与 API", "Sino AI", "执行器", "讨论配置"]) expect(screen.getByRole("button", { name })).toBeTruthy();
+    for (const name of ["模型与 API", "Sino AI", "执行器", "讨论配置", "运行环境"]) expect(screen.getByRole("button", { name })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "← 返回 Founder" })).toBeNull();
     expect(screen.queryByRole("button", { name: "关闭设置" })).toBeNull();
     expect(document.querySelector(".sino-settings-tabs")).toBeTruthy();
@@ -62,11 +62,11 @@ describe("Founder Settings", () => {
     getModelCenter.mockResolvedValue({ ...center, model_capability_registry: capabilityRegistry });
     saveModelRoutingPreferred.mockResolvedValue(capabilityRegistry);
     render(<ModelCenter />);
-    expect(await screen.findByRole("region", { name: "Model Capabilities" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "Model Routing Policy" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "模型能力" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "模型路由策略" })).toBeTruthy();
     expect(screen.getAllByText("Gemini 3.6 Flash").length).toBeGreaterThan(0);
-    expect(screen.getByText("Missing")).toBeTruthy();
-    fireEvent.change(screen.getByRole("combobox", { name: "Vision Understanding Preferred" }), { target: { value: "gpt::gpt-5-pro" } });
+    expect(screen.getByText("缺失")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "视觉理解 首选模型" }), { target: { value: "gpt::gpt-5-pro" } });
     await waitFor(() => expect(saveModelRoutingPreferred).toHaveBeenCalledWith("VISION_UNDERSTANDING", { provider_id: "gpt", model_id: "gpt-5-pro" }));
   });
 
@@ -77,7 +77,7 @@ describe("Founder Settings", () => {
     expect(screen.getByText("配置 Sino Founder AI 使用的模型、API、讨论与执行环境。")).toBeTruthy();
     expect(screen.getByText(/DeepSeek \/ deepseek/)).toBeTruthy();
     expect(screen.getByText("****1234")).toBeTruthy();
-    expect(screen.getByText("Available Models")).toBeTruthy();
+    expect(screen.getByText("可用模型")).toBeTruthy();
     rerender(<SettingsContext detail={{ section: "sino" }} onClose={onClose} />);
     expect(screen.getByText("Sino Founder AI 系统配置")).toBeTruthy();
     expect(screen.getByText("设置详情")).toBeTruthy();
@@ -87,13 +87,13 @@ describe("Founder Settings", () => {
 
   it("shows verified LOCAL bindings and future stages without exposing credential references", async () => {
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: "Runtime Environment" }));
+    fireEvent.click(screen.getByRole("button", { name: "运行环境" }));
     expect(await screen.findByText("http://127.0.0.1:5173")).toBeTruthy();
     expect(screen.getByText("http://127.0.0.1:8000")).toBeTruthy();
     expect(screen.getByText("PostgreSQL / LOCAL")).toBeTruthy();
     expect(screen.getByText("application-level HTTP Bearer RBAC")).toBeTruthy();
     expect(screen.getByText("loopback")).toBeTruthy();
-    expect(screen.getByText("Configured / Reference Exists")).toBeTruthy();
+    expect(screen.getByText("已配置 / 引用存在")).toBeTruthy();
     expect(screen.getByText("PLANNED")).toBeTruthy();
     expect(screen.getAllByText("NOT_CONFIGURED").length).toBeGreaterThanOrEqual(1);
     expect(document.body.textContent).not.toContain("credential-reference://");
@@ -102,10 +102,10 @@ describe("Founder Settings", () => {
   it("uses the middle Settings panel as the sole scroll container and keeps the last runtime card reachable", async () => {
     render(<div className="sino-founder-shell"><main className="sino-founder-main sino-founder-main--fixed-workspace"><ModelCenter /></main><aside className="sino-founder-context" aria-label="Settings Context">Settings Context</aside></div>);
     await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: "Runtime Environment" }));
+    fireEvent.click(screen.getByRole("button", { name: "运行环境" }));
     const settings = screen.getByRole("region", { name: "设置" });
     expect(settings.matches(".sino-founder-main--fixed-workspace > .sino-settings")).toBe(true);
-    expect(settings.contains(screen.getByText("Network"))).toBe(true);
+    expect(settings.contains(screen.getByText("网络"))).toBe(true);
     expect(screen.getByLabelText("Settings Context")).toBeTruthy();
     expect(screen.getByRole("main").classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
   });

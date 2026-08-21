@@ -135,6 +135,14 @@ describe("formal Sino Founder workspace shell", () => {
     expect(screen.getByLabelText("功能页详情").textContent).toContain("Detail");
   });
 
+  it("removes the navigation track from Settings while keeping its configuration inspector", () => {
+    const { container } = render(<SinoFounderShell {...props} active="settings" main={<section>设置</section>} context={<section aria-label="系统配置面板">配置</section>} />);
+    expect(container.querySelector(".sino-founder-asset-route.is-settings")).toBeTruthy();
+    expect(screen.queryByLabelText("Founder Navigation")).toBeNull();
+    expect(screen.getByRole("main", { name: "Founder AI 功能页面" }).textContent).toContain("设置");
+    expect(screen.getByLabelText("功能页详情").textContent).toContain("配置");
+  });
+
   it("expands Library across the execution column without a model selector or Composer", () => {
     const { container } = render(<SinoFounderShell {...props} active="library" main={<section aria-label="库工作区">Library cards</section>} />);
     expect(container.querySelector(".founder-workspace.is-library")).toBeTruthy();
