@@ -23,14 +23,14 @@ describe("Founder sidebar information architecture", () => {
   it("renders only the complete navigation and delegates collapse ownership to the workspace shell", () => {
     const onCollapse = vi.fn();
     render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} onNewConversation={vi.fn()} onCollapse={onCollapse} />);
-    expect(screen.getByText("Sino")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sino AI" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "新建讨论" })).toBeTruthy();
     const topActions = document.querySelector(".sino-sidebar-top-actions");
     expect(topActions.children).toHaveLength(2);
     expect([...topActions.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"))).toEqual(["收起侧边栏", "新建讨论"]);
     expect(screen.getByRole("button", { name: "库" })).toBeTruthy();
     expect(screen.getByText("项目")).toBeTruthy();
-    expect(screen.getByText("会话")).toBeTruthy();
+    expect(screen.getByText("最近")).toBeTruthy();
     expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
     expect(document.querySelector(".sino-collapsed-navigation")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
@@ -60,6 +60,30 @@ describe("Founder sidebar information architecture", () => {
     expect(document.querySelectorAll(".sino-conversation-group")).toHaveLength(0);
   });
 
+  it("renders the requested navigation hierarchy without Project status metadata", () => {
+    const onNavigate = vi.fn();
+    const onSelectConversation = vi.fn();
+    render(<FounderNavigationPanel
+      onNavigate={onNavigate}
+      onSelectConversation={onSelectConversation}
+      projects={[{ id: "commerce", name: "AI Commerce OS", ready_count: 3, candidate_count: 2 }]}
+      conversations={[{ id: "recent", title: "最近的真实会话", updatedAt: 20 }]}
+    />);
+    expect(screen.getByRole("button", { name: "Sino AI" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "库" })).toBeTruthy();
+    expect(screen.getByText("项目")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "新建项目" })).toBeTruthy();
+    expect(screen.getByText("AI Commerce OS")).toBeTruthy();
+    expect(screen.getByText("最近")).toBeTruthy();
+    expect(screen.queryByText(/Conversations/)).toBeNull();
+    expect(screen.queryByText(/Ready 3/)).toBeNull();
+    expect(screen.queryByText(/Candidate 2/)).toBeNull();
+    fireEvent.click(document.querySelector('.sino-conversation-item__open[title="最近的真实会话"]'));
+    expect(onSelectConversation).toHaveBeenCalledWith("recent");
+    fireEvent.click(screen.getByRole("button", { name: "Sino AI" }));
+    expect(onNavigate).toHaveBeenCalledWith("conversation");
+  });
+
   it("uses created time and conversation id as deterministic tie breakers", () => {
     const timestamp = "2026-08-18T10:27:00.000000+08:00";
     const conversations = [
@@ -73,7 +97,7 @@ describe("Founder sidebar information architecture", () => {
     expect([...document.querySelectorAll(".sino-conversation-item")].map((item) => item.dataset.conversationId)).toEqual(["conv-c", "conv-b", "conv-a"]);
   });
 
-  it("files project Conversations under the Project and keeps only unassigned Founder Conversations global", () => {
+  it("keeps Projects as containers and renders all Founder Conversations in Recent", () => {
     const conversations = [
       { id: "project-work", project_id: "project-1", title: "Project 内工作", updatedAt: 20 },
       { id: "general-work", project_id: null, title: "普通工作", updatedAt: 10 },
@@ -84,7 +108,7 @@ describe("Founder sidebar information architecture", () => {
     expect(document.querySelectorAll(".sino-project-heading")).toHaveLength(1);
     expect(document.querySelectorAll(".sino-sidebar__conversation-title")).toHaveLength(1);
     const headingLabels = [...document.querySelectorAll(".sino-sidebar-primary-title__label")];
-    expect(headingLabels.map((label) => label.textContent)).toEqual(["项目", "会话"]);
+    expect(headingLabels.map((label) => label.textContent)).toEqual(["项目", "最近"]);
     expect(headingLabels.every((label) => label.className === headingLabels[0].className)).toBe(true);
     expect(document.querySelector(".sino-project-item .sino-conversation-list")).toBeNull();
     const section = document.querySelector(".sino-sidebar__conversation-section");
@@ -92,11 +116,11 @@ describe("Founder sidebar information architecture", () => {
     const list = section.querySelector(".sino-sidebar__scroll-region .sino-conversation-list");
     expect([...section.children]).toEqual([title, section.querySelector(":scope > .sino-sidebar__scroll-region")]);
     expect(title.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect([...list.querySelectorAll("b")].map((item) => item.textContent)).toEqual(["普通工作"]);
+    expect([...list.querySelectorAll("b")].map((item) => item.textContent)).toEqual(["Project 内工作", "普通工作"]);
 
     rerender(<FounderNavigationPanel conversations={conversations} projects={projects} activeProjectId="project-1" onSelectConversation={vi.fn()} />);
-    expect([...document.querySelectorAll(".sino-sidebar__scroll-region .sino-conversation-item__open b")].map((item) => item.textContent)).toEqual(["普通工作"]);
-    expect([...document.querySelectorAll(".sino-project-item .sino-conversation-item__open b")].map((item) => item.textContent)).toEqual(["Project 内工作"]);
+    expect([...document.querySelectorAll(".sino-sidebar__scroll-region .sino-conversation-item__open b")].map((item) => item.textContent)).toEqual(["Project 内工作", "普通工作"]);
+    expect(document.querySelector(".sino-project-item .sino-conversation-item__open")).toBeNull();
     expect(document.querySelectorAll(".sino-sidebar__conversation-title")).toHaveLength(1);
     expect(document.querySelector('.sino-collapsed-navigation [aria-label="会话"]')).toBeNull();
   });
@@ -122,12 +146,12 @@ describe("Founder sidebar information architecture", () => {
     const projects = [{ id: "project-a", name: "Project A" }];
     const { rerender } = render(<FounderNavigationPanel conversations={[conversation]} projects={projects} activeConversationId="conv-active" onSelectConversation={onSelectConversation} />);
     fireEvent.click(screen.getByRole("button", { name: /会话操作 Active filing/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Project A" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Project A" }).at(-1));
     await waitFor(() => expect(bindFounderConversationProject).toHaveBeenCalledWith("conv-active", "project-a"));
     expect(onSelectConversation).toHaveBeenCalledWith("conv-active");
 
     rerender(<FounderNavigationPanel conversations={[{ ...conversation, project_id: "project-a", conversation_type: "PROJECT_CONVERSATION" }]} projects={projects} activeProjectId="project-a" activeConversationId="conv-active" onSelectConversation={onSelectConversation} />);
-    expect(document.querySelector('.sino-project-item .sino-conversation-item[data-conversation-id="conv-active"].is-active')).toBeTruthy();
+    expect(document.querySelector('.sino-sidebar__scroll-region .sino-conversation-item[data-conversation-id="conv-active"].is-active')).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /会话操作 Active filing/ }));
     fireEvent.click(screen.getByRole("button", { name: "移出 Project" }));
     await waitFor(() => expect(bindFounderConversationProject).toHaveBeenCalledWith("conv-active", null));
@@ -146,39 +170,29 @@ describe("Founder sidebar information architecture", () => {
     expect(screen.queryByText("Empty")).toBeNull();
   });
 
-  it("renders a System Project beneath its persisted parent Project", () => {
+  it("renders persisted parent and System Projects as a flat navigation list", () => {
     render(<FounderNavigationPanel conversations={[]} projects={[{ id: "parent", name: "AI Commerce OS" }, { id: "child", name: "Intelligence Evolution Layer", parent_project_id: "parent", project_type: "system_project" }]} activeProjectId="parent" onSelectProject={vi.fn()} />);
     const items = [...document.querySelectorAll(".sino-project-item")];
     expect(items.map((item) => item.textContent)).toEqual(expect.arrayContaining([expect.stringContaining("AI Commerce OS"), expect.stringContaining("Intelligence Evolution Layer")]));
-    expect(items[1].classList.contains("is-child")).toBe(true);
-    expect(items[1].style.marginLeft).toBe("14px");
+    expect(items[1].classList.contains("is-child")).toBe(false);
+    expect(items[1].style.marginLeft).toBe("");
   });
 
-  it("collapses and expands only the selected parent project subtree", async () => {
+  it("selects a Project without hiding any other Project", async () => {
     const projects = [{ id: "commerce", name: "AI Commerce OS" }, { id: "intel", name: "Intelligence Evolution Layer", parent_project_id: "commerce" }, { id: "cloud", name: "AI Commerce OS Cloud", parent_project_id: "commerce" }, { id: "operator", name: "Sino Operator AI" }];
     render(<FounderNavigationPanel conversations={[]} projects={projects} activeProjectId="commerce" onSelectProject={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("Intelligence Evolution Layer")).toBeTruthy());
-    const parent = document.querySelector('.sino-project-item__open[title="AI Commerce OS"]');
-    fireEvent.click(parent);
-    expect(screen.queryByText("Intelligence Evolution Layer")).toBeNull();
-    expect(screen.queryByText("AI Commerce OS Cloud")).toBeNull();
-    expect(screen.getByText("Sino Operator AI")).toBeTruthy();
-    fireEvent.click(parent);
+    fireEvent.click(document.querySelector('.sino-project-item__open[title="AI Commerce OS"]'));
     expect(screen.getByText("Intelligence Evolution Layer")).toBeTruthy();
     expect(screen.getByText("AI Commerce OS Cloud")).toBeTruthy();
     expect(screen.getByText("Sino Operator AI")).toBeTruthy();
   });
 
-  it("removes the Projects heading chevron, preserves plus, and keeps section toggling", () => {
+  it("shows an explicit New Project entry under the Projects section", () => {
     render(<FounderNavigationPanel conversations={[]} projects={[{ id: "commerce", name: "AI Commerce OS" }]} />);
     const heading = document.querySelector(".sino-project-heading");
-    const toggle = heading.querySelector("button:first-child");
-    expect(toggle.querySelector("i")).toBeNull();
-    expect(screen.getByRole("button", { name: "新建 Project" })).toBeTruthy();
-    expect(document.querySelector(".sino-project-list")).toBeTruthy();
-    fireEvent.click(toggle);
-    expect(document.querySelector(".sino-project-list")).toBeNull();
-    fireEvent.click(toggle);
+    expect(heading.querySelector("button")).toBeNull();
+    expect(screen.getByRole("button", { name: "新建项目" })).toBeTruthy();
     expect(document.querySelector(".sino-project-list")).toBeTruthy();
   });
 
@@ -193,7 +207,7 @@ describe("Founder sidebar information architecture", () => {
       return <FounderNavigationPanel conversations={[{ id: "conv-1", title: "商品讨论", updatedAt: Date.now() }]} projects={projects} onProjectsChanged={refresh} onSelectProject={onSelectProject} onSelectConversation={vi.fn()} />;
     }
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "新建 Project" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建项目" }));
     fireEvent.change(screen.getByLabelText("Project 名称"), { target: { value: "AI电商" } });
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
     await waitFor(() => expect(createFounderProject).toHaveBeenCalledWith({ name: "AI电商", description: null }));
@@ -204,7 +218,7 @@ describe("Founder sidebar information architecture", () => {
     fireEvent.keyDown(screen.getByLabelText("重命名 AI电商"), { key: "Enter" });
     await waitFor(() => expect(updateFounderProject).toHaveBeenCalledWith("project-commerce", { name: "AI电商系统" }));
     fireEvent.click(screen.getByRole("button", { name: /会话操作 商品讨论/ }));
-    fireEvent.click(screen.getByRole("button", { name: "AI电商系统" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "AI电商系统" }).at(-1));
     await waitFor(() => expect(bindFounderConversationProject).toHaveBeenCalledWith("conv-1", "project-commerce"));
   });
 
@@ -215,7 +229,7 @@ describe("Founder sidebar information architecture", () => {
     rerender(<FounderNavigationPanel conversations={[conversation]} projects={[]} activeProjectId={null} onSelectConversation={vi.fn()} />);
     expect(screen.queryByText("已删除 Demo Project")).toBeNull();
     expect(screen.getByText("仍然保留的讨论")).toBeTruthy();
-    expect(document.querySelector(".sino-project-list")?.children.length || 0).toBe(0);
+    expect(document.querySelector(".sino-project-list")?.children.length || 0).toBe(1);
   });
 
   it("returns Home and refreshes authoritative state immediately after deleting the active Project", async () => {

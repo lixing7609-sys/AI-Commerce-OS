@@ -25,21 +25,21 @@ test("Founder workspace uses the consolidated readable GPT-style visual language
 
   const navigationSection = page.getByText("项目", { exact: true });
   const navigationItem = page.getByRole("button", { name: "库" });
-  const projectMetadata = page.locator(".sino-project-item__meta").first();
+  const recentSection = page.getByText("最近", { exact: true });
   const composer = page.getByLabel("讨论内容");
   const executionTitle = page.getByRole("heading", { name: "执行中心" });
   const executionSecondary = page.getByText("Founder 暂无需要处理的事项");
   const audit = {
     navigationSection: await styleOf(navigationSection),
     navigationItem: await styleOf(navigationItem),
-    projectMetadata: await styleOf(projectMetadata),
+    recentSection: await styleOf(recentSection),
     composer: await styleOf(composer),
     executionTitle: await styleOf(executionTitle),
     executionSecondary: await styleOf(executionSecondary),
   };
   expect(parseFloat(audit.navigationSection.fontSize)).toBeGreaterThanOrEqual(14);
   expect(parseFloat(audit.navigationItem.fontSize)).toBeGreaterThanOrEqual(14);
-  expect(parseFloat(audit.projectMetadata.fontSize)).toBeGreaterThanOrEqual(13);
+  expect(parseFloat(audit.recentSection.fontSize)).toBeGreaterThanOrEqual(14);
   expect(parseFloat(audit.composer.fontSize)).toBeGreaterThanOrEqual(15);
   expect(parseFloat(audit.executionTitle.fontSize)).toBeGreaterThanOrEqual(14);
   expect(parseFloat(audit.executionSecondary.fontSize)).toBeGreaterThanOrEqual(13);
