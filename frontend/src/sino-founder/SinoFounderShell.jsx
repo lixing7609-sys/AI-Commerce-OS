@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { FounderNavigationPanel } from "./FounderNavigationPanel.jsx";
 
 const EXECUTION_WIDTH_KEY = "sino-founder-execution-center-width";
+const NAV_COLLAPSED_KEY = "sino-founder-sidebar-collapsed";
+const NAV_WIDTH_KEY = "sino-founder-navigation-width";
+const DEFAULT_NAV_WIDTH = 244;
+const MIN_NAV_WIDTH = 210;
+const MAX_NAV_WIDTH = 480;
 const DEFAULT_EXECUTION_WIDTH = 336;
 const MIN_EXECUTION_WIDTH = 280;
 const MAX_EXECUTION_WIDTH = 640;
@@ -16,12 +21,30 @@ const restoredWidth = () => {
   } catch { return DEFAULT_EXECUTION_WIDTH; }
 };
 
+const restoredNavWidth = () => {
+  try {
+    const value = Number(window.localStorage.getItem(NAV_WIDTH_KEY));
+    return Number.isFinite(value) && value >= MIN_NAV_WIDTH && value <= MAX_NAV_WIDTH ? value : DEFAULT_NAV_WIDTH;
+  } catch { return DEFAULT_NAV_WIDTH; }
+};
+
+const restoredNavCollapsed = () => {
+  try { return window.localStorage.getItem(NAV_COLLAPSED_KEY) === "true"; }
+  catch { return false; }
+};
+
+function SidebarIcon({ expanded = false }) {
+  return <svg aria-hidden="true" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5" /><path d={expanded ? "M5.5 2.5v11M8 6l2 2-2 2" : "M5.5 2.5v11M10 6 8 8l2 2"} /></svg>;
+}
+
 const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
 
 export function SinoFounderShell({ active, onNavigate, sidebarProps, main, context, conversationSelector }) {
   const workspaceRef = useRef(null);
   const surfaceRef = useRef(null);
   const [executionWidth, setExecutionWidth] = useState(restoredWidth);
+  const [navWidth, setNavWidth] = useState(restoredNavWidth);
+  const [navCollapsed, setNavCollapsed] = useState(restoredNavCollapsed);
   const [resizing, setResizing] = useState(false);
   const isWorkspace = active === "conversation";
 
@@ -32,6 +55,39 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
   function persistWidth(value) {
     setExecutionWidth(value);
     try { window.localStorage.setItem(EXECUTION_WIDTH_KEY, String(value)); } catch { /* unavailable */ }
+  }
+
+  function persistNavWidth(value) {
+    setNavWidth(value);
+    try { window.localStorage.setItem(NAV_WIDTH_KEY, String(value)); } catch { /* unavailable */ }
+  }
+
+  function setNavigationCollapsed(value) {
+    setNavCollapsed(value);
+    try { window.localStorage.setItem(NAV_COLLAPSED_KEY, String(value)); } catch { /* unavailable */ }
+  }
+
+  function resizeNavigation(event) {
+    if (navCollapsed || window.matchMedia?.("(max-width: 900px)").matches) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const startX = event.clientX;
+    const startWidth = navWidth;
+    setResizing(true);
+    const move = (moveEvent) => {
+      const workspaceWidth = workspaceRef.current?.clientWidth || window.innerWidth;
+      const maxWidth = Math.min(MAX_NAV_WIDTH, Math.floor(workspaceWidth * .35), workspaceWidth - MIN_CONVERSATION_WIDTH - executionWidth - 36);
+      persistNavWidth(clamp(startWidth + moveEvent.clientX - startX, MIN_NAV_WIDTH, maxWidth));
+    };
+    const stop = () => {
+      setResizing(false);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
   }
 
   function resizeExecutionCenter(event) {
@@ -57,7 +113,8 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
     window.addEventListener("pointercancel", stop);
   }
 
-  const navigation = <FounderNavigationPanel active={active} onNavigate={onNavigate} {...sidebarProps} />;
+  const navResizeHandle = <div className="founder-navigation-resize-handle" role="separator" aria-label="调整左侧导航宽度" aria-orientation="vertical" aria-valuemin={MIN_NAV_WIDTH} aria-valuemax={MAX_NAV_WIDTH} aria-valuenow={navWidth} onPointerDown={resizeNavigation} onDoubleClick={() => persistNavWidth(DEFAULT_NAV_WIDTH)} />;
+  const navigation = <FounderNavigationPanel active={active} onNavigate={onNavigate} onCollapse={isWorkspace ? () => setNavigationCollapsed(true) : undefined} resizeHandle={isWorkspace ? navResizeHandle : undefined} {...sidebarProps} />;
 
   if (!isWorkspace) {
     return <div className="sino-founder-asset-route">
@@ -69,12 +126,16 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
 
   return <div
     ref={workspaceRef}
-    className={`founder-workspace${resizing ? " is-resizing" : ""}`}
-    style={{ "--execution-center-width": `${executionWidth}px` }}
-    data-workspace-structure="navigation conversation execution"
+    className={`founder-workspace${navCollapsed ? " is-nav-collapsed" : ""}${resizing ? " is-resizing" : ""}`}
+    style={{ "--founder-nav-width": `${navWidth}px`, "--execution-center-width": `${executionWidth}px` }}
+    data-workspace-structure={navCollapsed ? "conversation execution" : "navigation conversation execution"}
   >
-    {navigation}
+    {!navCollapsed ? navigation : null}
     <main ref={surfaceRef} className="founder-conversation-surface" tabIndex={0} aria-label="Sino Natural Conversation">
+      {navCollapsed ? <div className="founder-collapsed-controls" aria-label="Collapsed navigation controls">
+        <button type="button" title="展开侧边栏" aria-label="展开侧边栏" onClick={() => setNavigationCollapsed(false)}><SidebarIcon expanded /></button>
+        <button type="button" title="新建讨论" aria-label="新建讨论" onClick={sidebarProps?.onNewConversation}>＋</button>
+      </div> : null}
       {conversationSelector}
       <div className="founder-conversation-actions" aria-label="Conversation controls">
         <button type="button" title="重置执行中心宽度" aria-label="重置执行中心宽度" onClick={() => persistWidth(DEFAULT_EXECUTION_WIDTH)}>↔</button>

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const API = "http://127.0.0.1:8000/api/v1";
 
-test("formal Founder workspace persists the GPT-style navigation rail", async ({ page }) => {
+test("formal Founder workspace resizes and fully hides the GPT-style navigation panel", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 800 });
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
@@ -10,24 +10,40 @@ test("formal Founder workspace persists the GPT-style navigation rail", async ({
   const workspace = page.locator(".founder-workspace");
   const navigation = page.getByLabel("Founder Navigation");
   const expanded = await navigation.boundingBox();
-  await expect(page.getByRole("button", { name: "Sino AI" })).toBeVisible();
-  await page.getByRole("button", { name: "收起侧边栏" }).click();
-  await expect(navigation).toHaveClass(/is-collapsed/);
+  const centerBefore = await page.getByRole("main", { name: "Sino Natural Conversation" }).boundingBox();
+  const selector = page.getByRole("button", { name: "Sino AI" });
+  await expect(selector).toBeVisible();
+  const selectorBefore = await selector.boundingBox();
+  const handle = page.getByRole("separator", { name: "调整左侧导航宽度" });
+  const handleBox = await handle.boundingBox();
+  await handle.hover({ position: { x: 5, y: 80 } });
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x + 105, handleBox.y + 80, { steps: 8 });
+  await page.mouse.up();
   await page.waitForTimeout(220);
-  const collapsed = await navigation.boundingBox();
-  expect(collapsed.width).toBeLessThan(expanded.width - 100);
-  await expect(page.getByRole("button", { name: "新建讨论" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "库" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "项目", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "会话" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "设置" })).toBeVisible();
-  await expect(workspace).toHaveAttribute("data-workspace-structure", "navigation conversation execution");
+  const wider = await navigation.boundingBox();
+  expect(wider.width).toBeGreaterThan(expanded.width + 80);
   await page.reload();
-  expect((await navigation.boundingBox()).width).toBeLessThan(expanded.width - 100);
-  await page.getByRole("button", { name: "展开侧边栏" }).click();
-  await expect(navigation).not.toHaveClass(/is-collapsed/);
+  expect(Math.abs((await navigation.boundingBox()).width - wider.width)).toBeLessThan(2);
+  await page.getByRole("button", { name: "收起侧边栏" }).click();
   await page.waitForTimeout(220);
-  expect((await navigation.boundingBox()).width).toBeGreaterThan(collapsed.width + 100);
+  await expect(page.getByLabel("Founder Navigation")).toHaveCount(0);
+  await expect(workspace).toHaveAttribute("data-workspace-structure", "conversation execution");
+  const centerCollapsed = await page.getByRole("main", { name: "Sino Natural Conversation" }).boundingBox();
+  expect(centerCollapsed.x).toBeLessThan(centerBefore.x - 100);
+  expect((await selector.boundingBox()).x).toBeLessThan(selectorBefore.x - 100);
+  await expect(page.getByRole("button", { name: "展开侧边栏" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "新建讨论" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "库" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "设置" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByLabel("Founder Navigation")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "展开侧边栏" })).toBeVisible();
+  await page.getByRole("button", { name: "展开侧边栏" }).click();
+  await page.waitForTimeout(220);
+  const restored = await page.getByLabel("Founder Navigation").boundingBox();
+  expect(Math.abs(restored.width - wider.width)).toBeLessThan(2);
+  await expect(workspace).toHaveAttribute("data-workspace-structure", "navigation conversation execution");
 });
 
 test("Sino AI selects and restores a conversation-scoped configured model", async ({ page, request }) => {

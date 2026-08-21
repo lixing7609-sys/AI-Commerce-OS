@@ -2,8 +2,6 @@ import { useState } from "react";
 import { businessAssetName, isDeveloperRecord } from "./assetPresentation.js";
 import { bindFounderConversationProject, createFounderProject, deleteFounderProject, updateFounderProject } from "../services/founderAiApi.js";
 
-const SIDEBAR_COLLAPSED_KEY = "sino-founder-sidebar-collapsed";
-
 function FolderIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M2.25 4.25h4l1.25 1.5h6.25v6.5H2.25z" /></svg>;
 }
@@ -16,17 +14,12 @@ function LibraryIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M2.5 3.25h4.25v4.25H2.5zM9.25 3.25h4.25v4.25H9.25zM2.5 9.5h4.25v3.25H2.5zM9.25 9.5h4.25v3.25H9.25z" /></svg>;
 }
 
-function SidebarToggleIcon({ expanded = false }) {
-  return <svg aria-hidden="true" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5" /><path d="M5.5 2.5v11M8.5 6l2 2-2 2" className={expanded ? "is-expanded" : ""} /></svg>;
+function SidebarToggleIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5" /><path d="M5.5 2.5v11M9.5 6l-2 2 2 2" /></svg>;
 }
 
 function SettingsIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.25" /><path d="M8 1.75v1.5M8 12.75v1.5M1.75 8h1.5M12.75 8h1.5M3.55 3.55l1.05 1.05M11.4 11.4l1.05 1.05M12.45 3.55 11.4 4.6M4.6 11.4l-1.05 1.05" /></svg>;
-}
-
-function restoredCollapsedState() {
-  try { return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true"; }
-  catch { return false; }
 }
 
 function conversationTimestamp(item) {
@@ -64,8 +57,7 @@ function ConversationList({ items, now, projects, activeConversationId, onSelect
   return <div className="sino-conversation-list">{items.map((item) => <div key={item.id} data-conversation-id={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><span>•</span><b>{item.title || "新讨论"}</b><small>{conversationTimeLabel(item, now)}</small></button><button type="button" className="sino-conversation-item__menu" aria-label={`会话操作 ${item.title}`} onClick={() => setMenu(menu === item.id ? null : item.id)}>···</button>{menu === item.id ? <div className="sino-sidebar-popover sino-conversation-move-menu"><strong>Move to Project</strong>{projects.filter((project) => project.id !== item.project_id).map((project) => <button key={project.id} type="button" onClick={() => { onMoveConversation(item.id, project.id); setMenu(null); }}>{project.name}</button>)}{item.project_id ? <button type="button" onClick={() => { onMoveConversation(item.id, null); setMenu(null); }}>移出 Project</button> : null}<button type="button" onClick={() => onDeleteConversation(item)}>删除会话</button></div> : null}</div>)}</div>;
 }
 
-export function FounderNavigationPanel({ active, onNavigate, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject, onProjectsChanged }) {
-  const [collapsed, setCollapsed] = useState(restoredCollapsedState);
+export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeHandle, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject, onProjectsChanged }) {
   const [projectsOpen, setProjectsOpen] = useState(true);
   const [now] = useState(() => Date.now());
   const [expandedProjects, setExpandedProjects] = useState({});
@@ -103,16 +95,6 @@ export function FounderNavigationPanel({ active, onNavigate, conversations = [],
   };
   (childrenByParent.get(null) || []).forEach((project) => appendProject(project));
 
-  function setSidebarCollapsed(next) {
-    setCollapsed(next);
-    try { window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next)); } catch { /* unavailable */ }
-  }
-
-  function expandSection(section) {
-    setSidebarCollapsed(false);
-    if (section === "projects") setProjectsOpen(true);
-  }
-
   async function createProject(event) {
     event.preventDefault(); const name = projectName.trim(); if (!name) return;
     try { const project = await createFounderProject({ name, description: null }); await onProjectsChanged?.(); setExpandedProjects((current) => ({ ...current, [project.id]: true })); setCreatingProject(false); setProjectName(""); onSelectProject(project.id); }
@@ -141,21 +123,17 @@ export function FounderNavigationPanel({ active, onNavigate, conversations = [],
     catch (error) { setProjectError(error.message); }
   }
 
-  return <aside className={`founder-navigation-panel${collapsed ? " is-collapsed" : ""}`} aria-label="Founder Navigation">
+  return <aside className="founder-navigation-panel" aria-label="Founder Navigation">
     <div className="sino-sidebar__fixed-top">
     <div className="sino-sidebar-brand-row">
       <button className="sino-brand" onClick={() => onNavigate("home")} title="Sino Founder AI 首页">
         <span className="sino-brand-mark">S</span>
         <div>Sino<strong>Founder AI</strong></div>
       </button>
-      <button type="button" className="sino-sidebar-toggle" onClick={() => setSidebarCollapsed(!collapsed)} title={collapsed ? "展开侧边栏" : "收起侧边栏"} aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}><SidebarToggleIcon expanded={collapsed} /></button>
+      {onCollapse ? <button type="button" className="sino-sidebar-toggle" onClick={onCollapse} title="收起侧边栏" aria-label="收起侧边栏"><SidebarToggleIcon /></button> : null}
     </div>
     <button className="sino-new-conversation" onClick={onNewConversation} title="新建讨论" aria-label="新建讨论"><span>＋</span><b>新建讨论</b></button>
     <button type="button" title="库" aria-label="库" className={`sino-sidebar-library${active === "capability-center" ? " is-active" : ""}`} onClick={() => onNavigate("capability-center")}><LibraryIcon /><span>库</span></button>
-    {collapsed && <nav className="sino-collapsed-navigation" aria-label="侧边栏快捷入口">
-      <button type="button" title="项目" aria-label="项目" onClick={() => expandSection("projects")}><FolderIcon /></button>
-      <button type="button" title="会话" aria-label="会话" onClick={() => expandSection("conversations")}><ConversationIcon /></button>
-    </nav>}
     <section className="sino-sidebar-section sino-project-workspace"><div className="sino-project-heading sino-sidebar-primary-title"><button type="button" onClick={() => setProjectsOpen((value) => !value)} aria-expanded={projectsOpen}><span className="sino-sidebar-primary-title__label"><FolderIcon />项目</span></button><button type="button" aria-label="新建 Project" title="新建 Project" onClick={() => { setCreatingProject(true); setProjectsOpen(true); }}>＋</button></div>{projectsOpen && <div className="sino-project-list">{creatingProject ? <form className="sino-project-create" onSubmit={createProject}><input autoFocus aria-label="Project 名称" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="Project 名称" /><button type="submit">创建</button><button type="button" onClick={() => setCreatingProject(false)}>取消</button></form> : null}{orderedProjects.map(({ project, depth }) => { const projectConversations = founderConversations.filter((item) => projectForConversation(item) === project.id && (item.conversation_type || "PROJECT_CONVERSATION") === "PROJECT_CONVERSATION"); const expanded = expandedProjects[project.id] ?? project.id === activeProjectId; return <div className={`sino-project-item${depth ? " is-child" : ""}`} style={depth ? { marginLeft: `${depth * 14}px` } : undefined} key={project.id}><div className={`sino-project-item__row${project.id === activeProjectId ? " is-active" : ""}`}>{editingProject === project.id ? <input autoFocus aria-label={`重命名 ${project.name}`} defaultValue={project.name} onBlur={(event) => renameProject(project, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") renameProject(project, event.currentTarget.value); if (event.key === "Escape") setEditingProject(null); }} /> : <button type="button" className="sino-project-item__open" onClick={() => { setExpandedProjects((current) => ({ ...current, [project.id]: !expanded })); onSelectProject(project.id); }} title={project.description || project.name}><i>{depth ? "└" : expanded ? "⌄" : "›"}</i><span>{businessAssetName({ ...project, asset_type: "project" })}</span><small>{projectConversations.length}</small></button>}<button type="button" className="sino-project-item__menu" aria-label={`Project 操作 ${project.name}`} onClick={() => setProjectMenu(projectMenu === project.id ? null : project.id)}>···</button>{projectMenu === project.id ? <div className="sino-sidebar-popover"><button type="button" onClick={() => { setEditingProject(project.id); setProjectMenu(null); }}>Rename</button><button type="button" onClick={() => archiveProject(project)}>Archive</button><button type="button" onClick={() => removeProject(project)}>Delete</button></div> : null}</div><div className="sino-project-item__meta"><span>{projectConversations.length} Conversations</span><span>Ready {project.ready_count || 0}</span><span>Candidate {project.candidate_count || 0}</span></div>{expanded && projectConversations.length ? <ConversationList items={projectConversations} now={now} projects={sortedProjects} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} onMoveConversation={moveConversation} /> : null}</div>; })}{projectError ? <p role="alert">{projectError}</p> : null}</div>}</section>
     </div>
     <section className="sino-sidebar__conversation-section" aria-label="会话">
@@ -167,5 +145,6 @@ export function FounderNavigationPanel({ active, onNavigate, conversations = [],
       </div>
     </section>
     <footer><button type="button" className="sino-sidebar-settings" title="设置" aria-label="设置" onClick={() => onNavigate("settings")} aria-current={active === "settings" ? "page" : undefined}><SettingsIcon /><span>设置</span></button></footer>
+    {resizeHandle}
   </aside>;
 }

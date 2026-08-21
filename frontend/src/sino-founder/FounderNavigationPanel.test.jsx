@@ -20,34 +20,18 @@ describe("Founder sidebar information architecture", () => {
     expect(onNavigate).toHaveBeenCalledWith("settings");
   });
 
-  it("collapses into a persisted icon rail and expands from projects or conversations", () => {
-    window.localStorage.clear();
-    const onNewConversation = vi.fn(); const onNavigate = vi.fn();
-    const { unmount } = render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={onNavigate} onNewConversation={onNewConversation} />);
+  it("renders only the complete navigation and delegates collapse ownership to the workspace shell", () => {
+    const onCollapse = vi.fn();
+    render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} onNewConversation={vi.fn()} onCollapse={onCollapse} />);
+    expect(screen.getByText("Sino")).toBeTruthy();
     expect(screen.getByText("新建讨论")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "库" })).toBeTruthy();
+    expect(screen.getByText("项目")).toBeTruthy();
+    expect(screen.getByText("会话")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
+    expect(document.querySelector(".sino-collapsed-navigation")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    const panel = screen.getByLabelText("Founder Navigation");
-    expect(panel.classList.contains("is-collapsed")).toBe(true);
-    expect(window.localStorage.getItem("sino-founder-sidebar-collapsed")).toBe("true");
-    expect(screen.getByTitle("新建讨论")).toBeTruthy();
-    expect(screen.getByTitle("库")).toBeTruthy();
-    expect(screen.getByTitle("项目")).toBeTruthy();
-    expect(screen.getByTitle("会话")).toBeTruthy();
-    expect(screen.getByTitle("设置")).toBeTruthy();
-    fireEvent.click(screen.getByTitle("新建讨论"));
-    expect(onNewConversation).toHaveBeenCalledOnce();
-    expect(panel.classList.contains("is-collapsed")).toBe(true);
-    fireEvent.click(screen.getByTitle("项目"));
-    expect(panel.classList.contains("is-collapsed")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    fireEvent.click(screen.getByTitle("会话"));
-    expect(panel.classList.contains("is-collapsed")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
-    unmount();
-    render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={onNavigate} onNewConversation={onNewConversation} />);
-    expect(screen.getByLabelText("Founder Navigation").classList.contains("is-collapsed")).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
-    expect(screen.getByText("新建讨论")).toBeTruthy();
+    expect(onCollapse).toHaveBeenCalledOnce();
   });
 
   it("uses governance metadata rather than titles to hide non-Founder runs", () => {

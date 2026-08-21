@@ -68,6 +68,54 @@ describe("formal Sino Founder workspace shell", () => {
     expect(window.localStorage.getItem("sino-founder-execution-center-width")).toBe("336");
   });
 
+  it("fully removes the navigation track when collapsed and exposes only top-left controls", () => {
+    const onNewConversation = vi.fn();
+    const { container, unmount } = render(<SinoFounderShell {...props} sidebarProps={{ ...props.sidebarProps, onNewConversation }} conversationSelector={<button>Sino AI</button>} />);
+    fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
+    const workspace = container.querySelector(".founder-workspace");
+    expect(workspace.classList.contains("is-nav-collapsed")).toBe(true);
+    expect(workspace.dataset.workspaceStructure).toBe("conversation execution");
+    expect(screen.queryByLabelText("Founder Navigation")).toBeNull();
+    expect(screen.getByRole("button", { name: "展开侧边栏" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "新建讨论" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "库" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
+    expect(workspace.children).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "新建讨论" }));
+    expect(onNewConversation).toHaveBeenCalledOnce();
+    expect(screen.queryByLabelText("Founder Navigation")).toBeNull();
+    unmount();
+    render(<SinoFounderShell {...props} />);
+    expect(screen.queryByLabelText("Founder Navigation")).toBeNull();
+    expect(screen.getByRole("button", { name: "展开侧边栏" })).toBeTruthy();
+  });
+
+  it("resizes the expanded navigation within limits, persists it, and restores it after collapse", () => {
+    const { container } = render(<SinoFounderShell {...props} />);
+    const handle = screen.getByRole("separator", { name: "调整左侧导航宽度" });
+    fireEvent.pointerDown(handle, { clientX: 244, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 344 });
+    fireEvent.pointerUp(window);
+    expect(handle.getAttribute("aria-valuenow")).toBe("344");
+    expect(window.localStorage.getItem("sino-founder-navigation-width")).toBe("344");
+    fireEvent.pointerDown(handle, { clientX: 344, pointerId: 2 });
+    fireEvent.pointerMove(window, { clientX: 0 });
+    fireEvent.pointerUp(window);
+    expect(handle.getAttribute("aria-valuenow")).toBe("210");
+    fireEvent.pointerDown(handle, { clientX: 210, pointerId: 3 });
+    fireEvent.pointerMove(window, { clientX: 900 });
+    fireEvent.pointerUp(window);
+    expect(handle.getAttribute("aria-valuenow")).toBe("480");
+    fireEvent.pointerDown(handle, { clientX: 480, pointerId: 4 });
+    fireEvent.pointerMove(window, { clientX: 310 });
+    fireEvent.pointerUp(window);
+    expect(handle.getAttribute("aria-valuenow")).toBe("310");
+    fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
+    expect(container.querySelector(".founder-navigation-panel")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
+    expect(screen.getByRole("separator", { name: "调整左侧导航宽度" }).getAttribute("aria-valuenow")).toBe("310");
+  });
+
   it("uses an independent asset-page layout outside the formal conversation workspace", () => {
     const { container } = render(<SinoFounderShell {...props} active="capability-center" main={<p>Library</p>} context={<p>Detail</p>} />);
     expect(container.querySelector(".founder-workspace")).toBeNull();
