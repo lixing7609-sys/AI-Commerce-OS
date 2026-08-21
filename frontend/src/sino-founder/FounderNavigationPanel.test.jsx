@@ -295,8 +295,13 @@ describe("Founder sidebar information architecture", () => {
     }
     render(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    const createDialog = screen.getByRole("dialog", { name: "创建项目" });
+    expect(createDialog.parentElement).toBe(document.body);
+    expect(createDialog.querySelector("[data-popover-arrow]")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "创建项目" }).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Project 名称"), { target: { value: "AI电商" } });
-    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+    expect(screen.getByRole("button", { name: "创建项目" }).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(createFounderProject).toHaveBeenCalledWith({ name: "AI电商", description: null }));
     expect(onSelectProject).toHaveBeenCalledWith("project-commerce");
     fireEvent.click(screen.getByRole("button", { name: /Project 操作 AI电商/ }));
@@ -307,6 +312,21 @@ describe("Founder sidebar information architecture", () => {
     fireEvent.click(screen.getByRole("button", { name: /会话操作 商品讨论/ }));
     fireEvent.click(screen.getAllByRole("button", { name: "AI电商系统" }).at(-1));
     await waitFor(() => expect(bindFounderConversationProject).toHaveBeenCalledWith("conv-1", "project-commerce"));
+  });
+
+  it("closes the anchored Project creation popover on repeat click, outside click and Escape", () => {
+    render(<div><FounderNavigationPanel conversations={[]} projects={[]} /><button type="button">Outside</button></div>);
+    const trigger = screen.getByRole("button", { name: "新建项目" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog", { name: "创建项目" })).toBeTruthy();
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("dialog", { name: "创建项目" })).toBeNull();
+    fireEvent.click(trigger);
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+    expect(screen.queryByRole("dialog", { name: "创建项目" })).toBeNull();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "创建项目" })).toBeNull();
   });
 
   it("drops a deleted Project from the authoritative list and keeps its Conversations unassigned", () => {

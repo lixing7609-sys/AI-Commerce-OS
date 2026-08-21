@@ -112,6 +112,8 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     await expect(modelPopover.getByRole("menuitemradio")).not.toHaveCount(0);
     const [triggerBounds, popoverBounds] = await Promise.all([modelTrigger.boundingBox(), modelPopover.boundingBox()]);
     expect(Math.abs((triggerBounds.x + triggerBounds.width / 2) - (popoverBounds.x + popoverBounds.width / 2))).toBeLessThanOrEqual(1);
+    const modelArrowBounds = await modelPopover.locator("[data-popover-arrow]").boundingBox();
+    expect(Math.abs((triggerBounds.x + triggerBounds.width / 2) - (modelArrowBounds.x + modelArrowBounds.width / 2))).toBeLessThanOrEqual(1);
     expect(popoverBounds.x).toBeLessThan(navigationPanelBounds.x + navigationPanelBounds.width);
     const popoverZ = await modelPopover.evaluate((element) => Number(getComputedStyle(element).zIndex));
     const sidebarZ = await navigation.evaluate((element) => Number(getComputedStyle(element).zIndex));
@@ -119,6 +121,28 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     await page.screenshot({ path: `${EVIDENCE}/model-selector-open.png`, fullPage: true });
     await page.keyboard.press("Escape");
     await expect(modelPopover).toHaveCount(0);
+
+    const createProjectTrigger = navigation.getByRole("button", { name: "新建项目" });
+    await createProjectTrigger.click();
+    const createProjectPopover = page.getByRole("dialog", { name: "创建项目" });
+    await expect(createProjectPopover).toBeVisible();
+    const [createTriggerBounds, createPopoverBounds, createArrowBounds] = await Promise.all([
+      createProjectTrigger.boundingBox(), createProjectPopover.boundingBox(), createProjectPopover.locator("[data-popover-arrow]").boundingBox(),
+    ]);
+    expect(createPopoverBounds.x).toBeGreaterThan(navigationPanelBounds.x + navigationPanelBounds.width - 12);
+    expect(Math.abs((createTriggerBounds.y + createTriggerBounds.height / 2) - (createArrowBounds.y + createArrowBounds.height / 2))).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: `${EVIDENCE}/project-create-popover-open.png`, fullPage: true });
+    const createdProjectName = `Sidebar Popover ${Date.now()}`;
+    await createProjectPopover.getByLabel("Project 名称").fill(createdProjectName);
+    await createProjectPopover.getByRole("button", { name: "创建项目" }).click();
+    await expect(createProjectPopover).toHaveCount(0);
+    await expect(navigation.getByText(createdProjectName, { exact: true })).toBeVisible();
+    const refreshedProjectsResponse = await request.get(`${API}/founder-ai/projects`);
+    const refreshedProjects = await refreshedProjectsResponse.json();
+    const createdThroughPopover = refreshedProjects.find((item) => item.name === createdProjectName);
+    expect(createdThroughPopover).toBeTruthy();
+    createdProjects.push(createdThroughPopover);
+    await page.screenshot({ path: `${EVIDENCE}/project-create-success.png`, fullPage: true });
     await expect(topbar.getByRole("button", { name: "重置执行中心宽度" })).toHaveCount(0);
     await expect(page.getByText("和 Sino 讨论任何想法、问题或计划……", { exact: true })).toHaveCount(0);
     await expect(navigation.locator(".sino-project-item")).toHaveCount(4);

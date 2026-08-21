@@ -37,6 +37,7 @@ describe("Sino AI Conversation Model selector", () => {
     const menu = await screen.findByRole("menu", { name: "Conversation Models" });
     expect(menu.classList.contains("sino-model-selector__menu--floating")).toBe(true);
     expect(menu.parentElement).toBe(document.body);
+    expect(menu.querySelector("[data-popover-arrow]")).toBeTruthy();
     expect(screen.getByRole("menuitemradio", { name: /DeepSeek Chat/ }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByRole("menuitemradio", { name: /Claude Sonnet/ }).disabled).toBe(true);
     fireEvent.click(screen.getByRole("menuitemradio", { name: /GPT 5 Pro/ }));

@@ -31,23 +31,29 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [popoverPosition, setPopoverPosition] = useState({ top: 0, left: 0 });
+  const [popoverPosition, setPopoverPosition] = useState({ top: 0, left: 0, arrowLeft: 0 });
 
   useEffect(() => { let live = true; getModelCenter().then((value) => live && setCenter(value)).catch(() => live && setCenter({ providers: [], roles: [] })); return () => { live = false; }; }, []);
   useEffect(() => {
     if (!open) return undefined;
     const position = () => {
       const bounds = triggerRef.current?.getBoundingClientRect();
-      if (bounds) setPopoverPosition({ top: bounds.bottom + 8, left: bounds.left + bounds.width / 2 });
+      if (!bounds) return;
+      const anchorCenter = bounds.left + bounds.width / 2;
+      const menuWidth = menuRef.current?.getBoundingClientRect().width || Math.min(340, window.innerWidth - 24);
+      const menuLeft = Math.max(12, Math.min(anchorCenter - menuWidth / 2, window.innerWidth - menuWidth - 12));
+      setPopoverPosition({ top: bounds.bottom + 12, left: menuLeft, arrowLeft: anchorCenter - menuLeft });
     };
     const close = (event) => { if (!rootRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false); };
     const escape = (event) => { if (event.key === "Escape") setOpen(false); };
     position();
+    const frame = window.requestAnimationFrame(position);
     window.addEventListener("pointerdown", close);
     window.addEventListener("keydown", escape);
     window.addEventListener("resize", position);
     window.addEventListener("scroll", position, true);
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener("pointerdown", close);
       window.removeEventListener("keydown", escape);
       window.removeEventListener("resize", position);
@@ -82,7 +88,8 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
     <button ref={triggerRef} type="button" className="sino-model-selector__trigger sino-model-selector__trigger--pill" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
       <span>Sino AI</span><svg className="sino-model-selector__chevron-right" aria-hidden="true" viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5" /></svg>
     </button>
-    {open && typeof document !== "undefined" ? createPortal(<div ref={menuRef} className="sino-model-selector__menu sino-model-selector__menu--floating" role="menu" aria-label="Conversation Models" style={{ top: `${popoverPosition.top}px`, left: `${popoverPosition.left}px` }}>
+    {open && typeof document !== "undefined" ? createPortal(<div ref={menuRef} className="sino-model-selector__menu sino-model-selector__menu--floating" role="menu" aria-label="Conversation Models" style={{ top: `${popoverPosition.top}px`, left: `${popoverPosition.left}px`, "--popover-arrow-left": `${popoverPosition.arrowLeft}px` }}>
+      <span className="sino-model-selector__arrow" data-popover-arrow aria-hidden="true" />
       <header><strong>Conversation Model</strong><small>只影响后续对话</small></header>
       {models.map((option) => <button type="button" role="menuitemradio" aria-checked={option.key === selectedKey} key={option.key} disabled={!option.available || saving} onClick={() => selectModel(option)}>
         <span><strong>{option.displayName}</strong><small>{option.providerName} · {option.model}</small></span>
