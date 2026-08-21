@@ -1627,6 +1627,10 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   box-shadow: 0 10px 34px rgba(0, 0, 0, .18);
 }
 .founder-navigation-panel { grid-template-rows: auto minmax(0, 1fr) auto; padding: 10px 8px 8px; }
+.founder-navigation-panel .sino-sidebar-top-actions { display: flex; align-items: center; gap: 2px; height: 36px; margin: 0 0 6px; }
+.founder-navigation-panel .sino-sidebar-top-actions button { display: grid; place-items: center; flex: 0 0 36px; width: 36px; min-width: 36px; height: 36px; min-height: 36px; margin: 0; padding: 0; border: 0; border-radius: var(--workspace-radius-control); background: transparent; color: var(--workspace-text-secondary); cursor: pointer; }
+.founder-navigation-panel .sino-sidebar-top-actions button:hover { background: var(--workspace-hover); color: var(--workspace-text); }
+.founder-navigation-panel .sino-sidebar-brand-row { padding-inline: 3px; }
 .founder-navigation-panel .sino-sidebar__fixed-top { min-height: 0; max-height: 58%; overflow: auto; scrollbar-width: none; }
 .founder-navigation-panel .sino-sidebar__fixed-top::-webkit-scrollbar,
 .founder-navigation-panel .sino-sidebar__scroll-region::-webkit-scrollbar { display: none; }
@@ -1651,7 +1655,6 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   text-align: left;
   cursor: pointer;
 }
-.founder-navigation-panel .sino-new-conversation { margin-top: 8px; }
 .founder-navigation-panel .sino-new-conversation:hover,
 .founder-navigation-panel .sino-sidebar-library:hover,
 .founder-navigation-panel .sino-sidebar-library.is-active,

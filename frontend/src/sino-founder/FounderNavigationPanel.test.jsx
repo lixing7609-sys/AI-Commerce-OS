@@ -24,7 +24,10 @@ describe("Founder sidebar information architecture", () => {
     const onCollapse = vi.fn();
     render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} onNewConversation={vi.fn()} onCollapse={onCollapse} />);
     expect(screen.getByText("Sino")).toBeTruthy();
-    expect(screen.getByText("新建讨论")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "新建讨论" })).toBeTruthy();
+    const topActions = document.querySelector(".sino-sidebar-top-actions");
+    expect(topActions.children).toHaveLength(2);
+    expect([...topActions.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"))).toEqual(["收起侧边栏", "新建讨论"]);
     expect(screen.getByRole("button", { name: "库" })).toBeTruthy();
     expect(screen.getByText("项目")).toBeTruthy();
     expect(screen.getByText("会话")).toBeTruthy();
