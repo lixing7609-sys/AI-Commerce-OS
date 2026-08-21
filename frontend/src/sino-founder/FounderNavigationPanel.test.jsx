@@ -137,6 +137,36 @@ describe("Founder sidebar information architecture", () => {
     expect(screen.getByText("广告平台解析")).toBeTruthy();
   });
 
+  it("collapses long Project lists without limiting search results and uses aligned navigation rows", () => {
+    const projects = Array.from({ length: 6 }, (_, index) => ({ id: `project-${index + 1}`, name: `Project ${index + 1}` }));
+    render(<FounderNavigationPanel
+      active="conversation"
+      projects={projects}
+      conversations={[{ id: "recent", title: "最近讨论", updatedAt: 20 }]}
+    />);
+
+    expect(document.querySelectorAll(".sino-project-item")).toHaveLength(4);
+    expect(screen.getByRole("button", { name: "展开显示" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "展开显示" }));
+    expect(document.querySelectorAll(".sino-project-item")).toHaveLength(6);
+    expect(screen.getByRole("button", { name: "收起显示" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "收起显示" }));
+    expect(document.querySelectorAll(".sino-project-item")).toHaveLength(4);
+
+    fireEvent.change(screen.getByPlaceholderText("搜索"), { target: { value: "project" } });
+    expect(document.querySelectorAll(".sino-project-item")).toHaveLength(6);
+    expect(screen.queryByRole("button", { name: /展开显示|收起显示/ })).toBeNull();
+
+    const home = screen.getByRole("button", { name: "Sino AI" });
+    expect(home.classList.contains("sino-sidebar-row")).toBe(true);
+    expect(home.querySelector(".sino-brand-mark")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "库" }).classList.contains("sino-sidebar-row")).toBe(true);
+    expect(screen.getByRole("button", { name: "新建项目" }).classList.contains("sino-sidebar-row")).toBe(true);
+    expect(screen.getByRole("button", { name: "设置" }).classList.contains("sino-sidebar-row")).toBe(true);
+    expect(document.querySelector(".sino-sidebar-search")).toBeTruthy();
+    expect(document.querySelector(".sino-conversation-item__open > span")).toBeNull();
+  });
+
   it("uses created time and conversation id as deterministic tie breakers", () => {
     const timestamp = "2026-08-18T10:27:00.000000+08:00";
     const conversations = [

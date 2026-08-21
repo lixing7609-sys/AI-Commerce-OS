@@ -7,12 +7,18 @@ const EVIDENCE = "../.runtime/visual-evidence/sidebar-information-architecture";
 test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Settings", async ({ page, request }) => {
   mkdirSync(EVIDENCE, { recursive: true });
   const created = [];
+  const createdProjects = [];
   try {
     const projectsResponse = await request.get(`${API}/founder-ai/projects`);
     expect(projectsResponse.ok()).toBeTruthy();
     const projects = await projectsResponse.json();
     const commerceProject = projects.find((item) => item.name === "AI Commerce OS");
     expect(commerceProject).toBeTruthy();
+    for (const name of ["Sidebar Visual Fixture A", "Sidebar Visual Fixture B"]) {
+      const response = await request.post(`${API}/founder-ai/projects`, { data: { name, description: "Isolated sidebar visual fixture" } });
+      expect(response.ok()).toBeTruthy();
+      createdProjects.push(await response.json());
+    }
     for (const [index, title] of ["Codex 终端操作建议", "API 接入是否需要 VPN", "今日广告平台解析"].entries()) {
       const response = await request.post(`${API}/conversations`, { data: {
         title,
@@ -57,7 +63,15 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     await expect(navigation.getByText("今日广告平台解析", { exact: true })).toBeVisible();
     await expect(navigation.getByRole("button", { name: "设置" })).toBeVisible();
     await expect(navigation.getByText(/Conversations|Ready|Candidate/)).toHaveCount(0);
+    await expect(navigation.locator(".sino-project-item")).toHaveCount(4);
+    await expect(navigation.getByRole("button", { name: "展开显示" })).toBeVisible();
+    await expect(navigation.locator(".sino-conversation-item__open > span")).toHaveCount(0);
     await page.screenshot({ path: `${EVIDENCE}/sidebar-expanded.png`, fullPage: true });
+
+    await navigation.getByRole("button", { name: "展开显示" }).click();
+    await expect(navigation.locator(".sino-project-item")).toHaveCount(projects.length + createdProjects.length);
+    await expect(navigation.getByRole("button", { name: "收起显示" })).toBeVisible();
+    await page.screenshot({ path: `${EVIDENCE}/sidebar-projects-expanded.png`, fullPage: true });
 
     const search = navigation.getByPlaceholder("搜索");
     await expect(search).toBeVisible();
@@ -83,5 +97,6 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     await expect(page.getByRole("region", { name: "Conversation" })).toBeVisible();
   } finally {
     for (const conversation of created) await request.delete(`${API}/conversations/${conversation.id}`);
+    for (const project of createdProjects) await request.delete(`${API}/founder-ai/projects/${project.id}`);
   }
 });

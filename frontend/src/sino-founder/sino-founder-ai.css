@@ -1596,6 +1596,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   --workspace-radius-composer: 26px;
   --workspace-icon-size: 18px;
   --workspace-icon-stroke: 1.7;
+  --workspace-nav-icon-box: 18px;
+  --workspace-nav-gap: 9px;
   --workspace-row-height: 32px;
   --workspace-body-size: 15px;
   --workspace-body-line: 1.62;
@@ -1643,9 +1645,13 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-sidebar-search input::placeholder { color: var(--workspace-text-secondary); opacity: 1; }
 .founder-navigation-panel .sino-sidebar-search-empty { margin: 0 10px 4px; color: var(--workspace-text-secondary); font: 400 var(--workspace-meta-size)/18px var(--workspace-font); }
 .founder-navigation-panel .sino-sidebar-home { display: flex; align-items: center; gap: 9px; width: 100%; min-height: var(--workspace-row-height); margin-top: 4px; padding: 5px 9px; border: 0; border-radius: var(--workspace-radius-row); background: transparent; color: var(--workspace-text); font: 500 var(--workspace-nav-size)/var(--workspace-nav-line) var(--workspace-font); text-align: left; cursor: pointer; }
-.founder-navigation-panel .sino-sidebar-home:hover,
-.founder-navigation-panel .sino-sidebar-home.is-active { background: var(--workspace-active); }
+.founder-navigation-panel .sino-sidebar-home:hover { background: var(--workspace-hover); }
+.founder-navigation-panel .sino-sidebar-home.is-active { background: transparent; color: var(--workspace-text); }
 .founder-navigation-panel .sino-sidebar-home .sino-brand-mark { width: var(--workspace-icon-size); min-width: var(--workspace-icon-size); max-width: var(--workspace-icon-size); height: var(--workspace-icon-size); min-height: var(--workspace-icon-size); max-height: var(--workspace-icon-size); border: 0; border-radius: 5px; background: transparent; box-shadow: none; font-size: 11px; font-weight: 600; }
+.founder-navigation-panel .sino-sidebar-row { display: grid; grid-template-columns: var(--workspace-nav-icon-box) minmax(0, 1fr); align-items: center; gap: var(--workspace-nav-gap); box-sizing: border-box; width: 100%; min-height: var(--workspace-row-height); padding-inline: 9px; text-align: left; }
+.founder-navigation-panel .sino-sidebar-row > svg,
+.founder-navigation-panel .sino-sidebar-row > .sino-brand-mark,
+.founder-navigation-panel .sino-sidebar-row > .sino-sidebar-row__icon { display: grid; place-items: center; box-sizing: border-box; width: var(--workspace-nav-icon-box); min-width: var(--workspace-nav-icon-box); height: var(--workspace-nav-icon-box); margin: 0; }
 .founder-navigation-panel .sino-sidebar__navigation-scroll { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .founder-navigation-panel .sino-sidebar__navigation-scroll::-webkit-scrollbar { display: none; }
 .founder-navigation-panel .sino-sidebar__fixed-top { min-height: 0; overflow: visible; }
@@ -1685,6 +1691,9 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-project-heading { display: block; }
 .founder-navigation-panel .sino-project-create-entry { color: var(--workspace-text-secondary); }
 .founder-navigation-panel .sino-project-create-entry > svg { flex: 0 0 var(--workspace-icon-size); color: var(--workspace-text-secondary); }
+.founder-navigation-panel .sino-project-expand { border: 0; background: transparent; color: var(--workspace-text-secondary); cursor: pointer; }
+.founder-navigation-panel .sino-project-expand:hover { background: var(--workspace-hover); color: var(--workspace-text); }
+.founder-navigation-panel .sino-project-expand .sino-sidebar-row__icon { align-content: center; padding-bottom: 6px; font-size: 16px; line-height: 1; letter-spacing: 1px; }
 .founder-navigation-panel .sino-sidebar-primary-title,
 .founder-navigation-panel .sino-sidebar-primary-title__label {
   font-family: var(--workspace-font);
@@ -1698,7 +1707,9 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-project-list button,
 .founder-navigation-panel .sino-conversation-list button { min-height: var(--workspace-row-height); padding-block: 5px; border-radius: var(--workspace-radius-row); font-family: var(--workspace-font); font-size: var(--workspace-nav-size); font-weight: 400; line-height: var(--workspace-nav-line); }
 .founder-navigation-panel .sino-project-list .sino-project-item__open { grid-template-columns: var(--workspace-icon-size) minmax(0, 1fr); }
+.founder-navigation-panel .sino-sidebar-row { display: grid; gap: var(--workspace-nav-gap); }
 .founder-navigation-panel .sino-project-item__open svg { width: var(--workspace-icon-size); height: var(--workspace-icon-size); fill: none; stroke: currentColor; stroke-width: var(--workspace-icon-stroke); }
+.founder-navigation-panel .sino-conversation-item .sino-conversation-item__open { gap: 0; padding-left: calc(9px + var(--workspace-nav-icon-box) + var(--workspace-nav-gap)); }
 .founder-navigation-panel .sino-project-item__row:hover,
 .founder-navigation-panel .sino-project-item__row.is-active,
 .founder-navigation-panel .sino-conversation-item:hover,
