@@ -141,6 +141,26 @@ describe("formal Sino Founder workspace shell", () => {
     expect(screen.queryByLabelText("Founder Navigation")).toBeNull();
     expect(screen.getByRole("main", { name: "Founder AI 功能页面" }).textContent).toContain("设置");
     expect(screen.getByLabelText("功能页详情").textContent).toContain("配置");
+    expect(screen.getByRole("main", { name: "Founder AI 功能页面" }).classList.contains("sino-scrollbar-hidden")).toBe(true);
+    expect(screen.getByLabelText("功能页详情").classList.contains("sino-settings-floating-inspector")).toBe(true);
+    expect(screen.getByLabelText("功能页详情").classList.contains("sino-scrollbar-hidden")).toBe(true);
+  });
+
+  it("resizes the floating Settings inspector without adding a layout track", () => {
+    const { container } = render(<SinoFounderShell {...props} active="settings" main={<section>设置</section>} context={<section>配置</section>} />);
+    const route = container.querySelector(".sino-founder-asset-route.is-settings");
+    const handle = screen.getByRole("separator", { name: "调整系统配置面板宽度" });
+    expect(handle.getAttribute("aria-valuenow")).toBe("340");
+    fireEvent.pointerDown(handle, { clientX: 1100, pointerId: 5 });
+    fireEvent.pointerMove(window, { clientX: 1000 });
+    fireEvent.pointerUp(window);
+    expect(handle.getAttribute("aria-valuenow")).toBe("440");
+    expect(route.style.getPropertyValue("--settings-inspector-width")).toBe("440px");
+    fireEvent.pointerDown(handle, { clientX: 1000, pointerId: 6 });
+    fireEvent.pointerMove(window, { clientX: 1400 });
+    fireEvent.pointerUp(window);
+    expect(handle.getAttribute("aria-valuenow")).toBe("300");
+    expect(window.localStorage.getItem("sino-founder-settings-inspector-width")).toBe("300");
   });
 
   it("expands Library across the execution column without a model selector or Composer", () => {

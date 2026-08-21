@@ -5,12 +5,16 @@ import { ComposeIcon, SidebarIcon } from "./FounderWorkspaceIcons.jsx";
 const EXECUTION_WIDTH_KEY = "sino-founder-execution-center-width";
 const NAV_COLLAPSED_KEY = "sino-founder-sidebar-collapsed";
 const NAV_WIDTH_KEY = "sino-founder-navigation-width";
+const SETTINGS_INSPECTOR_WIDTH_KEY = "sino-founder-settings-inspector-width";
 const DEFAULT_NAV_WIDTH = 244;
 const MIN_NAV_WIDTH = 210;
 const MAX_NAV_WIDTH = 480;
 const DEFAULT_EXECUTION_WIDTH = 336;
 const MIN_EXECUTION_WIDTH = 280;
 const MAX_EXECUTION_WIDTH = 640;
+const DEFAULT_SETTINGS_INSPECTOR_WIDTH = 340;
+const MIN_SETTINGS_INSPECTOR_WIDTH = 300;
+const MAX_SETTINGS_INSPECTOR_WIDTH = 640;
 const MIN_CONVERSATION_WIDTH = 420;
 
 const restoredWidth = () => {
@@ -34,6 +38,15 @@ const restoredNavCollapsed = () => {
   catch { return false; }
 };
 
+const restoredSettingsInspectorWidth = () => {
+  try {
+    const value = Number(window.localStorage.getItem(SETTINGS_INSPECTOR_WIDTH_KEY));
+    return Number.isFinite(value) && value >= MIN_SETTINGS_INSPECTOR_WIDTH && value <= MAX_SETTINGS_INSPECTOR_WIDTH
+      ? value
+      : DEFAULT_SETTINGS_INSPECTOR_WIDTH;
+  } catch { return DEFAULT_SETTINGS_INSPECTOR_WIDTH; }
+};
+
 const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
 
 export function SinoFounderShell({ active, onNavigate, sidebarProps, main, context, conversationSelector }) {
@@ -42,6 +55,7 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
   const [executionWidth, setExecutionWidth] = useState(restoredWidth);
   const [navWidth, setNavWidth] = useState(restoredNavWidth);
   const [navCollapsed, setNavCollapsed] = useState(restoredNavCollapsed);
+  const [settingsInspectorWidth, setSettingsInspectorWidth] = useState(restoredSettingsInspectorWidth);
   const [resizing, setResizing] = useState(false);
   const isWorkspace = active === "conversation";
   const isLibrary = active === "library";
@@ -59,6 +73,11 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
   function persistNavWidth(value) {
     setNavWidth(value);
     try { window.localStorage.setItem(NAV_WIDTH_KEY, String(value)); } catch { /* unavailable */ }
+  }
+
+  function persistSettingsInspectorWidth(value) {
+    setSettingsInspectorWidth(value);
+    try { window.localStorage.setItem(SETTINGS_INSPECTOR_WIDTH_KEY, String(value)); } catch { /* unavailable */ }
   }
 
   function setNavigationCollapsed(value) {
@@ -112,14 +131,38 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
     window.addEventListener("pointercancel", stop);
   }
 
+  function resizeSettingsInspector(event) {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const startX = event.clientX;
+    const startWidth = settingsInspectorWidth;
+    setResizing(true);
+    const move = (moveEvent) => {
+      const maxWidth = Math.min(MAX_SETTINGS_INSPECTOR_WIDTH, Math.floor(window.innerWidth * .48));
+      persistSettingsInspectorWidth(clamp(startWidth + startX - moveEvent.clientX, MIN_SETTINGS_INSPECTOR_WIDTH, maxWidth));
+    };
+    const stop = () => {
+      setResizing(false);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  }
+
   const navResizeHandle = <div className="founder-navigation-resize-handle" role="separator" aria-label="调整左侧导航宽度" aria-orientation="vertical" aria-valuemin={MIN_NAV_WIDTH} aria-valuemax={MAX_NAV_WIDTH} aria-valuenow={navWidth} onPointerDown={resizeNavigation} onDoubleClick={() => persistNavWidth(DEFAULT_NAV_WIDTH)} />;
   const navigation = <FounderNavigationPanel active={active} onNavigate={onNavigate} onCollapse={isWorkspace || isLibrary ? () => setNavigationCollapsed(true) : undefined} resizeHandle={isWorkspace || isLibrary ? navResizeHandle : undefined} {...sidebarProps} />;
 
   if (!isWorkspace && !isLibrary) {
-    return <div className={`sino-founder-asset-route${isSettings ? " is-settings" : ""}`}>
+    return <div className={`sino-founder-asset-route${isSettings ? " is-settings" : ""}`} style={isSettings ? { "--settings-inspector-width": `${settingsInspectorWidth}px` } : undefined}>
       {!isSettings ? navigation : null}
-      <main ref={surfaceRef} className="sino-founder-asset-page" tabIndex={0} aria-label="Founder AI 功能页面">{main}</main>
-      {context ? <aside className="sino-founder-asset-inspector" aria-label="功能页详情">{context}</aside> : null}
+      <main ref={surfaceRef} className={`sino-founder-asset-page${isSettings ? " sino-scrollbar-hidden" : ""}`} tabIndex={0} aria-label="Founder AI 功能页面">{main}</main>
+      {context ? <aside className={`sino-founder-asset-inspector${isSettings ? " sino-settings-floating-inspector sino-scrollbar-hidden" : ""}`} aria-label="功能页详情">
+        {isSettings ? <div className="sino-settings-inspector-resize-handle" role="separator" aria-label="调整系统配置面板宽度" aria-orientation="vertical" aria-valuemin={MIN_SETTINGS_INSPECTOR_WIDTH} aria-valuemax={MAX_SETTINGS_INSPECTOR_WIDTH} aria-valuenow={settingsInspectorWidth} onPointerDown={resizeSettingsInspector} /> : null}
+        {context}
+      </aside> : null}
     </div>;
   }
 

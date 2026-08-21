@@ -5,7 +5,7 @@ const evidenceDirectory = "../.runtime/visual-evidence/settings-workspace";
 const provider = {
   provider_key: "deepseek", provider_type: "deepseek", display_name: "DeepSeek", installed: true,
   enabled: true, health_status: "healthy", api_key_mask: "****1234", base_url: "https://api.deepseek.com/v1",
-  available_models: [{ model_id: "deepseek-chat", display_name: "deepseek-chat", recommendation_score: 90 }],
+  available_models: Array.from({ length: 18 }, (_, index) => ({ model_id: index ? `deepseek-model-${index + 1}` : "deepseek-chat", display_name: index ? `DeepSeek Model ${index + 1}` : "deepseek-chat", recommendation_score: 90 })),
   selected_models: ["deepseek-chat"],
 };
 const center = {
@@ -33,11 +33,38 @@ test("Settings removes the Founder sidebar, expands its workspace, and keeps the
   const settings = page.getByRole("main", { name: "Founder AI 功能页面" });
   await expect(settings).toBeVisible();
   expect((await settings.boundingBox()).x).toBeLessThan(4);
+  expect((await settings.boundingBox()).width).toBeGreaterThan(1430);
   await expect(page.getByText("Sino Founder AI 系统配置")).toBeVisible();
   await expect(page.getByRole("heading", { name: "模型能力" })).toBeVisible();
   await expect(page.getByText("Model Capabilities")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "运行环境" })).toBeVisible();
   await expect(page.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
+
+  const inspector = page.getByLabel("功能页详情");
+  await expect(inspector).toHaveCSS("position", "fixed");
+  await expect(inspector).toHaveCSS("scrollbar-width", "none");
+  await expect(inspector.locator(".sino-settings-context")).toHaveCSS("overflow-y", "auto");
+  await expect(inspector.locator(".sino-settings-context")).toHaveCSS("scrollbar-width", "none");
+  const mainWidth = (await settings.boundingBox()).width;
+  const initialInspector = await inspector.boundingBox();
+  const handle = page.getByRole("separator", { name: "调整系统配置面板宽度" });
+  await expect(handle).toHaveCSS("cursor", "col-resize");
+  const handleBox = await handle.boundingBox();
+  await page.mouse.move(handleBox.x + 4, handleBox.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x - 120, handleBox.y + 80, { steps: 6 });
+  await page.mouse.up();
+  const widerInspector = await inspector.boundingBox();
+  expect(widerInspector.width).toBeGreaterThan(initialInspector.width + 100);
+  expect(Math.abs(widerInspector.x + widerInspector.width - (initialInspector.x + initialInspector.width))).toBeLessThan(2);
+  expect(Math.abs((await settings.boundingBox()).width - mainWidth)).toBeLessThan(2);
+
+  await page.getByRole("button", { name: /deepseek-chat DeepSeek/ }).click();
+  const availableModels = page.locator(".sino-settings-context .sino-model-choices");
+  await expect(availableModels).toHaveCSS("overflow-y", "auto");
+  await expect(availableModels).toHaveCSS("scrollbar-width", "none");
+  await availableModels.evaluate((element) => { element.scrollTop = 120; });
+  expect(await availableModels.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   await page.screenshot({ path: `${evidenceDirectory}/settings-expanded.png`, fullPage: true });
 
   await page.getByRole("button", { name: "关闭设置" }).click();
