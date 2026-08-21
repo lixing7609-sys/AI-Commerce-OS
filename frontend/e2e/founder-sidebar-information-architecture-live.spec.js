@@ -61,6 +61,11 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     await expect(navigation.getByText("Codex 终端操作建议", { exact: true })).toBeVisible();
     await expect(navigation.getByText("API 接入是否需要 VPN", { exact: true })).toBeVisible();
     await expect(navigation.getByText("今日广告平台解析", { exact: true })).toBeVisible();
+    const [recentHeadingBounds, recentTitleBounds] = await Promise.all([
+      navigation.locator(".sino-sidebar__conversation-title .sino-sidebar-primary-title__label").boundingBox(),
+      navigation.locator(".sino-conversation-item__open b").first().boundingBox(),
+    ]);
+    expect(recentTitleBounds.x).toBe(recentHeadingBounds.x);
     await expect(navigation.getByRole("button", { name: "设置" })).toBeVisible();
     await expect(navigation.getByText(/Conversations|Ready|Candidate/)).toHaveCount(0);
     const topbar = page.getByRole("banner", { name: "Workspace top bar" });

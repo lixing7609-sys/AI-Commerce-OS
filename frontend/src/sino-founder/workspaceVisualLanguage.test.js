@@ -47,4 +47,9 @@ describe("Founder workspace visual language", () => {
     expect(workspaceCss).toContain("margin: 8px 1px 6px");
     expect(workspaceCss).toContain(".founder-execution-center .sino-work-queue-heading h2 { font-family: var(--workspace-font); font-size: var(--workspace-nav-size); font-weight: 600; line-height: var(--workspace-nav-line); }");
   });
+
+  it("aligns Recent Conversation titles directly with the Recent section heading", () => {
+    expect(workspaceCss).toContain(".founder-navigation-panel .sino-conversation-item .sino-conversation-item__open { gap: 0; padding-left: 10px; }");
+    expect(workspaceCss).not.toContain("padding-left: calc(9px + var(--workspace-nav-icon-box) + var(--workspace-nav-gap))");
+  });
 });

@@ -1727,7 +1727,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-project-list .sino-project-item__open { grid-template-columns: var(--workspace-icon-size) minmax(0, 1fr); }
 .founder-navigation-panel .sino-sidebar-row { display: grid; gap: var(--workspace-nav-gap); }
 .founder-navigation-panel .sino-project-item__open svg { width: var(--workspace-icon-size); height: var(--workspace-icon-size); fill: none; stroke: currentColor; stroke-width: var(--workspace-icon-stroke); }
-.founder-navigation-panel .sino-conversation-item .sino-conversation-item__open { gap: 0; padding-left: calc(9px + var(--workspace-nav-icon-box) + var(--workspace-nav-gap)); }
+.founder-navigation-panel .sino-conversation-item .sino-conversation-item__open { gap: 0; padding-left: 10px; }
 .founder-navigation-panel .sino-project-item__row:hover,
 .founder-navigation-panel .sino-project-item__row.is-active,
 .founder-navigation-panel .sino-conversation-item:hover,
