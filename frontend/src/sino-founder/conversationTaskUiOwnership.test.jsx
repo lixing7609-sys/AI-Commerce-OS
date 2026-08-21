@@ -25,14 +25,13 @@ describe("Conversation / Task UI ownership", () => {
 
   it("shows a quiet task sidebar before a task exists", () => {
     render(<SinoBrainContext brain={discussionBrain} />);
-    const status = screen.getByRole("region", { name: "Task Status" });
-    expect(within(status).getByText("讨论中")).toBeTruthy();
-    expect(within(status).getByText("尚未形成执行任务")).toBeTruthy();
-    expect(screen.getByText("暂无需要你处理的事项")).toBeTruthy();
+    const status = screen.getByRole("region", { name: "Execution Center" });
+    expect(within(status).getByRole("heading", { name: "执行中心" })).toBeTruthy();
+    expect(within(status).getByText("暂无执行事项")).toBeTruthy();
+    expect(within(status).getByText("Founder 暂无需要处理的事项")).toBeTruthy();
     expect(screen.queryByRole("progressbar")).toBeNull();
     expect(screen.queryByRole("button", { name: "停止任务" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Brain Dashboard" })).toBeNull();
-    expect(screen.getByText("查看讨论详情 / 技术详情").closest("details").open).toBe(false);
   });
 
   it("projects clarification as a Founder action instead of saying no action is required", () => {

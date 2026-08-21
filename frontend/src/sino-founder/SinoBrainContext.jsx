@@ -77,10 +77,17 @@ export function FounderWorkQueue({ tasks = [], focusedTaskId, conversationId, bu
       </section> : null}
     </article>;
   };
-  return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Founder Work Queue">
-    <header className="sino-work-queue-heading"><div><h2>Founder工作队列</h2><span>任务 {tasks.length}</span></div><small>{tasks.some((item) => item.founder_action_required) ? "有事项需要处理" : "暂无需要处理的事项"}</small></header>
+  return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Execution Center">
+    <header className="sino-work-queue-heading"><div><h2>执行中心</h2><span>任务 {tasks.length}</span></div><small>{tasks.some((item) => item.founder_action_required) ? "有事项需要处理" : "暂无需要处理的事项"}</small></header>
     <section className="sino-work-queue-list" aria-label="Conversation Tasks">{active.map(card)}</section>
     {completed.length ? <details className="sino-work-queue-completed"><summary>已完成（{completed.length}）</summary>{completed.map(card)}</details> : null}
+  </section>;
+}
+
+export function ExecutionCenterEmpty() {
+  return <section className="sino-brain-context sino-founder-task-sidebar sino-execution-center-empty" aria-label="Execution Center">
+    <header className="sino-work-queue-heading"><div><h2>执行中心</h2></div></header>
+    <section className="sino-task-status-empty"><strong>暂无执行事项</strong><small>Founder 暂无需要处理的事项</small></section>
   </section>;
 }
 
@@ -132,7 +139,7 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
   const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
   const conversationTasks = brain.discovery?.conversation_tasks || [];
-  if (conversationTasks.length > 1) return <FounderWorkQueue tasks={conversationTasks} focusedTaskId={brain.discovery?.focused_task_id}
+  if (conversationTasks.length > 0) return <FounderWorkQueue tasks={conversationTasks} focusedTaskId={brain.discovery?.focused_task_id}
     conversationId={conversationId} busy={busy} onFocused={onTaskCandidateResolved} onCandidateResolved={onTaskCandidateResolved}
     onContinueDiscussion={onContinueDiscussion} />;
   if (!routeHasTask) {
@@ -141,7 +148,9 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
     const founderActions = [...taskConfirmationActions, ...clarificationActions];
     const clarificationRequired = clarificationActions.length > 0 || brain.discovery?.clarification_state?.founder_action_required === true;
     const taskConfirmationRequired = taskConfirmationActions.length > 0;
-    return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Task Status and Founder Action Queue">
+    if (!founderActions.length) return <ExecutionCenterEmpty />;
+    return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Execution Center">
+      <header className="sino-work-queue-heading"><div><h2>执行中心</h2></div></header>
       <section className="sino-task-status-empty" aria-label="Task Status"><header><h2>任务状态</h2></header><strong>{taskConfirmationRequired ? "待确认" : clarificationRequired ? "等待确认" : "讨论中"}</strong><p>{taskConfirmationRequired ? "已形成待确认任务，尚未开始执行" : "尚未形成执行任务"}</p><small>{founderActions.length ? "Founder：需要操作" : "Founder：无需操作"}</small></section>
       <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>需要你处理</h2><span>{founderActions.length ? `${founderActions.length} 项待处理` : "暂无需要你处理的事项"}</span></header>
         {taskConfirmationActions.map((item) => { const candidate = item.task_candidate || {}; const list = (value) => Array.isArray(value) ? value : value ? [value] : []; return <article className="sino-founder-action-item" aria-label="Task Confirmation" key={item.action_id}><span>待确认任务</span><h3>{candidate.title || item.title}</h3><p>{candidate.goal || item.summary}</p><dl><div><dt>范围</dt><dd>{list(candidate.scope).join(" · ") || "按当前讨论"}</dd></div><div><dt>约束</dt><dd>{list(candidate.constraints).join(" · ") || "按当前讨论"}</dd></div><div><dt>验收标准</dt><dd>{list(candidate.acceptance_criteria).join(" · ") || "按当前讨论"}</dd></div></dl><footer><button type="button" className="is-primary" disabled={busy} onClick={async () => { const value = await decideFounderTaskCandidate(conversationId, candidate.candidate_id, "confirm"); onTaskCandidateResolved?.(value); }}>确认执行</button><button type="button" disabled={busy} onClick={async () => { const value = await decideFounderTaskCandidate(conversationId, candidate.candidate_id, "modify"); onTaskCandidateResolved?.(value); onContinueDiscussion?.(); }}>修改任务</button><button type="button" disabled={busy} onClick={async () => { const value = await decideFounderTaskCandidate(conversationId, candidate.candidate_id, "continue_discussion"); onTaskCandidateResolved?.(value); onContinueDiscussion?.(); }}>继续讨论</button></footer></article>; })}
@@ -159,8 +168,8 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
     const architecturePending = isStrategicTask && ["pending", "ready_for_founder_decision", "revision_requested"].includes(architectureDecisionStatus);
     const accepted = acceptance?.status === "accepted";
     const hasHandledActions = accepted || ["approved", "rejected"].includes(architectureDecisionStatus);
-    return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Task Status and Founder Action Queue">
-      <header className="sino-task-status-heading"><h2>任务状态</h2></header>
+    return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Execution Center">
+      <header className="sino-task-status-heading"><h2>执行中心</h2></header>
       <FounderActionCard compact action={action} busy={busy} readOnly onViewAssets={onViewAssets} />
       {canStop ? <section className="sino-emergency-stop" aria-label="任务控制"><button type="button" disabled={busy || progress?.execution_status === "cancelling"} onClick={() => cancelFounderExecution(executionId).catch(() => {})}>{progress?.execution_status === "cancelling" ? "正在停止…" : "停止任务"}</button></section> : null}
       <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>需要你处理</h2><span>{actionCount ? `${actionCount} 项待处理` : "暂无需要你处理的事项"}</span></header>
@@ -175,9 +184,9 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
       <details className="sino-task-technical-details"><summary>查看任务详情 / 技术详情</summary><dl><div><dt>Task</dt><dd>{progress?.task_id || "—"}</dd></div><div><dt>Target</dt><dd>{quickFixRoute?.standard_task_contract?.target_surface || quickFixRoute?.quick_fix_contract?.target_area || "—"}</dd></div><div><dt>Execution</dt><dd>{executionId || "—"}</dd></div><div><dt>Phase</dt><dd>{progress?.current_phase || quickFixRoute?.current_step}</dd></div><div><dt>Status</dt><dd>{progress?.execution_status || quickFixRoute?.execution_status}</dd></div></dl><ContextSourcesDebug groundings={contextGroundings} /></details>
     </section>;
   }
-  return <section className="sino-brain-context sino-brain-dashboard" aria-label="Brain Dashboard">
+  return <section className="sino-brain-context sino-brain-dashboard" aria-label="Execution Center">
     {!projectAware ? <FounderActionCard compact action={action} busy={busy} onCapabilityAction={onCapabilityAction} onConfirmGoal={onConfirmGoal} onReviseGoal={onContinueDiscussion} onAdvanceStage={onAdvanceStage} onReviewPackage={onReviewPackage} onContinueDiscussion={onContinueDiscussion} onViewAssets={onViewAssets} onNewGoal={onNewGoal} /> : null}
-    <header><h2>{constitution ? "Constitution Review Status" : "Brain Dashboard"}</h2><span>{isQuickFix ? "Quick Fix" : isStandardTask ? "Standard Task" : isStrategicTask ? "Architecture Task" : autonomousLoop ? "Autonomous Capability Build" : projectLifecycle?.rank >= 300 ? projectLifecycle.stage_label : STAGE_LABELS[brain.stage] || brain.stage}</span></header>
+    <header><h2>执行中心</h2><span>{constitution ? "Constitution Review" : autonomousLoop ? "Autonomous Capability Build" : projectLifecycle?.rank >= 300 ? projectLifecycle.stage_label : STAGE_LABELS[brain.stage] || brain.stage}</span></header>
     {isQuickFix ? <dl className="sino-brain-dashboard__grid">
       <div><dt>Task Type</dt><dd>Quick Fix</dd></div><div><dt>Visual Target</dt><dd>{quickFixRoute.quick_fix_contract?.visual_target || quickFixRoute.quick_fix_contract?.target_area}</dd></div><div><dt>Action</dt><dd>{quickFixRoute.quick_fix_contract?.operation === "REMOVE_UI_ELEMENT" ? "Remove UI Element" : "Bounded UI Fix"}</dd></div><div><dt>Current Step</dt><dd>{progress?.current_phase || (quickFixRoute.execution_status === "completed" ? "Completed" : quickFixRoute.clarification_required ? "需要确认目标位置" : "自动推进")}</dd></div><div><dt>Founder Decision</dt><dd>{progress?.founder_action_required ? "Required" : "Not Required"}</dd></div><div><dt>Next Action</dt><dd>{progress?.next_action || (quickFixRoute.execution_status === "completed" ? "等待 Founder 验收" : quickFixRoute.clarification_required ? "补充目标位置后继续 Quick Fix" : "Sino 自动执行")}</dd></div>
     </dl> : isStandardTask ? <dl className="sino-brain-dashboard__grid">

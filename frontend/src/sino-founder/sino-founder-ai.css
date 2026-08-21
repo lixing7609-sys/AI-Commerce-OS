@@ -458,6 +458,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-conversation-thread > .sino-conversation-header, .sino-conversation-thread > .sino-return-latest, .sino-conversation-thread > .sino-conversation-composer-dock, .sino-conversation-thread > .sino-conversation-workspace-safe-area { flex: 0 0 auto; }
 .sino-conversation-thread .sino-conversation-log { align-content: start; flex: 1 1 0; max-height: none; min-width: 0; min-height: 0; margin: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .sino-conversation-thread .sino-conversation-log::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.sino-conversation-empty-prompt { align-self: center; margin: auto 0; padding: 28px 16px; color: var(--text-muted); text-align: center; }
+.sino-execution-center-empty .sino-task-status-empty { padding-top: 18px; border-bottom: 0; }
 .sino-conversation-composer-dock { z-index: 2; width: 100%; background: #090b09; box-sizing: border-box; }
 .sino-return-latest { display: flex; justify-content: flex-end; width: min(100%, var(--conversation-content-max-width)); margin: 0 auto 6px; padding-inline: var(--conversation-content-gutter); box-sizing: border-box; }
 .sino-return-latest button { min-height: 28px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: #101410; color: var(--text-secondary); font: 550 12px/1 var(--font-sans); cursor: pointer; }

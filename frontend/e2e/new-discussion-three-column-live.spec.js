@@ -1,44 +1,73 @@
 import { expect, test } from "@playwright/test";
 
-test("real + New Discussion route renders the confirmed three-column workspace", async ({ page }) => {
+const API = "http://127.0.0.1:8000/api/v1";
+
+test("Founder home and New Discussion are the same unified three-column workspace", async ({ page, request }) => {
+  await page.addInitScript(() => localStorage.clear());
   await page.setViewportSize({ width: 1440, height: 800 });
   await page.goto("/");
+
+  const assertWorkspace = async () => {
+    await expect(page.locator(".sino-sidebar")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Conversation" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Execution Center" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "讨论内容" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "执行中心" })).toBeVisible();
+    await expect(page.getByText("暂无执行事项")).toBeVisible();
+    await expect(page.getByText("能力上下文")).toHaveCount(0);
+    await expect(page.getByText("创造什么 AI 能力？")).toHaveCount(0);
+    await expect(page.getByText("创建 Agent")).toHaveCount(0);
+  };
+
+  await assertWorkspace();
+  const before = await page.locator(".sino-founder-shell").evaluate((node) => ({
+    columns: getComputedStyle(node).gridTemplateColumns,
+    childCount: node.children.length,
+  }));
+
   await page.getByRole("button", { name: /新建讨论/ }).click();
+  await assertWorkspace();
+  const after = await page.locator(".sino-founder-shell").evaluate((node) => ({
+    columns: getComputedStyle(node).gridTemplateColumns,
+    childCount: node.children.length,
+  }));
+  expect(after).toEqual(before);
 
-  const left = page.locator(".sino-sidebar");
-  const center = page.getByRole("region", { name: "Draft Discussion" });
-  const right = page.getByRole("complementary", { name: "当前上下文" });
-  await expect(left).toBeVisible();
-  await expect(center).toBeVisible();
-  await expect(right).toBeVisible();
-  await expect(right.getByRole("region", { name: "Task Status", exact: true })).toBeVisible();
-  await expect(right.getByRole("region", { name: "Founder Action Queue", exact: true })).toBeVisible();
-  await expect(center.getByRole("textbox", { name: "讨论内容" })).toBeVisible();
-
-  const layout = await page.evaluate(() => {
-    const box = (selector) => document.querySelector(selector)?.getBoundingClientRect();
+  const bounds = await page.evaluate(() => {
+    const rect = (selector) => {
+      const box = document.querySelector(selector)?.getBoundingClientRect();
+      return box && { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width };
+    };
     return {
-      left: box(".sino-sidebar"),
-      center: box('[aria-label="Draft Discussion"]'),
-      right: box('.sino-founder-context[aria-label="当前上下文"]'),
-      viewport: { width: window.innerWidth, height: window.innerHeight },
+      left: rect(".sino-sidebar"),
+      center: rect('[aria-label="Conversation"]'),
+      right: rect('.sino-founder-context[aria-label="当前上下文"]'),
+      viewportHeight: window.innerHeight,
     };
   });
-  expect(layout.left.right).toBeLessThanOrEqual(layout.center.left);
-  expect(layout.center.right).toBeLessThanOrEqual(layout.right.left);
-  for (const column of [layout.left, layout.center, layout.right]) {
+  expect(bounds.left.right).toBeLessThanOrEqual(bounds.center.left);
+  expect(bounds.center.right).toBeLessThanOrEqual(bounds.right.left);
+  for (const column of [bounds.left, bounds.center, bounds.right]) {
     expect(column.width).toBeGreaterThan(0);
     expect(column.top).toBeGreaterThanOrEqual(0);
-    expect(column.bottom).toBeLessThanOrEqual(layout.viewport.height);
+    expect(column.bottom).toBeLessThanOrEqual(bounds.viewportHeight);
   }
+
+  expect(await (await request.get(`${API}/conversations`)).json()).toEqual([]);
 });
 
-test("the current task View Result opens the verified New Discussion route", async ({ page }) => {
+test("asset pages remain independent and returning home restores the unified workspace", async ({ page }) => {
+  await page.addInitScript(() => localStorage.clear());
   await page.goto("/");
-  await page.locator('button.sino-conversation-item__open[title="把新建讨论页面改成3列式"]').click();
-  const acceptance = page.getByRole("article", { name: "Founder Acceptance" });
-  await expect(acceptance).toContainText("Verification PASS", { timeout: 20_000 });
-  await acceptance.getByRole("button", { name: "查看结果" }).click();
-  await expect(page.getByRole("region", { name: "Draft Discussion" })).toBeVisible();
-  await expect(page.getByRole("complementary", { name: "当前上下文" }).getByRole("region", { name: "Founder Action Queue", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "能力仓库", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "草案中心" })).toBeVisible();
+  await page.getByTitle("Sino Founder AI 首页").click();
+  await expect(page.getByRole("region", { name: "Conversation" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Execution Center" })).toBeVisible();
+
+  await page.getByRole("button", { name: /设置/ }).click();
+  await expect(page.getByText("Sino Founder AI 系统配置")).toBeVisible();
+  await page.getByRole("button", { name: "关闭设置" }).click();
+  await expect(page.getByRole("region", { name: "Conversation" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Execution Center" })).toBeVisible();
 });
