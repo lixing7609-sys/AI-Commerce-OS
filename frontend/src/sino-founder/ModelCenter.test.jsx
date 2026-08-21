@@ -65,9 +65,10 @@ describe("Founder Settings", () => {
     expect(primaryTabs.querySelectorAll("button")).toHaveLength(5);
     expect(container.querySelector(".sino-settings-content")).toBeTruthy();
     expect(container.querySelector(".sino-settings-page--models")).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "模型概览" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Sino AI" }));
     expect(screen.getByRole("region", { name: "Sino AI" }).classList.contains("sino-settings-page")).toBe(true);
-    expect(container.querySelector(".sino-settings-section-card.sino-settings-object-list")).toBeTruthy();
+    expect(container.querySelectorAll(".sino-settings-object-grid .sino-settings-section-card").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "执行器" }));
     expect(screen.getByRole("region", { name: "执行器" }).classList.contains("sino-settings-page")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "讨论配置" }));

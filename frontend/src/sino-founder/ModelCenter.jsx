@@ -85,6 +85,18 @@ export function ModelCenter({ onContextChange }) {
     const metrics = center.health_cost.find((item) => item.provider_key === provider.provider_key && (!item.model || item.model === selected || item.selected_models?.includes(selected))) || {};
     return { provider, selected, meta, health: metrics.health_status || provider.health_status, usage: metrics.usage || {} };
   }));
+  const conversationRole = center.roles.find((role) => role.role_key === "sino_conversation");
+  const imageRoute = center.model_capability_registry?.routing_policies?.find((policy) => policy.capability === "IMAGE_GENERATION");
+  const fallbackRoute = center.model_capability_registry?.routing_policies?.find((policy) => policy.configured_fallback);
+  const modelSummary = [
+    ["已配置模型", modelRows.length],
+    ["正常模型", modelRows.filter((row) => row.health === "healthy").length],
+    ["异常模型", modelRows.filter((row) => row.health === "unhealthy").length],
+    ["服务商", installed.length],
+    ["主对话模型", conversationRole?.model || "未分配"],
+    ["图像模型", imageRoute?.active_primary?.display_name || imageRoute?.active_primary?.model_id || "未分配"],
+    ["Fallback", fallbackRoute?.configured_fallback?.display_name || fallbackRoute?.configured_fallback?.model_id || "未配置"],
+  ];
   useEffect(() => {
     if (section === "models" && selectedProvider && selectedModelMeta) onContextChange?.({ section, provider: selectedProvider, model: selectedModelMeta, action: providerState(selectedProvider.provider_key), onCredentialSave: (values) => updateCredentials(selectedProvider, values), onRefresh: () => refresh(selectedProvider), onHealth: () => health(selectedProvider), onChoose: (model, checked) => choose(selectedProvider, model, checked) });
     else onContextChange?.({ section });
@@ -96,7 +108,7 @@ export function ModelCenter({ onContextChange }) {
     {message && <p className="sino-model-center-message" role="status">{message}</p>}
     {section === "models" && <section className="sino-capability-section sino-settings-page sino-settings-page--models" aria-label="模型与 API">
       <nav className="sino-model-section-tabs" aria-label="模型与 API 内容">{[["list", "我的模型"], ["capabilities", "模型能力"], ["routing", "模型路由策略"]].map(([key, label]) => <button type="button" key={key} className={modelSection === key ? "is-active" : ""} aria-pressed={modelSection === key} onClick={() => setModelSection(key)}>{label}</button>)}</nav>
-      {modelSection === "list" ? <div className="sino-model-section-panel" data-model-section="list"><div className="sino-capability-section-heading"><p>管理已经接入 AI Commerce OS 的模型与服务。</p><button type="button" onClick={() => { setEditing(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></div><div className="sino-my-models" role="table" aria-label="模型状态列表"><div className="sino-my-models__header" role="row"><strong>模型</strong><strong>服务商</strong><strong>健康状态</strong><strong>调用</strong><strong>Token</strong><strong>成本</strong><strong>延迟</strong><strong>额度</strong></div>{modelRows.map(({ provider, selected, meta, health: healthState, usage }) => { const active = editing === provider.provider_key && selectedModel === selected; return <button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} key={`${provider.provider_key}-${selected}`} onClick={() => selectModel(provider, selected)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span><span>{usage.calls ?? "—"}</span><span>{usage.tokens ?? "—"}</span><span>{usage.cost ?? "—"}</span><span>{usage.average_latency_ms == null ? "—" : `${usage.average_latency_ms} ms`}</span><span>{usage.quota ?? "—"}</span></button>; })}</div></div> : null}
+      {modelSection === "list" ? <div className="sino-model-section-panel sino-model-workspace" data-model-section="list"><section className="sino-model-list-pane"><div className="sino-model-list-heading"><div><h3>我的模型</h3><p>管理已接入的模型与服务。</p></div><button type="button" onClick={() => { setEditing(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></div><div className="sino-my-models" role="table" aria-label="模型状态列表"><div className="sino-my-models__header" role="row"><strong>模型</strong><strong>服务商</strong><strong>健康状态</strong><strong>调用</strong><strong>Token</strong><strong>成本</strong><strong>延迟</strong><strong>额度</strong></div>{modelRows.map(({ provider, selected, meta, health: healthState, usage }) => { const active = editing === provider.provider_key && selectedModel === selected; return <button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} key={`${provider.provider_key}-${selected}`} onClick={() => selectModel(provider, selected)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span><span>{usage.calls ?? "—"}</span><span>{usage.tokens ?? "—"}</span><span>{usage.cost ?? "—"}</span><span>{usage.average_latency_ms == null ? "—" : `${usage.average_latency_ms} ms`}</span><span>{usage.quota ?? "—"}</span></button>; })}</div></section><aside className="sino-model-summary" aria-label="模型概览"><h3>模型概览</h3><dl>{modelSummary.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}</dl></aside></div> : null}
       {modelSection === "capabilities" ? <ModelCapabilities registry={center.model_capability_registry} /> : null}
       {modelSection === "routing" ? <RoutingPolicies registry={center.model_capability_registry} models={center.model_capability_registry?.models || []} busy={busy} onSave={savePreferred} /> : null}
     </section>}
@@ -177,18 +189,18 @@ function DiscussionSettingsContext({ detail }) {
 
 function SinoSettings({ roles, onSelect }) {
   const keys = ["sino_conversation", "deep_thinking", "goal_reasoning", "project_analysis", "system_builder", "solution_review"];
-  return <section className="sino-capability-section sino-settings-page" aria-label="Sino AI"><div className="sino-capability-section-heading"><div><h3>模型职责</h3><p>为 Sino 的真实智能任务选择默认模型。</p></div></div><div className="sino-settings-section-card sino-settings-object-list">{keys.map((key) => roles.find((role) => role.role_key === key)).filter(Boolean).map((role) => <button type="button" key={role.role_key} onClick={() => onSelect(role)}><strong>{MODEL_TASK_LABELS[role.role_key] || role.label}</strong><span>{role.model || "未分配"}</span></button>)}</div></section>;
+  return <section className="sino-capability-section sino-settings-page" aria-label="Sino AI"><div className="sino-capability-section-heading"><div><h3>模型职责</h3><p>为 Sino 的真实智能任务选择默认模型。</p></div></div><div className="sino-settings-object-grid">{keys.map((key) => roles.find((role) => role.role_key === key)).filter(Boolean).map((role) => <button type="button" className="sino-settings-section-card" key={role.role_key} onClick={() => onSelect(role)}><strong>{MODEL_TASK_LABELS[role.role_key] || role.label}</strong><span>{role.model || "未分配"}</span></button>)}</div></section>;
 }
 
 function ExecutorSettings({ roles, engines, onSelect }) {
   const execution = roles.find((role) => role.role_key === "code_execution") || {};
   const engine = engines.find((item) => item.engine_id === execution.execution_engine_id);
-  return <section className="sino-capability-section sino-settings-page" aria-label="执行器"><div className="sino-capability-section-heading"><div><h3>执行配置</h3><p>当前执行引擎与系统模型。</p></div></div><div className="sino-settings-section-card sino-settings-object-list"><button type="button" onClick={onSelect}><strong>{engine?.display_name || "执行引擎"}</strong><span>{execution.model || "未分配系统模型"}</span></button></div></section>;
+  return <section className="sino-capability-section sino-settings-page" aria-label="执行器"><div className="sino-capability-section-heading"><div><h3>执行配置</h3><p>当前执行引擎与系统模型。</p></div></div><button type="button" className="sino-settings-section-card sino-executor-summary" onClick={onSelect}><span><small>执行引擎</small><strong>{engine?.display_name || "执行引擎"}</strong></span><span><small>系统模型</small><strong>{execution.model || "未分配系统模型"}</strong></span></button></section>;
 }
 
 function DiscussionSettings({ roles, onSelect }) {
   const council = roles.find((role) => role.role_key === "multi_model_discussion") || { models: [] };
-  return <section className="sino-capability-section sino-settings-page" aria-label="讨论配置"><div className="sino-capability-section-heading"><div><h3>讨论模式</h3><p>管理现有多模型讨论与自动多轮配置。</p></div></div><div className="sino-settings-section-card sino-settings-object-list"><button type="button" onClick={onSelect}><strong>多模型讨论</strong><span>{council.models?.length || 0} 个参与模型</span></button><button type="button" onClick={onSelect}><strong>自动多轮</strong><span>策略工作区中可用</span></button></div></section>;
+  return <section className="sino-capability-section sino-settings-page" aria-label="讨论配置"><div className="sino-capability-section-heading"><div><h3>讨论模式</h3><p>管理现有多模型讨论与自动多轮配置。</p></div></div><div className="sino-settings-object-grid sino-settings-object-grid--discussion"><button type="button" className="sino-settings-section-card" onClick={onSelect}><strong>多模型讨论</strong><span>{council.models?.length || 0} 个参与模型</span></button><button type="button" className="sino-settings-section-card" onClick={onSelect}><strong>自动多轮</strong><span>策略工作区中可用</span></button></div></section>;
 }
 
 function AddModelModal({ step, center, install, editing, busy, providerKey, onSelectProvider, onInstallChange, onConnect, onChoose, onClose }) {

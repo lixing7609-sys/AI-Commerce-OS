@@ -6,7 +6,7 @@ const provider = {
   provider_key: "deepseek", provider_type: "deepseek", display_name: "DeepSeek", installed: true,
   enabled: true, health_status: "healthy", api_key_mask: "****1234", base_url: "https://api.deepseek.com/v1",
   available_models: Array.from({ length: 18 }, (_, index) => ({ model_id: index ? `deepseek-model-${index + 1}` : "deepseek-chat", display_name: index ? `DeepSeek Model ${index + 1}` : "deepseek-chat", recommendation_score: 90 })),
-  selected_models: ["deepseek-chat"],
+  selected_models: Array.from({ length: 8 }, (_, index) => index ? `deepseek-model-${index + 1}` : "deepseek-chat"),
 };
 const center = {
   provider_catalog: [], providers: [provider], roles: [
@@ -52,6 +52,8 @@ test("Settings removes the Founder sidebar, expands its workspace, and keeps the
   await expect(page.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "我的模型" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("table", { name: "模型状态列表" })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "模型概览" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "模型状态列表" }).locator("button[aria-pressed]")).toHaveCount(8);
   await expect(page.getByText("Sino Founder AI 系统配置")).toBeVisible();
   for (const section of ["模型", "连接状态", "可用模型", "连接配置", "连接测试"]) await expect(inspector.getByRole("heading", { name: section, exact: true })).toBeVisible();
   await expect(inspector).toHaveCSS("position", "relative");
@@ -63,6 +65,12 @@ test("Settings removes the Founder sidebar, expands its workspace, and keeps the
   await expect(availableModels.locator("label")).toHaveCount(3);
   await expect(inspector.getByRole("button", { name: "查看全部 18 个模型" })).toBeVisible();
   await page.screenshot({ path: `${evidenceDirectory}/settings-models-two-zone.png`, fullPage: true });
+  const settingsScroll = page.locator(".sino-settings");
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
+    await page.setViewportSize(viewport);
+    expect(await settingsScroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 2)).toBe(true);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   const handle = page.getByRole("separator", { name: "调整系统配置面板宽度" });
   await expect(handle).toHaveCSS("cursor", "col-resize");
@@ -97,18 +105,22 @@ test("Settings removes the Founder sidebar, expands its workspace, and keeps the
 
   await page.getByRole("button", { name: "Sino AI" }).click();
   await expect(page.getByRole("region", { name: "Sino AI" })).toBeVisible();
+  expect(await settingsScroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 2)).toBe(true);
   await page.screenshot({ path: `${evidenceDirectory}/settings-sino-ai.png`, fullPage: true });
 
   await page.getByRole("button", { name: "执行器" }).click();
   await expect(page.getByRole("region", { name: "执行器" })).toBeVisible();
+  expect(await settingsScroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 2)).toBe(true);
   await page.screenshot({ path: `${evidenceDirectory}/settings-executor.png`, fullPage: true });
 
   await page.getByRole("button", { name: "讨论配置" }).click();
   await expect(page.getByRole("region", { name: "讨论配置" })).toBeVisible();
+  expect(await settingsScroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 2)).toBe(true);
   await page.screenshot({ path: `${evidenceDirectory}/settings-discussion.png`, fullPage: true });
 
   await page.getByRole("button", { name: "运行环境" }).click();
   await expect(page.getByRole("region", { name: "运行环境" })).toBeVisible();
+  expect(await settingsScroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 2)).toBe(true);
   await page.screenshot({ path: `${evidenceDirectory}/settings-runtime.png`, fullPage: true });
 
   await page.getByRole("button", { name: "关闭设置并返回 Sino 首页" }).click();
