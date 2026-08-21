@@ -63,10 +63,29 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     await expect(navigation.getByText("今日广告平台解析", { exact: true })).toBeVisible();
     await expect(navigation.getByRole("button", { name: "设置" })).toBeVisible();
     await expect(navigation.getByText(/Conversations|Ready|Candidate/)).toHaveCount(0);
+    const topbar = page.getByRole("banner", { name: "Workspace top bar" });
+    const conversationSurface = page.getByRole("main", { name: "Sino Natural Conversation" });
+    const executionCenter = page.getByRole("complementary", { name: "执行中心" });
+    await expect(topbar).toBeVisible();
+    await expect(topbar.getByRole("button", { name: /Sino AI/ })).toBeVisible();
+    const [topbarBounds, navigationPanelBounds, conversationBounds, executionBounds] = await Promise.all([
+      topbar.boundingBox(), navigation.boundingBox(), conversationSurface.boundingBox(), executionCenter.boundingBox(),
+    ]);
+    expect(topbarBounds.x).toBeGreaterThanOrEqual(navigationPanelBounds.x + navigationPanelBounds.width);
+    expect(topbarBounds.x + topbarBounds.width).toBeGreaterThanOrEqual(executionBounds.x + executionBounds.width - 1);
+    expect(topbarBounds.y + topbarBounds.height).toBeLessThanOrEqual(conversationBounds.y);
     await expect(navigation.locator(".sino-project-item")).toHaveCount(4);
     await expect(navigation.getByRole("button", { name: "展开显示" })).toBeVisible();
     await expect(navigation.locator(".sino-conversation-item__open > span")).toHaveCount(0);
     await page.screenshot({ path: `${EVIDENCE}/sidebar-expanded.png`, fullPage: true });
+    await page.screenshot({ path: `${EVIDENCE}/workspace-topbar.png`, fullPage: true });
+
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await expect(topbar.getByRole("button", { name: /Sino AI/ })).toBeVisible();
+    await expect(topbar.getByRole("button", { name: "重置执行中心宽度" })).toBeVisible();
+    const responsiveTopbarBounds = await topbar.boundingBox();
+    expect(responsiveTopbarBounds.x + responsiveTopbarBounds.width).toBeLessThanOrEqual(1024);
+    await page.setViewportSize({ width: 1440, height: 900 });
 
     await navigation.getByRole("button", { name: "展开显示" }).click();
     await expect(navigation.locator(".sino-project-item")).toHaveCount(projects.length + createdProjects.length);

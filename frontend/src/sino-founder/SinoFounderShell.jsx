@@ -128,7 +128,7 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
     data-workspace-structure={navCollapsed ? "conversation execution" : "navigation conversation execution"}
   >
     {!navCollapsed ? navigation : null}
-    <main ref={surfaceRef} className="founder-conversation-surface" tabIndex={0} aria-label="Sino Natural Conversation">
+    <header className="founder-workspace-topbar" aria-label="Workspace top bar">
       {navCollapsed ? <div className="founder-collapsed-controls" aria-label="Collapsed navigation controls">
         <button type="button" title="展开侧边栏" aria-label="展开侧边栏" onClick={() => setNavigationCollapsed(false)}><SidebarIcon expanded /></button>
         <button type="button" title="新建讨论" aria-label="新建讨论" onClick={sidebarProps?.onNewConversation}><ComposeIcon /></button>
@@ -137,6 +137,8 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
       <div className="founder-conversation-actions" aria-label="Conversation controls">
         <button type="button" title="重置执行中心宽度" aria-label="重置执行中心宽度" onClick={() => persistWidth(DEFAULT_EXECUTION_WIDTH)}><PanelWidthIcon /></button>
       </div>
+    </header>
+    <main ref={surfaceRef} className="founder-conversation-surface" tabIndex={0} aria-label="Sino Natural Conversation">
       {main}
     </main>
     <aside className="founder-execution-center" aria-label="执行中心">

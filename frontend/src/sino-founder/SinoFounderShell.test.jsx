@@ -19,17 +19,25 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("formal Sino Founder workspace shell", () => {
-  it("has exactly the navigation, conversation, and execution visual regions", () => {
+  it("adds one continuous workspace top bar above conversation and execution", () => {
     const { container } = render(<SinoFounderShell {...props} />);
     const workspace = container.querySelector(".founder-workspace");
     expect(workspace.dataset.workspaceStructure).toBe("navigation conversation execution");
-    expect(workspace.children).toHaveLength(3);
+    expect(workspace.children).toHaveLength(4);
     expect(screen.getByLabelText("Founder Navigation")).toBeTruthy();
+    expect(screen.getByRole("banner", { name: "Workspace top bar" })).toBeTruthy();
     expect(screen.getByRole("main", { name: "Sino Natural Conversation" })).toBeTruthy();
     expect(screen.getByLabelText("执行中心")).toBeTruthy();
     expect(container.querySelector(".sino-founder-main")).toBeNull();
     expect(container.querySelector(".sino-founder-context")).toBeNull();
     expect(container.querySelector(".sino-founder-topbar")).toBeNull();
+  });
+
+  it("keeps the model selector and existing action inside the workspace top bar", () => {
+    render(<SinoFounderShell {...props} conversationSelector={<button type="button">Sino AI</button>} />);
+    const topbar = screen.getByRole("banner", { name: "Workspace top bar" });
+    expect(topbar.querySelector("button").textContent).toBe("Sino AI");
+    expect(topbar.querySelector('[aria-label="重置执行中心宽度"]')).toBeTruthy();
   });
 
   it("exposes the GPT-style navigation capabilities without a management topbar", () => {
@@ -84,7 +92,7 @@ describe("formal Sino Founder workspace shell", () => {
     expect(screen.getByRole("button", { name: "新建讨论" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "库" })).toBeNull();
     expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
-    expect(workspace.children).toHaveLength(2);
+    expect(workspace.children).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: "新建讨论" }));
     expect(onNewConversation).toHaveBeenCalledOnce();
     expect(screen.queryByLabelText("Founder Navigation")).toBeNull();
