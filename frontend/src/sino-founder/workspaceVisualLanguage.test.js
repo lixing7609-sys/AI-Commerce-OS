@@ -20,7 +20,7 @@ describe("Founder workspace visual language", () => {
 
   it("uses semantic SVG icons rather than legacy unicode glyphs for workspace top actions", () => {
     expect(shellSource).toContain("<ComposeIcon />");
-    expect(shellSource).toContain("<PanelWidthIcon />");
+    expect(shellSource).not.toContain("PanelWidthIcon");
     expect(shellSource).not.toContain(">＋<");
     expect(shellSource).not.toContain(">↔<");
   });

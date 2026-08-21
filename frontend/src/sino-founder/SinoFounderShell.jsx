@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FounderNavigationPanel } from "./FounderNavigationPanel.jsx";
-import { ComposeIcon, PanelWidthIcon, SidebarIcon } from "./FounderWorkspaceIcons.jsx";
+import { ComposeIcon, SidebarIcon } from "./FounderWorkspaceIcons.jsx";
 
 const EXECUTION_WIDTH_KEY = "sino-founder-execution-center-width";
 const NAV_COLLAPSED_KEY = "sino-founder-sidebar-collapsed";
@@ -134,9 +134,6 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
         <button type="button" title="新建讨论" aria-label="新建讨论" onClick={sidebarProps?.onNewConversation}><ComposeIcon /></button>
       </div> : null}
       {conversationSelector}
-      <div className="founder-conversation-actions" aria-label="Conversation controls">
-        <button type="button" title="重置执行中心宽度" aria-label="重置执行中心宽度" onClick={() => persistWidth(DEFAULT_EXECUTION_WIDTH)}><PanelWidthIcon /></button>
-      </div>
     </header>
     <main ref={surfaceRef} className="founder-conversation-surface" tabIndex={0} aria-label="Sino Natural Conversation">
       {main}

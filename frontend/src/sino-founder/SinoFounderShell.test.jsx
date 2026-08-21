@@ -33,11 +33,11 @@ describe("formal Sino Founder workspace shell", () => {
     expect(container.querySelector(".sino-founder-topbar")).toBeNull();
   });
 
-  it("keeps the model selector and existing action inside the workspace top bar", () => {
+  it("keeps only the model selector inside the workspace top bar", () => {
     render(<SinoFounderShell {...props} conversationSelector={<button type="button">Sino AI</button>} />);
     const topbar = screen.getByRole("banner", { name: "Workspace top bar" });
     expect(topbar.querySelector("button").textContent).toBe("Sino AI");
-    expect(topbar.querySelector('[aria-label="重置执行中心宽度"]')).toBeTruthy();
+    expect(topbar.querySelector('[aria-label="重置执行中心宽度"]')).toBeNull();
   });
 
   it("exposes the GPT-style navigation capabilities without a management topbar", () => {
@@ -69,14 +69,13 @@ describe("formal Sino Founder workspace shell", () => {
     expect(handle.getAttribute("aria-valuenow")).toBe("640");
   });
 
-  it("restores and resets the execution center width", () => {
+  it("restores and resets the execution center width from its resize handle", () => {
     window.localStorage.setItem("sino-founder-execution-center-width", "440");
     render(<SinoFounderShell {...props} />);
     const handle = screen.getByRole("separator", { name: "调整执行中心宽度" });
     expect(handle.getAttribute("aria-valuenow")).toBe("440");
     fireEvent.doubleClick(handle);
     expect(handle.getAttribute("aria-valuenow")).toBe("336");
-    fireEvent.click(screen.getByRole("button", { name: "重置执行中心宽度" }));
     expect(window.localStorage.getItem("sino-founder-execution-center-width")).toBe("336");
   });
 

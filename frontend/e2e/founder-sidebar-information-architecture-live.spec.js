@@ -72,8 +72,12 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
       topbar.boundingBox(), navigation.boundingBox(), conversationSurface.boundingBox(), executionCenter.boundingBox(),
     ]);
     expect(topbarBounds.x).toBeGreaterThanOrEqual(navigationPanelBounds.x + navigationPanelBounds.width);
-    expect(topbarBounds.x + topbarBounds.width).toBeGreaterThanOrEqual(executionBounds.x + executionBounds.width - 1);
+    expect(topbarBounds.x + topbarBounds.width).toBeLessThanOrEqual(executionBounds.x);
     expect(topbarBounds.y + topbarBounds.height).toBeLessThanOrEqual(conversationBounds.y);
+    expect(executionBounds.y).toBe(navigationPanelBounds.y);
+    expect(executionBounds.height).toBe(navigationPanelBounds.height);
+    await expect(topbar.getByRole("button", { name: "重置执行中心宽度" })).toHaveCount(0);
+    await expect(page.getByText("和 Sino 讨论任何想法、问题或计划……", { exact: true })).toHaveCount(0);
     await expect(navigation.locator(".sino-project-item")).toHaveCount(4);
     await expect(navigation.getByRole("button", { name: "展开显示" })).toBeVisible();
     await expect(navigation.locator(".sino-conversation-item__open > span")).toHaveCount(0);
@@ -82,7 +86,6 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
 
     await page.setViewportSize({ width: 1024, height: 768 });
     await expect(topbar.getByRole("button", { name: /Sino AI/ })).toBeVisible();
-    await expect(topbar.getByRole("button", { name: "重置执行中心宽度" })).toBeVisible();
     const responsiveTopbarBounds = await topbar.boundingBox();
     expect(responsiveTopbarBounds.x + responsiveTopbarBounds.width).toBeLessThanOrEqual(1024);
     await page.setViewportSize({ width: 1440, height: 900 });

@@ -27,7 +27,7 @@ describe("Unified three-column Founder Workspace", () => {
   it("renders an empty natural Conversation surface without creation shortcuts", () => {
     render(conversation());
     const center = screen.getByRole("region", { name: "Conversation" });
-    expect(within(center).getByText("和 Sino 讨论任何想法、问题或计划……")).toBeTruthy();
+    expect(within(center).queryByText("和 Sino 讨论任何想法、问题或计划……")).toBeNull();
     expect(within(center).getByRole("textbox", { name: "讨论内容" })).toBeTruthy();
     expect(within(center).queryByRole("heading", { name: "新讨论" })).toBeNull();
     expect(within(center).queryByText("创造什么 AI 能力？")).toBeNull();
