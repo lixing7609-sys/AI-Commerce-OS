@@ -586,9 +586,12 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 @keyframes sino-intelligence-update { 0% { background: rgba(201,244,91,.12); } 100% { background: transparent; } }
 .sino-project-context button small { display: block; }
 .sino-project-workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 30px 0 22px; box-sizing: border-box; }
-.sino-project-workspace > header { flex: 0 0 auto; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
-.sino-project-workspace h1 { margin: 0 0 7px; font-size: 24px; }
-.sino-project-workspace > header span { color: #7e877b; font-size: 12px; }
+.sino-project-workspace > header { flex: 0 0 auto; padding-bottom: 0; border-bottom: 1px solid var(--line); }
+.sino-project-workspace h1 { margin: 0 0 18px; font-size: 24px; }
+.sino-project-tabs { display: flex; gap: 22px; }
+.sino-project-tabs button { position: relative; padding: 0 1px 12px; border: 0; background: transparent; color: var(--workspace-text-secondary); font: inherit; font-size: 14px; cursor: pointer; }
+.sino-project-tabs button:hover, .sino-project-tabs button.is-active { color: var(--workspace-text-primary); }
+.sino-project-tabs button.is-active::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px; background: var(--accent); content: ""; }
 .sino-project-workspace__state { margin: 0; color: #7e877b; font-size: 12px; }
 .sino-project-conversations { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: none; }
 .sino-project-conversations::-webkit-scrollbar { display: none; width: 0; height: 0; }
@@ -597,6 +600,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-project-conversation-row p, .sino-project-conversation-row time, .sino-project-conversations__empty { margin: 0; color: #7e877b; font-size: 12px; line-height: 1.55; }
 .sino-project-conversation-row time { font-size: 12px; }
 .sino-project-conversations__empty { padding: 28px 4px; }
+.sino-project-sources { flex: 1 1 auto; min-height: 0; padding: 28px 4px; color: var(--workspace-text-secondary); }
+.sino-project-sources p { margin: 0; }
 .sino-project-workspace > .sino-conversation-composer-dock { margin-top: 18px; }
 .sino-project-workspace .sino-global-composer { width: 100%; margin: 0; }
 .sino-home__intro { margin: -18px 0 26px; color: #7f887d; font-size: 14px; }
@@ -1672,7 +1677,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-project-workspace { display: block; height: auto; min-height: 0; padding: 0; }
 .founder-navigation-panel .sino-project-heading { display: block; }
 .founder-navigation-panel .sino-project-create-entry { color: var(--workspace-text-secondary); }
-.founder-navigation-panel .sino-project-create-entry > span { width: var(--workspace-icon-size); color: var(--workspace-text-secondary); font-size: 17px; line-height: 1; text-align: center; }
+.founder-navigation-panel .sino-project-create-entry > svg { flex: 0 0 var(--workspace-icon-size); color: var(--workspace-text-secondary); }
 .founder-navigation-panel .sino-sidebar-primary-title,
 .founder-navigation-panel .sino-sidebar-primary-title__label {
   font-family: var(--workspace-font);
@@ -1717,6 +1722,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-collapsed-controls svg { width: var(--workspace-icon-size); height: var(--workspace-icon-size); stroke-width: var(--workspace-icon-stroke); }
 .founder-workspace.is-nav-collapsed .sino-model-selector { left: 88px; }
 .founder-conversation-surface > .sino-conversation-page { flex: 1 1 0; }
+.founder-conversation-surface > .sino-project-workspace { flex: 1 1 0; width: min(100%, 768px); margin-inline: auto; padding-top: 56px; }
 .founder-conversation-surface .sino-conversation-thread { --conversation-content-max-width: 768px; --conversation-content-gutter: 20px; font-family: var(--workspace-font); }
 .founder-conversation-surface .sino-conversation-log { padding-top: 50px; }
 .founder-conversation-surface .sino-conversation-reading-column { padding-bottom: 22px; }

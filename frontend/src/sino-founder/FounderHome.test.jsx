@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FounderHome, ProjectIntelligenceContext, ProjectWorkspace } from "./FounderHome.jsx";
+
+afterEach(() => cleanup());
 
 describe("Founder AI capability factory home", () => {
   it("renders the capability-first hero and routes all quick creation entries into discussion", () => {
@@ -25,11 +27,15 @@ describe("Founder AI capability factory home", () => {
 });
 
 describe("System Project workspace context", () => {
-  it("counts only the active canonical Draft projected by the API", () => {
-    render(<ProjectWorkspace intelligence={{ project_name: "Foundation System", conversation_refs: [] }} drafts={[{ draft_id: "draft-canonical", title: "System Definition", status: "confirmed", implementation: { status: "founder_approved", execution_approval: "approved", execution_package: { package_id: "package-1", preflight_status: "ready" } } }]} onOpenConversation={vi.fn()} onOpenDraft={vi.fn()} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
-    expect(screen.getByText("Drafts").nextSibling.textContent).toBe("1");
-    expect(screen.getByText("System Definition")).toBeTruthy();
-    expect(screen.getByText("已确认 · 执行准备完成")).toBeTruthy();
+  it("renders the Project name, tabs, and canonical Project Conversations", () => {
+    const openConversation = vi.fn();
+    render(<ProjectWorkspace intelligence={{ project_name: "Foundation System", conversation_refs: [{ conversation_id: "conv-new", title: "最新讨论", summary: "最近一条内容摘要", updated_at: "2026-08-21T10:00:00Z" }, { conversation_id: "conv-old", title: "较早讨论", updated_at: "2026-08-20T10:00:00Z" }] }} onOpenConversation={openConversation} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "Foundation System" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "聊天" }).classList.contains("is-active")).toBe(true);
+    expect(screen.getByRole("button", { name: "数据源" })).toBeTruthy();
+    expect(screen.getByText("最近一条内容摘要")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /最新讨论/ }));
+    expect(openConversation).toHaveBeenCalledWith("conv-new");
   });
 
   it("shows only the initial context persisted by the Formal Object Proposal", () => {
@@ -51,18 +57,16 @@ describe("System Project workspace context", () => {
     expect(screen.getByText("Runtime Platform")).toBeTruthy();
   });
 
-  it("shows the highest Project lifecycle without reopening planning", () => {
-    const lifecycle = { rank: 700, stage_label: "Validation / Execution Result", resume_point: "wi-007", current_action: { title: "等待外部依赖解除后恢复真实环境验证", status_label: "Validation Blocked", description: "Implementation 已完成；等待 Runtime Platform。" } };
-    render(<ProjectWorkspace intelligence={{ project_name: "Evolution System", conversation_refs: [{ conversation_id: "conv-1", title: "Evolution · 项目规划" }], project_lifecycle: lifecycle }} drafts={[]} onOpenConversation={vi.fn()} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
-    expect(screen.getByRole("region", { name: "项目生命周期" })).toBeTruthy();
-    expect(screen.getByText("Validation / Execution Result")).toBeTruthy();
-    expect(screen.queryByText("正在判断讨论成熟度")).toBeNull();
+  it("keeps the Project Composer bound to the selected Project", () => {
+    render(<ProjectWorkspace intelligence={{ project_name: "Evolution System", conversation_refs: [] }} onOpenConversation={vi.fn()} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
+    expect(screen.getByLabelText("当前项目").textContent).toContain("Evolution System");
+    expect(screen.getByPlaceholderText("继续和 Sino 讨论 Evolution System……")).toBeTruthy();
   });
 
-  it("opens the canonical Founder Gate Proposal from the Project homepage", () => {
-    const open = vi.fn(); const proposal = { proposal_id: "proposal-runtime", status: "ready_for_review" };
-    render(<ProjectWorkspace intelligence={{ project_name: "Cloud Foundation", conversation_refs: [], project_lifecycle: { rank: 500, stage_label: "Execution Package", current_action: { status_label: "Founder Gate Required", description: "Runtime binding required" } }, active_founder_gate_proposal: proposal }} drafts={[]} onOpenFounderGate={open} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "审核运行环境方案" }));
-    expect(open).toHaveBeenCalledWith(proposal);
+  it("switches to the lightweight Data Sources shell without inventing backend data", () => {
+    render(<ProjectWorkspace intelligence={{ project_name: "Cloud Foundation", conversation_refs: [] }} onOpenConversation={vi.fn()} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "数据源" }));
+    expect(screen.getByRole("region", { name: "Cloud Foundation 数据源" })).toBeTruthy();
+    expect(screen.getByText("暂无项目数据源")).toBeTruthy();
   });
 });

@@ -181,20 +181,19 @@ export function ConversationIntelligenceContext({ intelligence }) {
   </section>;
 }
 
-export function ProjectWorkspace({ intelligence, drafts = [], loading, error, onOpenConversation, onOpenDraft, onOpenFounderGate, message, onMessage, onSend, busy, healthy, mode, onModeChange }) {
+export function ProjectWorkspace({ intelligence, loading, error, onOpenConversation, message, onMessage, onSend, busy, healthy, mode, onModeChange }) {
+  const [tab, setTab] = useState("chats");
   if (!intelligence) return <section className="sino-project-workspace" aria-label="项目工作区"><p className="sino-project-workspace__state" role="status">{loading ? "正在加载项目…" : error || "项目暂时不可用"}</p></section>;
   const conversations = [...(intelligence.conversation_refs || [])].sort((left, right) => new Date(right.updated_at || 0) - new Date(left.updated_at || 0));
   return <section className="sino-project-workspace" aria-label="项目工作区">
-    <header><h1>{intelligence.project_name}</h1><span>项目讨论</span></header>
-    {intelligence.project_lifecycle?.rank >= 300 ? <section className="sino-project-drafts" aria-label="项目生命周期"><header><strong>{intelligence.project_lifecycle.stage_label}</strong><span>{intelligence.project_lifecycle.current_action?.status_label}</span></header><p>{intelligence.project_lifecycle.current_action?.description}</p>{intelligence.active_founder_gate_proposal?.status === "ready_for_review" ? <button type="button" className="is-primary" onClick={() => onOpenFounderGate?.(intelligence.active_founder_gate_proposal)}>审核运行环境方案</button> : null}</section> : null}
-    {drafts.length ? <section className="sino-project-drafts" aria-label="项目草案"><header><strong>Drafts</strong><span>{drafts.length}</span></header>{drafts.map((draft) => <button type="button" key={draft.draft_id} onClick={() => onOpenDraft?.(draft)}><strong>{draft.title}</strong><span>{draft.status === "refining" ? "完善中" : draft.status === "confirmed" ? `已确认${draft.implementation?.execution_package?.preflight_status === "ready" ? " · 执行准备完成" : draft.implementation?.execution_package ? ` · Preflight ${draft.implementation.execution_package.preflight_status}` : draft.implementation?.execution_approval === "approved" ? " · 实施方案已批准" : draft.implementation ? " · 实施方案待批准" : ""}` : draft.status}</span></button>)}</section> : null}
-    <div className="sino-project-conversations" role="region" aria-label={`${intelligence.project_name} 项目会话`}>
+    <header><h1>{intelligence.project_name}</h1><nav className="sino-project-tabs" aria-label="项目内容"><button type="button" className={tab === "chats" ? "is-active" : ""} onClick={() => setTab("chats")}>聊天</button><button type="button" className={tab === "sources" ? "is-active" : ""} onClick={() => setTab("sources")}>数据源</button></nav></header>
+    {tab === "chats" ? <div className="sino-project-conversations" role="region" aria-label={`${intelligence.project_name} 项目会话`}>
       {conversations.length ? conversations.map((item) => <button type="button" className="sino-project-conversation-row" key={item.conversation_id} onClick={() => onOpenConversation(item.conversation_id)}>
         <strong>{item.title || "新讨论"}</strong>
         {item.summary && <p>{item.summary}</p>}
         <time>{formatTime(item.updated_at)}</time>
       </button>) : <p className="sino-project-conversations__empty">还没有项目讨论</p>}
-    </div>
+    </div> : <div className="sino-project-sources" role="region" aria-label={`${intelligence.project_name} 数据源`}><p>暂无项目数据源</p></div>}
     <div className="sino-conversation-composer-dock"><GlobalSecretaryComposer value={message} onChange={onMessage} onSubmit={onSend} busy={busy} healthy={healthy} mode={mode} onModeChange={onModeChange} placeholder={`继续和 Sino 讨论 ${intelligence.project_name}……`} toolbar={<span className="sino-project-context-lock" aria-label="当前项目"><span aria-hidden="true">📁</span>{intelligence.project_name}</span>} /></div>
   </section>;
 }
