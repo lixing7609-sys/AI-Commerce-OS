@@ -105,6 +105,13 @@ class ExecutionQueue:
         with self._condition:
             return self._items.get(execution_id)
 
+    def clear(self) -> int:
+        with self._condition:
+            count = len(self._items)
+            self._items.clear()
+            self._condition.notify_all()
+            return count
+
     def wake(self):
         with self._condition:
             self._condition.notify_all()

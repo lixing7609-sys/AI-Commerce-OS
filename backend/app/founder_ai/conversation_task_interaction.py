@@ -143,6 +143,9 @@ def reconcile_discussion_task_candidate(conversation_id: str, *, generator=None)
         if existing.get("status") in {"pending_founder_confirmation", "needs_revision", "discussion_continues", "confirmed"}:
             return existing
         core = dict(discovery.get("conversation_core") or {})
+        cleanup_baseline = dict(discovery.get("task_runtime_cleanup_baseline") or {})
+        if cleanup_baseline and cleanup_baseline.get("conversation_core_updated_at") == core.get("updated_at"):
+            return None
         updates = dict(core.get("context_updates") or {})
         mature = bool(core.get("conversation_state") in {"task_candidate_ready", "task_established"}
                       or updates.get("task_created") is True)

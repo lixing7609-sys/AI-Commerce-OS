@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import shutil
 from threading import RLock
 from uuid import uuid4
 
@@ -205,6 +206,50 @@ def get_execution_session(execution_id: str) -> tuple[ExecutionSession, Executio
 def list_execution_sessions() -> list[ExecutionSession]:
     """Return a read-only snapshot for Founder state analysis."""
     return list(_sessions.values())
+
+
+def clear_execution_registry_runtime() -> dict:
+    """Remove only execution/package runtime, retaining repository and long-term assets."""
+    root = _registry_path().parent
+    backup = root.with_name(f"{root.name}.cleanup-backup-{uuid4().hex[:10]}")
+    with _lock:
+        count = len(_sessions)
+        if root.exists():
+            root.replace(backup)
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            _registry_path().write_text(json.dumps({"sessions": {}, "packages": {}}, ensure_ascii=False), encoding="utf-8")
+            _sessions.clear()
+            _packages.clear()
+        except Exception:
+            if root.exists():
+                shutil.rmtree(root)
+            if backup.exists():
+                backup.replace(root)
+            load_execution_sessions()
+            raise
+    return {"execution_count": count, "backup_path": str(backup) if backup.exists() else None}
+
+
+def finalize_execution_registry_cleanup(backup_path: str | None) -> None:
+    if backup_path:
+        backup = Path(backup_path)
+        if backup.exists():
+            shutil.rmtree(backup)
+
+
+def restore_execution_registry_cleanup(backup_path: str | None) -> None:
+    if not backup_path:
+        return
+    backup = Path(backup_path)
+    root = _registry_path().parent
+    with _lock:
+        _sessions.clear(); _packages.clear()
+        if root.exists():
+            shutil.rmtree(root)
+        if backup.exists():
+            backup.replace(root)
+        load_execution_sessions()
 
 
 def list_actually_active_sessions(*, queue_getter=None, task_lookup=None, package_id: str | None = None) -> list[ExecutionSession]:
