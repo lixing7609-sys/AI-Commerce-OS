@@ -657,17 +657,17 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-model-center > header h2 { margin: 4px 0 0; }
 .sino-model-center > header p, .sino-model-center-message { margin: 0; color: #7e877b; font-size: 12px; }
 .sino-model-center-message { margin-bottom: 14px; }
-.sino-settings { position: relative; box-sizing: border-box; width: 100%; min-height: 100%; padding: 30px clamp(24px, 4vw, 56px); }
+.sino-settings { position: relative; box-sizing: border-box; width: 100%; min-height: 100%; padding: 24px clamp(24px, 3vw, 44px); }
 .sino-founder-main--fixed-workspace > .sino-settings { flex: 1 1 0; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .sino-founder-main--fixed-workspace > .sino-settings::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-settings > header { align-items: flex-start; }
 .sino-settings > header > div { display: grid; gap: 5px; }
-.sino-settings-tabs { display: flex; gap: 22px; margin: 8px 0 24px; border-bottom: 1px solid var(--line); }
+.sino-settings-tabs { display: flex; gap: 22px; margin: 4px 0 18px; border-bottom: 1px solid var(--line); }
 .sino-settings-tabs button { padding: 11px 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: 14px; cursor: pointer; }
 .sino-settings-tabs button:hover { color: var(--text-primary); }
 .sino-settings-tabs button.is-active { border-bottom-color: var(--accent); color: var(--text-primary); }
 .sino-settings-content { min-width: 0; width: 100%; }
-.sino-model-section-tabs { display: flex; gap: 4px; margin-bottom: 18px; }
+.sino-model-section-tabs { display: flex; gap: 4px; margin-bottom: 14px; }
 .sino-model-section-tabs button { padding: 7px 11px; border: 0; border-radius: 8px; background: transparent; color: var(--text-secondary); font-size: 14px; cursor: pointer; }
 .sino-model-section-tabs button:hover { background: var(--surface-raised); color: var(--text-primary); }
 .sino-model-section-tabs button.is-active { background: var(--surface-selected); color: var(--text-primary); }
@@ -700,13 +700,25 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-key-editor input { box-sizing: border-box; width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-base); color: var(--text-primary); }
 .sino-settings-key-editor > div { display: flex; gap: 7px; }
 .sino-settings-context article > section { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.sino-settings-provider-inspector { display: grid; gap: 0; }
+.sino-settings-provider-inspector > section { padding: 18px 0; border-top: 1px solid var(--line); }
+.sino-settings-provider-inspector > section:first-of-type { padding-top: 0; border-top: 0; }
+.sino-settings-provider-inspector h4 { margin: 0 0 12px; color: var(--text-primary); font-size: 14px; font-weight: 600; line-height: 20px; }
+.sino-settings-inspector-facts { display: grid; gap: 10px; margin: 0; }
+.sino-settings-inspector-facts > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.sino-settings-inspector-facts dt { color: var(--text-label); font-size: 12px; }
+.sino-settings-inspector-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--text-primary); font-size: 13px; line-height: 19px; }
+.sino-settings-provider-inspector .sino-settings-context-heading h4 { margin: 0; }
 .sino-settings-context-heading, .sino-settings-connection-test { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .sino-settings-context-heading > div, .sino-settings-connection-test > div { display: grid; gap: 4px; }
 .sino-settings-context-heading small, .sino-settings-connection-test span { color: var(--text-secondary); font-size: 12px; }
 .sino-settings-context .sino-model-choices { max-height: 260px; margin-top: 10px; overflow-y: auto; }
 .sino-settings-context .sino-model-choices { scrollbar-width: none; -ms-overflow-style: none; }
 .sino-settings-context .sino-model-choices::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.sino-settings-context .sino-model-choices > label { grid-template-columns: auto minmax(0, 1fr); }
+.sino-settings-context .sino-model-choices > label { grid-template-columns: auto minmax(0, 1fr); gap: 9px; padding: 9px 2px; }
+.sino-settings-context .sino-model-choices strong { font-size: 14px; line-height: 19px; }
+.sino-settings-context .sino-model-choices small { font-size: 12px; line-height: 17px; }
+.sino-settings-context .sino-model-choices em { font-size: 11px; line-height: 16px; }
 .sino-settings-context .sino-model-choices b { display: none; }
 .sino-settings-object-list { display: grid; border-top: 1px solid var(--line); }
 .sino-settings-object-list button { display: flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; padding: 18px 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
@@ -809,9 +821,9 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-capability-tabs button, .sino-capability-section-heading button, .sino-provider-install button, .sino-model-library-card footer button { font-size: 14px; }
 .sino-capability-section-heading h3 { font-size: 21px; font-weight: 600; }
 .sino-capability-section { padding-block: 10px 28px; }
-.sino-my-models { min-width: 0; display: grid; border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.sino-my-models { display: grid; width: fit-content; min-width: 680px; max-width: 100%; border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
 .sino-my-models::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.sino-my-models__header, .sino-my-models > button { display: grid; grid-template-columns: minmax(150px, 2fr) minmax(86px, 1fr) minmax(78px, max-content) repeat(5, minmax(48px, max-content)); align-items: center; gap: 8px; }
+.sino-my-models__header, .sino-my-models > button { display: grid; grid-template-columns: minmax(170px, 240px) minmax(92px, 130px) max-content repeat(5, max-content); align-items: center; gap: 14px; }
 .sino-my-models__header { min-width: 680px; min-height: 32px; padding: 0 8px; border-bottom: 1px solid var(--line); color: var(--text-label); font-size: 11px; }
 .sino-my-models > button { min-width: 680px; width: 100%; min-height: 48px; padding: 7px 8px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .sino-my-models > button:hover { background: var(--surface-raised); }
@@ -819,6 +831,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-my-models > button strong { min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .sino-my-models > button span { min-width: 0; overflow: hidden; color: #8d968a; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .sino-model-capabilities,.sino-routing-policies{margin-top:28px;padding-top:22px;border-top:1px solid var(--line)}
+.sino-model-section-panel.sino-model-capabilities,.sino-model-section-panel.sino-routing-policies{margin-top:0;padding-top:0;border-top:0}
 .sino-model-capabilities>div:last-child,.sino-routing-policies>div:last-child{display:grid;gap:10px}
 .sino-model-capabilities article,.sino-routing-policies article{padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-raised)}
 .sino-model-capabilities article>header,.sino-routing-policies article>header{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px}
@@ -1900,19 +1913,18 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-founder-asset-page > * { flex: 1 1 0; min-width: 0; }
 .sino-founder-asset-inspector { border-left: 1px solid var(--line); }
 .sino-founder-asset-route:not(:has(.sino-founder-asset-inspector)) { grid-template-columns: 244px minmax(0, 1fr); }
-.sino-founder-asset-route.is-settings { position: relative; display: block; }
+.sino-founder-asset-route.is-settings { grid-template-columns: minmax(680px, 1fr) var(--settings-inspector-width, 340px); gap: 8px; padding: 0 8px 0 0; }
 .sino-founder-asset-route.is-settings > .sino-founder-asset-page { box-sizing: border-box; width: 100%; height: 100%; }
-.sino-founder-asset-route.is-settings.has-settings-inspector .sino-settings { padding-right: calc(var(--settings-inspector-width, 340px) + 24px); }
 .sino-scrollbar-hidden { scrollbar-width: none; -ms-overflow-style: none; }
 .sino-scrollbar-hidden::-webkit-scrollbar,
 .sino-scrollbar-hidden *::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-settings-floating-inspector {
-  position: fixed;
-  z-index: 40;
-  top: 8px;
-  right: 8px;
-  bottom: 8px;
+  position: relative;
+  z-index: 1;
+  align-self: stretch;
   box-sizing: border-box;
+  height: calc(100dvh - 16px);
+  margin: 8px 0;
   width: var(--settings-inspector-width, 340px);
   min-width: 300px;
   max-width: min(640px, 48vw);
@@ -1921,7 +1933,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface-base);
-  box-shadow: 0 18px 48px rgba(0,0,0,.28);
+  box-shadow: 0 12px 32px rgba(0,0,0,.22);
 }
 .sino-settings-floating-inspector > .sino-settings-context { box-sizing: border-box; width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }
 .sino-settings-floating-inspector > .sino-settings-context::-webkit-scrollbar { display: none; width: 0; height: 0; }

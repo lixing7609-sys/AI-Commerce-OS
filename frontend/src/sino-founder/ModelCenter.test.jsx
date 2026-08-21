@@ -85,14 +85,14 @@ describe("Founder Settings", () => {
     const onClose = vi.fn();
     const { rerender } = render(<SettingsContext detail={{ section: "models", provider: deepseek, model: deepseek.available_models[0] }} onClose={onClose} />);
     expect(screen.getByText("Sino Founder AI 系统配置")).toBeTruthy();
-    expect(screen.getByText("配置 Sino Founder AI 使用的模型、API、讨论与执行环境。")).toBeTruthy();
+    expect(screen.getByText("配置当前模型及相关连接参数。")).toBeTruthy();
     expect(screen.getByText(/DeepSeek \/ deepseek/)).toBeTruthy();
     expect(screen.getByText("****1234")).toBeTruthy();
     expect(screen.getByText("可用模型")).toBeTruthy();
     rerender(<SettingsContext detail={{ section: "sino" }} onClose={onClose} />);
     expect(screen.getByText("Sino Founder AI 系统配置")).toBeTruthy();
     expect(screen.getByText("设置详情")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置并返回 Sino 首页" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -194,7 +194,7 @@ describe("Founder Settings", () => {
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
     expect(screen.queryByText("GPT")).toBeNull();
     expect(screen.queryByRole("button", { name: "管理" })).toBeNull();
-    expect(screen.getByRole("table", { name: "模型状态列表" }).querySelectorAll('button[aria-pressed="false"]')).toHaveLength(2);
+    expect(screen.getByRole("table", { name: "模型状态列表" }).querySelectorAll("button[aria-pressed]")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "＋ 添加模型" }));
     expect(screen.getAllByText("OpenAI").length).toBeGreaterThan(0);
     expect(screen.getByText("认证失败")).toBeTruthy();

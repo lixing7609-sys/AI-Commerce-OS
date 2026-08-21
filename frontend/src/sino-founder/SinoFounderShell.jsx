@@ -15,6 +15,7 @@ const MAX_EXECUTION_WIDTH = 640;
 const DEFAULT_SETTINGS_INSPECTOR_WIDTH = 340;
 const MIN_SETTINGS_INSPECTOR_WIDTH = 300;
 const MAX_SETTINGS_INSPECTOR_WIDTH = 640;
+const MIN_SETTINGS_MAIN_WIDTH = 680;
 const MIN_CONVERSATION_WIDTH = 420;
 
 const restoredWidth = () => {
@@ -138,7 +139,7 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
     const startWidth = settingsInspectorWidth;
     setResizing(true);
     const move = (moveEvent) => {
-      const maxWidth = Math.min(MAX_SETTINGS_INSPECTOR_WIDTH, Math.floor(window.innerWidth * .48));
+      const maxWidth = Math.min(MAX_SETTINGS_INSPECTOR_WIDTH, Math.floor(window.innerWidth * .48), window.innerWidth - MIN_SETTINGS_MAIN_WIDTH - 24);
       persistSettingsInspectorWidth(clamp(startWidth + startX - moveEvent.clientX, MIN_SETTINGS_INSPECTOR_WIDTH, maxWidth));
     };
     const stop = () => {
@@ -156,7 +157,7 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
   const navigation = <FounderNavigationPanel active={active} onNavigate={onNavigate} onCollapse={isWorkspace || isLibrary ? () => setNavigationCollapsed(true) : undefined} resizeHandle={isWorkspace || isLibrary ? navResizeHandle : undefined} {...sidebarProps} />;
 
   if (!isWorkspace && !isLibrary) {
-    return <div className={`sino-founder-asset-route${isSettings ? " is-settings" : ""}${isSettings && context ? " has-settings-inspector" : ""}${resizing ? " is-resizing" : ""}`} style={isSettings ? { "--settings-inspector-width": `${settingsInspectorWidth}px` } : undefined}>
+    return <div className={`sino-founder-asset-route${isSettings ? " is-settings" : ""}${resizing ? " is-resizing" : ""}`} style={isSettings ? { "--settings-inspector-width": `${settingsInspectorWidth}px` } : undefined}>
       {!isSettings ? navigation : null}
       <main ref={surfaceRef} className={`sino-founder-asset-page${isSettings ? " sino-scrollbar-hidden" : ""}`} tabIndex={0} aria-label="Founder AI 功能页面">{main}</main>
       {context ? <aside className={`sino-founder-asset-inspector${isSettings ? " sino-settings-floating-inspector sino-scrollbar-hidden" : ""}`} aria-label="功能页详情">

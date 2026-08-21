@@ -26,7 +26,14 @@ export function ModelCenter({ onContextChange }) {
   const installed = useMemo(() => center.providers.filter((item) => item.installed), [center.providers]);
 
   async function reload() { const value = await getModelCenter(); setCenter(value); return value; }
-  useEffect(() => { reload().catch((error) => setMessage(error.message)); getRuntimeEnvironmentRegistry().then(setRuntimeRegistry).catch((error) => setMessage(error.message)); onContextChange?.(null); }, []);
+  useEffect(() => {
+    reload().then((value) => {
+      const provider = value.providers.find((item) => item.installed && item.selected_models?.length);
+      if (provider) { setEditing(provider.provider_key); setSelectedModel(provider.selected_models[0]); }
+    }).catch((error) => setMessage(error.message));
+    getRuntimeEnvironmentRegistry().then(setRuntimeRegistry).catch((error) => setMessage(error.message));
+    onContextChange?.({ section: "models" });
+  }, []);
 
   function providerState(providerKey) { return providerActionState[providerKey] || {}; }
   function updateProviderState(providerKey, patch) { setProviderActionState((current) => ({ ...current, [providerKey]: { ...(current[providerKey] || {}), ...patch } })); }
@@ -79,7 +86,7 @@ export function ModelCenter({ onContextChange }) {
   }));
   useEffect(() => {
     if (section === "models" && selectedProvider && selectedModelMeta) onContextChange?.({ section, provider: selectedProvider, model: selectedModelMeta, action: providerState(selectedProvider.provider_key), onCredentialSave: (values) => updateCredentials(selectedProvider, values), onRefresh: () => refresh(selectedProvider), onHealth: () => health(selectedProvider), onChoose: (model, checked) => choose(selectedProvider, model, checked) });
-    else onContextChange?.(null);
+    else onContextChange?.({ section });
   }, [section, editing, selectedModel, center, providerActionState]);
   return <section className="sino-model-center sino-settings" aria-label="设置">
     <header><div><span className="sino-kicker">设置</span><h2>设置</h2></div></header>
@@ -129,7 +136,7 @@ function RuntimeEnvironmentSettings({ registry }) {
 
 export function SettingsContext({ detail, onClose }) {
   const provider = detail?.provider;
-  return <div className="sino-context-summary sino-settings-context"><header><div><h3>Sino Founder AI 系统配置</h3><p>配置 Sino Founder AI 使用的模型、API、讨论与执行环境。</p></div><button type="button" onClick={onClose} aria-label="关闭设置">×</button></header><article>{provider ? <ProviderSettingsContext detail={detail} /> : detail?.role ? <RoleSettingsContext detail={detail} /> : detail?.section === "executor" && detail.engines ? <ExecutorSettingsContext detail={detail} /> : detail?.section === "discussion" && detail.roles ? <DiscussionSettingsContext detail={detail} /> : <><span className="sino-kicker">设置上下文</span><h3>设置详情</h3><p>选择一个服务商、模型或配置项查看详情。</p></>}</article></div>;
+  return <div className="sino-context-summary sino-settings-context"><header><div><h3>Sino Founder AI 系统配置</h3><p>配置当前模型及相关连接参数。</p></div><button type="button" onClick={onClose} aria-label="关闭设置并返回 Sino 首页">×</button></header><article>{provider ? <ProviderSettingsContext detail={detail} /> : detail?.role ? <RoleSettingsContext detail={detail} /> : detail?.section === "executor" && detail.engines ? <ExecutorSettingsContext detail={detail} /> : detail?.section === "discussion" && detail.roles ? <DiscussionSettingsContext detail={detail} /> : <><span className="sino-kicker">设置上下文</span><h3>设置详情</h3><p>选择一个服务商、模型或配置项查看详情。</p></>}</article></div>;
 }
 
 function ProviderSettingsContext({ detail }) {
@@ -139,7 +146,14 @@ function ProviderSettingsContext({ detail }) {
   useEffect(() => { setEditingKey(false); setApiKey(""); }, [provider.provider_key, modelId(model)]);
   const busy = Boolean(action.isConnecting || action.isRefreshingModels || action.isCheckingHealth || action.isSaving);
   async function saveKey(event) { event.preventDefault(); await onCredentialSave?.({ api_key: apiKey, base_url: null, display_name: null }); setApiKey(""); setEditingKey(false); }
-  return <><span className="sino-kicker">模型</span><h3>{model?.display_name || modelId(model)}</h3><p className="sino-settings-provider-name">{provider.display_name} / {provider.provider_type}</p>{action.error ? <p className="sino-provider-result is-error" role="status">{action.error}</p> : action.successMessage ? <p className="sino-provider-result is-success" role="status">{action.successMessage}</p> : null}<dl><div><dt>连接状态</dt><dd>{stateLabel(provider.health_status)}</dd></div><div><dt>API Key</dt><dd>{provider.api_key_mask || "未配置"}</dd></div></dl>{editingKey ? <form className="sino-settings-key-editor" onSubmit={saveKey}><input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="输入新的 API Key" aria-label="新的 API Key" /><div><button type="submit" disabled={!apiKey || busy}>保存</button><button type="button" onClick={() => { setEditingKey(false); setApiKey(""); }}>取消</button></div></form> : <button type="button" className="sino-settings-context-action" onClick={() => setEditingKey(true)}>更新 API Key</button>}<section><div className="sino-settings-context-heading"><div><strong>可用模型</strong><small>{provider.available_models?.length || 0}</small></div><button type="button" onClick={onRefresh} disabled={busy}>{action.isRefreshingModels ? "正在刷新…" : "刷新模型"}</button></div><ModelChoices models={provider.available_models || []} provider={provider} onChoose={(_, item, checked) => onChoose?.(item, checked)} busy={busy} /></section><dl><div><dt>基础地址</dt><dd>{provider.base_url || "默认"}</dd></div><div><dt>当前启用模型</dt><dd>{provider.selected_models?.join(" · ") || "未选择"}</dd></div></dl><section className="sino-settings-connection-test"><div><strong>连接测试</strong><span data-health={provider.health_status}>{stateLabel(provider.health_status)}</span></div><button type="button" onClick={onHealth} disabled={busy}>{action.isCheckingHealth ? "正在测试…" : "测试连接"}</button></section></>;
+  return <div className="sino-settings-provider-inspector">
+    {action.error ? <p className="sino-provider-result is-error" role="status">{action.error}</p> : action.successMessage ? <p className="sino-provider-result is-success" role="status">{action.successMessage}</p> : null}
+    <section aria-labelledby="settings-inspector-model"><h4 id="settings-inspector-model">模型</h4><dl className="sino-settings-inspector-facts"><div><dt>模型名称</dt><dd>{model?.display_name || modelId(model)}</dd></div><div><dt>服务商</dt><dd>{provider.display_name} / {provider.provider_type}</dd></div><div><dt>模型 ID</dt><dd>{modelId(model)}</dd></div></dl></section>
+    <section aria-labelledby="settings-inspector-connection"><h4 id="settings-inspector-connection">连接状态</h4><dl className="sino-settings-inspector-facts"><div><dt>状态</dt><dd data-health={provider.health_status}>{stateLabel(provider.health_status)}</dd></div><div><dt>API Key</dt><dd>{provider.api_key_mask || "未配置"}</dd></div></dl>{editingKey ? <form className="sino-settings-key-editor" onSubmit={saveKey}><input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="输入新的 API Key" aria-label="新的 API Key" /><div><button type="submit" disabled={!apiKey || busy}>保存</button><button type="button" onClick={() => { setEditingKey(false); setApiKey(""); }}>取消</button></div></form> : <button type="button" className="sino-settings-context-action" onClick={() => setEditingKey(true)}>更新 API Key</button>}</section>
+    <section aria-labelledby="settings-inspector-models"><div className="sino-settings-context-heading"><div><h4 id="settings-inspector-models">可用模型</h4><small>{provider.available_models?.length || 0}</small></div><button type="button" onClick={onRefresh} disabled={busy}>{action.isRefreshingModels ? "正在刷新…" : "刷新模型"}</button></div><ModelChoices models={provider.available_models || []} provider={provider} onChoose={(_, item, checked) => onChoose?.(item, checked)} busy={busy} /></section>
+    <section aria-labelledby="settings-inspector-config"><h4 id="settings-inspector-config">连接配置</h4><dl className="sino-settings-inspector-facts"><div><dt>基础地址</dt><dd>{provider.base_url || "默认"}</dd></div><div><dt>当前启用模型</dt><dd>{provider.selected_models?.join(" · ") || "未选择"}</dd></div></dl></section>
+    <section className="sino-settings-connection-test" aria-labelledby="settings-inspector-test"><div><h4 id="settings-inspector-test">连接测试</h4><span data-health={provider.health_status}>{stateLabel(provider.health_status)}</span></div><button type="button" onClick={onHealth} disabled={busy}>{action.isCheckingHealth ? "正在测试…" : "测试连接"}</button></section>
+  </div>;
 }
 
 function RoleSettingsContext({ detail }) {
