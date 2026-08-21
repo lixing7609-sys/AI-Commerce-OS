@@ -29,12 +29,32 @@ describe("Sino AI Conversation Model selector", () => {
     getModelCenter.mockResolvedValue(center);
     const onPreselect = vi.fn();
     render(<SinoModelSelector conversation={null} onPreselect={onPreselect} />);
-    fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
-    await screen.findByRole("menu", { name: "Conversation Models" });
+    const trigger = screen.getByRole("button", { name: /Sino AI/ });
+    expect(trigger.classList.contains("sino-model-selector__trigger--pill")).toBe(true);
+    expect(trigger.querySelector(".sino-model-selector__chevron-right")).toBeTruthy();
+    expect(trigger.querySelector("i")).toBeNull();
+    fireEvent.click(trigger);
+    const menu = await screen.findByRole("menu", { name: "Conversation Models" });
+    expect(menu.classList.contains("sino-model-selector__menu--floating")).toBe(true);
+    expect(menu.parentElement).toBe(document.body);
     expect(screen.getByRole("menuitemradio", { name: /DeepSeek Chat/ }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByRole("menuitemradio", { name: /Claude Sonnet/ }).disabled).toBe(true);
     fireEvent.click(screen.getByRole("menuitemradio", { name: /GPT 5 Pro/ }));
     expect(onPreselect).toHaveBeenCalledWith(expect.objectContaining({ providerKey: "gpt", model: "gpt-5-pro" }));
+  });
+
+  it("closes the floating popover on outside click and Escape", async () => {
+    getModelCenter.mockResolvedValue(center);
+    render(<div><SinoModelSelector conversation={null} /><button type="button">Outside</button></div>);
+    const trigger = screen.getByRole("button", { name: /Sino AI/ });
+    fireEvent.click(trigger);
+    await screen.findByRole("menu", { name: "Conversation Models" });
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+    expect(screen.queryByRole("menu", { name: "Conversation Models" })).toBeNull();
+    fireEvent.click(trigger);
+    await screen.findByRole("menu", { name: "Conversation Models" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Conversation Models" })).toBeNull();
   });
 
   it("persists an existing conversation override and safely retains the previous model on failure", async () => {
