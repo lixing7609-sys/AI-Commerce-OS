@@ -74,10 +74,12 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     expect(topbarBounds.x).toBe(0);
     expect(topbarBounds.x + topbarBounds.width).toBe(1440);
     expect(topbarBounds.y + topbarBounds.height).toBeLessThanOrEqual(conversationBounds.y);
-    expect(navigationPanelBounds.x).toBe(0);
-    expect(executionBounds.x + executionBounds.width).toBe(1440);
+    expect(navigationPanelBounds.x).toBe(8);
+    expect(executionBounds.x + executionBounds.width).toBe(1432);
     expect(executionBounds.y).toBe(navigationPanelBounds.y);
     expect(executionBounds.height).toBe(navigationPanelBounds.height);
+    expect(navigationPanelBounds.y).toBe(8);
+    expect(navigationPanelBounds.y + navigationPanelBounds.height).toBe(892);
     await expect(topbar.getByRole("button", { name: "重置执行中心宽度" })).toHaveCount(0);
     await expect(page.getByText("和 Sino 讨论任何想法、问题或计划……", { exact: true })).toHaveCount(0);
     await expect(navigation.locator(".sino-project-item")).toHaveCount(4);
