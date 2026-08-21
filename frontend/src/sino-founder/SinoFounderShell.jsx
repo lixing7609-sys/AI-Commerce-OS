@@ -44,6 +44,7 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
   const [navCollapsed, setNavCollapsed] = useState(restoredNavCollapsed);
   const [resizing, setResizing] = useState(false);
   const isWorkspace = active === "conversation";
+  const isLibrary = active === "library";
 
   useEffect(() => {
     if (surfaceRef.current) surfaceRef.current.scrollTop = 0;
@@ -111,9 +112,9 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
   }
 
   const navResizeHandle = <div className="founder-navigation-resize-handle" role="separator" aria-label="调整左侧导航宽度" aria-orientation="vertical" aria-valuemin={MIN_NAV_WIDTH} aria-valuemax={MAX_NAV_WIDTH} aria-valuenow={navWidth} onPointerDown={resizeNavigation} onDoubleClick={() => persistNavWidth(DEFAULT_NAV_WIDTH)} />;
-  const navigation = <FounderNavigationPanel active={active} onNavigate={onNavigate} onCollapse={isWorkspace ? () => setNavigationCollapsed(true) : undefined} resizeHandle={isWorkspace ? navResizeHandle : undefined} {...sidebarProps} />;
+  const navigation = <FounderNavigationPanel active={active} onNavigate={onNavigate} onCollapse={isWorkspace || isLibrary ? () => setNavigationCollapsed(true) : undefined} resizeHandle={isWorkspace || isLibrary ? navResizeHandle : undefined} {...sidebarProps} />;
 
-  if (!isWorkspace) {
+  if (!isWorkspace && !isLibrary) {
     return <div className="sino-founder-asset-route">
       {navigation}
       <main ref={surfaceRef} className="sino-founder-asset-page" tabIndex={0} aria-label="Founder AI 功能页面">{main}</main>
@@ -123,9 +124,9 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
 
   return <div
     ref={workspaceRef}
-    className={`founder-workspace${navCollapsed ? " is-nav-collapsed" : ""}${resizing ? " is-resizing" : ""}`}
+    className={`founder-workspace${isLibrary ? " is-library" : ""}${navCollapsed ? " is-nav-collapsed" : ""}${resizing ? " is-resizing" : ""}`}
     style={{ "--founder-nav-width": `${navWidth}px`, "--execution-center-width": `${executionWidth}px` }}
-    data-workspace-structure={navCollapsed ? "conversation execution" : "navigation conversation execution"}
+    data-workspace-structure={isLibrary ? navCollapsed ? "library" : "navigation library" : navCollapsed ? "conversation execution" : "navigation conversation execution"}
   >
     {!navCollapsed ? navigation : null}
     <header className="founder-workspace-topbar" aria-label="Workspace top bar">
@@ -134,13 +135,13 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
         <button type="button" title="展开侧边栏" aria-label="展开侧边栏" onClick={() => setNavigationCollapsed(false)}><SidebarIcon expanded /></button>
         <button type="button" title="新建讨论" aria-label="新建讨论" onClick={sidebarProps?.onNewConversation}><ComposeIcon /></button>
       </div> : null}
-      {conversationSelector}
+      {!isLibrary ? conversationSelector : null}
       </div>
     </header>
-    <main ref={surfaceRef} className="founder-conversation-surface" tabIndex={0} aria-label="Sino Natural Conversation">
+    <main ref={surfaceRef} className={isLibrary ? "founder-library-surface" : "founder-conversation-surface"} tabIndex={0} aria-label={isLibrary ? "Sino Library Workspace" : "Sino Natural Conversation"}>
       {main}
     </main>
-    <aside className="founder-execution-center" aria-label="执行中心">
+    {!isLibrary ? <aside className="founder-execution-center" aria-label="执行中心">
       <div
         className="founder-execution-resize-handle"
         role="separator"
@@ -153,6 +154,6 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
         onDoubleClick={() => persistWidth(DEFAULT_EXECUTION_WIDTH)}
       />
       {context}
-    </aside>
+    </aside> : null}
   </div>;
 }

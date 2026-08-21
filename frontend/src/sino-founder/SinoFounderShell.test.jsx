@@ -135,12 +135,21 @@ describe("formal Sino Founder workspace shell", () => {
     expect(screen.getByLabelText("功能页详情").textContent).toContain("Detail");
   });
 
+  it("expands Library across the execution column without a model selector or Composer", () => {
+    const { container } = render(<SinoFounderShell {...props} active="library" main={<section aria-label="库工作区">Library cards</section>} />);
+    expect(container.querySelector(".founder-workspace.is-library")).toBeTruthy();
+    expect(screen.getByRole("main", { name: "Sino Library Workspace" })).toBeTruthy();
+    expect(screen.queryByLabelText("执行中心")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Sino AI · 选择模型/ })).toBeNull();
+    expect(container.querySelector(".sino-global-composer")).toBeNull();
+  });
+
   it("keeps library and settings navigation wired", () => {
     const onNavigate = vi.fn();
     render(<SinoFounderShell {...props} onNavigate={onNavigate} />);
     fireEvent.click(screen.getByRole("button", { name: "库" }));
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
-    expect(onNavigate).toHaveBeenNthCalledWith(1, "capability-center");
+    expect(onNavigate).toHaveBeenNthCalledWith(1, "library");
     expect(onNavigate).toHaveBeenNthCalledWith(2, "settings");
   });
 });

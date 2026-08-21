@@ -15,6 +15,7 @@ import { ExecutionDeltaPanel } from "./ExecutionDeltaPanel.jsx";
 import { ExecutionTimeline } from "./ExecutionTimeline.jsx";
 import { FounderGateProposalReview } from "./FounderGateProposalReview.jsx";
 import { ProjectWorkspace } from "./FounderHome.jsx";
+import { LibraryWorkspace } from "./LibraryWorkspace.jsx";
 import { SinoFounderShell } from "./SinoFounderShell.jsx";
 import { stableConversationOrder } from "./FounderNavigationPanel.jsx";
 import { SinoModelSelector } from "./SinoModelSelector.jsx";
@@ -996,6 +997,7 @@ export function ConversationWorkspace() {
   if (view === "object") { main = <CapabilityObjectWorkspace object={selectedWorkspaceObject} onContinue={continueObject} onOpenExecution={openObjectExecution} />; context = capabilityContext; }
   if (view === "execution") { main = executionId ? executionView : <LifecycleExecutionCenter selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} />; context = executionId ? executionContext : <ExecutionContext selected={selectedLifecycleExecution} onSelect={setSelectedLifecycleExecution} onOpenExecution={openLifecycleExecution} />; }
   if (view === "assets") { main = <AssetLifecycleCenter selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} initialAsset={selectedWorkspaceObject?.asset_id ? selectedWorkspaceObject : null} onStartNewGoal={newConversation} />; context = <AssetContext selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} conversationId={conversationId} projectId={activeProjectId} onOpenExecution={openLifecycleExecution} onContinue={continueAsset} />; }
+  if (view === "library") { main = <LibraryWorkspace />; context = null; }
   if (view === "builder") { main = <SystemBuilderPanel projectId={activeProjectId} selected={selectedSystemAsset} onSelect={setSelectedSystemAsset} />; context = <SystemContext selected={selectedSystemAsset} onOpenAsset={openAssetRecord} />; }
   if (view === "settings") { const closeSettings = () => { const previous = normalizeFounderView(previousFounderViewRef.current || "conversation"); persistWorkspace(previous, null); setView(previous); }; main = <ModelCenter onContextChange={setSettingsContext} />; context = <SettingsContext detail={settingsContext} onClose={closeSettings} />; }
 
