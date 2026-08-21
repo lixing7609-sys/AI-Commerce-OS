@@ -33,13 +33,16 @@ describe("formal Sino Founder workspace shell", () => {
   });
 
   it("exposes the GPT-style navigation capabilities without a management topbar", () => {
-    render(<SinoFounderShell {...props} />);
+    const { container } = render(<SinoFounderShell {...props} />);
     expect(screen.getByTitle("新建讨论")).toBeTruthy();
     expect(screen.getByRole("button", { name: "库" })).toBeTruthy();
     expect(screen.getByText("项目")).toBeTruthy();
     expect(screen.getByText("会话")).toBeTruthy();
     expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
     expect(screen.queryByRole("navigation", { name: "能力管理主导航" })).toBeNull();
+    const icons = [...container.querySelectorAll(".sino-sidebar-toggle svg, .sino-new-conversation svg")];
+    expect(icons).toHaveLength(2);
+    expect(icons.every((icon) => icon.getAttribute("width") === "18" && icon.getAttribute("stroke-width") === "1.7")).toBe(true);
   });
 
   it("resizes only the execution center within its limits and persists the width", () => {

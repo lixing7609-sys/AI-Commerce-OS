@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FounderNavigationPanel } from "./FounderNavigationPanel.jsx";
+import { ComposeIcon, PanelWidthIcon, SidebarIcon } from "./FounderWorkspaceIcons.jsx";
 
 const EXECUTION_WIDTH_KEY = "sino-founder-execution-center-width";
 const NAV_COLLAPSED_KEY = "sino-founder-sidebar-collapsed";
@@ -32,10 +33,6 @@ const restoredNavCollapsed = () => {
   try { return window.localStorage.getItem(NAV_COLLAPSED_KEY) === "true"; }
   catch { return false; }
 };
-
-function SidebarIcon({ expanded = false }) {
-  return <svg aria-hidden="true" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5" /><path d={expanded ? "M5.5 2.5v11M8 6l2 2-2 2" : "M5.5 2.5v11M10 6 8 8l2 2"} /></svg>;
-}
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
 
@@ -134,11 +131,11 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
     <main ref={surfaceRef} className="founder-conversation-surface" tabIndex={0} aria-label="Sino Natural Conversation">
       {navCollapsed ? <div className="founder-collapsed-controls" aria-label="Collapsed navigation controls">
         <button type="button" title="展开侧边栏" aria-label="展开侧边栏" onClick={() => setNavigationCollapsed(false)}><SidebarIcon expanded /></button>
-        <button type="button" title="新建讨论" aria-label="新建讨论" onClick={sidebarProps?.onNewConversation}>＋</button>
+        <button type="button" title="新建讨论" aria-label="新建讨论" onClick={sidebarProps?.onNewConversation}><ComposeIcon /></button>
       </div> : null}
       {conversationSelector}
       <div className="founder-conversation-actions" aria-label="Conversation controls">
-        <button type="button" title="重置执行中心宽度" aria-label="重置执行中心宽度" onClick={() => persistWidth(DEFAULT_EXECUTION_WIDTH)}>↔</button>
+        <button type="button" title="重置执行中心宽度" aria-label="重置执行中心宽度" onClick={() => persistWidth(DEFAULT_EXECUTION_WIDTH)}><PanelWidthIcon /></button>
       </div>
       {main}
     </main>
