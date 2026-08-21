@@ -44,6 +44,14 @@ export function bindFounderConversationProject(conversationId, projectId) {
   }, "更新 Conversation 项目失败");
 }
 
+export function setFounderConversationModel(conversationId, providerKey, model) {
+  return request(`/conversations/${encodeURIComponent(conversationId)}/conversation-model`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider_key: providerKey, model }),
+  }, "切换 Conversation Model 失败");
+}
+
 export function getFounderProjects() {
   return request("/founder-ai/projects", undefined, "获取 Founder 项目失败");
 }

@@ -25,7 +25,7 @@ class ConversationBoundaryError(ValueError):
     """Raised when a conversation crosses the Founder application boundary."""
 
 
-def create_conversation(*, title: str | None = None, project_id: str | None = None, topic_key: str | None = None, conversation_type: str = "USER_CONVERSATION", created_by: str = "FOUNDER") -> ConversationDB:
+def create_conversation(*, title: str | None = None, project_id: str | None = None, topic_key: str | None = None, conversation_type: str = "USER_CONVERSATION", created_by: str = "FOUNDER", conversation_model_provider: str | None = None, conversation_model: str | None = None) -> ConversationDB:
     if project_id and get_project(project_id) is None:
         raise ConversationBoundaryError("Founder project not found")
     conversation_type = conversation_type.upper()
@@ -33,6 +33,12 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
     if conversation_type not in CONVERSATION_TYPES: raise ConversationBoundaryError("Unsupported conversation type")
     if created_by not in CREATORS: raise ConversationBoundaryError("Unsupported conversation creator")
     if project_id and conversation_type == "USER_CONVERSATION": conversation_type = "PROJECT_CONVERSATION"
+    if bool(conversation_model_provider) != bool(conversation_model):
+        raise ConversationBoundaryError("Conversation model provider and model must be selected together")
+    if conversation_model_provider:
+        from app.core.model_center.service import resolve_runtime_config
+        if resolve_runtime_config(provider_key=conversation_model_provider, model=conversation_model) is None:
+            raise ConversationBoundaryError("Conversation model is unavailable")
     hidden = conversation_type in {"SYSTEM_RUN", "VERIFICATION_RUN", "TEMPORARY_CONVERSATION"}
     with SessionLocal() as session:
         record = ConversationDB(
@@ -44,6 +50,8 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
             created_by=created_by,
             visibility="hidden_from_conversation_list" if hidden else "conversation_list",
             lifecycle_status="ephemeral" if conversation_type == "TEMPORARY_CONVERSATION" else "active",
+            conversation_model_provider=conversation_model_provider,
+            conversation_model=conversation_model,
         )
         session.add(record)
         session.flush()
@@ -56,6 +64,20 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
         session.add(SinoBrainSessionDB(conversation_id=record.id, project_id=project_id))
         session.commit()
         session.refresh(record)
+        return record
+
+
+def set_conversation_model(conversation_id: str, provider_key: str, model: str) -> ConversationDB:
+    from app.core.model_center.service import resolve_runtime_config
+    if resolve_runtime_config(provider_key=provider_key, model=model) is None:
+        raise ConversationBoundaryError("Conversation model is unavailable")
+    with SessionLocal() as session:
+        record = session.get(ConversationDB, conversation_id)
+        if record is None or record.system_id != FOUNDER_SYSTEM_KEY:
+            raise LookupError("Founder AI conversation not found")
+        record.conversation_model_provider = provider_key
+        record.conversation_model = model
+        session.commit(); session.refresh(record)
         return record
 
 

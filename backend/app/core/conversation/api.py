@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.conversation.service import activate_conversation, bind_conversation_project, create_conversation, delete_conversation, ensure_conversation_runtime_state, get_conversation, list_conversations
+from app.core.conversation.service import activate_conversation, bind_conversation_project, create_conversation, delete_conversation, ensure_conversation_runtime_state, get_conversation, list_conversations, set_conversation_model
 
 
 class ConversationCreateIn(BaseModel):
@@ -13,6 +13,8 @@ class ConversationCreateIn(BaseModel):
     project_id: str | None = Field(default=None, max_length=40)
     conversation_type: str = Field(default="USER_CONVERSATION", max_length=30)
     created_by: str = Field(default="FOUNDER", max_length=20)
+    conversation_model_provider: str | None = Field(default=None, max_length=80)
+    conversation_model: str | None = Field(default=None, max_length=160)
 
 
 class ConversationOut(BaseModel):
@@ -30,6 +32,8 @@ class ConversationOut(BaseModel):
     lifecycle_status: str
     topic_key: str | None
     merged_into_conversation_id: str | None
+    conversation_model_provider: str | None
+    conversation_model: str | None
     created_at: datetime
     updated_at: datetime
     initialization_status: str | None = None
@@ -40,6 +44,12 @@ class ConversationOut(BaseModel):
 class ConversationProjectIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     project_id: str | None = Field(default=None, max_length=40)
+
+
+class ConversationModelIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider_key: str = Field(min_length=1, max_length=80)
+    model: str = Field(min_length=1, max_length=160)
 
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
@@ -56,7 +66,7 @@ def list_founder_conversations(scope: str = "all", project_id: str | None = None
 @router.post("", response_model=ConversationOut, status_code=201)
 def create_founder_conversation(request: ConversationCreateIn):
     try:
-        conversation = create_conversation(title=request.title, project_id=request.project_id, conversation_type=request.conversation_type, created_by=request.created_by)
+        conversation = create_conversation(title=request.title, project_id=request.project_id, conversation_type=request.conversation_type, created_by=request.created_by, conversation_model_provider=request.conversation_model_provider, conversation_model=request.conversation_model)
         readiness = ensure_conversation_runtime_state(conversation.id)
         return ConversationOut.model_validate(conversation).model_copy(update={"initialization_status": "ready", "brain_ready": readiness["brain_ready"], "workspace_ready": readiness["workspace_ready"]})
     except ValueError as error:
@@ -79,6 +89,16 @@ def update_conversation_project(conversation_id: str, request: ConversationProje
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.patch("/{conversation_id}/conversation-model", response_model=ConversationOut)
+def update_conversation_model(conversation_id: str, request: ConversationModelIn):
+    try:
+        return set_conversation_model(conversation_id, request.provider_key, request.model)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.post("/{conversation_id}/activate", response_model=ConversationOut)

@@ -18,7 +18,7 @@ const restoredWidth = () => {
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
 
-export function SinoFounderShell({ active, onNavigate, sidebarProps, main, context }) {
+export function SinoFounderShell({ active, onNavigate, sidebarProps, main, context, conversationSelector }) {
   const workspaceRef = useRef(null);
   const surfaceRef = useRef(null);
   const [executionWidth, setExecutionWidth] = useState(restoredWidth);
@@ -75,6 +75,7 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
   >
     {navigation}
     <main ref={surfaceRef} className="founder-conversation-surface" tabIndex={0} aria-label="Sino Natural Conversation">
+      {conversationSelector}
       <div className="founder-conversation-actions" aria-label="Conversation controls">
         <button type="button" title="重置执行中心宽度" aria-label="重置执行中心宽度" onClick={() => persistWidth(DEFAULT_EXECUTION_WIDTH)}>↔</button>
       </div>

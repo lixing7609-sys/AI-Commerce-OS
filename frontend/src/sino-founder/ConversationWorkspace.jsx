@@ -16,6 +16,7 @@ import { ExecutionTimeline } from "./ExecutionTimeline.jsx";
 import { FounderGateProposalReview } from "./FounderGateProposalReview.jsx";
 import { SinoFounderShell } from "./SinoFounderShell.jsx";
 import { stableConversationOrder } from "./FounderNavigationPanel.jsx";
+import { SinoModelSelector } from "./SinoModelSelector.jsx";
 import { SolutionCard } from "./SolutionCard.jsx";
 import { SystemBuilderPanel, SystemContext } from "./SystemBuilderPanel.jsx";
 import { TaskPlanCard } from "./TaskPlanCard.jsx";
@@ -137,6 +138,7 @@ export function ConversationWorkspace() {
   const [selectedLifecycleExecution, setSelectedLifecycleExecution] = useState(null);
   const [pendingClientMessageId, setPendingClientMessageId] = useState(null);
   const [streamingReply, setStreamingReply] = useState(null);
+  const [preselectedConversationModel, setPreselectedConversationModel] = useState(null);
   const [activeCapabilityAsset, setActiveCapabilityAsset] = useState(null);
   useEffect(() => { setSelectedConstitutionWorkItemId(null); }, [conversationId]);
   useEffect(() => { getFounderDrafts().then((data) => setDrafts(data.drafts || [])).catch(() => setDrafts([])); }, [snapshot?.sino_brain?.cognitive_outcomes?.length, view]);
@@ -414,7 +416,7 @@ export function ConversationWorkspace() {
       }
       if (isFirstSubmit) {
         setConversationInitializing(true);
-        const conversation = await createFounderConversation("新讨论", activeProjectId, { conversation_type: "TEMPORARY_CONVERSATION", created_by: "FOUNDER" });
+        const conversation = await createFounderConversation("新讨论", activeProjectId, { conversation_type: "TEMPORARY_CONVERSATION", created_by: "FOUNDER", ...(preselectedConversationModel ? { conversation_model_provider: preselectedConversationModel.providerKey, conversation_model: preselectedConversationModel.model } : {}) });
         if (conversation.initialization_status && (conversation.initialization_status !== "ready" || conversation.brain_ready !== true || conversation.workspace_ready !== true)) throw new Error("Sino 初始化未完成");
         id = conversation.id; activeConversationRef.current = id; skipNextRestoreRef.current = true; setConversationId(id); remember(CONVERSATION_KEY, id);
       }
@@ -695,13 +697,13 @@ export function ConversationWorkspace() {
 
   function newConversation(preserveProject = false) {
     const keepProject = preserveProject === true;
-    setConversationId(null); activeConversationRef.current = null; resetConversationProjection(); setError("");
+    setConversationId(null); activeConversationRef.current = null; resetConversationProjection(); setPreselectedConversationModel(null); setError("");
     if (!keepProject) { setActiveProjectId(null); setProjectIntelligence(null); forgetProject(); }
     remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(WORKSPACE_VIEW_KEY, "conversation"); setCreationContext(null); setSelectedWorkspaceObject(null); setView("conversation");
   }
 
   function goHome() {
-    setConversationId(null); activeConversationRef.current = null; resetConversationProjection(); setError("");
+    setConversationId(null); activeConversationRef.current = null; resetConversationProjection(); setPreselectedConversationModel(null); setError("");
     setActiveProjectId(null); setProjectIntelligence(null); forgetProject();
     remember(CONVERSATION_KEY, null); remember(EXECUTION_KEY, null); remember(WORKSPACE_VIEW_KEY, "conversation"); setCreationContext(null); setSelectedWorkspaceObject(null); setView("conversation");
   }
@@ -1000,7 +1002,8 @@ export function ConversationWorkspace() {
   if (view === "builder") { main = <SystemBuilderPanel projectId={activeProjectId} selected={selectedSystemAsset} onSelect={setSelectedSystemAsset} />; context = <SystemContext selected={selectedSystemAsset} onOpenAsset={openAssetRecord} />; }
   if (view === "settings") { const closeSettings = () => { const previous = normalizeFounderView(previousFounderViewRef.current || "conversation"); persistWorkspace(previous, null); setView(previous); }; main = <ModelCenter onContextChange={setSettingsContext} />; context = <SettingsContext detail={settingsContext} onClose={closeSettings} />; }
 
-  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("conversation", null); goHome(); } else { const normalized = normalizeFounderView(next); if (normalized === "settings" && view !== "settings") previousFounderViewRef.current = view; if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject, onProjectsChanged: refreshProjects }} main={<>{conversationInitializing ? <div className="sino-initializing" role="status">Initializing Sino...</div> : null}{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
+  const conversationSelector = <SinoModelSelector conversation={snapshot?.conversation || null} preselected={preselectedConversationModel} onPreselect={setPreselectedConversationModel} onConversationChanged={(updated) => setSnapshot((current) => ({ ...(current || {}), conversation: { ...(current?.conversation || {}), ...updated } }))} />;
+  return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (next === "home") { persistWorkspace("conversation", null); goHome(); } else { const normalized = normalizeFounderView(next); if (normalized === "settings" && view !== "settings") previousFounderViewRef.current = view; if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject, onProjectsChanged: refreshProjects }} main={<>{conversationInitializing ? <div className="sino-initializing" role="status">Initializing Sino...</div> : null}{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} conversationSelector={conversationSelector} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;
 }
 
 function ContextSummary({ title, children }) {

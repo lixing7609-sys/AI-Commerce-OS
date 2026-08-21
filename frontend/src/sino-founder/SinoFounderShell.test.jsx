@@ -38,7 +38,7 @@ describe("formal Sino Founder workspace shell", () => {
     expect(screen.getByRole("button", { name: "库" })).toBeTruthy();
     expect(screen.getByText("项目")).toBeTruthy();
     expect(screen.getByText("会话")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "⚙ 设置" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
     expect(screen.queryByRole("navigation", { name: "能力管理主导航" })).toBeNull();
   });
 
@@ -80,7 +80,7 @@ describe("formal Sino Founder workspace shell", () => {
     const onNavigate = vi.fn();
     render(<SinoFounderShell {...props} onNavigate={onNavigate} />);
     fireEvent.click(screen.getByRole("button", { name: "库" }));
-    fireEvent.click(screen.getByRole("button", { name: "⚙ 设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
     expect(onNavigate).toHaveBeenNthCalledWith(1, "capability-center");
     expect(onNavigate).toHaveBeenNthCalledWith(2, "settings");
   });

@@ -8,6 +8,7 @@ from app.database.base import Base
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
 import app.founder_ai.conversation_core as core
+import app.core.conversation.service as conversation_service
 
 
 def _factory(monkeypatch):
@@ -132,6 +133,44 @@ def test_model_roles_resolve_from_configuration_without_provider_binding(monkeyp
     assert roles["execution"].model == "execute-c"
     assert roles["executor"] == "codex"
     assert [item[0] for item in calls[:3]] == ["sino_conversation", "deep_thinking", "code_execution"]
+
+
+def test_conversation_model_override_drives_the_same_streaming_reasoning_path(monkeypatch):
+    factory = _factory(monkeypatch)
+    with factory() as db:
+        db.add(ConversationDB(id="conv-override", system_id="founder_ai", title="模型选择", conversation_model_provider="provider-b", conversation_model="chat-b"))
+        db.add(SinoBrainSessionDB(conversation_id="conv-override", discovery={}))
+        db.commit()
+    override = SimpleNamespace(provider_key="provider-b", model="chat-b")
+    monkeypatch.setattr(core, "resolve_runtime_config", lambda provider_key=None, model=None, **_: override if (provider_key, model) == ("provider-b", "chat-b") else None)
+    decision = core.reason_about_message("conv-override", "继续讨论", generator=lambda _context, runtime: {
+        "response": f"由 {runtime.model} 回复", "semantic_intent": "conversation", "conversation_state": "discussion",
+    })
+    assert decision["provider"] == "provider-b"
+    assert decision["model"] == "chat-b"
+    assert decision["response"] == "由 chat-b 回复"
+
+
+def test_conversation_model_override_persists_and_rejects_unavailable_models(monkeypatch):
+    factory = _factory(monkeypatch)
+    monkeypatch.setattr(conversation_service, "SessionLocal", factory)
+    with factory() as db:
+        db.add(ConversationDB(id="conv-preference", system_id="founder_ai", title="模型偏好"))
+        db.commit()
+    import app.core.model_center.service as model_center_service
+    selected = SimpleNamespace(provider_key="provider-b", model="chat-b")
+    monkeypatch.setattr(model_center_service, "resolve_runtime_config", lambda provider_key=None, model=None, **_: selected if (provider_key, model) == ("provider-b", "chat-b") else None)
+    updated = conversation_service.set_conversation_model("conv-preference", "provider-b", "chat-b")
+    assert (updated.conversation_model_provider, updated.conversation_model) == ("provider-b", "chat-b")
+    with factory() as db:
+        persisted = db.get(ConversationDB, "conv-preference")
+        assert (persisted.conversation_model_provider, persisted.conversation_model) == ("provider-b", "chat-b")
+    try:
+        conversation_service.set_conversation_model("conv-preference", "disabled-provider", "disabled-model")
+    except conversation_service.ConversationBoundaryError as error:
+        assert "unavailable" in str(error)
+    else:
+        raise AssertionError("disabled model must be rejected")
 
 
 def test_execution_event_batch_gets_one_model_authored_summary(monkeypatch):

@@ -27,5 +27,7 @@ class ConversationDB(Base):
     topic_key: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
     merged_into_conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     conversation_state: Mapped[str] = mapped_column(String(30), nullable=False, default="exploring", server_default="exploring")
+    conversation_model_provider: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    conversation_model: Mapped[str | None] = mapped_column(String(160), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
