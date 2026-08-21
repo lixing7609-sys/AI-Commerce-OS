@@ -96,6 +96,27 @@ describe("Founder Settings", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("groups Provider details into cards and progressively reveals available models", () => {
+    const models = Array.from({ length: 5 }, (_, index) => ({ model_id: `model-${index + 1}`, display_name: `Model ${index + 1}`, recommendation_score: index === 0 ? 90 : 50 }));
+    const provider = { ...deepseek, available_models: models, selected_models: ["model-1"] };
+    const onRefresh = vi.fn();
+    const onHealth = vi.fn();
+    const { container } = render(<SettingsContext detail={{ section: "models", provider, model: models[0], onRefresh, onHealth, onChoose: vi.fn() }} onClose={vi.fn()} />);
+    expect(container.querySelectorAll(".sino-settings-inspector-card")).toHaveLength(5);
+    expect(screen.getByText("Model 3")).toBeTruthy();
+    expect(screen.queryByText("Model 4")).toBeNull();
+    const toggle = screen.getByRole("button", { name: /查看全部 5 个模型/ });
+    fireEvent.click(toggle);
+    expect(screen.getByText("Model 5")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "收起" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    expect(screen.queryByText("Model 4")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "刷新模型" }));
+    fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onHealth).toHaveBeenCalledTimes(1);
+  });
+
   it("shows verified LOCAL bindings and future stages without exposing credential references", async () => {
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
     fireEvent.click(screen.getByRole("button", { name: "运行环境" }));

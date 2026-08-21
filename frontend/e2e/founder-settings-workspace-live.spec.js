@@ -49,6 +49,10 @@ test("Settings removes the Founder sidebar, expands its workspace, and keeps the
   await expect(inspector).toHaveCSS("scrollbar-width", "none");
   await expect(inspector.locator(".sino-settings-context")).toHaveCSS("overflow-y", "auto");
   await expect(inspector.locator(".sino-settings-context")).toHaveCSS("scrollbar-width", "none");
+  await expect(inspector.locator(".sino-settings-inspector-card")).toHaveCount(5);
+  const availableModels = inspector.locator(".sino-model-choices");
+  await expect(availableModels.locator("label")).toHaveCount(3);
+  await expect(inspector.getByRole("button", { name: "查看全部 18 个模型" })).toBeVisible();
   await page.screenshot({ path: `${evidenceDirectory}/settings-models-two-zone.png`, fullPage: true });
 
   const handle = page.getByRole("separator", { name: "调整系统配置面板宽度" });
@@ -65,11 +69,12 @@ test("Settings removes the Founder sidebar, expands its workspace, and keeps the
   expect(narrowerMain.x + narrowerMain.width).toBeLessThanOrEqual(widerInspector.x);
   await page.screenshot({ path: `${evidenceDirectory}/settings-inspector-wider.png`, fullPage: true });
 
-  const availableModels = page.locator(".sino-settings-context .sino-model-choices");
-  await expect(availableModels).toHaveCSS("overflow-y", "auto");
-  await expect(availableModels).toHaveCSS("scrollbar-width", "none");
-  await availableModels.evaluate((element) => { element.scrollTop = 120; });
-  expect(await availableModels.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await inspector.getByRole("button", { name: "查看全部 18 个模型" }).click();
+  await expect(availableModels.locator("label")).toHaveCount(18);
+  const inspectorScroll = inspector.locator(".sino-settings-context");
+  await inspectorScroll.evaluate((element) => { element.scrollTop = 120; });
+  expect(await inspectorScroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.screenshot({ path: `${evidenceDirectory}/settings-models-expanded.png`, fullPage: true });
   await page.getByRole("button", { name: "模型能力" }).click();
   await expect(page.getByRole("table", { name: "模型状态列表" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "模型能力" })).toBeVisible();
