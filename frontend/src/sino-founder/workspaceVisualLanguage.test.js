@@ -42,4 +42,9 @@ describe("Founder workspace visual language", () => {
     expect(workspaceCss).toContain(".founder-execution-center { width: auto; height: auto; margin: var(--workspace-panel-inset) var(--workspace-panel-inset) var(--workspace-panel-inset) 0;");
     expect(workspaceCss).toContain(".founder-workspace > .founder-workspace-topbar { grid-column: 1 / -1;");
   });
+
+  it("spaces the search below the shared divider and reuses section typography for Execution Center", () => {
+    expect(workspaceCss).toContain("margin: 8px 1px 6px");
+    expect(workspaceCss).toContain(".founder-execution-center .sino-work-queue-heading h2 { font-family: var(--workspace-font); font-size: var(--workspace-nav-size); font-weight: 600; line-height: var(--workspace-nav-line); }");
+  });
 });

@@ -1656,7 +1656,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-sidebar-top-actions { display: flex; align-items: flex-start; gap: 2px; box-sizing: border-box; height: calc(var(--workspace-topbar-height) - var(--workspace-panel-inset) - var(--workspace-panel-border) - 10px); margin: 0; border-bottom: 1px solid var(--workspace-divider); }
 .founder-navigation-panel .sino-sidebar-top-actions button { display: grid; place-items: center; flex: 0 0 36px; width: 36px; min-width: 36px; height: 36px; min-height: 36px; margin: 0; padding: 0; border: 0; border-radius: var(--workspace-radius-control); background: transparent; color: var(--workspace-text-secondary); cursor: pointer; }
 .founder-navigation-panel .sino-sidebar-top-actions button:hover { background: var(--workspace-hover); color: var(--workspace-text); }
-.founder-navigation-panel .sino-sidebar-search { display: grid; grid-template-columns: var(--workspace-icon-size) minmax(0, 1fr); align-items: center; gap: 8px; min-height: 34px; margin: 2px 1px 6px; padding: 0 9px; border-radius: var(--workspace-radius-row); background: rgba(255,255,255,.045); color: var(--workspace-text-secondary); }
+.founder-navigation-panel .sino-sidebar-search { display: grid; grid-template-columns: var(--workspace-icon-size) minmax(0, 1fr); align-items: center; gap: 8px; min-height: 34px; margin: 8px 1px 6px; padding: 0 9px; border-radius: var(--workspace-radius-row); background: rgba(255,255,255,.045); color: var(--workspace-text-secondary); }
 .founder-navigation-panel .sino-sidebar-search:focus-within { background: rgba(255,255,255,.065); color: var(--workspace-text); }
 .founder-navigation-panel .sino-sidebar-search svg { width: var(--workspace-icon-size); height: var(--workspace-icon-size); fill: none; stroke: currentColor; stroke-width: var(--workspace-icon-stroke); }
 .founder-navigation-panel .sino-sidebar-search input { min-width: 0; width: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: var(--workspace-text); font: 400 var(--workspace-nav-size)/var(--workspace-nav-line) var(--workspace-font); }
@@ -1819,7 +1819,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-workspace.is-resizing { cursor: col-resize; user-select: none; }
 .founder-execution-center > .sino-founder-task-sidebar { height: 100%; padding: 14px 9px 18px; overflow: auto; font-family: var(--workspace-font); scrollbar-color: rgba(255,255,255,.14) transparent; scrollbar-width: thin; }
 .founder-execution-center .sino-work-queue-heading { display: flex; align-items: center; box-sizing: border-box; height: calc(var(--workspace-topbar-height) - var(--workspace-panel-inset) - var(--workspace-panel-border) - 14px); padding: 0 6px; border-bottom: 1px solid var(--workspace-divider); }
-.founder-execution-center .sino-work-queue-heading h2 { font-family: var(--workspace-font); font-size: 14px; font-weight: 500; line-height: 20px; }
+.founder-execution-center .sino-work-queue-heading h2 { font-family: var(--workspace-font); font-size: var(--workspace-nav-size); font-weight: 600; line-height: var(--workspace-nav-line); }
 .founder-execution-center .sino-work-queue-heading small,
 .founder-execution-center .sino-work-queue-heading span { color: var(--workspace-text-secondary); font-size: 13px; font-weight: 400; line-height: 18px; }
 .founder-execution-center .sino-work-queue-list { gap: 4px; }
