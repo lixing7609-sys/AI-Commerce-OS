@@ -32,9 +32,14 @@ describe("System Project workspace context", () => {
     render(<ProjectWorkspace intelligence={{ project_name: "Foundation System", conversation_refs: [{ conversation_id: "conv-new", title: "最新讨论", summary: "最近一条内容摘要", updated_at: "2026-08-21T10:00:00Z" }, { conversation_id: "conv-old", title: "较早讨论", updated_at: "2026-08-20T10:00:00Z" }] }} onOpenConversation={openConversation} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Foundation System" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "聊天" }).classList.contains("is-active")).toBe(true);
+    expect(screen.getByRole("button", { name: "聊天" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "数据源" })).toBeTruthy();
     expect(screen.getByText("最近一条内容摘要")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /最新讨论/ }));
+    const conversationRow = screen.getByRole("button", { name: /最新讨论/ });
+    expect(conversationRow.querySelector("strong").textContent).toBe("最新讨论");
+    expect(conversationRow.querySelector("p").textContent).toBe("最近一条内容摘要");
+    expect(screen.queryByText(/Ready|Candidate|Status/)).toBeNull();
+    fireEvent.click(conversationRow);
     expect(openConversation).toHaveBeenCalledWith("conv-new");
   });
 

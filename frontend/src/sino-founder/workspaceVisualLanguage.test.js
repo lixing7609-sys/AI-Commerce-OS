@@ -52,4 +52,11 @@ describe("Founder workspace visual language", () => {
     expect(workspaceCss).toContain(".founder-navigation-panel .sino-conversation-item .sino-conversation-item__open { gap: 0; padding-left: 10px; }");
     expect(workspaceCss).not.toContain("padding-left: calc(9px + var(--workspace-nav-icon-box) + var(--workspace-nav-gap))");
   });
+
+  it("gives the Project workspace a wide list and a shorter bottom-bound Composer", () => {
+    expect(workspaceCss).toContain("width: min(calc(100% - 48px), 1120px)");
+    expect(workspaceCss).toContain(".founder-conversation-surface > .sino-project-workspace > .sino-conversation-composer-dock { position: sticky; bottom: 0;");
+    expect(workspaceCss).toContain(".founder-conversation-surface > .sino-project-workspace .sino-global-composer { min-height: 88px;");
+    expect(workspaceCss).toContain(".sino-project-conversation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto;");
+  });
 });

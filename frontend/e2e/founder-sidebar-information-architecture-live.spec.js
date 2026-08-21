@@ -37,6 +37,16 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     }});
     expect(scopedResponse.ok()).toBeTruthy();
     created.push(await scopedResponse.json());
+    for (const title of ["供应链金融业务解析", "AI Commerce OS 开发规划"]) {
+      const response = await request.post(`${API}/conversations`, { data: {
+        title,
+        project_id: commerceProject.id,
+        conversation_type: "PROJECT_CONVERSATION",
+        created_by: "VERIFICATION",
+      }});
+      expect(response.ok()).toBeTruthy();
+      created.push(await response.json());
+    }
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/");
@@ -178,7 +188,17 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     await expect(projectWorkspace.getByRole("button", { name: "聊天" })).toBeVisible();
     await expect(projectWorkspace.getByRole("button", { name: "数据源" })).toBeVisible();
     await expect(projectWorkspace.getByText("AI Commerce OS 项目讨论", { exact: true })).toBeVisible();
+    await expect(projectWorkspace.getByText("供应链金融业务解析", { exact: true })).toBeVisible();
+    await expect(projectWorkspace.getByText("AI Commerce OS 开发规划", { exact: true })).toBeVisible();
     await expect(projectWorkspace.getByLabel("当前项目")).toContainText("AI Commerce OS");
+    await expect(executionCenter).toBeVisible();
+    const [projectWorkspaceBounds, projectListBounds, projectComposerBounds] = await Promise.all([
+      projectWorkspace.boundingBox(), projectWorkspace.locator(".sino-project-conversations").boundingBox(), projectWorkspace.locator(".sino-global-composer").boundingBox(),
+    ]);
+    expect(projectListBounds.width / projectWorkspaceBounds.width).toBeGreaterThan(0.95);
+    expect(projectComposerBounds.width / projectWorkspaceBounds.width).toBeGreaterThan(0.95);
+    expect(projectComposerBounds.height).toBeLessThanOrEqual(150);
+    expect(projectComposerBounds.y + projectComposerBounds.height).toBeGreaterThan(projectWorkspaceBounds.y + projectWorkspaceBounds.height - 130);
     await page.screenshot({ path: `${EVIDENCE}/project-workspace.png`, fullPage: true });
 
     await navigation.getByRole("button", { name: "Sino AI" }).click();
