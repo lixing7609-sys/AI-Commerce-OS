@@ -28,6 +28,10 @@ export function LibraryIcon() {
   return <Icon><path d="M4 19.5V5a2 2 0 0 1 2-2h11.5A2.5 2.5 0 0 1 20 5.5V19" /><path d="M6 17h14" /><path d="M8 7h8" /></Icon>;
 }
 
+export function SearchIcon() {
+  return <Icon><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></Icon>;
+}
+
 export function FolderIcon() {
   return <Icon><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H9l2 2h7.5A2.5 2.5 0 0 1 21 8.5v8A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5Z" /></Icon>;
 }

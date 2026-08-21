@@ -96,6 +96,47 @@ describe("Founder sidebar information architecture", () => {
     expect(scroll.contains(document.querySelector(".founder-navigation-panel > footer"))).toBe(false);
   });
 
+  it("filters Projects and Recent Conversations locally and restores the complete navigation", () => {
+    const onSelectProject = vi.fn();
+    const onSelectConversation = vi.fn();
+    render(<FounderNavigationPanel
+      projects={[
+        { id: "commerce", name: "AI Commerce OS" },
+        { id: "operator", name: "Sino Operator AI" },
+        { id: "studio", name: "Sino Studio AI" },
+      ]}
+      conversations={[
+        { id: "gpt", title: "把图标改成 GPT 风格", updatedAt: 20 },
+        { id: "ads", title: "广告平台解析", updatedAt: 10 },
+      ]}
+      onSelectProject={onSelectProject}
+      onSelectConversation={onSelectConversation}
+    />);
+
+    const search = screen.getByPlaceholderText("搜索");
+    fireEvent.change(search, { target: { value: "  Commerce  " } });
+    expect(screen.getByText("AI Commerce OS")).toBeTruthy();
+    expect(screen.queryByText("Sino Operator AI")).toBeNull();
+    expect(screen.getByRole("button", { name: "新建项目" })).toBeTruthy();
+    fireEvent.click(document.querySelector('.sino-project-item__open[title="AI Commerce OS"]'));
+    expect(onSelectProject).toHaveBeenCalledWith("commerce");
+
+    fireEvent.change(search, { target: { value: "gpt" } });
+    expect(screen.getByText("把图标改成 GPT 风格")).toBeTruthy();
+    expect(screen.queryByText("广告平台解析")).toBeNull();
+    fireEvent.click(document.querySelector('.sino-conversation-item__open[title="把图标改成 GPT 风格"]'));
+    expect(onSelectConversation).toHaveBeenCalledWith("gpt");
+
+    fireEvent.change(search, { target: { value: "没有匹配" } });
+    expect(screen.getByText("没有找到结果")).toBeTruthy();
+    expect(screen.queryByText("最近")).toBeNull();
+    expect(screen.getByRole("button", { name: "新建项目" })).toBeTruthy();
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(search.value).toBe("");
+    expect(screen.getByText("Sino Operator AI")).toBeTruthy();
+    expect(screen.getByText("广告平台解析")).toBeTruthy();
+  });
+
   it("uses created time and conversation id as deterministic tie breakers", () => {
     const timestamp = "2026-08-18T10:27:00.000000+08:00";
     const conversations = [

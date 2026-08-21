@@ -59,6 +59,16 @@ test("Founder sidebar presents Sino AI, Projects, Recent Conversations, and Sett
     await expect(navigation.getByText(/Conversations|Ready|Candidate/)).toHaveCount(0);
     await page.screenshot({ path: `${EVIDENCE}/sidebar-expanded.png`, fullPage: true });
 
+    const search = navigation.getByPlaceholder("搜索");
+    await expect(search).toBeVisible();
+    await search.fill("Commerce");
+    await expect(navigation.getByText("AI Commerce OS", { exact: true })).toBeVisible();
+    await expect(navigation.getByText("Sino Operator AI", { exact: true })).toHaveCount(0);
+    await expect(navigation.getByRole("button", { name: "新建项目" })).toBeVisible();
+    await page.screenshot({ path: `${EVIDENCE}/sidebar-search-commerce.png`, fullPage: true });
+    await search.fill("");
+    await expect(navigation.getByText("Sino Operator AI", { exact: true })).toBeVisible();
+
     await navigation.getByRole("button", { name: "AI Commerce OS", exact: true }).click();
     const projectWorkspace = page.getByRole("region", { name: "项目工作区" });
     await expect(projectWorkspace.getByRole("heading", { name: "AI Commerce OS" })).toBeVisible();

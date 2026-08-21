@@ -1632,9 +1632,16 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   box-shadow: 0 10px 34px rgba(0, 0, 0, .18);
 }
 .founder-navigation-panel { grid-template-rows: auto minmax(0, 1fr) auto; padding: 10px 8px 8px; }
+.founder-navigation-panel .sino-sidebar__header { min-width: 0; }
 .founder-navigation-panel .sino-sidebar-top-actions { display: flex; align-items: center; gap: 2px; height: 36px; margin: 0 0 6px; }
 .founder-navigation-panel .sino-sidebar-top-actions button { display: grid; place-items: center; flex: 0 0 36px; width: 36px; min-width: 36px; height: 36px; min-height: 36px; margin: 0; padding: 0; border: 0; border-radius: var(--workspace-radius-control); background: transparent; color: var(--workspace-text-secondary); cursor: pointer; }
 .founder-navigation-panel .sino-sidebar-top-actions button:hover { background: var(--workspace-hover); color: var(--workspace-text); }
+.founder-navigation-panel .sino-sidebar-search { display: grid; grid-template-columns: var(--workspace-icon-size) minmax(0, 1fr); align-items: center; gap: 8px; min-height: 34px; margin: 2px 1px 6px; padding: 0 9px; border-radius: var(--workspace-radius-row); background: rgba(255,255,255,.045); color: var(--workspace-text-secondary); }
+.founder-navigation-panel .sino-sidebar-search:focus-within { background: rgba(255,255,255,.065); color: var(--workspace-text); }
+.founder-navigation-panel .sino-sidebar-search svg { width: var(--workspace-icon-size); height: var(--workspace-icon-size); fill: none; stroke: currentColor; stroke-width: var(--workspace-icon-stroke); }
+.founder-navigation-panel .sino-sidebar-search input { min-width: 0; width: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: var(--workspace-text); font: 400 var(--workspace-nav-size)/var(--workspace-nav-line) var(--workspace-font); }
+.founder-navigation-panel .sino-sidebar-search input::placeholder { color: var(--workspace-text-secondary); opacity: 1; }
+.founder-navigation-panel .sino-sidebar-search-empty { margin: 0 10px 4px; color: var(--workspace-text-secondary); font: 400 var(--workspace-meta-size)/18px var(--workspace-font); }
 .founder-navigation-panel .sino-sidebar-home { display: flex; align-items: center; gap: 9px; width: 100%; min-height: var(--workspace-row-height); margin-top: 4px; padding: 5px 9px; border: 0; border-radius: var(--workspace-radius-row); background: transparent; color: var(--workspace-text); font: 500 var(--workspace-nav-size)/var(--workspace-nav-line) var(--workspace-font); text-align: left; cursor: pointer; }
 .founder-navigation-panel .sino-sidebar-home:hover,
 .founder-navigation-panel .sino-sidebar-home.is-active { background: var(--workspace-active); }

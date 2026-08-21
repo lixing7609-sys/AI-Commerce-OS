@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { businessAssetName, isDeveloperRecord } from "./assetPresentation.js";
 import { bindFounderConversationProject, createFounderProject, deleteFounderProject, updateFounderProject } from "../services/founderAiApi.js";
-import { ComposeIcon, FolderIcon, FolderPlusIcon, LibraryIcon, SettingsIcon, SidebarIcon } from "./FounderWorkspaceIcons.jsx";
+import { ComposeIcon, FolderIcon, FolderPlusIcon, LibraryIcon, SearchIcon, SettingsIcon, SidebarIcon } from "./FounderWorkspaceIcons.jsx";
 
 function conversationTimestamp(item) {
   const value = item.updatedAt ?? item.updated_at ?? item.created_at;
@@ -46,6 +46,7 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   const [editingProject, setEditingProject] = useState(null);
   const [projectAssignments, setProjectAssignments] = useState({});
   const [projectError, setProjectError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const founderConversations = stableConversationOrder(conversations.filter((item) => {
     const type = item.conversation_type || "USER_CONVERSATION";
     return ["USER_CONVERSATION", "PROJECT_CONVERSATION"].includes(type) && (item.visibility || "conversation_list") === "conversation_list" && (item.lifecycle_status || "active") === "active";
@@ -59,6 +60,11 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
     const latest = (project) => Math.max(conversationTimestamp(project), ...founderConversations.filter((item) => projectForConversation(item) === project.id).map(conversationTimestamp));
     return latest(b) - latest(a);
   });
+  const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+  const matchesSearch = (value) => !normalizedSearch || String(value || "").toLocaleLowerCase().includes(normalizedSearch);
+  const visibleProjects = sortedProjects.filter((project) => matchesSearch(businessAssetName({ ...project, asset_type: "project" })));
+  const visibleConversations = founderConversations.filter((conversation) => matchesSearch(conversation.title));
+  const hasSearchResults = visibleProjects.length > 0 || visibleConversations.length > 0;
   async function createProject(event) {
     event.preventDefault(); const name = projectName.trim(); if (!name) return;
     try { const project = await createFounderProject({ name, description: null }); await onProjectsChanged?.(); setCreatingProject(false); setProjectName(""); onSelectProject(project.id); }
@@ -88,24 +94,28 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   }
 
   return <aside className="founder-navigation-panel" aria-label="Founder Navigation">
+    <div className="sino-sidebar__header">
     <div className="sino-sidebar-top-actions" aria-label="Workspace navigation controls">
       {onCollapse ? <button type="button" className="sino-sidebar-toggle" onClick={onCollapse} title="收起侧边栏" aria-label="收起侧边栏"><SidebarIcon /></button> : null}
       <button type="button" className="sino-new-conversation" onClick={onNewConversation} title="新建讨论" aria-label="新建讨论"><ComposeIcon /></button>
+    </div>
+    <label className="sino-sidebar-search"><SearchIcon /><input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setSearchQuery(""); } }} placeholder="搜索" aria-label="搜索项目和最近会话" /></label>
+    {normalizedSearch && !hasSearchResults ? <p className="sino-sidebar-search-empty" role="status">没有找到结果</p> : null}
     </div>
     <div className="sino-sidebar__navigation-scroll">
     <div className="sino-sidebar__fixed-top">
     <button type="button" className={`sino-sidebar-home${active === "conversation" ? " is-active" : ""}`} onClick={() => onNavigate("conversation")} title="Sino AI" aria-label="Sino AI"><span className="sino-brand-mark">S</span><b>Sino AI</b></button>
     <button type="button" title="库" aria-label="库" className={`sino-sidebar-library${active === "capability-center" ? " is-active" : ""}`} onClick={() => onNavigate("capability-center")}><LibraryIcon /><span>库</span></button>
-    <section className="sino-sidebar-section sino-project-workspace"><div className="sino-project-heading sino-sidebar-primary-title"><span className="sino-sidebar-primary-title__label">项目</span></div><div className="sino-project-list"><button type="button" className="sino-project-create-entry" aria-label="新建项目" title="新建项目" onClick={() => setCreatingProject(true)}><FolderPlusIcon />新建项目</button>{creatingProject ? <form className="sino-project-create" onSubmit={createProject}><input autoFocus aria-label="Project 名称" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="Project 名称" /><button type="submit">创建</button><button type="button" onClick={() => setCreatingProject(false)}>取消</button></form> : null}{sortedProjects.map((project) => <div className="sino-project-item" key={project.id}><div className={`sino-project-item__row${project.id === activeProjectId ? " is-active" : ""}`}>{editingProject === project.id ? <input autoFocus aria-label={`重命名 ${project.name}`} defaultValue={project.name} onBlur={(event) => renameProject(project, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") renameProject(project, event.currentTarget.value); if (event.key === "Escape") setEditingProject(null); }} /> : <button type="button" className="sino-project-item__open" onClick={() => onSelectProject(project.id)} title={project.description || project.name}><FolderIcon /><span>{businessAssetName({ ...project, asset_type: "project" })}</span></button>}<button type="button" className="sino-project-item__menu" aria-label={`Project 操作 ${project.name}`} onClick={() => setProjectMenu(projectMenu === project.id ? null : project.id)}>···</button>{projectMenu === project.id ? <div className="sino-sidebar-popover"><button type="button" onClick={() => { setEditingProject(project.id); setProjectMenu(null); }}>Rename</button><button type="button" onClick={() => archiveProject(project)}>Archive</button><button type="button" onClick={() => removeProject(project)}>Delete</button></div> : null}</div></div>)}{projectError ? <p role="alert">{projectError}</p> : null}</div></section>
+    <section className="sino-sidebar-section sino-project-workspace"><div className="sino-project-heading sino-sidebar-primary-title"><span className="sino-sidebar-primary-title__label">项目</span></div><div className="sino-project-list"><button type="button" className="sino-project-create-entry" aria-label="新建项目" title="新建项目" onClick={() => setCreatingProject(true)}><FolderPlusIcon />新建项目</button>{creatingProject ? <form className="sino-project-create" onSubmit={createProject}><input autoFocus aria-label="Project 名称" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="Project 名称" /><button type="submit">创建</button><button type="button" onClick={() => setCreatingProject(false)}>取消</button></form> : null}{visibleProjects.map((project) => <div className="sino-project-item" key={project.id}><div className={`sino-project-item__row${project.id === activeProjectId ? " is-active" : ""}`}>{editingProject === project.id ? <input autoFocus aria-label={`重命名 ${project.name}`} defaultValue={project.name} onBlur={(event) => renameProject(project, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") renameProject(project, event.currentTarget.value); if (event.key === "Escape") setEditingProject(null); }} /> : <button type="button" className="sino-project-item__open" onClick={() => onSelectProject(project.id)} title={project.description || project.name}><FolderIcon /><span>{businessAssetName({ ...project, asset_type: "project" })}</span></button>}<button type="button" className="sino-project-item__menu" aria-label={`Project 操作 ${project.name}`} onClick={() => setProjectMenu(projectMenu === project.id ? null : project.id)}>···</button>{projectMenu === project.id ? <div className="sino-sidebar-popover"><button type="button" onClick={() => { setEditingProject(project.id); setProjectMenu(null); }}>Rename</button><button type="button" onClick={() => archiveProject(project)}>Archive</button><button type="button" onClick={() => removeProject(project)}>Delete</button></div> : null}</div></div>)}{projectError ? <p role="alert">{projectError}</p> : null}</div></section>
     </div>
-    <section className="sino-sidebar__conversation-section" aria-label="最近">
+    {(!normalizedSearch || visibleConversations.length > 0) ? <section className="sino-sidebar__conversation-section" aria-label="最近">
       <div className="sino-sidebar__conversation-title sino-sidebar-primary-title"><span className="sino-sidebar-primary-title__label">最近</span></div>
       <div className="sino-sidebar__scroll-region" aria-label="历史会话列表">
         <div className="sino-conversation-navigation">
-          <ConversationList items={founderConversations} now={now} projects={sortedProjects} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} onMoveConversation={moveConversation} />
+          <ConversationList items={visibleConversations} now={now} projects={sortedProjects} activeConversationId={activeConversationId} onSelectConversation={onSelectConversation} onDeleteConversation={onDeleteConversation} onMoveConversation={moveConversation} />
         </div>
       </div>
-    </section>
+    </section> : null}
     </div>
     <footer><button type="button" className="sino-sidebar-settings" title="设置" aria-label="设置" onClick={() => onNavigate("settings")} aria-current={active === "settings" ? "page" : undefined}><SettingsIcon /><span>设置</span></button></footer>
     {resizeHandle}
