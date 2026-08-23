@@ -32,7 +32,7 @@ const center = {
 };
 const runtime = { environments: [{ environment_type: "LOCAL", status: "ACTIVE", services: [{ service_id: "founder_frontend", protocol: "http", host: "127.0.0.1", port: 5173, status: "ACTIVE", health: "healthy" }, { service_id: "founder_backend", protocol: "http", host: "127.0.0.1", port: 8000, status: "ACTIVE", health: "healthy" }], database: { type: "PostgreSQL", connectivity_status: "verified", health_status: "healthy", credential_reference_exists: true }, iam: { type: "HTTP Bearer RBAC", verification_status: "verified" }, network: { boundary: "loopback", verification_status: "verified" } }, { environment_type: "NAS", status: "PLANNED" }, { environment_type: "COMMERCIAL_CLOUD", status: "NOT_CONFIGURED" }] };
 
-test("Model settings expands without the inspector while other settings sections keep it", async ({ page }) => {
+test("Settings consolidates into three domains and keeps the real model inspector", async ({ page }) => {
   mkdirSync(evidenceDirectory, { recursive: true });
   await page.route("**/api/v1/founder-ai/model-center", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(center) }));
   await page.route("**/api/v1/founder-ai/runtime-environments", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(runtime) }));
@@ -49,11 +49,15 @@ test("Model settings expands without the inspector while other settings sections
   const initialMain = await settings.boundingBox();
   expect(initialMain.width).toBeGreaterThan(1430);
   await expect(page.getByText("Model Capabilities")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "运行环境" })).toBeVisible();
+  const settingsTabs = page.getByRole("navigation", { name: "设置分类" });
+  await expect(settingsTabs.getByRole("button")).toHaveCount(3);
+  for (const name of ["模型", "Sino AI", "执行与运行"]) await expect(settingsTabs.getByRole("button", { name, exact: true })).toBeVisible();
+  for (const name of ["模型与 API", "模型能力", "模型路由策略", "执行器", "讨论配置", "运行环境"]) await expect(settingsTabs.getByRole("button", { name, exact: true })).toHaveCount(0);
   await expect(page.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "模型与 API" })).toHaveClass(/is-active/);
-  await expect(page.getByRole("navigation", { name: "模型与 API 内容" })).toHaveCount(0);
+  await expect(settingsTabs.getByRole("button", { name: "模型" })).toHaveClass(/is-active/);
   await expect(page.getByRole("table", { name: "模型状态列表" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "模型能力", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "模型路由策略", exact: true })).toBeVisible();
   const modelSummary = page.getByRole("complementary", { name: "模型概览" });
   await expect(modelSummary).toBeVisible();
   await expect(modelSummary.locator("dl > div")).toHaveCount(7);
@@ -72,6 +76,9 @@ test("Model settings expands without the inspector while other settings sections
 
   await page.getByRole("button", { name: "deepseek-chat DeepSeek" }).click();
   await expect(inspector).toBeVisible();
+  const settingsPageBox = await page.locator(".sino-founder-asset-page").boundingBox();
+  const inspectorBox = await inspector.boundingBox();
+  expect(settingsPageBox.x + settingsPageBox.width).toBeLessThanOrEqual(inspectorBox.x);
   await expect(inspector.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
   for (const section of ["当前模型", "Provider 连接", "Provider 模型管理", "Provider 端点", "连接测试"]) await expect(inspector.getByRole("heading", { name: section, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Claude Sonnet 5 Claude" }).click();
@@ -82,56 +89,32 @@ test("Model settings expands without the inspector while other settings sections
 
   await page.getByRole("button", { name: "Sino AI" }).click();
   await expect(inspector).toHaveCount(0);
-  await page.getByRole("button", { name: "模型与 API" }).click();
+  await settingsTabs.getByRole("button", { name: "模型" }).click();
   await expect(inspector).toHaveCount(0);
 
-  await page.getByRole("button", { name: "模型能力" }).click();
-  await expect(page.getByRole("table", { name: "模型状态列表" })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "模型能力", exact: true })).toBeVisible();
-  await expect(inspector).toHaveCount(0);
-  await page.screenshot({ path: `${evidenceDirectory}/settings-model-capabilities.png`, fullPage: true });
-
-  await page.getByRole("button", { name: "模型路由策略" }).click();
-  await expect(page.getByRole("region", { name: "模型能力", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "模型路由策略", exact: true })).toBeVisible();
-  await expect(inspector).toHaveCount(0);
-  await page.screenshot({ path: `${evidenceDirectory}/settings-model-routing.png`, fullPage: true });
-
-  await page.getByRole("button", { name: "Sino AI" }).click();
+  await settingsTabs.getByRole("button", { name: "Sino AI" }).click();
   await expect(page.getByRole("region", { name: "Sino AI" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Sino AI" }).locator(".sino-settings-section-card")).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Sino 核心" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "多模型讨论" })).toBeVisible();
+  await expect(page.getByText("自动多轮", { exact: true })).toHaveCount(0);
   await expect(inspector).toHaveCount(0);
   await expect(page.getByText("设置上下文")).toHaveCount(0);
-  await page.getByRole("region", { name: "Sino AI" }).getByRole("button").first().click();
+  await page.getByRole("region", { name: "Sino 核心" }).getByRole("button").click();
   await expect(inspector).toBeVisible();
   expect(await settingsScroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 2)).toBe(true);
   await page.screenshot({ path: `${evidenceDirectory}/settings-sino-ai.png`, fullPage: true });
 
-  await page.getByRole("button", { name: "执行器" }).click();
+  await settingsTabs.getByRole("button", { name: "执行与运行" }).click();
+  await expect(page.getByRole("region", { name: "执行与运行" })).toBeVisible();
   await expect(page.getByRole("region", { name: "执行器" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "运行环境" })).toBeVisible();
   await expect(inspector).toHaveCount(0);
   await page.getByRole("region", { name: "执行器" }).getByRole("button").click();
   await expect(inspector).toBeVisible();
-  expect(await settingsScroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 2)).toBe(true);
-  await page.screenshot({ path: `${evidenceDirectory}/settings-executor.png`, fullPage: true });
-
-  await page.getByRole("button", { name: "讨论配置" }).click();
-  await expect(page.getByRole("region", { name: "讨论配置" })).toBeVisible();
-  await expect(page.getByText("自动多轮", { exact: true })).toHaveCount(0);
-  await expect(inspector).toHaveCount(0);
-  await page.getByRole("region", { name: "讨论配置" }).getByRole("button", { name: /多模型讨论/ }).click();
-  await expect(inspector).toBeVisible();
-  expect(await settingsScroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 2)).toBe(true);
-  await page.screenshot({ path: `${evidenceDirectory}/settings-discussion.png`, fullPage: true });
-
-  await page.getByRole("button", { name: "运行环境" }).click();
-  await expect(page.getByRole("region", { name: "运行环境" })).toBeVisible();
   await expect(page.getByText("NAS", { exact: true })).toHaveCount(0);
   await expect(page.getByText("商业云", { exact: true })).toHaveCount(0);
-  await expect(inspector).toHaveCount(0);
-  await expect(page.getByText("设置详情")).toHaveCount(0);
-  expect(await settingsScroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 2)).toBe(true);
-  await page.screenshot({ path: `${evidenceDirectory}/settings-runtime.png`, fullPage: true });
+  await expect(page.getByText("未接入 Runtime", { exact: true })).toBeVisible();
+  await page.screenshot({ path: `${evidenceDirectory}/settings-execution-runtime.png`, fullPage: true });
 
   await page.getByRole("button", { name: "⬅️ 返回首页" }).click();
   await expect(page.getByLabel("Founder Navigation")).toBeVisible();

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveExecutionEngine, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
 import { hasSettingsDetail, ModelCenter, SettingsContext } from "./ModelCenter.jsx";
@@ -42,7 +42,7 @@ describe("Founder Settings", () => {
   beforeEach(() => { vi.clearAllMocks(); getModelCenter.mockResolvedValue(center); getRuntimeEnvironmentRegistry.mockResolvedValue(runtimeRegistry); });
   afterEach(cleanup);
 
-  it("uses the Settings identity and seven configuration categories", async () => {
+  it("uses the Settings identity and three responsibility domains", async () => {
     const onContextChange = vi.fn();
     render(<ModelCenter onContextChange={onContextChange} />);
     expect(await screen.findByRole("heading", { name: "设置" })).toBeTruthy();
@@ -52,7 +52,8 @@ describe("Founder Settings", () => {
     expect(screen.queryByText("API Key ****1234")).toBeNull();
     expect(screen.queryByText(/secret-value/)).toBeNull();
     expect(screen.queryByRole("region", { name: "连接状态" })).toBeNull();
-    for (const name of ["模型与 API", "模型能力", "模型路由策略", "Sino AI", "执行器", "讨论配置", "运行环境"]) expect(screen.getByRole("button", { name })).toBeTruthy();
+    for (const name of ["模型", "Sino AI", "执行与运行"]) expect(screen.getByRole("button", { name })).toBeTruthy();
+    for (const name of ["模型与 API", "模型能力", "模型路由策略", "执行器", "讨论配置", "运行环境"]) expect(screen.queryByRole("button", { name, exact: true })).toBeNull();
     expect(screen.queryByRole("button", { name: "← 返回 Founder" })).toBeNull();
     expect(screen.queryByRole("button", { name: "关闭设置" })).toBeNull();
     expect(document.querySelector(".sino-settings-tabs")).toBeTruthy();
@@ -77,11 +78,11 @@ describe("Founder Settings", () => {
     await waitFor(() => expect(onContextChange.mock.calls.at(-1)[0]).toMatchObject({ section: "models", provider: deepseek, model: deepseek.available_models[0] }));
   });
 
-  it("uses one Settings design system across all seven primary pages", async () => {
+  it("consolidates Settings into three primary domains", async () => {
     const { container } = render(<ModelCenter />);
     await screen.findByRole("heading", { name: "设置" });
     const primaryTabs = screen.getByRole("navigation", { name: "设置分类" });
-    expect(primaryTabs.querySelectorAll("button")).toHaveLength(7);
+    expect(primaryTabs.querySelectorAll("button")).toHaveLength(3);
     expect(container.querySelector(".sino-settings-content")).toBeTruthy();
     expect(container.querySelector(".sino-settings-page--models")).toBeTruthy();
     const modelWorkspace = container.querySelector(".sino-model-workspace");
@@ -93,16 +94,14 @@ describe("Founder Settings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sino AI" }));
     const sinoPage = screen.getByRole("region", { name: "Sino AI" });
     expect(sinoPage.classList.contains("sino-settings-page")).toBe(true);
-    expect(sinoPage.querySelectorAll(".sino-settings-section-card")).toHaveLength(1);
+    expect(screen.getByRole("region", { name: "Sino 核心" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "多模型讨论" })).toBeTruthy();
     expect(screen.queryByText("目标推理模型")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "执行器" }));
-    expect(screen.getByRole("region", { name: "执行器" }).classList.contains("sino-settings-page")).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "讨论配置" }));
-    expect(screen.getByRole("region", { name: "讨论配置" }).classList.contains("sino-settings-page")).toBe(true);
     expect(screen.queryByText("自动多轮")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "运行环境" }));
+    fireEvent.click(screen.getByRole("button", { name: "执行与运行" }));
+    expect(screen.getByRole("region", { name: "执行器" })).toBeTruthy();
     const runtime = await screen.findByRole("region", { name: "运行环境" });
-    expect(runtime.classList.contains("sino-settings-page")).toBe(true);
+    expect(screen.getByRole("region", { name: "执行与运行" }).classList.contains("sino-settings-page")).toBe(true);
     expect(runtime.querySelectorAll(".sino-settings-section-card").length).toBeGreaterThanOrEqual(3);
   });
 
@@ -111,19 +110,13 @@ describe("Founder Settings", () => {
     saveModelRoutingPreferred.mockResolvedValue(capabilityRegistry);
     render(<ModelCenter />);
     await screen.findByRole("heading", { name: "设置" });
-    expect(screen.queryByRole("navigation", { name: "模型与 API 内容" })).toBeNull();
-    expect(screen.getByRole("button", { name: "模型与 API" }).classList.contains("is-active")).toBe(true);
+    expect(screen.getByRole("button", { name: "模型" }).classList.contains("is-active")).toBe(true);
     expect(screen.getByRole("table", { name: "模型状态列表" })).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "模型能力" })).toBeNull();
-    expect(screen.queryByRole("region", { name: "模型路由策略" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "模型能力" }));
-    expect(screen.queryByRole("table", { name: "模型状态列表" })).toBeNull();
     expect(screen.getByRole("region", { name: "模型能力" })).toBeTruthy();
     expect(screen.getAllByText("Gemini 3.6 Flash").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "模型路由策略" }));
-    expect(screen.queryByRole("region", { name: "模型能力" })).toBeNull();
-    expect(screen.getByRole("region", { name: "模型路由策略" })).toBeTruthy();
-    expect(screen.queryByText("图像生成", { exact: true })).toBeNull();
+    const routing = screen.getByRole("region", { name: "模型路由策略" });
+    expect(routing).toBeTruthy();
+    expect(within(routing).queryByText("图像生成", { exact: true })).toBeNull();
     fireEvent.change(screen.getByRole("combobox", { name: "视觉理解 首选模型" }), { target: { value: "gpt::gpt-5-pro" } });
     await waitFor(() => expect(saveModelRoutingPreferred).toHaveBeenCalledWith("VISION_UNDERSTANDING", { provider_id: "gpt", model_id: "gpt-5-pro" }));
   });
@@ -172,7 +165,7 @@ describe("Founder Settings", () => {
 
   it("shows verified LOCAL bindings and future stages without exposing credential references", async () => {
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: "运行环境" }));
+    fireEvent.click(screen.getByRole("button", { name: "执行与运行" }));
     expect(await screen.findByText("http://127.0.0.1:5173")).toBeTruthy();
     expect(screen.getByText("http://127.0.0.1:8000")).toBeTruthy();
     expect(screen.getByText("PostgreSQL / LOCAL")).toBeTruthy();
@@ -189,7 +182,7 @@ describe("Founder Settings", () => {
   it("uses the middle Settings panel as the sole scroll container and keeps the last runtime card reachable", async () => {
     render(<div className="sino-founder-shell"><main className="sino-founder-main sino-founder-main--fixed-workspace"><ModelCenter /></main><aside className="sino-founder-context" aria-label="Settings Context">Settings Context</aside></div>);
     await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: "运行环境" }));
+    fireEvent.click(screen.getByRole("button", { name: "执行与运行" }));
     const settings = screen.getByRole("region", { name: "设置" });
     expect(settings.matches(".sino-founder-main--fixed-workspace > .sino-settings")).toBe(true);
     expect(settings.contains(screen.getByText("网络"))).toBe(true);
@@ -200,7 +193,7 @@ describe("Founder Settings", () => {
   it("selects and persists the execution engine independently", async () => {
     saveExecutionEngine.mockResolvedValue(center);
     render(<SettingsHarness />); await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: "执行器" }));
+    fireEvent.click(screen.getByRole("button", { name: "执行与运行" }));
     fireEvent.click(screen.getByRole("button", { name: /Codex/ }));
     const selector = screen.getByRole("combobox", { name: "执行引擎" });
     expect(selector.value).toBe("codex");
@@ -250,8 +243,8 @@ describe("Founder Settings", () => {
     fireEvent.click(screen.getByRole("button", { name: /默认对话模型/ }));
     fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "deepseek::deepseek-chat" } });
     await waitFor(() => expect(saveCapabilityAssignment).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "讨论配置" }));
-    fireEvent.click(screen.getByRole("button", { name: /多模型讨论/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Sino AI" }));
+    fireEvent.click(within(screen.getByRole("region", { name: "多模型讨论" })).getByRole("button", { name: /参与模型/ }));
     fireEvent.click(screen.getByRole("button", { name: /DeepSeek Chat/ }));
     await waitFor(() => expect(saveMultiModelAssignment).toHaveBeenCalled());
   });
