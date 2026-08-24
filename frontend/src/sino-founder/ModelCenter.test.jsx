@@ -40,7 +40,7 @@ describe("Founder Settings", () => {
   beforeEach(() => { vi.clearAllMocks(); getModelCenter.mockResolvedValue(center); getRuntimeEnvironmentRegistry.mockResolvedValue(runtimeRegistry); });
   afterEach(cleanup);
 
-  it("uses the Settings identity and two operational domains", async () => {
+  it("uses one top-level model navigation and keeps operational domains as page entries", async () => {
     render(<ModelCenter />);
     expect(await screen.findByRole("heading", { name: "设置" })).toBeTruthy();
     expect(screen.queryByText("Sino Founder AI 系统配置")).toBeNull();
@@ -49,7 +49,11 @@ describe("Founder Settings", () => {
     expect(screen.queryByText("API Key ****1234")).toBeNull();
     expect(screen.queryByText(/secret-value/)).toBeNull();
     expect(screen.queryByRole("region", { name: "连接状态" })).toBeNull();
-    for (const name of ["模型", "Sino AI", "系统"]) expect(screen.getByRole("button", { name })).toBeTruthy();
+    const navigation = screen.getByRole("navigation", { name: "设置分类" });
+    expect(within(navigation).getAllByRole("button")).toHaveLength(1);
+    expect(within(navigation).getByRole("button", { name: "模型" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "打开Sino AI" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "打开系统" })).toBeTruthy();
     for (const name of ["模型与 API", "模型能力", "模型路由策略", "执行器", "讨论配置", "运行环境"]) expect(screen.queryByRole("button", { name, exact: true })).toBeNull();
     expect(screen.queryByRole("button", { name: "← 返回 Founder" })).toBeNull();
     expect(screen.queryByRole("button", { name: "关闭设置" })).toBeNull();
@@ -95,7 +99,7 @@ describe("Founder Settings", () => {
     const { container } = render(<ModelCenter />);
     await screen.findByRole("heading", { name: "设置" });
     const primaryTabs = screen.getByRole("navigation", { name: "设置分类" });
-    expect(primaryTabs.querySelectorAll("button")).toHaveLength(3);
+    expect(primaryTabs.querySelectorAll("button")).toHaveLength(1);
     expect(container.querySelector(".sino-settings-content")).toBeTruthy();
     expect(container.querySelector(".sino-settings-page--models")).toBeTruthy();
     expect(screen.getByLabelText("模型摘要").textContent).toContain("1 个模型 · 1 正常");
@@ -110,16 +114,22 @@ describe("Founder Settings", () => {
     const usage = screen.getByRole("region", { name: "Usage 与成本" });
     const modelList = screen.getByRole("list", { name: "已接入模型列表" });
     expect(usage.compareDocumentPosition(modelList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const sinoEntry = screen.getByRole("button", { name: "打开Sino AI" });
+    const systemEntry = screen.getByRole("button", { name: "打开系统" });
+    expect(modelGrid.compareDocumentPosition(sinoEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(sinoEntry.compareDocumentPosition(systemEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("region", { name: "模型分配" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Sino AI" }));
+    fireEvent.click(sinoEntry);
+    expect(screen.getByRole("dialog", { name: "Sino AI" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "模型分配" })).toBeTruthy();
-    expect(screen.queryByRole("list", { name: "已接入模型列表" })).toBeNull();
-    expect(screen.queryByRole("region", { name: "Usage 与成本" })).toBeNull();
+    expect(screen.getByRole("list", { name: "已接入模型列表" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Usage 与成本" })).toBeTruthy();
     expect(screen.queryByText("自动多轮")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "系统" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭Sino AI" }));
+    fireEvent.click(systemEntry);
+    expect(screen.getByRole("dialog", { name: "系统" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "执行器" })).toBeTruthy();
     expect(await screen.findByRole("region", { name: "运行环境" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "系统" }).classList.contains("sino-settings-page")).toBe(true);
   });
 
   it("constrains Vision assignments to verified models and persists its chain", async () => {
@@ -129,7 +139,7 @@ describe("Founder Settings", () => {
     await screen.findByRole("heading", { name: "设置" });
     expect(screen.getByRole("button", { name: "模型" }).classList.contains("is-active")).toBe(true);
     expect(screen.getByRole("list", { name: "已接入模型列表" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Sino AI" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
     const vision = screen.getByRole("combobox", { name: "Vision Primary" });
     expect(within(vision).getByRole("option", { name: /GPT 5 Pro.*能力不匹配/ }).disabled).toBe(true);
     expect(within(vision).getByRole("option", { name: "Gemini 3.6 Flash" })).toBeTruthy();
@@ -180,7 +190,7 @@ describe("Founder Settings", () => {
 
   it("keeps Runtime details collapsed until explicitly requested", async () => {
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: "系统" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开系统" }));
     expect(screen.getByText("5/5 services healthy")).toBeTruthy();
     expect(screen.queryByText("http://127.0.0.1:5173")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "查看详情" }));
@@ -199,7 +209,7 @@ describe("Founder Settings", () => {
   it("uses the middle Settings panel as the sole scroll container and keeps the last runtime card reachable", async () => {
     render(<div className="sino-founder-shell"><main className="sino-founder-main sino-founder-main--fixed-workspace"><ModelCenter /></main><aside className="sino-founder-context" aria-label="Settings Context">Settings Context</aside></div>);
     await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: "系统" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开系统" }));
     fireEvent.click(screen.getByRole("button", { name: "查看详情" }));
     const settings = screen.getByRole("region", { name: "设置" });
     expect(settings.matches(".sino-founder-main--fixed-workspace > .sino-settings")).toBe(true);
@@ -210,7 +220,7 @@ describe("Founder Settings", () => {
 
   it("shows the single real executor without a meaningless selector", async () => {
     render(<SettingsHarness />); await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: "系统" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开系统" }));
     expect(screen.getByText("Codex")).toBeTruthy();
     expect(screen.queryByRole("combobox", { name: "执行引擎" })).toBeNull();
   });
@@ -253,7 +263,7 @@ describe("Founder Settings", () => {
     saveCapabilityAssignment.mockResolvedValue(center);
     saveMultiModelAssignment.mockImplementation(async (models) => ({ ...center, roles: capabilities.map((item) => item.role_key === "multi_model_discussion" ? { ...item, models } : item) }));
     render(<SettingsHarness />); await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: "Sino AI" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Sino 主对话 Primary" }), { target: { value: "deepseek::deepseek-chat" } });
     await waitFor(() => expect(saveCapabilityAssignment).toHaveBeenCalledWith("sino_conversation", "deepseek", "deepseek-chat", []));
     expect(screen.getByRole("button", { name: "移除 DeepSeek Chat" })).toBeTruthy();
@@ -271,7 +281,7 @@ describe("Founder Settings", () => {
     getModelCenter.mockResolvedValue({ ...center, providers: [deepseek, claude], roles });
     saveCapabilityAssignment.mockResolvedValue({ ...center, providers: [deepseek, claude], roles });
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: "Sino AI" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
     expect(screen.getByRole("combobox", { name: "Sino 主对话 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("正常");
     expect(screen.getByRole("combobox", { name: "深度推理 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("Fallback 可用");
     expect(screen.getByRole("combobox", { name: "Vision Primary" }).closest(".sino-model-assignment-row").textContent).toContain("未配置");

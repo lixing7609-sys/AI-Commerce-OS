@@ -61,8 +61,10 @@ test("Settings exposes model control and system health with the real Provider in
   expect((await settings.boundingBox()).width).toBeGreaterThan(1430);
   await expect(page.getByText("Model Capabilities")).toHaveCount(0);
   const settingsTabs = page.getByRole("navigation", { name: "设置分类" });
-  await expect(settingsTabs.getByRole("button")).toHaveCount(3);
-  for (const name of ["模型", "Sino AI", "系统"]) await expect(settingsTabs.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(settingsTabs.getByRole("button")).toHaveCount(1);
+  await expect(settingsTabs.getByRole("button", { name: "模型", exact: true })).toBeVisible();
+  await expect(settingsTabs.getByRole("button", { name: "Sino AI", exact: true })).toHaveCount(0);
+  await expect(settingsTabs.getByRole("button", { name: "系统", exact: true })).toHaveCount(0);
   for (const name of ["执行与运行"]) await expect(settingsTabs.getByRole("button", { name, exact: true })).toHaveCount(0);
   for (const name of ["模型与 API", "模型能力", "模型路由策略", "执行器", "讨论配置", "运行环境"]) await expect(settingsTabs.getByRole("button", { name, exact: true })).toHaveCount(0);
   await expect(page.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
@@ -74,6 +76,12 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(page.getByText(/10 个模型 · 10 正常/)).toBeVisible();
   await expect(page.getByRole("list", { name: "已接入模型列表" }).locator("button[aria-pressed]")).toHaveCount(10);
   await expect(page.getByRole("list", { name: "已接入模型列表" }).locator('[role="listitem"]').last().getByRole("button", { name: "＋ 添加模型" })).toBeVisible();
+  const sinoEntry = page.getByRole("button", { name: "打开Sino AI" });
+  const systemEntry = page.getByRole("button", { name: "打开系统" });
+  await expect(sinoEntry).toBeVisible();
+  await expect(systemEntry).toBeVisible();
+  expect((await sinoEntry.boundingBox()).y).toBeGreaterThan((await page.getByRole("list", { name: "已接入模型列表" }).boundingBox()).y);
+  expect((await systemEntry.boundingBox()).y).toBeGreaterThan((await sinoEntry.boundingBox()).y);
   await expect(page.locator(".sino-model-list-heading").getByRole("button", { name: "＋ 添加模型" })).toHaveCount(0);
   await page.getByRole("button", { name: "＋ 添加模型" }).click();
   await expect(page.getByRole("dialog", { name: "添加 AI 模型" })).toBeVisible();
@@ -107,17 +115,18 @@ test("Settings exposes model control and system health with the real Provider in
   await page.screenshot({ path: `${evidenceDirectory}/settings-model-inspector-selected.png`, fullPage: true });
   await providerDialog.getByRole("button", { name: "关闭 Provider 技术配置" }).click();
 
-  await settingsTabs.getByRole("button", { name: "Sino AI" }).click();
+  await sinoEntry.click();
+  await expect(page.getByRole("dialog", { name: "Sino AI" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Provider 技术配置" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
-  await expect(page.getByRole("list", { name: "已接入模型列表" })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Usage 与成本" })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "已接入模型列表" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Usage 与成本" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Primary" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
   await page.getByRole("combobox", { name: "Sino 主对话 Fallback" }).selectOption("claude::claude-sonnet-5");
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toHaveValue("claude::claude-sonnet-5");
   await page.reload();
-  await page.getByRole("navigation", { name: "设置分类" }).getByRole("button", { name: "Sino AI" }).click();
+  await page.getByRole("button", { name: "打开Sino AI" }).click();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toHaveValue("claude::claude-sonnet-5");
   await expect(page.getByRole("combobox", { name: "Vision Primary" }).locator("xpath=ancestor::div[contains(@class,'sino-model-assignment-row')]")).toContainText("未配置");
   const codingRow = page.getByRole("combobox", { name: "Coding Primary" }).locator("xpath=ancestor::div[contains(@class,'sino-model-assignment-row')]");
@@ -131,8 +140,9 @@ test("Settings exposes model control and system health with the real Provider in
   await page.getByRole("button", { name: "选择参与模型" }).click();
   await page.screenshot({ path: `${evidenceDirectory}/settings-sino-ai-assignment.png`, fullPage: true });
 
-  await settingsTabs.getByRole("button", { name: "系统" }).click();
-  await expect(page.getByRole("region", { name: "系统" })).toBeVisible();
+  await page.getByRole("button", { name: "关闭Sino AI" }).click();
+  await page.getByRole("button", { name: "打开系统" }).click();
+  await expect(page.getByRole("dialog", { name: "系统" })).toBeVisible();
   await expect(page.getByRole("region", { name: "执行器" })).toBeVisible();
   await expect(page.getByRole("region", { name: "运行环境" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Provider 技术配置" })).toHaveCount(0);
@@ -147,6 +157,7 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(page.getByText(/执行系统模型尚未接入 Runtime/)).toBeVisible();
   await page.screenshot({ path: `${evidenceDirectory}/settings-execution-runtime.png`, fullPage: true });
 
+  await page.getByRole("button", { name: "关闭系统" }).click();
   await page.getByRole("button", { name: "⬅️ 返回首页" }).click();
   await expect(page.getByLabel("Founder Navigation")).toBeVisible();
   await expect(page.getByRole("main", { name: "Sino Natural Conversation" })).toBeVisible();

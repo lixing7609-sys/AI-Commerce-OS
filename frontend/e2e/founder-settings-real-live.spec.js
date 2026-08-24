@@ -9,10 +9,10 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await page.goto("/");
   await page.getByRole("button", { name: "设置", exact: true }).click();
   const tabs = page.getByRole("navigation", { name: "设置分类" });
-  await expect(tabs.getByRole("button")).toHaveCount(3);
+  await expect(tabs.getByRole("button")).toHaveCount(1);
   await expect(tabs.getByRole("button", { name: "模型" })).toBeVisible();
-  await expect(tabs.getByRole("button", { name: "Sino AI" })).toBeVisible();
-  await expect(tabs.getByRole("button", { name: "系统" })).toBeVisible();
+  await expect(tabs.getByRole("button", { name: "Sino AI" })).toHaveCount(0);
+  await expect(tabs.getByRole("button", { name: "系统" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "模型分配" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Usage 与成本" })).toBeVisible();
   await expect(page.getByLabel("功能页详情")).toHaveCount(0);
@@ -44,7 +44,8 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   }
   await inspector.getByRole("button", { name: "关闭 Provider 技术配置" }).click();
 
-  await tabs.getByRole("button", { name: "Sino AI" }).click();
+  await page.getByRole("button", { name: "打开Sino AI" }).click();
+  await expect(page.getByRole("dialog", { name: "Sino AI" })).toBeVisible();
   await expect(inspector).toHaveCount(0);
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Primary" })).toBeVisible();
@@ -59,7 +60,9 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(page.getByRole("group", { name: "参与模型选项" })).toBeVisible();
   await page.screenshot({ path: `${evidence}/settings-model-assignment-multiselect-1440x900.png`, fullPage: true });
   await page.getByRole("button", { name: "选择参与模型" }).click();
-  await tabs.getByRole("button", { name: "系统" }).click();
+  await page.getByRole("button", { name: "关闭Sino AI" }).click();
+  await page.getByRole("button", { name: "打开系统" }).click();
+  await expect(page.getByRole("dialog", { name: "系统" })).toBeVisible();
   await expect(inspector).toHaveCount(0);
   await expect(page.getByText("Codex", { exact: true })).toBeVisible();
   await expect(page.getByText(/services healthy/)).toBeVisible();

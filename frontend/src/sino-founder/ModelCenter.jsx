@@ -10,8 +10,8 @@ const actionFailure = (action) => `${action}失败，请检查服务商授权或
 
 export function ModelCenter({ onHome }) {
   const [center, setCenter] = useState(empty);
-  const [section, setSection] = useState("models");
   const [adding, setAdding] = useState(false);
+  const [featureModal, setFeatureModal] = useState(null);
   const [installStep, setInstallStep] = useState(1);
   const [installProviderKey, setInstallProviderKey] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -24,6 +24,8 @@ export function ModelCenter({ onHome }) {
   const [discussionOpen, setDiscussionOpen] = useState(false);
   const providerDialogRef = useRef(null);
   const providerTriggerRef = useRef(null);
+  const featureDialogRef = useRef(null);
+  const featureTriggerRef = useRef(null);
   const installed = useMemo(() => center.providers.filter((item) => item.installed), [center.providers]);
 
   async function reload() { const value = await getModelCenter(); setCenter(value); return value; }
@@ -65,8 +67,10 @@ export function ModelCenter({ onHome }) {
   async function refresh(provider) { const key = provider.provider_key; updateProviderState(key, { isRefreshingModels: true, error: "", successMessage: "正在刷新模型…" }); try { const result = await discoverProviderModels(key); mergeProvider(result); updateProviderState(key, { successMessage: `模型已刷新，共 ${result.available_models?.length || 0} 个`, error: "" }); } catch (error) { updateProviderState(key, { error: failureLabel(provider.health_error), successMessage: "" }); } finally { updateProviderState(key, { isRefreshingModels: false }); } }
   async function choose(provider, model, checked) { const key = provider.provider_key; const id = modelId(model); const next = checked ? [...provider.selected_models, id] : provider.selected_models.filter((item) => item !== id); updateProviderState(key, { isSaving: true, error: "", successMessage: "正在保存…" }); try { const result = await selectProviderModels(key, next); mergeProvider(result); updateProviderState(key, { successMessage: "模型选择已保存" }); } catch (error) { updateProviderState(key, { error: "模型选择保存失败", successMessage: "" }); } finally { updateProviderState(key, { isSaving: false }); } }
   async function health(provider) { const key = provider.provider_key; updateProviderState(key, { isCheckingHealth: true, error: "", successMessage: "正在检查…" }); try { const result = await checkModelProvider(key); mergeProvider(result.configuration); const feedback = result.status === "healthy" ? "连接正常" : failureLabel(result.configuration?.health_error); updateProviderState(key, { successMessage: result.status === "healthy" ? feedback : "", error: result.status === "healthy" ? "" : feedback }); } catch (error) { updateProviderState(key, { error: failureLabel(provider.health_error), successMessage: "" }); } finally { updateProviderState(key, { isCheckingHealth: false }); } }
-  function selectModel(provider, model, trigger) { providerTriggerRef.current = trigger; setAdding(false); setEditing(provider.provider_key); setSelectedModel(model); }
+  function selectModel(provider, model, trigger) { providerTriggerRef.current = trigger; setAdding(false); setFeatureModal(null); setEditing(provider.provider_key); setSelectedModel(model); }
   function closeProviderModal() { setEditing(null); setSelectedModel(null); requestAnimationFrame(() => providerTriggerRef.current?.focus()); }
+  function openFeatureModal(name, trigger) { featureTriggerRef.current = trigger; setAdding(false); setEditing(null); setSelectedModel(null); setFeatureModal(name); }
+  function closeFeatureModal() { setFeatureModal(null); requestAnimationFrame(() => featureTriggerRef.current?.focus()); }
   async function updateCredentials(provider, values) { const key = provider.provider_key; updateProviderState(key, { isConnecting: true, error: "", successMessage: "正在保存…" }); try { const result = await updateModelProviderCredentials(key, values); mergeProvider(result); updateProviderState(key, { isConnecting: false, error: "", successMessage: "Provider 配置已保存" }); } catch (error) { updateProviderState(key, { isConnecting: false, error: actionFailure("Provider 配置"), successMessage: "" }); } }
   async function assignCapability(capabilityKey, value, fallbackValue) { const [providerKey, model] = value ? value.split("::") : [null, null]; const [fallbackProvider, fallbackModel] = fallbackValue ? fallbackValue.split("::") : [null, null]; setBusy(`capability:${capabilityKey}`); try { setCenter(await saveCapabilityAssignment(capabilityKey, providerKey, model, fallbackProvider ? [{ provider_key: fallbackProvider, model: fallbackModel }] : [])); setMessage("模型分配已保存并接入 Runtime"); } catch (error) { setMessage(actionFailure("模型分配")); } finally { setBusy(""); } }
   const modelOptions = installed.filter((item) => item.enabled).flatMap((provider) => provider.selected_models.map((model) => ({ value: `${provider.provider_key}::${model}`, provider, model, healthy: provider.health_status === "healthy", label: (provider.available_models.find((item) => modelId(item) === model) || {}).display_name || model })));
@@ -104,25 +108,44 @@ export function ModelCenter({ onHome }) {
     requestAnimationFrame(() => providerDialogRef.current?.focus());
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedProvider?.provider_key, selectedModel]);
+  useEffect(() => {
+    if (!featureModal) return undefined;
+    const onKeyDown = (event) => { if (event.key === "Escape") closeFeatureModal(); };
+    window.addEventListener("keydown", onKeyDown);
+    requestAnimationFrame(() => featureDialogRef.current?.focus());
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [featureModal]);
+  const conversationRole = center.roles.find((item) => item.role_key === "sino_conversation");
+  const configuredRoles = center.roles.filter((item) => ["sino_conversation", "deep_thinking", "code_execution", "multi_model_discussion"].includes(item.role_key) && (item.model || item.models?.length)).length;
+  const localRuntime = runtimeRegistry?.environments?.find((item) => item.environment_type === "LOCAL");
+  const activeEngine = center.execution_engines.find((item) => item.engine_id === center.roles.find((role) => role.role_key === "code_execution")?.execution_engine_id);
   return <section className="sino-model-center sino-settings" aria-label="设置">
     <header><div><button type="button" className="sino-settings-home-link" onClick={onHome}>⬅️ 返回首页</button><h2>设置</h2></div></header>
-    <nav className="sino-settings-tabs" aria-label="设置分类">{[["models", "模型"], ["sino-ai", "Sino AI"], ["system", "系统"]].map(([key, label]) => <button type="button" key={key} className={section === key ? "is-active" : ""} onClick={() => { setSection(key); setEditing(null); setSelectedModel(null); }}>{label}</button>)}</nav>
+    <nav className="sino-settings-tabs" aria-label="设置分类"><button type="button" className="is-active" aria-current="page">模型</button></nav>
     <div className="sino-settings-content">
     {message && <p className="sino-model-center-message" role="status">{message}</p>}
-    {section === "models" && <section className="sino-capability-section sino-settings-page sino-settings-page--models" aria-label="模型">
+    <section className="sino-capability-section sino-settings-page sino-settings-page--models" aria-label="模型">
       <UsageCost healthCost={center.health_cost || []} />
-      <section className="sino-model-list-pane"><div className="sino-model-list-heading"><h3>已接入模型</h3><div><span aria-label="模型摘要">{modelRows.length} 个模型 · {modelRows.filter((row) => row.health === "healthy").length} 正常 · {modelRows.filter((row) => row.health === "unhealthy").length} 异常 · {installed.length} Provider</span></div></div><div className="sino-model-card-grid" role="list" aria-label="已接入模型列表">{modelRows.map(({ provider, selected, meta, health: healthState }) => { const active = editing === provider.provider_key && selectedModel === selected; const duties = modelDuties(provider.provider_key, selected); return <article role="listitem" key={`${provider.provider_key}-${selected}`}><button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} onClick={(event) => selectModel(provider, selected, event.currentTarget)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span><small>{duties.length ? duties.join(" · ") : "未分配"}</small></button></article>; })}<article role="listitem"><button type="button" className="sino-add-model-card" onClick={() => { setEditing(null); setSelectedModel(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></article></div></section>
-    </section>}
-
-    {section === "sino-ai" && <section className="sino-capability-section sino-settings-page sino-settings-page--sino-ai" aria-label="Sino AI"><ModelAssignments roles={center.roles || []} options={modelOptions} registry={center.model_capability_registry} busy={busy} discussionOpen={discussionOpen} onDiscussionToggle={() => setDiscussionOpen((value) => !value)} onAssign={assignCapability} onVisionAssign={savePreferred} onCouncilSave={saveCouncil} /></section>}
+      <section className="sino-model-list-pane"><div className="sino-model-list-heading"><h3>已接入模型</h3><div><span aria-label="模型摘要">{modelRows.length} 个模型 · {modelRows.filter((row) => row.health === "healthy").length} 正常 · {modelRows.filter((row) => row.health === "unhealthy").length} 异常 · {installed.length} Provider</span></div></div><div className="sino-model-card-grid" role="list" aria-label="已接入模型列表">{modelRows.map(({ provider, selected, meta, health: healthState }) => { const active = editing === provider.provider_key && selectedModel === selected; const duties = modelDuties(provider.provider_key, selected); return <article role="listitem" key={`${provider.provider_key}-${selected}`}><button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} onClick={(event) => selectModel(provider, selected, event.currentTarget)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span><small>{duties.length ? duties.join(" · ") : "未分配"}</small></button></article>; })}<article role="listitem"><button type="button" className="sino-add-model-card" onClick={() => { setFeatureModal(null); setEditing(null); setSelectedModel(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></article></div></section>
+      <SettingsFeatureEntry title="Sino AI" description="模型职责分配、Primary / Fallback 与多模型讨论" summary={`${conversationRole?.model || "主对话未配置"} · ${configuredRoles} 个职责`} onClick={(event) => openFeatureModal("sino-ai", event.currentTarget)} />
+      <SettingsFeatureEntry title="系统" description="Executor、Runtime 与 System Health" summary={`${activeEngine?.display_name || "Codex"} · ${localRuntime?.status || "LOCAL"}`} onClick={(event) => openFeatureModal("system", event.currentTarget)} />
+    </section>
 
     {adding && <AddModelModal step={installStep} center={center} install={install} editing={editing} busy={busy} providerKey={installProviderKey} onSelectProvider={beginProviderConnection} onInstallChange={setInstall} onConnect={addProvider} onChoose={choose} onClose={() => { setAdding(false); setInstallStep(1); setInstallProviderKey(null); }} />}
 
-    {section === "models" && selectedProvider && selectedModelMeta ? <SettingsContext dialogRef={providerDialogRef} detail={{ section, provider: selectedProvider, model: selectedModelMeta, action: providerState(selectedProvider.provider_key), onCredentialSave: (values) => updateCredentials(selectedProvider, values), onRefresh: () => refresh(selectedProvider), onHealth: () => health(selectedProvider), onChoose: (model, checked) => choose(selectedProvider, model, checked) }} onClose={closeProviderModal} /> : null}
-
-    {section === "system" && <section className="sino-settings-page sino-settings-domain-grid sino-settings-domain-grid--execution" aria-label="系统"><ExecutorSettings roles={center.roles || []} engines={center.execution_engines || []} /><RuntimeEnvironmentSettings registry={runtimeRegistry} /></section>}
+    {selectedProvider && selectedModelMeta ? <SettingsContext dialogRef={providerDialogRef} detail={{ section: "models", provider: selectedProvider, model: selectedModelMeta, action: providerState(selectedProvider.provider_key), onCredentialSave: (values) => updateCredentials(selectedProvider, values), onRefresh: () => refresh(selectedProvider), onHealth: () => health(selectedProvider), onChoose: (model, checked) => choose(selectedProvider, model, checked) }} onClose={closeProviderModal} /> : null}
+    {featureModal === "sino-ai" ? <SettingsFeatureModal title="Sino AI" description="模型职责分配、Fallback 与多模型讨论。" dialogRef={featureDialogRef} onClose={closeFeatureModal}><ModelAssignments roles={center.roles || []} options={modelOptions} registry={center.model_capability_registry} busy={busy} discussionOpen={discussionOpen} onDiscussionToggle={() => setDiscussionOpen((value) => !value)} onAssign={assignCapability} onVisionAssign={savePreferred} onCouncilSave={saveCouncil} /></SettingsFeatureModal> : null}
+    {featureModal === "system" ? <SettingsFeatureModal title="系统" description="Executor、Runtime 与系统健康。" dialogRef={featureDialogRef} onClose={closeFeatureModal}><div className="sino-settings-domain-grid sino-settings-domain-grid--execution"><ExecutorSettings roles={center.roles || []} engines={center.execution_engines || []} /><RuntimeEnvironmentSettings registry={runtimeRegistry} /></div></SettingsFeatureModal> : null}
     </div>
   </section>;
+}
+
+function SettingsFeatureEntry({ title, description, summary, onClick }) {
+  return <section className="sino-settings-feature-section" aria-label={title}><h3>{title}</h3><button type="button" aria-label={`打开${title}`} onClick={onClick}><span><strong>{title}</strong><small>{description}</small></span><span><small>{summary}</small><b aria-hidden="true">→</b></span></button></section>;
+}
+
+function SettingsFeatureModal({ title, description, dialogRef, onClose, children }) {
+  return <div className="sino-add-model-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialogRef} className="sino-add-model-modal sino-settings-feature-modal" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}><header><div><h2>{title}</h2><p>{description}</p></div><button type="button" aria-label={`关闭${title}`} onClick={onClose}>×</button></header><div className="sino-settings-feature-modal__content">{children}</div></section></div>;
 }
 
 function modelValue(reference) { return reference?.provider_key && reference?.model ? `${reference.provider_key}::${reference.model}` : ""; }
