@@ -664,7 +664,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-founder-main--fixed-workspace > .sino-settings::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-settings > header { align-items: flex-start; }
 .sino-settings > header > div { display: grid; gap: 2px; }
-.sino-settings-content { min-width: 0; width: 100%; }
+.sino-settings-content { min-width: 0; width: calc(100% - clamp(48px, 6vw, 120px)); max-width: 1536px; margin-inline: auto; }
 .sino-settings-page { box-sizing: border-box; width: 100%; padding-block: 6px 10px; }
 .sino-settings-page--models { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 .sino-settings-domain-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }

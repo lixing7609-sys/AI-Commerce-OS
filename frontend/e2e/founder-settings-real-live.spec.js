@@ -15,9 +15,22 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   const firstModel = page.getByRole("list", { name: "已接入模型列表" }).locator("button[aria-pressed]").first();
   await expect(firstModel).toBeVisible();
   await page.screenshot({ path: `${evidence}/settings-model-control-1440x900.png`, fullPage: true });
-  for (const viewport of [{ width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
     await page.setViewportSize(viewport);
-    await expect(page.getByRole("list", { name: "已接入模型列表" })).toBeVisible();
+    const usageBox = await page.getByRole("region", { name: "用量与成本" }).boundingBox();
+    const modelBox = await page.getByRole("list", { name: "已接入模型列表" }).boundingBox();
+    const sinoBox = await page.getByRole("region", { name: "Sino AI" }).boundingBox();
+    const systemBox = await page.getByRole("region", { name: "系统" }).boundingBox();
+    for (const box of [usageBox, modelBox, sinoBox, systemBox]) {
+      expect(box.x).toBeGreaterThanOrEqual(68);
+      expect(viewport.width - box.x - box.width).toBeGreaterThanOrEqual(68);
+    }
+    expect(Math.abs(usageBox.x - modelBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(usageBox.x - sinoBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(usageBox.x - systemBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(usageBox.width - modelBox.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(usageBox.width - sinoBox.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(usageBox.width - systemBox.width)).toBeLessThanOrEqual(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.screenshot({ path: `${evidence}/settings-model-control-${viewport.width}x${viewport.height}.png`, fullPage: true });
   }
