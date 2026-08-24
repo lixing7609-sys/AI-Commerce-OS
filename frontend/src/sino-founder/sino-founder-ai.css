@@ -670,8 +670,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-tabs button.is-active { border-bottom-color: var(--accent); color: var(--text-primary); }
 .sino-settings-content { min-width: 0; width: 100%; }
 .sino-settings-page { box-sizing: border-box; width: 100%; padding-block: 6px 10px; }
-.sino-settings-page--models { display: grid; grid-template-columns: minmax(440px, 1.25fr) minmax(390px, .95fr); grid-template-areas: "summary summary" "pool assignments" "pool usage"; gap: 10px 16px; align-items: start; }
-.sino-settings-page--models > .sino-model-pool-summary { grid-area: summary; }
+.sino-settings-page--models { display: grid; grid-template-columns: minmax(440px, 1.25fr) minmax(390px, .95fr); grid-template-areas: "pool assignments" "pool usage"; gap: 10px 16px; align-items: start; }
 .sino-settings-page--models > .sino-model-list-pane { grid-area: pool; }
 .sino-settings-page--models > .sino-model-assignments { grid-area: assignments; margin-top: 0; padding-top: 0; border-top: 0; }
 .sino-settings-page--models > .sino-usage-cost { grid-area: usage; margin-top: 0; }
@@ -688,9 +687,6 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-section-card { box-sizing: border-box; min-width: 0; border: 1px solid color-mix(in srgb, var(--line) 84%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--surface-raised) 72%, transparent); }
 .sino-settings-empty { margin: 8px 0; color: var(--text-secondary); font-size: 13px; }
 .sino-model-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; }
-.sino-model-pool-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 34px; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
-.sino-model-pool-summary strong { font-size: 14px; }
-.sino-model-pool-summary span { color: var(--text-secondary); font-size: 12px; }
 .sino-model-assignments, .sino-usage-cost { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
 .sino-model-assignment-table { display: grid; }
 .sino-model-assignment-row { display: grid; grid-template-columns: minmax(120px,.8fr) minmax(160px,1fr) minmax(160px,1fr) 82px; gap: 10px; align-items: center; min-height: 44px; border-bottom: 1px solid color-mix(in srgb,var(--line) 66%,transparent); font-size: 12px; }
@@ -707,11 +703,12 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-runtime-summary span:last-child { justify-self: end; color: var(--text-secondary); font-size: 12px; }
 .sino-settings-page .sino-capability-section-heading button { border: 0; background: transparent; color: var(--accent); cursor: pointer; }
 @container (max-width: 760px) { .sino-model-assignment-row { grid-template-columns: minmax(100px,.6fr) minmax(150px,1fr); }.sino-model-assignment-row > :nth-child(3),.sino-model-assignment-row > :nth-child(4){grid-column:2}.sino-usage-cost dl{grid-template-columns:repeat(2,minmax(0,1fr));} }
-@container (max-width: 980px) { .sino-settings-page--models { grid-template-columns:minmax(0,1fr);grid-template-areas:"summary" "pool" "assignments" "usage"; } }
+@container (max-width: 980px) { .sino-settings-page--models { grid-template-columns:minmax(0,1fr);grid-template-areas:"pool" "assignments" "usage"; } }
 .sino-model-list-pane { min-width: 0; }
 .sino-model-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; margin-bottom: 6px; }
 .sino-model-list-heading h3 { margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 600; line-height: 20px; }
-.sino-model-list-heading p { margin: 1px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 16px; }
+.sino-model-list-heading > div { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
+.sino-model-list-heading span { overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .sino-model-list-heading button { flex: none; min-height: 32px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text-primary); font-size: 12px; cursor: pointer; }
 .sino-model-list-heading button:hover { background: var(--surface-raised); }
 .sino-executor-summary:hover { background: var(--surface-raised); }
@@ -889,15 +886,17 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-capability-tabs button, .sino-capability-section-heading button, .sino-provider-install button, .sino-model-library-card footer button { font-size: 14px; }
 .sino-capability-section-heading h3 { font-size: 21px; font-weight: 600; }
 .sino-capability-section { padding-block: 8px 22px; }
-.sino-my-models { display: grid; width: 100%; min-width: 420px; border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
-.sino-my-models::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.sino-my-models__header, .sino-my-models > button { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(110px, 1fr) minmax(92px, .7fr); align-items: center; gap: 12px; }
-.sino-my-models__header { min-width: 420px; min-height: 30px; padding: 0 7px; border-bottom: 1px solid var(--line); color: var(--text-label); font-size: 10px; }
-.sino-my-models > button { min-width: 420px; width: 100%; min-height: 32px; padding: 2px 7px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
-.sino-my-models > button:hover { background: var(--surface-raised); }
-.sino-my-models > button.is-selected { box-shadow: inset 2px 0 var(--accent); background: var(--surface-selected); }
-.sino-my-models > button strong { min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.sino-my-models > button span { min-width: 0; overflow: hidden; color: #8d968a; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.sino-model-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; width: 100%; }
+.sino-model-card-grid > article { min-width: 0; }
+.sino-model-card-grid > article > button { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto; gap: 3px 10px; width: 100%; min-width: 0; min-height: 88px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--line) 84%, transparent); border-radius: 9px; background: color-mix(in srgb, var(--surface-raised) 54%, transparent); color: inherit; text-align: left; cursor: pointer; }
+.sino-model-card-grid > article > button:hover { border-color: color-mix(in srgb, var(--line) 55%, var(--text-secondary)); background: var(--surface-raised); }
+.sino-model-card-grid > article > button.is-selected { border-color: color-mix(in srgb, var(--accent) 54%, var(--line)); box-shadow: inset 2px 0 var(--accent); background: var(--surface-selected); }
+.sino-model-card-grid strong { grid-column: 1 / -1; min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.sino-model-card-grid span { min-width: 0; overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.sino-model-card-grid span[data-health] { justify-self: end; }
+.sino-model-card-grid span[data-health="healthy"] { color: var(--text-secondary); }
+.sino-model-card-grid span[data-health="unhealthy"] { color: #c97878; }
+.sino-model-card-grid small { grid-column: 1 / -1; overflow: hidden; color: var(--text-label); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 @container (max-width: 860px) {
   .sino-settings-domain-grid { grid-template-columns: minmax(0, 1fr); }
 }

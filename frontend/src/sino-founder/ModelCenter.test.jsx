@@ -86,7 +86,12 @@ describe("Founder Settings", () => {
     expect(primaryTabs.querySelectorAll("button")).toHaveLength(2);
     expect(container.querySelector(".sino-settings-content")).toBeTruthy();
     expect(container.querySelector(".sino-settings-page--models")).toBeTruthy();
-    expect(screen.getByLabelText("模型资源池摘要").textContent).toContain("1 个模型 · 1 正常");
+    expect(screen.getByLabelText("模型摘要").textContent).toContain("1 个模型 · 1 正常");
+    expect(screen.getByRole("heading", { name: "已接入模型" })).toBeTruthy();
+    expect(screen.queryByText("模型资源池", { exact: true })).toBeNull();
+    expect(screen.getByRole("list", { name: "已接入模型列表" }).querySelectorAll('[role="listitem"]')).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("Sino 主对话");
+    expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("多模型讨论");
     expect(screen.getByRole("region", { name: "模型分配" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "Usage 与成本" })).toBeTruthy();
     expect(screen.queryByText("自动多轮")).toBeNull();
@@ -102,7 +107,7 @@ describe("Founder Settings", () => {
     render(<ModelCenter />);
     await screen.findByRole("heading", { name: "设置" });
     expect(screen.getByRole("button", { name: "模型" }).classList.contains("is-active")).toBe(true);
-    expect(screen.getByRole("table", { name: "模型状态列表" })).toBeTruthy();
+    expect(screen.getByRole("list", { name: "已接入模型列表" })).toBeTruthy();
     const vision = screen.getByRole("combobox", { name: "Vision Primary" });
     expect(within(vision).queryByRole("option", { name: "GPT 5 Pro" })).toBeNull();
     expect(within(vision).getByRole("option", { name: "Gemini 3.6 Flash" })).toBeTruthy();
@@ -233,7 +238,7 @@ describe("Founder Settings", () => {
   it("keeps configuration fields and hides incomplete or provider-level usage metrics", async () => {
     checkModelProvider.mockResolvedValue({ status: "healthy", configuration: deepseek });
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
-    expect(screen.getByRole("table", { name: "模型状态列表" })).toBeTruthy();
+    expect(screen.getByRole("list", { name: "已接入模型列表" })).toBeTruthy();
     for (const label of ["调用", "额度"]) expect(screen.queryByText(label, { exact: true })).toBeNull();
     expect(screen.queryByText("120.5 ms")).toBeNull();
   });
@@ -244,7 +249,7 @@ describe("Founder Settings", () => {
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
     expect(screen.queryByText("GPT")).toBeNull();
     expect(screen.queryByRole("button", { name: "管理" })).toBeNull();
-    expect(screen.getByRole("table", { name: "模型状态列表" }).querySelectorAll("button[aria-pressed]")).toHaveLength(2);
+    expect(screen.getByRole("list", { name: "已接入模型列表" }).querySelectorAll("button[aria-pressed]")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "＋ 添加模型" }));
     expect(screen.getAllByText("OpenAI").length).toBeGreaterThan(0);
     expect(screen.getByText("认证失败")).toBeTruthy();

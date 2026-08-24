@@ -77,6 +77,23 @@ export function ModelCenter({ onContextChange, onHome }) {
     const metrics = center.health_cost.find((item) => item.provider_key === provider.provider_key && (!item.model || item.model === selected || item.selected_models?.includes(selected))) || {};
     return { provider, selected, meta, health: metrics.health_status || provider.health_status, usage: metrics.usage || {} };
   }));
+  function modelDuties(providerKey, model) {
+    const duties = [];
+    const matches = (reference) => (reference?.provider_key || reference?.provider_id) === providerKey && (reference?.model || reference?.model_id) === model;
+    const assignedRole = (key, label) => {
+      const role = center.roles.find((item) => item.role_key === key);
+      if (matches(role)) duties.push(label);
+      if (role?.fallbacks?.some(matches)) duties.push(`${label} Fallback`);
+    };
+    assignedRole("sino_conversation", "Sino 主对话");
+    assignedRole("deep_thinking", "深度推理");
+    const vision = center.model_capability_registry?.routing_policies?.find((item) => item.capability === "VISION_UNDERSTANDING");
+    if (matches(vision?.preferred_primary || vision?.active_primary)) duties.push("Vision");
+    if (matches(vision?.preferred_fallback)) duties.push("Vision Fallback");
+    const discussion = center.roles.find((item) => item.role_key === "multi_model_discussion");
+    if (discussion?.models?.some(matches)) duties.push("多模型讨论");
+    return duties;
+  }
   useEffect(() => {
     if (section === "models" && selectedProvider && selectedModelMeta) onContextChange?.({ section, provider: selectedProvider, model: selectedModelMeta, action: providerState(selectedProvider.provider_key), onCredentialSave: (values) => updateCredentials(selectedProvider, values), onRefresh: () => refresh(selectedProvider), onHealth: () => health(selectedProvider), onChoose: (model, checked) => choose(selectedProvider, model, checked) });
     else onContextChange?.({ section });
@@ -87,8 +104,7 @@ export function ModelCenter({ onContextChange, onHome }) {
     <div className="sino-settings-content">
     {message && <p className="sino-model-center-message" role="status">{message}</p>}
     {section === "models" && <section className="sino-capability-section sino-settings-page sino-settings-page--models" aria-label="模型">
-      <div className="sino-model-pool-summary" aria-label="模型资源池摘要"><strong>模型资源池</strong><span>{modelRows.length} 个模型 · {modelRows.filter((row) => row.health === "healthy").length} 正常 · {modelRows.filter((row) => row.health === "unhealthy").length} 异常 · {installed.length} Provider</span></div>
-      <section className="sino-model-list-pane"><div className="sino-model-list-heading"><div><h3>模型资源池</h3><p>当前职责来自真实 Runtime 分配；Usage 未接入的字段不展示。</p></div><button type="button" onClick={() => { setEditing(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></div><div className="sino-my-models" role="table" aria-label="模型状态列表"><div className="sino-my-models__header" role="row"><strong>模型</strong><strong>Provider</strong><strong>健康状态</strong></div>{modelRows.map(({ provider, selected, meta, health: healthState }) => { const active = editing === provider.provider_key && selectedModel === selected; return <button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} key={`${provider.provider_key}-${selected}`} onClick={() => selectModel(provider, selected)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span></button>; })}</div></section>
+      <section className="sino-model-list-pane"><div className="sino-model-list-heading"><h3>已接入模型</h3><div><span aria-label="模型摘要">{modelRows.length} 个模型 · {modelRows.filter((row) => row.health === "healthy").length} 正常 · {modelRows.filter((row) => row.health === "unhealthy").length} 异常 · {installed.length} Provider</span><button type="button" onClick={() => { setEditing(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></div></div><div className="sino-model-card-grid" role="list" aria-label="已接入模型列表">{modelRows.map(({ provider, selected, meta, health: healthState }) => { const active = editing === provider.provider_key && selectedModel === selected; const duties = modelDuties(provider.provider_key, selected); return <article role="listitem" key={`${provider.provider_key}-${selected}`}><button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} onClick={() => selectModel(provider, selected)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span><small>{duties.length ? duties.join(" · ") : "未分配"}</small></button></article>; })}</div></section>
       <ModelAssignments roles={center.roles || []} options={modelOptions} registry={center.model_capability_registry} busy={busy} discussionOpen={discussionOpen} onDiscussionToggle={() => setDiscussionOpen((value) => !value)} onAssign={assignCapability} onVisionAssign={savePreferred} onCouncilSave={saveCouncil} />
       <UsageCost healthCost={center.health_cost || []} />
     </section>}

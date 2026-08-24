@@ -56,13 +56,13 @@ test("Settings exposes model control and system health with the real Provider in
   for (const name of ["模型与 API", "模型能力", "模型路由策略", "执行器", "讨论配置", "运行环境"]) await expect(settingsTabs.getByRole("button", { name, exact: true })).toHaveCount(0);
   await expect(page.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
   await expect(settingsTabs.getByRole("button", { name: "模型" })).toHaveClass(/is-active/);
-  await expect(page.getByRole("table", { name: "模型状态列表" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "已接入模型列表" })).toBeVisible();
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Usage 与成本" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Primary" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
   await expect(page.getByText(/10 个模型 · 10 正常/)).toBeVisible();
-  await expect(page.getByRole("table", { name: "模型状态列表" }).locator("button[aria-pressed]")).toHaveCount(10);
+  await expect(page.getByRole("list", { name: "已接入模型列表" }).locator("button[aria-pressed]")).toHaveCount(10);
   await page.screenshot({ path: `${evidenceDirectory}/settings-models-full-width.png`, fullPage: true });
   const settingsScroll = page.locator(".sino-settings");
   for (const viewport of [{ width: 1440, height: 900 }, { width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {

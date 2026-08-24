@@ -15,9 +15,16 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Primary" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
-  const firstModel = page.getByRole("table", { name: "模型状态列表" }).locator("button").first();
+  const firstModel = page.getByRole("list", { name: "已接入模型列表" }).locator("button").first();
   await expect(firstModel).toBeVisible();
   await page.screenshot({ path: `${evidence}/settings-model-control-1440x900.png`, fullPage: true });
+  for (const viewport of [{ width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByRole("list", { name: "已接入模型列表" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.screenshot({ path: `${evidence}/settings-model-control-${viewport.width}x${viewport.height}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await firstModel.click();
   const inspector = page.getByLabel("功能页详情");
   await expect(inspector).toBeVisible();
