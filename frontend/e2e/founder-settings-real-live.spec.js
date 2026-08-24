@@ -149,12 +149,26 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     await expect(page.getByLabel("Sino 主对话 Assignment 状态")).toHaveText("● 正常");
   }
   const visionPrimary = page.getByRole("combobox", { name: "Vision Primary" });
+  const visionFallback = page.getByRole("combobox", { name: "Vision Fallback" });
+  const centerBeforeVisionPersistence = await page.evaluate(() => fetch("http://127.0.0.1:8000/api/v1/founder-ai/model-center").then((response) => response.json()));
+  const visionPolicyBeforePersistence = centerBeforeVisionPersistence.model_capability_registry.routing_policies.find((item) => item.capability === "VISION_UNDERSTANDING");
+  const primaryEligibleValues = await visionPrimary.locator("option:not([disabled])").evaluateAll((options) => options.map((option) => option.value).filter(Boolean));
+  const fallbackEligibleValues = await visionFallback.locator("option:not([disabled])").evaluateAll((options) => options.map((option) => option.value).filter(Boolean));
+  const currentVisionPrimary = await visionPrimary.inputValue();
+  expect(primaryEligibleValues.length).toBeGreaterThan(0);
+  expect(fallbackEligibleValues).toEqual(primaryEligibleValues.filter((value) => value !== currentVisionPrimary));
   const selectedVisionOption = visionPrimary.locator("option:checked");
   if ((await visionPrimary.inputValue()) === "gpt::gpt-5-pro") {
     await expect(selectedVisionOption).toContainText("能力不匹配");
     expect(await selectedVisionOption.getAttribute("disabled")).not.toBeNull();
     await expect(page.getByLabel("Vision Primary 状态")).toHaveText("● 配置错误");
   }
+  const [visionProviderId, visionModelId] = primaryEligibleValues[0].split("::");
+  await page.evaluate(({ provider_id, model_id }) => fetch("http://127.0.0.1:8000/api/v1/founder-ai/model-center/routing-policies/VISION_UNDERSTANDING", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferred_primary: { provider_id, model_id }, preferred_fallback: null }) }), { provider_id: visionProviderId, model_id: visionModelId });
+  await page.reload();
+  await page.getByRole("button", { name: "打开Sino AI" }).click();
+  await expect(page.getByRole("combobox", { name: "Vision Primary" })).toHaveValue(primaryEligibleValues[0]);
+  await page.evaluate((policy) => fetch("http://127.0.0.1:8000/api/v1/founder-ai/model-center/routing-policies/VISION_UNDERSTANDING", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferred_primary: policy.preferred_primary, preferred_fallback: policy.preferred_fallback }) }), visionPolicyBeforePersistence);
   await expectMinimumVisibleFont(page.getByRole("dialog", { name: "Sino AI" }));
   for (const viewport of [{ width: 1440, height: 900 }, { width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
     await page.setViewportSize(viewport);

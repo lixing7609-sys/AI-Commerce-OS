@@ -47,6 +47,22 @@ def test_model_center_preserves_existing_key_and_records_health(monkeypatch, tmp
     assert health["health_checked_at"]
 
 
+def test_model_center_projects_persisted_vision_capability_into_connected_registry(monkeypatch, tmp_path):
+    factory = _database(monkeypatch, tmp_path)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="vision-model", api_key="secret", enabled=True)
+    model_center.record_health("deepseek", "healthy")
+    with factory() as session:
+        model = session.query(model_center.ModelRegistryDB).filter_by(provider_id="deepseek", model_id="vision-model").one()
+        model.supports_vision = True
+        session.commit()
+    center = model_center.get_model_center()
+    model = next(item for item in center["models"] if item["model_id"] == "vision-model")
+    registry_model = next(item for item in center["model_capability_registry"]["models"] if item["model_id"] == "vision-model")
+    assert model["supports_vision"] is True
+    assert model["vision_capability_source"] == "MODEL_REGISTRY_VERIFIED"
+    assert registry_model["capabilities"]["supports_vision_understanding"]["status"] == "VERIFIED"
+
+
 def test_model_center_exposes_real_per_model_invocation_counts_and_completed_latency(monkeypatch, tmp_path):
     factory = _database(monkeypatch, tmp_path)
     with factory() as session:

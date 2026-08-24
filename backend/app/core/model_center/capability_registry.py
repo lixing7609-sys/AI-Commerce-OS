@@ -11,6 +11,15 @@ from app.database.db import SessionLocal
 REGISTRY_ID = "model-capability-registry-v1"
 POLICY_KEY = "model_routing_policy_v1"
 CAPABILITIES = ("TEXT_REASONING", "VISION_UNDERSTANDING", "IMAGE_GENERATION", "TOOL_USE", "STRUCTURED_OUTPUT")
+VISION_CAPABILITY_ALIASES = frozenset({
+    "VISION_UNDERSTANDING",
+    "VISION",
+    "IMAGE",
+    "IMAGE_INPUT",
+    "IMAGE_UNDERSTANDING",
+    "MULTIMODAL",
+    "VISUAL",
+})
 DEFAULT_PREFERRED = {
     "TEXT_REASONING": {"provider_id": "gpt", "model_id": "gpt-5-pro"},
     "VISION_UNDERSTANDING": {"provider_id": "gpt", "model_id": "gpt-5-pro"},
@@ -26,6 +35,45 @@ def _ref(provider_id: str, model_id: str) -> str:
 
 def _state(status: str, source: str, evidence: dict | None = None, verified_at: str | None = None) -> dict:
     return {"status": status, "verified": status == "VERIFIED", "source": source, "evidence": evidence or {}, "verified_at": verified_at}
+
+
+def normalize_capability_vocabulary(values: list | tuple | set | None) -> set[str]:
+    """Normalize explicit catalog/registry capability keys to the V1 vocabulary."""
+    normalized = set()
+    for value in values or []:
+        key = str(value).strip().replace("-", "_").replace(" ", "_").upper()
+        if key in VISION_CAPABILITY_ALIASES:
+            normalized.add("VISION_UNDERSTANDING")
+        elif key in CAPABILITIES:
+            normalized.add(key)
+    return normalized
+
+
+def _vision_capability_state(model, probe: dict | None) -> dict:
+    # A successful runtime probe sets ModelRegistryDB.supports_vision permanently.
+    # A later operational failure must not erase that capability evidence: health
+    # and capability validity are separate facts.
+    if probe and probe.get("status") == "passed" and probe.get("supports_image"):
+        return _state("VERIFIED", "REAL_PROBE", probe, probe.get("observed_at"))
+    if bool(model.supports_vision):
+        return _state(
+            "VERIFIED",
+            "MODEL_REGISTRY_VERIFIED",
+            {"supports_vision": True, "latest_probe": probe or {}},
+            probe.get("observed_at") if probe else None,
+        )
+    if "VISION_UNDERSTANDING" in normalize_capability_vocabulary(model.capability):
+        return _state(
+            "VERIFIED",
+            "MODEL_REGISTRY_CAPABILITY_METADATA",
+            {"capability_keys": list(model.capability or [])},
+        )
+    return _state(
+        "BLOCKED" if probe else "UNVERIFIED",
+        "REAL_PROBE" if probe else "INFERRED_UNVERIFIED",
+        probe,
+        probe.get("observed_at") if probe else None,
+    )
 
 
 def _image_probe_results(session) -> dict[str, dict]:
@@ -59,7 +107,7 @@ def build_model_capability_registry(providers: dict, models: list, configs: dict
         vision_probe = vision.get(key)
         image_probe = image_results.get(key)
         image_pass = image_verified.get(key)
-        vision_state = _state("VERIFIED", "REAL_PROBE", vision_probe, vision_probe.get("observed_at")) if vision_probe and vision_probe.get("status") == "passed" else _state("BLOCKED" if vision_probe else "UNVERIFIED", "REAL_PROBE" if vision_probe else "INFERRED_UNVERIFIED", vision_probe)
+        vision_state = _vision_capability_state(model, vision_probe)
         if image_pass and image_pass.get("supports_image_generation"):
             image_state = _state("VERIFIED", "REAL_PROBE", image_pass, image_pass.get("observed_at"))
         elif image_probe:
@@ -69,7 +117,7 @@ def build_model_capability_registry(providers: dict, models: list, configs: dict
             image_state = _state(status, "REAL_PROBE", {"probe_status": image_probe.get("probe_status"), "reason": reason, "http_status": evidence.get("http_status")}, image_probe.get("timestamp"))
         else:
             image_state = _state("UNVERIFIED", "INFERRED_UNVERIFIED")
-        structured_state = _state("VERIFIED", "REAL_PROBE", {"source_probe": "vision_json_response"}, vision_probe.get("observed_at")) if vision_state["verified"] else _state("UNVERIFIED", "INFERRED_UNVERIFIED")
+        structured_state = _state("VERIFIED", "REAL_PROBE", {"source_probe": "vision_json_response"}, vision_probe.get("observed_at")) if vision_probe and vision_probe.get("status") == "passed" else _state("UNVERIFIED", "INFERRED_UNVERIFIED")
         items.append({
             "provider_id": model.provider_id, "model_id": model.model_id, "display_name": model.display_name,
             "enabled": bool(model.enabled), "selected": bool(model.selected), "healthy": healthy,

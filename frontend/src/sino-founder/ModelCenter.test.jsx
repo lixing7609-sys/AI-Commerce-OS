@@ -28,6 +28,7 @@ const capabilityRegistry = { registry_id: "model-capability-registry-v1", models
   { provider_id: "gpt", model_id: "gpt-5-pro", display_name: "GPT 5 Pro", enabled: true, selected: true, healthy: true, capabilities: { supports_text_reasoning: { status: "UNVERIFIED" }, supports_vision_understanding: { status: "BLOCKED" }, supports_image_generation: { status: "UNVERIFIED" }, supports_tool_use: { status: "UNVERIFIED" }, supports_structured_output: { status: "UNVERIFIED" } } },
   { provider_id: "deepseek", model_id: "deepseek-chat", display_name: "DeepSeek Chat", enabled: true, selected: true, healthy: true, capabilities: { supports_text_reasoning: { status: "VERIFIED" }, supports_vision_understanding: { status: "UNVERIFIED" }, supports_image_generation: { status: "UNVERIFIED" }, supports_tool_use: { status: "UNVERIFIED" }, supports_structured_output: { status: "UNVERIFIED" } } },
   { provider_id: "ofox", model_id: "gemini-3.6-flash", display_name: "Gemini 3.6 Flash", enabled: true, selected: true, healthy: true, capabilities: { supports_text_reasoning: { status: "UNVERIFIED" }, supports_vision_understanding: { status: "VERIFIED" }, supports_image_generation: { status: "UNVERIFIED" }, supports_tool_use: { status: "UNVERIFIED" }, supports_structured_output: { status: "VERIFIED" } } },
+  { provider_id: "ofox", model_id: "google/gemini-3.1-flash-image", display_name: "Google/gemini 3.1 Flash Image", enabled: true, selected: true, healthy: true, capabilities: { supports_text_reasoning: { status: "UNVERIFIED" }, supports_vision_understanding: { status: "VERIFIED" }, supports_image_generation: { status: "UNVERIFIED" }, supports_tool_use: { status: "UNVERIFIED" }, supports_structured_output: { status: "VERIFIED" } } },
 ], routing_policies: [
   { capability: "VISION_UNDERSTANDING", preferred_primary: { provider_id: "gpt", model_id: "gpt-5-pro" }, active_primary: { provider_id: "ofox", model_id: "gemini-3.6-flash", display_name: "Gemini 3.6 Flash" }, configured_fallback: { provider_id: "ofox", model_id: "gemini-3.6-flash", display_name: "Gemini 3.6 Flash" }, fallbacks: [], status: "ACTIVE", preferred_status: "UNVERIFIED_OR_UNHEALTHY" },
   { capability: "IMAGE_GENERATION", preferred_primary: null, active_primary: null, configured_fallback: null, fallbacks: [], status: "MISSING", preferred_status: "AUTO" },
@@ -247,9 +248,11 @@ describe("Founder Settings", () => {
     expect(within(vision).getByRole("option", { name: /GPT 5 Pro.*能力不匹配/ }).disabled).toBe(true);
     expect(within(vision).queryByRole("option", { name: /DeepSeek Chat/ })).toBeNull();
     expect(within(vision).getByRole("option", { name: "Gemini 3.6 Flash" })).toBeTruthy();
+    expect(within(vision).getByRole("option", { name: "Google/gemini 3.1 Flash Image" })).toBeTruthy();
     const visionFallback = screen.getByRole("combobox", { name: "Vision Fallback" });
     expect(within(visionFallback).getByRole("option", { name: /GPT 5 Pro.*能力不匹配/ }).disabled).toBe(true);
     expect(within(visionFallback).queryByRole("option", { name: /DeepSeek Chat/ })).toBeNull();
+    expect(within(visionFallback).getByRole("option", { name: "Google/gemini 3.1 Flash Image" })).toBeTruthy();
     expect(screen.getByLabelText("Vision Primary 状态").textContent).toBe("● 配置错误");
     expect(screen.getByLabelText("Vision Fallback 状态").textContent).toBe("● 未配置");
     expect(screen.getByLabelText("Vision Assignment 状态").textContent).toBe("● 配置错误");

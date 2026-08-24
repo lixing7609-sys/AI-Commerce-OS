@@ -57,3 +57,26 @@ def test_unhealthy_verified_primary_falls_back(monkeypatch):
         ])
         session.commit()
     assert capability_registry.resolve_model_route("VISION_UNDERSTANDING")[0]["model_id"] == "b"
+
+
+def test_persisted_verified_vision_survives_a_later_operational_probe_failure(monkeypatch):
+    factory = _db(monkeypatch)
+    with factory() as session:
+        session.add_all([
+            ModelProviderConfigDB(provider_key="ofox", provider_type="ofoxai", display_name="OfoxAI", base_url="https://ofox.test/v1", model="google/gemini-3.1-flash-image", available_models=["google/gemini-3.1-flash-image"], selected_models=["google/gemini-3.1-flash-image"], enabled=True, health_status="healthy"),
+            ModelRegistryDB(provider_id="ofox", model_id="google/gemini-3.1-flash-image", display_name="Google/gemini 3.1 Flash Image", supports_vision=True, selected=True, enabled=True),
+            AICapabilityConfigDB(capability_key="vision_model_routing", configuration={"model_probes": {"ofox:google/gemini-3.1-flash-image": {"supports_image": False, "status": "failed", "source": "real_multimodal_capability_probe", "error_type": "JSONDecodeError"}}}),
+        ])
+        session.commit()
+    registry = capability_registry.get_model_capability_registry()
+    model = registry["models"][0]
+    assert model["capabilities"]["supports_vision_understanding"]["status"] == "VERIFIED"
+    assert model["capabilities"]["supports_vision_understanding"]["source"] == "MODEL_REGISTRY_VERIFIED"
+    policy = next(item for item in registry["routing_policies"] if item["capability"] == "VISION_UNDERSTANDING")
+    assert policy["active_primary"]["model_id"] == "google/gemini-3.1-flash-image"
+
+
+def test_explicit_capability_aliases_normalize_without_model_name_guessing():
+    for alias in ("image", "vision", "multimodal", "image_input", "image-understanding", "VISION_UNDERSTANDING"):
+        assert capability_registry.normalize_capability_vocabulary([alias]) == {"VISION_UNDERSTANDING"}
+    assert capability_registry.normalize_capability_vocabulary(["unknown", "Google/gemini Image"]) == set()
