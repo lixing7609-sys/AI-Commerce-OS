@@ -115,14 +115,16 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     await expect(providerModal.getByRole("heading", { name: "Provider 模型管理" })).toBeVisible();
     await expect(providerModal.locator(".sino-settings-provider-inspector > section")).toHaveCount(2);
     await expect(providerModal.locator(".sino-settings-inspector-card")).toHaveCount(0);
-    await expect(providerModal.locator(".sino-provider-summary-row")).toHaveCount(3);
-    const currentModelRow = providerModal.getByText("当前模型", { exact: true }).locator("xpath=parent::div");
+    await expect(providerModal.locator(".sino-provider-summary-row")).toHaveCount(2);
+    const currentModelRow = providerModal.locator(".sino-provider-summary-row--identity");
+    await expect(currentModelRow.getByText("Provider", { exact: true })).toBeVisible();
     await expect(currentModelRow.getByText("Base URL", { exact: true })).toBeVisible();
     await expect(currentModelRow.locator("small, em")).toHaveCount(0);
     await expect(providerModal.locator(".sino-provider-model-management em").first()).toBeVisible();
-    await expect(providerModal.getByText("状态", { exact: true }).locator("xpath=parent::div").getByText("Provider", { exact: true })).toBeVisible();
-    const statusReason = providerModal.locator(".sino-provider-status-reason");
-    if (await statusReason.count()) await expect(statusReason.locator("xpath=ancestor::div[dt[normalize-space()='状态']]")).toHaveCount(1);
+    await expect(providerModal.getByText("状态", { exact: true })).toHaveCount(0);
+    const actionRow = providerModal.locator(".sino-provider-summary-row--actions");
+    await expect(actionRow.getByRole("button", { name: "更新 API Key" })).toBeVisible();
+    await expect(actionRow.getByRole("button", { name: "测试连接" })).toBeVisible();
     await providerModal.getByRole("button", { name: "关闭 Provider 技术配置" }).click();
   }
 

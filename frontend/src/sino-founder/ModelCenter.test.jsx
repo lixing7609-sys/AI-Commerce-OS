@@ -301,23 +301,20 @@ describe("Founder Settings", () => {
     const { container } = render(<ProviderConfigModal provider={provider} model={models[0]} onRefresh={onRefresh} onHealth={onHealth} onChoose={vi.fn()} />);
     expect(container.querySelectorAll(".sino-settings-inspector-card")).toHaveLength(0);
     expect(container.querySelectorAll(".sino-settings-provider-inspector > section")).toHaveLength(2);
-    expect(container.querySelectorAll(".sino-provider-connection-control .sino-provider-summary-row")).toHaveLength(3);
-    const currentModelRow = screen.getByText("当前模型", { selector: "dt" }).closest("div");
+    expect(container.querySelectorAll(".sino-provider-connection-control .sino-provider-summary-row")).toHaveLength(2);
+    const currentModelRow = container.querySelector(".sino-provider-summary-row--identity");
     expect(within(currentModelRow).getByText("Model 1")).toBeTruthy();
-    expect(within(currentModelRow).getByText("Base URL", { selector: "dt" })).toBeTruthy();
+    expect(within(currentModelRow).getByText("Provider")).toBeTruthy();
+    expect(within(currentModelRow).getByText("DeepSeek / deepseek")).toBeTruthy();
+    expect(within(currentModelRow).getByText("Base URL")).toBeTruthy();
     expect(within(currentModelRow).getByText("https://api.deepseek.com/v1")).toBeTruthy();
     expect(within(currentModelRow).queryByText("model-1")).toBeNull();
     expect(screen.getByText("model-1")).toBeTruthy();
-    const apiKeyRow = screen.getByText("API Key", { selector: "dt" }).closest("div");
+    const apiKeyRow = container.querySelector(".sino-provider-summary-row--actions");
     expect(within(apiKeyRow).getByText("****1234")).toBeTruthy();
     expect(within(apiKeyRow).getByRole("button", { name: "更新 API Key" })).toBeTruthy();
-    const statusRow = screen.getByText("状态", { selector: "dt" }).closest("div");
-    expect(within(statusRow).getByText("Provider", { selector: "dt" })).toBeTruthy();
-    expect(within(statusRow).getByText("正常")).toBeTruthy();
-    expect(within(statusRow).getByRole("button", { name: "测试连接" })).toBeTruthy();
-    const endpointRow = screen.getByText("Base URL", { selector: "dt" }).closest("div");
-    expect(endpointRow).toBe(currentModelRow);
-    expect(endpointRow.textContent).toContain("api.deepseek.com");
+    expect(within(apiKeyRow).getByRole("button", { name: "测试连接" })).toBeTruthy();
+    expect(within(screen.getByRole("dialog", { name: "Provider 技术配置" })).queryByText("状态", { exact: true })).toBeNull();
     expect(screen.getByText("Model 3")).toBeTruthy();
     expect(screen.queryByText("Model 4")).toBeNull();
     const toggle = screen.getByRole("button", { name: /查看全部 5 个模型/ });
@@ -332,30 +329,21 @@ describe("Founder Settings", () => {
     expect(onHealth).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps a real Provider error reason on the status row and omits absent optional fields", () => {
+  it("omits absent optional fields and has no persistent Provider status", () => {
     const provider = { ...claude, base_url: "" };
-    render(<ProviderConfigModal provider={provider} model={provider.available_models[0]} action={{}} />);
-    const statusRow = screen.getByText("状态", { selector: "dt" }).closest("div");
-    expect(within(statusRow).getByText("异常")).toBeTruthy();
-    expect(within(statusRow).getByRole("alert").textContent).toBe("· 账户额度不足");
-    expect(within(statusRow).getByRole("button", { name: "测试连接" })).toBeTruthy();
-    expect(screen.queryByText("Base URL", { selector: "dt" })).toBeNull();
-    expect(document.querySelector(".sino-provider-inline-error")).toBeNull();
-  });
-
-  it("does not invent a reason when Provider health has no recognized detail", () => {
-    const provider = { ...claude, health_error: "unmapped_provider_detail" };
-    render(<ProviderConfigModal provider={provider} model={provider.available_models[0]} action={{}} />);
-    const statusRow = screen.getByText("状态", { selector: "dt" }).closest("div");
-    expect(within(statusRow).getByText("异常")).toBeTruthy();
-    expect(within(statusRow).queryByRole("alert")).toBeNull();
+    const { container } = render(<ProviderConfigModal provider={provider} model={provider.available_models[0]} action={{}} />);
+    expect(within(container.querySelector(".sino-provider-summary-row--identity")).queryByText("Base URL")).toBeNull();
+    expect(screen.queryByText("状态", { exact: true })).toBeNull();
+    expect(screen.queryByText("账户额度不足")).toBeNull();
+    expect(screen.getByRole("button", { name: "测试连接" })).toBeTruthy();
   });
 
   it("omits the API Key row when a Provider explicitly does not require credentials", () => {
     const provider = { ...deepseek, requires_api_key: false };
     const { container } = render(<ProviderConfigModal provider={provider} model={provider.available_models[0]} action={{}} />);
     expect(container.querySelectorAll(".sino-provider-summary-row")).toHaveLength(2);
-    expect(screen.queryByText("API Key", { selector: "dt" })).toBeNull();
+    expect(screen.queryByText("API Key", { exact: true })).toBeNull();
+    expect(screen.getByRole("button", { name: "测试连接" })).toBeTruthy();
   });
 
   it("shows Provider success feedback transiently without a persistent card", () => {
@@ -543,8 +531,8 @@ describe("Founder Settings", () => {
     render(<SettingsHarness />); await screen.findByRole("heading", { name: "设置" });
     fireEvent.click(screen.getByRole("button", { name: "Claude Sonnet 5 Claude" }));
     fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("· 账户额度不足"));
-    expect(screen.getByRole("alert").closest("div")).toBe(screen.getByText("状态", { selector: "dt" }).closest("div"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("账户额度不足"));
+    expect(within(screen.getByRole("dialog", { name: "Provider 技术配置" })).queryByText("状态", { exact: true })).toBeNull();
     expect(screen.queryByText("认证失败")).toBeNull();
     expect(screen.getAllByText("DeepSeek Chat").length).toBeGreaterThanOrEqual(1);
   });
