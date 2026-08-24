@@ -120,7 +120,8 @@ export function ModelCenter({ onHome }) {
   const localRuntime = runtimeRegistry?.environments?.find((item) => item.environment_type === "LOCAL");
   const activeEngine = center.execution_engines.find((item) => item.engine_id === center.roles.find((role) => role.role_key === "code_execution")?.execution_engine_id);
   return <section className="sino-model-center sino-settings" aria-label="设置">
-    <header><div><button type="button" className="sino-settings-home-link" onClick={onHome}>⬅️ 返回首页</button><h2>设置</h2></div></header>
+    <div className="sino-settings-workspace">
+    <header className="sino-settings-header"><div><button type="button" className="sino-settings-home-link" onClick={onHome}>⬅️ 返回首页</button><h2>设置</h2></div></header>
     <div className="sino-settings-content">
     {message && <p className="sino-model-center-message" role="status">{message}</p>}
     <section className="sino-capability-section sino-settings-page sino-settings-page--models" aria-label="模型">
@@ -135,6 +136,7 @@ export function ModelCenter({ onHome }) {
     {selectedProvider && selectedModelMeta ? <SettingsContext dialogRef={providerDialogRef} detail={{ section: "models", provider: selectedProvider, model: selectedModelMeta, action: providerState(selectedProvider.provider_key), onCredentialSave: (values) => updateCredentials(selectedProvider, values), onRefresh: () => refresh(selectedProvider), onHealth: () => health(selectedProvider), onChoose: (model, checked) => choose(selectedProvider, model, checked) }} onClose={closeProviderModal} /> : null}
     {featureModal === "sino-ai" ? <SettingsFeatureModal title="Sino AI" description="模型职责分配、Fallback 与多模型讨论。" dialogRef={featureDialogRef} onClose={closeFeatureModal}><ModelAssignments roles={center.roles || []} options={modelOptions} registry={center.model_capability_registry} busy={busy} discussionOpen={discussionOpen} onDiscussionToggle={() => setDiscussionOpen((value) => !value)} onAssign={assignCapability} onVisionAssign={savePreferred} onCouncilSave={saveCouncil} /></SettingsFeatureModal> : null}
     {featureModal === "system" ? <SettingsFeatureModal title="系统" description="Executor、Runtime 与系统健康。" dialogRef={featureDialogRef} onClose={closeFeatureModal}><div className="sino-settings-domain-grid sino-settings-domain-grid--execution"><ExecutorSettings roles={center.roles || []} engines={center.execution_engines || []} /><RuntimeEnvironmentSettings registry={runtimeRegistry} /></div></SettingsFeatureModal> : null}
+    </div>
     </div>
   </section>;
 }

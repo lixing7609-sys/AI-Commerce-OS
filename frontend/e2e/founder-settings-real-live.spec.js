@@ -21,6 +21,8 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     const modelBox = await page.getByRole("list", { name: "已接入模型列表" }).boundingBox();
     const sinoBox = await page.getByRole("region", { name: "Sino AI" }).boundingBox();
     const systemBox = await page.getByRole("region", { name: "系统" }).boundingBox();
+    const homeBox = await page.getByRole("button", { name: "⬅️ 返回首页" }).boundingBox();
+    const titleBox = await page.getByRole("heading", { name: "设置" }).boundingBox();
     for (const box of [usageBox, modelBox, sinoBox, systemBox]) {
       expect(box.x).toBeGreaterThanOrEqual(68);
       expect(viewport.width - box.x - box.width).toBeGreaterThanOrEqual(68);
@@ -28,6 +30,8 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     expect(Math.abs(usageBox.x - modelBox.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.x - sinoBox.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.x - systemBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(usageBox.x - homeBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(usageBox.x - titleBox.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.width - modelBox.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.width - sinoBox.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.width - systemBox.width)).toBeLessThanOrEqual(1);

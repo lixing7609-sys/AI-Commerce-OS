@@ -653,18 +653,18 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-builder-tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
 .sino-builder-tabs button { appearance: none; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #7e877b; padding: 10px 14px; cursor: pointer; }
 .sino-builder-tabs button.is-active { color: #dbe0d8; border-bottom-color: #dbe0d8; }
-.sino-model-center > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 6px; }
-.sino-model-center > header h2 { margin: 2px 0 0; }
+.sino-settings-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin: 0; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.sino-settings-header h2 { margin: 2px 0 0; }
 .sino-settings-home-link { display: inline-flex; align-items: center; padding: 0; border: 0; background: transparent; color: var(--text-label); font: 600 var(--font-label)/var(--line-label) var(--font-family); cursor: pointer; }
 .sino-settings-home-link:hover { color: var(--text-primary); background: transparent; }
-.sino-model-center > header p, .sino-model-center-message { margin: 0; color: #7e877b; font-size: 12px; }
+.sino-settings-header p, .sino-model-center-message { margin: 0; color: #7e877b; font-size: 12px; }
 .sino-model-center-message { margin-bottom: 14px; }
 .sino-settings { position: relative; box-sizing: border-box; container-type: inline-size; width: 100%; min-height: 100%; padding: 30px; }
 .sino-founder-main--fixed-workspace > .sino-settings { flex: 1 1 0; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .sino-founder-main--fixed-workspace > .sino-settings::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.sino-settings > header { align-items: flex-start; }
-.sino-settings > header > div { display: grid; gap: 2px; }
-.sino-settings-content { min-width: 0; width: calc(100% - clamp(48px, 6vw, 120px)); max-width: 1536px; margin-inline: auto; }
+.sino-settings-workspace { width: calc(100% - clamp(64px, 8vw, 160px)); max-width: 1448px; margin-inline: auto; }
+.sino-settings-header > div { display: grid; gap: 2px; }
+.sino-settings-content { min-width: 0; width: 100%; padding-top: 8px; }
 .sino-settings-page { box-sizing: border-box; width: 100%; padding-block: 6px 10px; }
 .sino-settings-page--models { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 .sino-settings-domain-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
@@ -689,7 +689,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-section-card { box-sizing: border-box; min-width: 0; border: 1px solid color-mix(in srgb, var(--line) 84%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--surface-raised) 72%, transparent); }
 .sino-settings-empty { margin: 8px 0; color: var(--text-secondary); font-size: 13px; }
 .sino-model-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; }
-.sino-model-assignments, .sino-usage-cost { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.sino-model-assignments { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
 .sino-model-assignment-table { display: grid; width: 100%; max-width: 1100px; }
 .sino-model-assignment-row { display: grid; grid-template-columns: minmax(120px,150px) minmax(210px,340px) minmax(210px,340px) minmax(82px,100px); justify-content: start; gap: 12px; align-items: center; min-height: 44px; border-bottom: 1px solid color-mix(in srgb,var(--line) 66%,transparent); font-size: 12px; }
 .sino-model-assignment-row > label { display: grid; grid-template-columns: 54px minmax(0,1fr); align-items: center; gap: 6px; color: var(--text-secondary); }
@@ -805,7 +805,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus,
 .sino-settings-context :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus { border-color: color-mix(in srgb, var(--accent) 52%, var(--line)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent); }
 .sino-settings :is(input[type="checkbox"], input[type="radio"]), .sino-settings-context :is(input[type="checkbox"], input[type="radio"]) { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
-@media (max-width: 760px) { .sino-settings { padding: 24px; }.sino-settings > header { flex-direction: column; } }
+@media (max-width: 760px) { .sino-settings { padding: 24px; }.sino-settings-workspace { width: 100%; }.sino-settings-header { flex-direction: column; } }
 .sino-model-provider-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .sino-model-provider { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.015); }
 .sino-model-provider-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
@@ -907,8 +907,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-application-bindings label > strong small { color: #7e877b; font-weight: 400; }
 .sino-health-cost-table { min-width: 720px; }
 .sino-health-cost-table [role="row"] { display: grid; grid-template-columns: 1.4fr repeat(6, 1fr); gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); color: #aeb6aa; font-size: 12px; }
-.sino-model-center > header h2 { font-size: 24px; font-weight: 600; }
-.sino-model-center > header p, .sino-capability-section-heading p, .sino-model-center-message { font-size: 14px; line-height: 1.55; }
+.sino-settings-header h2 { font-size: 24px; font-weight: 600; }
+.sino-settings-header p, .sino-capability-section-heading p, .sino-model-center-message { font-size: 14px; line-height: 1.55; }
 .sino-capability-tabs button, .sino-capability-section-heading button, .sino-provider-install button, .sino-model-library-card footer button { font-size: 14px; }
 .sino-capability-section-heading h3 { font-size: 21px; font-weight: 600; }
 .sino-capability-section { padding-block: 8px 22px; }
@@ -1015,7 +1015,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-context-summary p, .sino-project-context p, .sino-project-context small, .sino-project-context time, .sino-project-context li, .sino-project-context dd { font-size: var(--font-body-small); line-height: var(--line-body-small); }
 
 /* Page and section titles */
-.sino-system-builder h2, .sino-model-center > header h2, .sino-execution-page__header h1, .sino-asset-center > header h2 { font-size: var(--font-page-title); font-weight: var(--weight-semibold); line-height: var(--line-page-title); }
+.sino-system-builder h2, .sino-settings-header h2, .sino-execution-page__header h1, .sino-asset-center > header h2 { font-size: var(--font-page-title); font-weight: var(--weight-semibold); line-height: var(--line-page-title); }
 .sino-capability-section-heading h3, .sino-agent-skills > h4, .sino-agent-models > h4, .sino-agent-memory > h4, .sino-execution-assignment > h4, .sino-current-execution h2, .sino-founder-actions h3 { font-size: var(--font-section-title); font-weight: var(--weight-semibold); line-height: var(--line-section-title); }
 
 /* System Builder */
@@ -1028,7 +1028,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-capability-tabs button { font-size: var(--font-nav); font-weight: var(--weight-medium); }
 .sino-capability-tabs button.is-active { font-weight: var(--weight-semibold); }
 .sino-agent-list strong, .sino-agent-overview h3, .sino-model-library-card > header strong { font-size: 17px; font-weight: var(--weight-semibold); line-height: var(--line-card-title); }
-.sino-agent-list p, .sino-agent-overview p, .sino-model-center > header p, .sino-capability-section-heading p, .sino-agent-skills article p, .sino-agent-memory p { font-size: var(--font-body-small); line-height: var(--line-body-small); }
+.sino-agent-list p, .sino-agent-overview p, .sino-settings-header p, .sino-capability-section-heading p, .sino-agent-skills article p, .sino-agent-memory p { font-size: var(--font-body-small); line-height: var(--line-body-small); }
 .sino-agent-list span, .sino-agent-overview :is(dt, dd), .sino-agent-skills :is(dt, dd), .sino-model-library-card :is(small, span) { font-size: var(--font-label); line-height: var(--line-label); }
 
 /* Execution Center */
