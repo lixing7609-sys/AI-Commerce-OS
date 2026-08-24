@@ -81,6 +81,7 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(page.locator(".sino-model-list-heading").getByRole("button", { name: "＋ 添加模型" })).toHaveCount(0);
   await page.getByRole("button", { name: "＋ 添加模型" }).click();
   await expect(page.getByRole("dialog", { name: "添加 AI 模型" })).toBeVisible();
+  expect(await page.getByRole("dialog", { name: "添加 AI 模型" }).boundingBox()).toMatchObject({ width: 1100, height: 700 });
   expect(await page.getByRole("dialog", { name: "添加 AI 模型" }).locator("nav").evaluate((nav) => parseFloat(getComputedStyle(nav).fontSize))).toBeGreaterThanOrEqual(14);
   await expect(page.getByRole("dialog", { name: "Provider 技术配置" })).toHaveCount(0);
   await page.getByRole("button", { name: "关闭添加 AI 模型" }).click();
@@ -96,6 +97,7 @@ test("Settings exposes model control and system health with the real Provider in
   await page.getByRole("button", { name: "deepseek-chat DeepSeek" }).click();
   let providerDialog = page.getByRole("dialog", { name: "Provider 技术配置" });
   await expect(providerDialog).toBeVisible();
+  expect(await providerDialog.boundingBox()).toMatchObject({ width: 1100, height: 700 });
   await expect(page.getByRole("dialog", { name: "添加 AI 模型" })).toHaveCount(0);
   await expect(providerDialog.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
   for (const section of ["当前模型", "Provider 连接", "Provider 模型管理", "Provider 端点", "连接测试"]) await expect(providerDialog.getByRole("heading", { name: section, exact: true })).toBeVisible();
@@ -114,6 +116,7 @@ test("Settings exposes model control and system health with the real Provider in
 
   await sinoEntry.click();
   await expect(page.getByRole("dialog", { name: "Sino AI" })).toBeVisible();
+  expect(await page.getByRole("dialog", { name: "Sino AI" }).boundingBox()).toMatchObject({ width: 1100, height: 700 });
   await expect(page.getByRole("dialog", { name: "Provider 技术配置" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
   await expect(page.getByRole("list", { name: "已接入模型列表" })).toBeVisible();
@@ -140,6 +143,7 @@ test("Settings exposes model control and system health with the real Provider in
   await page.getByRole("button", { name: "关闭Sino AI" }).click();
   await page.getByRole("button", { name: "打开系统" }).click();
   await expect(page.getByRole("dialog", { name: "系统" })).toBeVisible();
+  expect(await page.getByRole("dialog", { name: "系统" }).boundingBox()).toMatchObject({ width: 1100, height: 700 });
   await expect(page.getByRole("region", { name: "执行器" })).toBeVisible();
   await expect(page.getByRole("region", { name: "运行环境" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Provider 技术配置" })).toHaveCount(0);

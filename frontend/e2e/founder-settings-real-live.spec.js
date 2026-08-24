@@ -70,17 +70,27 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(inspector.getByRole("button", { name: "测试连接" })).toBeVisible();
   await expectMinimumVisibleFont(inspector);
   const initialInspectorBox = await inspector.boundingBox();
-  expect(initialInspectorBox.width).toBeLessThanOrEqual(820);
+  expect(Math.abs(initialInspectorBox.width - 1100)).toBeLessThanOrEqual(2);
+  expect(Math.abs(initialInspectorBox.height - 700)).toBeLessThanOrEqual(2);
   expect(Math.abs(initialInspectorBox.x + initialInspectorBox.width / 2 - 720)).toBeLessThanOrEqual(2);
+  expect(Math.abs(initialInspectorBox.y + initialInspectorBox.height / 2 - 450)).toBeLessThanOrEqual(2);
   await page.screenshot({ path: `${evidence}/settings-provider-inspector-1440x900.png`, fullPage: true });
   for (const viewport of [{ width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
     await page.setViewportSize(viewport);
     const inspectorBox = await inspector.boundingBox();
-    expect(inspectorBox.width).toBeLessThanOrEqual(820);
+    expect(Math.abs(inspectorBox.width - 1100)).toBeLessThanOrEqual(2);
+    expect(Math.abs(inspectorBox.height - 700)).toBeLessThanOrEqual(2);
     expect(Math.abs(inspectorBox.x + inspectorBox.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(2);
+    expect(Math.abs(inspectorBox.y + inspectorBox.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(2);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.screenshot({ path: `${evidence}/settings-provider-inspector-${viewport.width}x${viewport.height}.png`, fullPage: true });
   }
+  await page.setViewportSize({ width: 1000, height: 680 });
+  const compactInspectorBox = await inspector.boundingBox();
+  expect(Math.abs(compactInspectorBox.width - 952)).toBeLessThanOrEqual(2);
+  expect(Math.abs(compactInspectorBox.height - 632)).toBeLessThanOrEqual(2);
+  expect(await inspector.locator(":scope > article").evaluate((body) => getComputedStyle(body).overflowY)).toBe("auto");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await inspector.getByRole("button", { name: "关闭 Provider 技术配置" }).click();
 
   await page.getByRole("button", { name: "打开Sino AI" }).click();

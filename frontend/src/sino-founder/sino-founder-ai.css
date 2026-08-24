@@ -796,24 +796,24 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-provider-catalog > button b { grid-column: 2; grid-row: 1 / 3; align-self: center; color: #aebaac; font-size: 14px; font-weight: 500; }
 .sino-provider-catalog > button.is-active { border-color: #667261; background: #1a1f19; }
 .sino-add-model-overlay { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 28px; background: rgb(5 7 5 / 72%); backdrop-filter: blur(5px); }
-.sino-add-model-modal { box-sizing: border-box; width: min(860px, calc(100vw - 56px)); max-height: min(780px, calc(100dvh - 56px)); overflow-y: auto; border: 1px solid #343b32; border-radius: 18px; background: #111410; box-shadow: 0 24px 80px rgb(0 0 0 / 45%); padding: 28px; }
+.sino-add-model-modal { box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(1100px, calc(100vw - 48px)); height: min(700px, calc(100dvh - 48px)); overflow: hidden; border: 1px solid #343b32; border-radius: 18px; background: #111410; box-shadow: 0 24px 80px rgb(0 0 0 / 45%); padding: 28px; }
 .sino-add-model-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .sino-add-model-modal > header h2 { margin: 0; font-size: 24px; line-height: 1.3; }
 .sino-add-model-modal > header p { margin: 6px 0 0; color: #8d968a; font-size: 14px; line-height: 1.6; }
 .sino-add-model-modal > header button { border: 0; background: transparent; color: #abb3a7; font-size: 25px; line-height: 1; cursor: pointer; }
-.sino-provider-config-modal { width: min(820px, calc(100vw - 56px)); max-height: calc(100dvh - 64px); }
+.sino-add-model-modal__body, .sino-provider-config-modal > article, .sino-settings-feature-modal__content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.sino-add-model-modal__body::-webkit-scrollbar, .sino-provider-config-modal > article::-webkit-scrollbar, .sino-settings-feature-modal__content::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-provider-config-modal > article { padding-top: 18px; }
 .sino-provider-config-modal .sino-settings-provider-inspector { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .sino-provider-config-modal .sino-settings-inspector-card { margin: 0; padding: 14px; border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent); }
 .sino-provider-config-modal .sino-settings-inspector-card:nth-child(3) { grid-column: 1 / -1; }
 .sino-provider-config-modal .sino-model-choices { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .sino-provider-config-modal .sino-model-choices::-webkit-scrollbar { display: none; }
-.sino-settings-feature-modal { width: min(940px, calc(100vw - 56px)); max-height: calc(100dvh - 64px); }
-.sino-settings-feature-modal__content { margin-top: 20px; overflow: visible; }
+.sino-settings-feature-modal__content { margin-top: 20px; overflow-y: auto; }
 .sino-settings-feature-modal .sino-model-assignments { margin-top: 0; padding-top: 0; border-top: 0; }
 .sino-settings-feature-modal .sino-settings-domain-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.sino-add-model-modal > nav { display: flex; gap: 22px; margin: 24px 0; padding-bottom: 16px; border-bottom: 1px solid var(--line); color: #6f776c; font-size: 14px; }
-.sino-add-model-modal > nav .is-active { color: #dbe0d8; }
+.sino-add-model-modal__body > nav { display: flex; gap: 22px; margin: 24px 0; padding-bottom: 16px; border-bottom: 1px solid var(--line); color: #6f776c; font-size: 14px; }
+.sino-add-model-modal__body > nav .is-active { color: #dbe0d8; }
 .sino-add-model-modal .sino-provider-catalog { grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; }
 .sino-add-model-modal .sino-provider-catalog > button { min-width: 180px; min-height: 94px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: center; gap: 5px 12px; padding: 16px; white-space: normal; word-break: keep-all; overflow-wrap: normal; }
 .sino-add-model-modal .sino-provider-catalog strong { font-size: 17px; }
@@ -834,7 +834,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-add-model-selection > details { color: #aeb6aa; font-size: 14px; }
 @media (max-width: 760px) { .sino-add-model-modal .sino-provider-catalog { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
 @media (max-width: 700px) { .sino-provider-config-modal .sino-settings-provider-inspector { grid-template-columns: minmax(0, 1fr); }.sino-provider-config-modal .sino-settings-inspector-card:nth-child(3) { grid-column: auto; } }
-@media (max-width: 520px) { .sino-add-model-overlay { padding: 12px; }.sino-add-model-modal, .sino-provider-config-modal { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 20px; }.sino-add-model-modal .sino-provider-catalog { grid-template-columns: 1fr; }.sino-add-model-modal .sino-provider-catalog > button { min-width: 0; }.sino-add-model-modal > nav { gap: 10px; font-size: 14px; } }
+@media (max-width: 520px) { .sino-add-model-overlay { padding: 12px; }.sino-add-model-modal { width: calc(100vw - 24px); height: calc(100dvh - 24px); padding: 20px; }.sino-add-model-modal .sino-provider-catalog { grid-template-columns: 1fr; }.sino-add-model-modal .sino-provider-catalog > button { min-width: 0; }.sino-add-model-modal__body > nav { gap: 10px; font-size: 14px; } }
 .sino-settings-header h2 { font-size: 24px; font-weight: 600; }
 .sino-settings-header p, .sino-capability-section-heading p, .sino-model-center-message { font-size: 14px; line-height: 1.55; }
 .sino-capability-section-heading button { font-size: 14px; }
