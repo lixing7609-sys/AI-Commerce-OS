@@ -744,13 +744,13 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-provider-connection-control dt { color: var(--text-label); font-size: 14px; }
 .sino-provider-connection-control dd { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; margin: 0; color: var(--text-primary); font-size: 14px; line-height: 1.45; }
 .sino-provider-connection-control dd > strong, .sino-provider-connection-control dd > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sino-provider-connection-control dd > small { margin-right: auto; overflow: hidden; color: var(--text-secondary); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .sino-provider-connection-control button, .sino-provider-section-heading button, .sino-settings-key-editor button { flex: 0 0 auto; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text-primary); font-size: 14px; cursor: pointer; }
 .sino-settings-key-editor { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%; }
 .sino-settings-key-editor input { box-sizing: border-box; width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-base); color: var(--text-primary); }
 .sino-settings-key-editor > span { display: flex; gap: 7px; }
-.sino-provider-inline-error { margin: 8px 0 0 126px; color: #c86a6a; font-size: 14px; line-height: 1.45; }
 .sino-provider-feedback { position: absolute; z-index: 2; top: 78px; right: 28px; margin: 0; padding: 6px 9px; border: 1px solid color-mix(in srgb, #67ad7b 36%, var(--line)); border-radius: 7px; background: var(--surface-raised); color: #67ad7b; font-size: 14px; line-height: 1.4; pointer-events: none; }
+.sino-provider-status-summary { display: flex; min-width: 0; gap: 5px; overflow: hidden; white-space: nowrap; }
+.sino-provider-status-reason { overflow: hidden; color: #c86a6a; text-overflow: ellipsis; white-space: nowrap; }
 .sino-settings-health-value { display: inline-flex; align-items: center; gap: 6px; }
 .sino-settings-health-value::before { width: 6px; height: 6px; border-radius: 50%; background: var(--text-label); content: ""; }
 .sino-settings-health-value[data-health="healthy"]::before { background: #67ad7b; }
@@ -821,7 +821,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-add-model-selection { display: grid; gap: 14px; }
 .sino-add-model-selection > details { color: #aeb6aa; font-size: 14px; }
 @media (max-width: 760px) { .sino-add-model-modal .sino-provider-catalog { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
-@media (max-width: 700px) { .sino-provider-connection-control > dl > div { grid-template-columns: 88px minmax(0, 1fr); }.sino-provider-inline-error { margin-left: 104px; } }
+@media (max-width: 700px) { .sino-provider-connection-control > dl > div { grid-template-columns: 88px minmax(0, 1fr); } }
 @media (max-width: 520px) { .sino-add-model-overlay { padding: 12px; }.sino-add-model-modal { width: calc(100vw - 24px); height: calc(100dvh - 24px); padding: 20px; }.sino-add-model-modal .sino-provider-catalog { grid-template-columns: 1fr; }.sino-add-model-modal .sino-provider-catalog > button { min-width: 0; }.sino-add-model-modal__body > nav { gap: 10px; font-size: 14px; } }
 .sino-settings-header h2 { font-size: 24px; font-weight: 600; }
 .sino-settings-header p, .sino-capability-section-heading p, .sino-model-center-message { font-size: 14px; line-height: 1.55; }

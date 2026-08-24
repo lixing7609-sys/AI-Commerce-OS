@@ -118,6 +118,9 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(providerDialog.getByRole("heading", { name: "Provider 模型管理" })).toBeVisible();
   await expect(providerDialog.locator(".sino-settings-provider-inspector > section")).toHaveCount(2);
   await expect(providerDialog.locator(".sino-settings-inspector-card")).toHaveCount(0);
+  const currentModelRow = providerDialog.getByText("当前模型", { exact: true }).locator("xpath=parent::div");
+  await expect(currentModelRow.locator("small, em")).toHaveCount(0);
+  await expect(providerDialog.locator(".sino-provider-model-management em").filter({ hasText: "deepseek-chat" })).toBeVisible();
   const statusRow = providerDialog.getByText("状态", { exact: true }).locator("xpath=parent::div");
   await expect(statusRow.getByRole("button", { name: "测试连接" })).toBeVisible();
   const apiKeyRow = providerDialog.getByText("API Key", { exact: true }).locator("xpath=parent::div");
