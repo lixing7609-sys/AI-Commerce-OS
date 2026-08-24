@@ -3,7 +3,7 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveExecutionEngine, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
-import { hasSettingsDetail, ModelCenter, SettingsContext } from "./ModelCenter.jsx";
+import { ModelCenter, SettingsContext } from "./ModelCenter.jsx";
 import "./sino-founder-ai.css";
 
 vi.mock("../services/founderAiApi.js", () => ({ checkModelProvider: vi.fn(), deleteModelProvider: vi.fn(), discoverProviderModels: vi.fn(), getModelCenter: vi.fn(), getRuntimeEnvironmentRegistry: vi.fn(), installModelProvider: vi.fn(), saveCapabilityAssignment: vi.fn(), saveExecutionEngine: vi.fn(), saveModelRoutingPreferred: vi.fn(), saveMultiModelAssignment: vi.fn(), selectProviderModels: vi.fn(), setModelProviderEnabled: vi.fn(), updateModelProviderCredentials: vi.fn() }));
@@ -35,7 +35,7 @@ const capabilityRegistry = { registry_id: "model-capability-registry-v1", models
 
 function SettingsHarness() {
   const [detail, setDetail] = useState(null);
-  return <><ModelCenter onContextChange={setDetail} /><SettingsContext detail={detail} onClose={vi.fn()} /></>;
+  return <><ModelCenter onContextChange={setDetail} /><SettingsContext detail={detail} /></>;
 }
 
 describe("Founder Settings", () => {
@@ -68,7 +68,7 @@ describe("Founder Settings", () => {
     expect(onHome).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the model context empty until a concrete model is selected", async () => {
+  it("keeps the Provider pane mounted and selects concrete model details", async () => {
     const onContextChange = vi.fn();
     render(<ModelCenter onContextChange={onContextChange} />);
     const model = await screen.findByRole("button", { name: "DeepSeek Chat DeepSeek" });
@@ -76,6 +76,22 @@ describe("Founder Settings", () => {
     expect(model.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(model);
     await waitFor(() => expect(onContextChange.mock.calls.at(-1)[0]).toMatchObject({ section: "models", provider: deepseek, model: deepseek.available_models[0] }));
+  });
+
+  it("switches the fixed Provider pane in sync with the selected model card", async () => {
+    getModelCenter.mockResolvedValue({ ...center, providers: [deepseek, claude] });
+    render(<SettingsHarness />);
+    await screen.findByRole("heading", { name: "设置" });
+    expect(await screen.findByText("请选择一个模型")).toBeTruthy();
+    const deepseekCard = screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" });
+    const claudeCard = screen.getByRole("button", { name: "Claude Sonnet 5 Claude" });
+    fireEvent.click(deepseekCard);
+    await waitFor(() => expect(deepseekCard.getAttribute("aria-pressed")).toBe("true"));
+    expect(screen.getByText("Provider 技术配置").closest(".sino-settings-context").textContent).toContain("deepseek-chat");
+    fireEvent.click(claudeCard);
+    await waitFor(() => expect(claudeCard.getAttribute("aria-pressed")).toBe("true"));
+    expect(deepseekCard.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByText("Provider 技术配置").closest(".sino-settings-context").textContent).toContain("claude-sonnet-5");
   });
 
   it("separates model resources, Sino intelligence assignment, and system health", async () => {
@@ -122,21 +138,20 @@ describe("Founder Settings", () => {
   });
 
   it("shows selected Provider details and omits empty Settings Context", async () => {
-    const onClose = vi.fn();
-    const { rerender } = render(<SettingsContext detail={{ section: "models", provider: deepseek, model: deepseek.available_models[0] }} onClose={onClose} />);
+    const { rerender } = render(<SettingsContext detail={{ section: "models" }} />);
+    expect(screen.getByText("请选择一个模型")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "关闭设置并返回 Sino 首页" })).toBeNull();
+    rerender(<SettingsContext detail={{ section: "models", provider: deepseek, model: deepseek.available_models[0] }} />);
     expect(screen.getByText("Provider 技术配置").closest("header")?.classList.contains("sino-settings-context-header")).toBe(true);
     expect(screen.getByText(/DeepSeek \/ deepseek/)).toBeTruthy();
     expect(screen.getByText("****1234")).toBeTruthy();
     expect(screen.getByText("Provider 模型管理")).toBeTruthy();
     expect(screen.getByText("Provider 端点")).toBeTruthy();
     expect(screen.queryByText("当前启用模型")).toBeNull();
-    rerender(<SettingsContext detail={{ section: "sino" }} onClose={onClose} />);
+    rerender(<SettingsContext detail={{ section: "sino" }} />);
     expect(screen.queryByText("Sino Founder AI 系统配置")).toBeNull();
     expect(screen.queryByText("设置上下文")).toBeNull();
     expect(screen.queryByText("设置详情")).toBeNull();
-    expect(hasSettingsDetail({ section: "models" })).toBe(false);
-    expect(hasSettingsDetail({ section: "models", provider: deepseek, model: deepseek.available_models[0] })).toBe(true);
-    expect(hasSettingsDetail({ section: "sino", role: capabilities[0] })).toBe(false);
   });
 
   it("groups Provider details into cards and progressively reveals available models", () => {
@@ -144,7 +159,7 @@ describe("Founder Settings", () => {
     const provider = { ...deepseek, available_models: models, selected_models: ["model-1"] };
     const onRefresh = vi.fn();
     const onHealth = vi.fn();
-    const { container } = render(<SettingsContext detail={{ section: "models", provider, model: models[0], onRefresh, onHealth, onChoose: vi.fn() }} onClose={vi.fn()} />);
+    const { container } = render(<SettingsContext detail={{ section: "models", provider, model: models[0], onRefresh, onHealth, onChoose: vi.fn() }} />);
     expect(container.querySelectorAll(".sino-settings-inspector-card")).toHaveLength(5);
     expect(screen.getByText("Model 3")).toBeTruthy();
     expect(screen.queryByText("Model 4")).toBeNull();

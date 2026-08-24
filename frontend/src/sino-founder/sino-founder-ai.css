@@ -712,7 +712,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-discussion-dropdown strong { color: var(--text-primary); font-size: 12px; }
 .sino-discussion-dropdown small, .sino-discussion-dropdown em { color: var(--text-label); font-size: 10px; font-style: normal; }
 .sino-discussion-dropdown em[data-health="unhealthy"] { color: #c97878; }
-.sino-usage-cost dl { display: grid; grid-template-columns: repeat(4,minmax(150px,1fr)); gap: 8px; max-width: 920px; margin: 0; }
+.sino-usage-cost dl { display: grid; grid-template-columns: repeat(4,minmax(150px,1fr)); gap: 8px; width: 100%; margin: 0; }
 .sino-usage-cost dl > div { min-width: 0; padding: 8px 10px; background: color-mix(in srgb,var(--surface-raised) 55%,transparent); border-radius: 8px; }
 .sino-usage-cost dt { color: var(--text-label); font-size: 11px; }
 .sino-usage-cost dd { margin: 3px 0 0; font-size: 13px; }
@@ -754,8 +754,6 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-context > header > div { display: grid; min-width: 0; gap: 2px; }
 .sino-settings-context > header h3 { margin: 0; color: var(--text-primary); font-size: 15px; font-weight: 600; line-height: 21px; }
 .sino-settings-context > header p { margin: 0; overflow: hidden; color: var(--text-secondary); font-size: 12px; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
-.sino-settings-context > header button { flex: 0 0 30px; width: 30px; height: 30px; margin-top: -4px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--text-secondary); font-size: 19px; font-weight: 300; line-height: 1; cursor: pointer; }
-.sino-settings-context > header button:hover { background: var(--surface-raised); color: var(--text-primary); }
 .sino-settings-context > article { align-content: start; padding-top: 12px; }
 .sino-settings-provider-name { margin: 5px 0 18px; color: var(--text-secondary); font-size: 13px; }
 .sino-settings-context-action, .sino-settings-context-heading button, .sino-settings-key-editor button, .sino-settings-connection-test button { padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text-primary); font-size: 12px; cursor: pointer; }
@@ -1922,22 +1920,20 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-founder-asset-page > * { flex: 1 1 0; min-width: 0; }
 .sino-founder-asset-inspector { border-left: 1px solid var(--line); }
 .sino-founder-asset-route:not(:has(.sino-founder-asset-inspector)) { grid-template-columns: 244px minmax(0, 1fr); }
-.sino-founder-asset-route.is-settings { grid-template-columns: minmax(680px, 1fr) var(--settings-inspector-width, 340px); gap: 8px; padding: 0 8px 0 0; }
+.sino-founder-asset-route.is-settings { grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 500px); gap: 8px; padding: 0 8px 0 0; }
 .sino-founder-asset-route.is-settings:not(:has(.sino-founder-asset-inspector)) { grid-template-columns: minmax(0, 1fr); gap: 0; padding-right: 0; }
 .sino-founder-asset-route.is-settings > .sino-founder-asset-page { box-sizing: border-box; width: 100%; height: 100%; }
 .sino-scrollbar-hidden { scrollbar-width: none; -ms-overflow-style: none; }
 .sino-scrollbar-hidden::-webkit-scrollbar,
 .sino-scrollbar-hidden *::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.sino-settings-floating-inspector {
+.sino-settings-provider-pane {
   position: relative;
   z-index: 1;
   align-self: stretch;
   box-sizing: border-box;
   height: calc(100dvh - 16px);
   margin: 8px 0;
-  width: var(--settings-inspector-width, 340px);
-  min-width: 300px;
-  max-width: min(340px, 48vw);
+  width: 100%;
   overflow: hidden;
   overscroll-behavior: contain;
   border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
@@ -1945,11 +1941,9 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   background: var(--surface-base);
   box-shadow: 0 12px 32px rgba(0,0,0,.22);
 }
-.sino-settings-floating-inspector > .sino-settings-context { box-sizing: border-box; width: 100%; height: 100%; padding: 11px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }
-.sino-settings-floating-inspector > .sino-settings-context::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.sino-settings-inspector-resize-handle { position: absolute; z-index: 1; top: 12px; bottom: 12px; left: 0; width: 10px; cursor: col-resize; touch-action: none; }
-.sino-settings-inspector-resize-handle::after { position: absolute; top: 8px; bottom: 8px; left: 4px; width: 1px; border-radius: 999px; background: transparent; content: ""; transition: background .15s ease; }
-.sino-settings-inspector-resize-handle:hover::after { background: rgba(255,255,255,.16); }
+.sino-settings-provider-pane > .sino-settings-context { box-sizing: border-box; width: 100%; height: 100%; padding: 11px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }
+.sino-settings-provider-pane > .sino-settings-context::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.sino-settings-inspector-empty { margin: 0; padding: 8px 1px; color: var(--text-secondary); font-size: 13px; }
 
 @media (max-width: 1100px) and (min-width: 901px) {
   .founder-workspace { grid-template-columns: var(--founder-nav-width, 220px) minmax(360px, 1fr) var(--execution-center-width, 300px); gap: 0; padding: 0; }

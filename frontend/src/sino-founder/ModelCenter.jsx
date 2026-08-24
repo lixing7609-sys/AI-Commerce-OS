@@ -163,14 +163,10 @@ function RuntimeEnvironmentSettings({ registry }) {
   return <section className="sino-capability-section sino-settings-domain-panel" aria-label="运行环境"><div className="sino-capability-section-heading"><div><h3>Runtime</h3><p>当前真实注册环境与系统健康。</p></div><button type="button" onClick={() => setShowDetails((value) => !value)}>{showDetails ? "收起详情" : "查看详情"}</button></div><div className="sino-runtime-summary"><strong>LOCAL</strong><span>{local.status}</span><span>{healthy}/{services.length} services healthy</span></div>{showDetails ? <div className="sino-runtime-binding-list">{[["前端", `${frontend.protocol}://${frontend.host}:${frontend.port}`, frontend], ["后端", `${backend.protocol}://${backend.host}:${backend.port}`, backend], ["数据库", `${local.database?.type} / LOCAL`, local.database], ["身份与访问管理", local.iam?.type, local.iam], ["网络", local.network?.boundary, local.network]].map(([label, binding, item]) => <article className="sino-settings-section-card" key={label}><div><strong>{label}</strong><span>{binding}</span></div><dl><div><dt>状态</dt><dd>{item?.status || item?.verification_status || item?.connectivity_status}</dd></div><div><dt>健康状态</dt><dd>{item?.health || item?.health_status || "verified"}</dd></div><div><dt>最近验证</dt><dd>{item?.last_verified_at || "—"}</dd></div></dl></article>)}</div> : null}</section>;
 }
 
-export function hasSettingsDetail(detail) {
-  return Boolean(detail?.provider && detail?.model);
-}
-
-export function SettingsContext({ detail, onClose }) {
-  if (!hasSettingsDetail(detail)) return null;
+export function SettingsContext({ detail }) {
+  if (detail?.section !== "models") return null;
   const provider = detail?.provider;
-  return <div className="sino-context-summary sino-settings-context"><header className="sino-settings-context-header"><div><h3>Provider 技术配置</h3><p>连接、模型启用与健康检查。</p></div><button type="button" onClick={onClose} aria-label="关闭设置并返回 Sino 首页">×</button></header><article><ProviderSettingsContext detail={detail} /></article></div>;
+  return <div className="sino-context-summary sino-settings-context"><header className="sino-settings-context-header"><div><h3>Provider 技术配置</h3><p>连接、模型启用与健康检查。</p></div></header><article>{provider && detail?.model ? <ProviderSettingsContext detail={detail} /> : <p className="sino-settings-inspector-empty">请选择一个模型</p>}</article></div>;
 }
 
 function ProviderSettingsContext({ detail }) {

@@ -56,10 +56,10 @@ test("Settings exposes model control and system health with the real Provider in
   const settings = page.getByRole("main", { name: "Founder AI 功能页面" });
   const inspector = page.getByLabel("功能页详情");
   await expect(settings).toBeVisible();
-  await expect(inspector).toHaveCount(0);
+  await expect(inspector).toBeVisible();
+  await expect(inspector.getByText("请选择一个模型")).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "关闭设置并返回 Sino 首页" })).toHaveCount(0);
   expect((await settings.boundingBox()).x).toBeLessThan(4);
-  const initialMain = await settings.boundingBox();
-  expect(initialMain.width).toBeGreaterThan(1430);
   await expect(page.getByText("Model Capabilities")).toHaveCount(0);
   const settingsTabs = page.getByRole("navigation", { name: "设置分类" });
   await expect(settingsTabs.getByRole("button")).toHaveCount(3);
@@ -71,6 +71,7 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(page.getByRole("list", { name: "已接入模型列表" })).toBeVisible();
   await expect(page.getByRole("region", { name: "模型分配" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Usage 与成本" })).toBeVisible();
+  expect((await page.getByRole("region", { name: "Usage 与成本" }).boundingBox()).y).toBeLessThan((await page.getByRole("list", { name: "已接入模型列表" }).boundingBox()).y);
   await expect(page.getByText(/10 个模型 · 10 正常/)).toBeVisible();
   await expect(page.getByRole("list", { name: "已接入模型列表" }).locator("button[aria-pressed]")).toHaveCount(10);
   await page.screenshot({ path: `${evidenceDirectory}/settings-models-full-width.png`, fullPage: true });
@@ -83,6 +84,7 @@ test("Settings exposes model control and system health with the real Provider in
 
   await page.getByRole("button", { name: "deepseek-chat DeepSeek" }).click();
   await expect(inspector).toBeVisible();
+  const inspectorWidthBeforeSelection = (await inspector.boundingBox()).width;
   const settingsPageBox = await page.locator(".sino-founder-asset-page").boundingBox();
   const inspectorBox = await inspector.boundingBox();
   expect(settingsPageBox.x + settingsPageBox.width).toBeLessThanOrEqual(inspectorBox.x);
@@ -92,6 +94,7 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(inspector.getByText("Claude Sonnet 5", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "GPT 5 Pro GPT" }).click();
   await expect(inspector.getByText("GPT 5 Pro", { exact: true }).first()).toBeVisible();
+  expect((await inspector.boundingBox()).width).toBe(inspectorWidthBeforeSelection);
   await page.screenshot({ path: `${evidenceDirectory}/settings-model-inspector-selected.png`, fullPage: true });
 
   await settingsTabs.getByRole("button", { name: "Sino AI" }).click();
