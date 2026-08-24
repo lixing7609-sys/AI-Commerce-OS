@@ -39,17 +39,23 @@ const referenceKey = (reference) => {
 
 export function buildAssignedModelEconomics({ roles = [], options = [], registry = {}, modelUsage = [] }) {
   const rows = new Map();
+  const connectedByKey = new Map(options.map((item) => [item.value, item]));
   const registryModels = registry.models || [];
   const visionChoices = registryModels.filter((item) => item.selected && item.enabled && item.capabilities?.supports_vision_understanding?.status === "VERIFIED").map((item) => ({ value: `${item.provider_id}::${item.model_id}`, label: item.display_name, healthy: Boolean(item.healthy), provider: options.find((option) => option.value === `${item.provider_id}::${item.model_id}`)?.provider }));
   const usageByModel = new Map(modelUsage.map((item) => [`${item.provider_id}::${item.model_id}`, item]));
   const merge = (reference, duty, choices = options, invalid = false, discussionTracked = false) => {
     const key = referenceKey(reference);
     if (!key) return;
+    const connectedChoice = connectedByKey.get(key);
+    // Current Model Economics is the intersection of persisted assignments and
+    // the connected/enabled model pool. Orphan references stay visible in the
+    // assignment editor as configuration errors, but are not current resources.
+    if (!connectedChoice) return;
     const [providerId, modelId] = key.split("::");
     const choice = choices.find((item) => item.value === key);
     const registryModel = registryModels.find((item) => item.provider_id === providerId && item.model_id === modelId);
     const status = resolveModelAssignmentStatus({ value: key, choices, invalid });
-    const current = rows.get(key) || { provider_id: providerId, model_id: modelId, display_name: choice?.label || registryModel?.display_name || modelId, provider_name: choice?.provider?.display_name || options.find((item) => item.value === key)?.provider?.display_name || providerId, roles: [], assignment_status: status, discussion_tracked: false };
+    const current = rows.get(key) || { provider_id: providerId, model_id: modelId, display_name: choice?.label || connectedChoice.label || registryModel?.display_name || modelId, provider_name: choice?.provider?.display_name || connectedChoice.provider?.display_name || providerId, roles: [], assignment_status: status, discussion_tracked: false };
     if (!current.roles.includes(duty)) current.roles.push(duty);
     if (assignmentStatusPriority[status] > assignmentStatusPriority[current.assignment_status]) current.assignment_status = status;
     current.discussion_tracked ||= discussionTracked;

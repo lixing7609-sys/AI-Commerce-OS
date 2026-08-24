@@ -404,6 +404,19 @@ def test_discussion_slots_persist_fallbacks_and_reject_duplicate_primaries(monke
         model_center.save_multi_model_assignment(slots=[{"primary": slots[0]["primary"], "fallback": slots[0]["primary"]}])
 
 
+def test_assigned_discussion_model_cannot_be_removed_and_usage_history_is_untouched(monkeypatch, tmp_path):
+    factory = _database(monkeypatch, tmp_path)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)
+    model_center.save_multi_model_assignment(slots=[{"primary": {"provider_key": "deepseek", "model": "deepseek-chat"}, "fallback": None}])
+    with factory() as session:
+        session.add(model_center.CouncilModelRunDB(council_run_id="historical-run", provider="deepseek", model="deepseek-chat", role="analyst", status="completed", proposal={}, latency_ms=100, context_references={}))
+        session.commit()
+    with pytest.raises(ValueError, match="model_in_use:讨论模型 1"):
+        model_center.select_models("deepseek", [])
+    with factory() as session:
+        assert session.query(model_center.CouncilModelRunDB).filter_by(model="deepseek-chat").count() == 1
+
+
 def test_skill_model_assignment_persists_via_internal_capability(monkeypatch, tmp_path):
     _database(monkeypatch, tmp_path)
     model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)

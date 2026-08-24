@@ -80,7 +80,7 @@ describe("Founder Settings", () => {
       { value: "unused::unused-model", label: "Unused", healthy: true, provider: { display_name: "Unused" } },
     ];
     const result = buildAssignedModelEconomics({ roles, options, registry: {}, modelUsage: [{ provider_id: "deepseek", model_id: "deepseek-chat", request_count: 3, completed_request_count: 2, average_latency_ms: 120.5 }] });
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(2);
     expect(result.some((item) => item.model_id === "unused-model")).toBe(false);
     const deepseekEconomics = result.find((item) => item.model_id === "deepseek-chat");
     expect(deepseekEconomics.roles).toEqual(["Sino 主对话", "深度推理", "讨论模型 1"]);
@@ -91,7 +91,35 @@ describe("Founder Settings", () => {
     expect(claudeEconomics.roles).toEqual(["Sino 主对话 Fallback", "Coding"]);
     expect(claudeEconomics.request_count).toBeNull();
     expect(claudeEconomics.assignment_status).toBe(MODEL_ASSIGNMENT_STATUS.ERROR);
-    expect(result.find((item) => item.model_id === "missing-model").assignment_status).toBe(MODEL_ASSIGNMENT_STATUS.CONFIG_ERROR);
+    expect(result.some((item) => item.model_id === "missing-model")).toBe(false);
+  });
+
+  it("excludes orphan discussion assignments while preserving Provider plus model identity", () => {
+    const roles = [{ role_key: "multi_model_discussion", slots: [
+      { primary: { provider_key: "removed", model: "shared-model" }, fallback: null },
+      { primary: { provider_key: "connected", model: "shared-model" }, fallback: null },
+    ] }];
+    const options = [{ value: "connected::shared-model", label: "Connected Shared Model", healthy: true, provider: { display_name: "Connected" } }];
+    const result = buildAssignedModelEconomics({ roles, options, modelUsage: [
+      { provider_id: "removed", model_id: "shared-model", request_count: 9 },
+      { provider_id: "connected", model_id: "shared-model", request_count: 2 },
+    ] });
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ provider_id: "connected", model_id: "shared-model", request_count: 2, roles: ["讨论模型 2"] });
+  });
+
+  it("keeps an orphan discussion reference visible as invalid but out of current economics", async () => {
+    const connectedProvider = { ...deepseek, model: "deepseek-reasoner", selected_models: ["deepseek-reasoner"] };
+    const roles = capabilities.map((item) => item.role_key === "multi_model_discussion" ? { ...item, models: [{ provider_key: "deepseek", model: "deepseek-chat" }], slots: [{ primary: { provider_key: "deepseek", model: "deepseek-chat" }, fallback: null }] } : item.role_key === "sino_conversation" ? { ...item, provider_key: null, model: null } : item);
+    getModelCenter.mockResolvedValue({ ...center, providers: [connectedProvider], roles, model_usage: [{ provider_id: "deepseek", model_id: "deepseek-chat", request_count: 7, completed_request_count: 7, average_latency_ms: 100 }] });
+    render(<ModelCenter />);
+    await screen.findByRole("heading", { name: "设置" });
+    expect(screen.getByLabelText("已分配模型摘要").textContent).toBe("0 个已分配模型");
+    expect(screen.getByRole("table", { name: "已分配模型经济账" }).textContent).not.toContain("deepseek-chat");
+    fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
+    expect(screen.getByLabelText("讨论模型 1 Primary 状态").textContent).toBe("● 配置错误");
+    const orphanOption = within(screen.getByRole("combobox", { name: "讨论模型 1 Primary" })).getByRole("option", { name: /deepseek-chat.*能力不匹配/ });
+    expect(orphanOption.disabled).toBe(true);
   });
 
   it("uses one top-level model navigation and keeps operational domains as page entries", async () => {
