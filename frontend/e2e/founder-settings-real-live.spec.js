@@ -50,6 +50,8 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     expect(Math.abs(usageBox.width - systemBox.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageTitleBox.y + usageTitleBox.height - usageSummaryBox.y - usageSummaryBox.height)).toBeLessThanOrEqual(2);
     expect(Math.abs(modelTitleBox.y + modelTitleBox.height - modelSummaryBox.y - modelSummaryBox.height)).toBeLessThanOrEqual(2);
+    expect(Math.abs(usageSummaryBox.x - usageTitleBox.x - usageTitleBox.width - 16)).toBeLessThanOrEqual(2);
+    expect(Math.abs(modelSummaryBox.x - modelTitleBox.x - modelTitleBox.width - 16)).toBeLessThanOrEqual(2);
     const modelCardRows = await page.getByRole("list", { name: "已接入模型列表" }).locator("article").evaluateAll((items) => [...new Set(items.map((item) => Math.round(item.getBoundingClientRect().top)))]);
     expect(modelCardRows).toHaveLength(2);
     await expectMinimumVisibleFont(page.locator(".sino-settings-workspace"));

@@ -673,7 +673,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-feature-section small { overflow: hidden; color: var(--text-secondary); font-size: 14px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .sino-settings-feature-section b { color: var(--text-secondary); font-size: 17px; font-weight: 400; }
 .sino-settings-domain-panel { min-width: 0; padding: 0; }
-.sino-settings-domain-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.sino-settings-domain-heading { display: flex; align-items: baseline; justify-content: flex-start; gap: 16px; margin-bottom: 8px; }
 .sino-settings-domain-heading h3 { margin: 0; color: var(--text-primary); font-size: 16px; font-weight: 600; line-height: 22px; }
 .sino-settings-domain-heading span { color: var(--text-label); font-size: 14px; }
 .sino-settings-page .sino-capability-section-heading { align-items: center; margin-bottom: 12px; }
@@ -717,7 +717,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-page .sino-capability-section-heading button { border: 0; background: transparent; color: var(--accent); cursor: pointer; }
 @container (max-width: 760px) { .sino-model-assignment-row { grid-template-columns: minmax(100px,.6fr) minmax(150px,1fr); }.sino-model-assignment-row > :nth-child(3),.sino-model-assignment-row > :nth-child(4){grid-column:2}.sino-usage-cost dl{grid-template-columns:repeat(2,minmax(0,1fr));} }
 .sino-model-list-pane { min-width: 0; }
-.sino-model-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; min-height: 38px; margin-bottom: 6px; }
+.sino-model-list-heading { display: flex; align-items: baseline; justify-content: flex-start; gap: 16px; min-height: 38px; margin-bottom: 6px; }
 .sino-model-list-heading h3 { margin: 0; color: var(--text-primary); font-size: 16px; font-weight: 600; line-height: 22px; }
 .sino-model-list-heading > div { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
 .sino-model-list-heading span { overflow: hidden; color: var(--text-secondary); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
