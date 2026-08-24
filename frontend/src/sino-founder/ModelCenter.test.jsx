@@ -61,9 +61,9 @@ describe("Founder Settings", () => {
   it("uses the compact Settings label as a return-home action", async () => {
     const onHome = vi.fn();
     render(<ModelCenter onHome={onHome} />);
-    expect(await screen.findByRole("button", { name: "⬅️ 返回首页" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "← 返回首页" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "设置" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "⬅️ 返回首页" }));
+    fireEvent.click(screen.getByRole("button", { name: "← 返回首页" }));
     expect(onHome).toHaveBeenCalledTimes(1);
   });
 

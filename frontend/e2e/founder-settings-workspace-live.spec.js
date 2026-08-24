@@ -79,6 +79,7 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(page.locator(".sino-model-list-heading").getByRole("button", { name: "＋ 添加模型" })).toHaveCount(0);
   await page.getByRole("button", { name: "＋ 添加模型" }).click();
   await expect(page.getByRole("dialog", { name: "添加 AI 模型" })).toBeVisible();
+  expect(await page.getByRole("dialog", { name: "添加 AI 模型" }).locator("nav").evaluate((nav) => parseFloat(getComputedStyle(nav).fontSize))).toBeGreaterThanOrEqual(14);
   await expect(page.getByRole("dialog", { name: "Provider 技术配置" })).toHaveCount(0);
   await page.getByRole("button", { name: "关闭添加 AI 模型" }).click();
   await expect(page.getByRole("dialog", { name: "添加 AI 模型" })).toHaveCount(0);
@@ -152,7 +153,7 @@ test("Settings exposes model control and system health with the real Provider in
   await page.screenshot({ path: `${evidenceDirectory}/settings-execution-runtime.png`, fullPage: true });
 
   await page.getByRole("button", { name: "关闭系统" }).click();
-  await page.getByRole("button", { name: "⬅️ 返回首页" }).click();
+  await page.getByRole("button", { name: "← 返回首页" }).click();
   await expect(page.getByLabel("Founder Navigation")).toBeVisible();
   await expect(page.getByRole("main", { name: "Sino Natural Conversation" })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "执行中心" })).toBeVisible();

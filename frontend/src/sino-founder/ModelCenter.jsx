@@ -121,7 +121,7 @@ export function ModelCenter({ onHome }) {
   const activeEngine = center.execution_engines.find((item) => item.engine_id === center.roles.find((role) => role.role_key === "code_execution")?.execution_engine_id);
   return <section className="sino-model-center sino-settings" aria-label="设置">
     <div className="sino-settings-workspace">
-    <header className="sino-settings-header"><div><button type="button" className="sino-settings-home-link" onClick={onHome}>⬅️ 返回首页</button><h2>设置</h2></div></header>
+    <header className="sino-settings-header"><button type="button" className="sino-settings-home-link" onClick={onHome}>← 返回首页</button><h2>设置</h2></header>
     <div className="sino-settings-content">
     {message && <p className="sino-model-center-message" role="status">{message}</p>}
     <section className="sino-capability-section sino-settings-page sino-settings-page--models" aria-label="模型">

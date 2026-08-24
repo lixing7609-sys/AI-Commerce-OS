@@ -3,6 +3,15 @@ import { mkdirSync } from "node:fs";
 
 const evidence = "../.runtime/visual-evidence/settings-resilience";
 
+async function expectMinimumVisibleFont(locator) {
+  const undersized = await locator.evaluate((root) => [...root.querySelectorAll("*")].filter((element) => {
+    const style = getComputedStyle(element);
+    const hasDirectText = [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+    return hasDirectText && style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length && parseFloat(style.fontSize) < 14;
+  }).map((element) => ({ text: element.textContent.trim().slice(0, 80), size: getComputedStyle(element).fontSize })));
+  expect(undersized).toEqual([]);
+}
+
 test("real Settings keeps model control, Provider inspector, and compact system health", async ({ page }) => {
   mkdirSync(evidence, { recursive: true });
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -21,7 +30,7 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     const modelBox = await page.getByRole("list", { name: "已接入模型列表" }).boundingBox();
     const sinoBox = await page.getByRole("region", { name: "Sino AI" }).boundingBox();
     const systemBox = await page.getByRole("region", { name: "系统" }).boundingBox();
-    const homeBox = await page.getByRole("button", { name: "⬅️ 返回首页" }).boundingBox();
+    const homeBox = await page.getByRole("button", { name: "← 返回首页" }).boundingBox();
     const titleBox = await page.getByRole("heading", { name: "设置" }).boundingBox();
     for (const box of [usageBox, modelBox, sinoBox, systemBox]) {
       expect(Math.abs(box.x - 100)).toBeLessThanOrEqual(2);
@@ -31,10 +40,13 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     expect(Math.abs(usageBox.x - sinoBox.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.x - systemBox.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.x - homeBox.x)).toBeLessThanOrEqual(1);
-    expect(Math.abs(usageBox.x - titleBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(usageBox.x + usageBox.width - titleBox.x - titleBox.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.width - modelBox.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.width - sinoBox.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.width - systemBox.width)).toBeLessThanOrEqual(1);
+    const modelCardRows = await page.getByRole("list", { name: "已接入模型列表" }).locator("article").evaluateAll((items) => [...new Set(items.map((item) => Math.round(item.getBoundingClientRect().top)))]);
+    expect(modelCardRows).toHaveLength(2);
+    await expectMinimumVisibleFont(page.locator(".sino-settings-workspace"));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.screenshot({ path: `${evidence}/settings-model-control-${viewport.width}x${viewport.height}.png`, fullPage: true });
   }
@@ -43,6 +55,7 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   const inspector = page.getByRole("dialog", { name: "Provider 技术配置" });
   await expect(inspector).toBeVisible();
   await expect(inspector.getByRole("button", { name: "测试连接" })).toBeVisible();
+  await expectMinimumVisibleFont(inspector);
   const initialInspectorBox = await inspector.boundingBox();
   expect(initialInspectorBox.width).toBeLessThanOrEqual(820);
   expect(Math.abs(initialInspectorBox.x + initialInspectorBox.width / 2 - 720)).toBeLessThanOrEqual(2);
@@ -63,6 +76,7 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Primary" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
+  await expectMinimumVisibleFont(page.getByRole("dialog", { name: "Sino AI" }));
   for (const viewport of [{ width: 1440, height: 900 }, { width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
     await page.setViewportSize(viewport);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -76,6 +90,7 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await page.getByRole("button", { name: "关闭Sino AI" }).click();
   await page.getByRole("button", { name: "打开系统" }).click();
   await expect(page.getByRole("dialog", { name: "系统" })).toBeVisible();
+  await expectMinimumVisibleFont(page.getByRole("dialog", { name: "系统" }));
   await expect(inspector).toHaveCount(0);
   await expect(page.getByText("Codex", { exact: true })).toBeVisible();
   await expect(page.getByText(/services healthy/)).toBeVisible();
