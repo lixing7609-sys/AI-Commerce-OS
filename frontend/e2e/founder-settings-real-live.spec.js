@@ -74,6 +74,12 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   expect(Math.abs(initialInspectorBox.height - 700)).toBeLessThanOrEqual(2);
   expect(Math.abs(initialInspectorBox.x + initialInspectorBox.width / 2 - 720)).toBeLessThanOrEqual(2);
   expect(Math.abs(initialInspectorBox.y + initialInspectorBox.height / 2 - 450)).toBeLessThanOrEqual(2);
+  const showAllModels = inspector.getByRole("button", { name: /查看全部 \d+ 个模型/ });
+  if (await showAllModels.count()) {
+    await showAllModels.click();
+    expect(await inspector.boundingBox()).toMatchObject({ width: 1100, height: 700 });
+    await expect(inspector.locator(".sino-provider-model-management .sino-model-choices")).toHaveCSS("overflow-y", "auto");
+  }
   await page.screenshot({ path: `${evidence}/settings-provider-inspector-1440x900.png`, fullPage: true });
   for (const viewport of [{ width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
     await page.setViewportSize(viewport);
@@ -89,9 +95,21 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   const compactInspectorBox = await inspector.boundingBox();
   expect(Math.abs(compactInspectorBox.width - 952)).toBeLessThanOrEqual(2);
   expect(Math.abs(compactInspectorBox.height - 632)).toBeLessThanOrEqual(2);
-  expect(await inspector.locator(":scope > article").evaluate((body) => getComputedStyle(body).overflowY)).toBe("auto");
+  expect(await inspector.locator(":scope > article").evaluate((body) => getComputedStyle(body).overflowY)).toBe("hidden");
+  expect(await inspector.locator(".sino-provider-model-management .sino-model-choices").evaluate((list) => getComputedStyle(list).overflowY)).toBe("auto");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await inspector.getByRole("button", { name: "关闭 Provider 技术配置" }).click();
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (const providerName of [/ Claude$/, / DeepSeek Official$/, / GPT$/, / OfoxAI$/]) {
+    await page.getByRole("list", { name: "已接入模型列表" }).getByRole("button", { name: providerName }).first().click();
+    const providerModal = page.getByRole("dialog", { name: "Provider 技术配置" });
+    await expect(providerModal.getByRole("heading", { name: "Provider 概览与连接控制" })).toBeVisible();
+    await expect(providerModal.getByRole("heading", { name: "Provider 模型管理" })).toBeVisible();
+    await expect(providerModal.locator(".sino-settings-provider-inspector > section")).toHaveCount(2);
+    await expect(providerModal.locator(".sino-settings-inspector-card")).toHaveCount(0);
+    await providerModal.getByRole("button", { name: "关闭 Provider 技术配置" }).click();
+  }
 
   await page.getByRole("button", { name: "打开Sino AI" }).click();
   await expect(page.getByRole("dialog", { name: "Sino AI" })).toBeVisible();

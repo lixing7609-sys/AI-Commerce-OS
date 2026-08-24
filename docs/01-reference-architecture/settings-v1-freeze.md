@@ -32,6 +32,8 @@ Settings dialogs share the same overlay, focus and close behavior, fixed header,
 
 Each mutable setting has one editing surface. Read-only summaries may reference a setting elsewhere, but must not create a second mutation path.
 
+Provider technical configuration uses one shared layout for every Provider. It contains only a compact connection-control section and the Provider model-management section. Connection status and its test action share one row; the masked API key and update action share one row; Base URL and any real Provider-specific fields are ordinary connection rows. Single-field cards and persistent success cards are prohibited. Successful operations use transient feedback, while model management owns the remaining scrollable dialog space.
+
 Multi-model discussion is a Founder-approved V1 capability extension. It provides five ordered discussion slots; each slot has one optional Primary, one optional Fallback, and operational status derived from the same model health rules as other assignments. Only slots with a configured Primary participate at Runtime. Existing `models` configurations migrate in order to slot Primaries without inventing Fallbacks.
 
 ## Change policy

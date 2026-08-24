@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Box, ChevronRight, Globe2, Link2, List } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
 
 const empty = { provider_catalog: [], providers: [], roles: [], agents: [], health_cost: [], execution_engines: [] };
@@ -219,18 +219,35 @@ function ProviderConfigContent({ provider, model, action = {}, onCredentialSave,
   const [editingKey, setEditingKey] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [showAllModels, setShowAllModels] = useState(false);
-  useEffect(() => { setEditingKey(false); setApiKey(""); setShowAllModels(false); }, [provider.provider_key, modelId(model)]);
+  const [successFeedback, setSuccessFeedback] = useState("");
+  const lastSuccessFeedback = useRef(action.successMessage);
+  useEffect(() => { setEditingKey(false); setApiKey(""); setShowAllModels(false); setSuccessFeedback(""); lastSuccessFeedback.current = action.successMessage; }, [provider.provider_key, modelId(model)]);
   const busy = Boolean(action.isConnecting || action.isRefreshingModels || action.isCheckingHealth || action.isSaving);
+  useEffect(() => {
+    const changed = Boolean(action.successMessage && action.successMessage !== lastSuccessFeedback.current);
+    lastSuccessFeedback.current = action.successMessage;
+    if (!changed || busy) return undefined;
+    setSuccessFeedback(action.successMessage);
+    const timeout = window.setTimeout(() => setSuccessFeedback(""), 2500);
+    return () => window.clearTimeout(timeout);
+  }, [action.successMessage, busy]);
   const availableModels = provider.available_models || [];
   const visibleModels = showAllModels ? availableModels : availableModels.slice(0, 3);
   async function saveKey(event) { event.preventDefault(); await onCredentialSave?.({ api_key: apiKey, base_url: null, display_name: null }); setApiKey(""); setEditingKey(false); }
   return <div className="sino-settings-provider-inspector">
-    {action.error ? <p className="sino-provider-result is-error" role="status">{action.error}</p> : action.successMessage ? <p className="sino-provider-result is-success" role="status">{action.successMessage}</p> : null}
-    <section className="sino-settings-inspector-card" aria-labelledby="settings-inspector-model"><h4 id="settings-inspector-model"><Box aria-hidden="true" />当前模型</h4><dl className="sino-settings-inspector-facts"><div><dt>显示名称</dt><dd>{model?.display_name || modelId(model)}</dd></div><div><dt>模型 ID</dt><dd>{modelId(model)}</dd></div><div><dt>所属 Provider</dt><dd>{provider.display_name}</dd></div></dl></section>
-    <section className="sino-settings-inspector-card" aria-labelledby="settings-inspector-connection"><h4 id="settings-inspector-connection"><Link2 aria-hidden="true" />Provider 连接</h4><dl className="sino-settings-inspector-facts"><div><dt>Provider</dt><dd>{provider.display_name} / {provider.provider_type}</dd></div><div><dt>状态</dt><dd className="sino-settings-health-value" data-health={provider.health_status}>{stateLabel(provider.health_status)}</dd></div><div><dt>API Key</dt><dd>{provider.api_key_mask || "未配置"}</dd></div></dl>{editingKey ? <form className="sino-settings-key-editor" onSubmit={saveKey}><input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="输入新的 API Key" aria-label="新的 API Key" /><div><button type="submit" disabled={!apiKey || busy}>保存</button><button type="button" onClick={() => { setEditingKey(false); setApiKey(""); }}>取消</button></div></form> : <button type="button" className="sino-settings-context-action" onClick={() => setEditingKey(true)}>更新 API Key</button>}</section>
-    <section className="sino-settings-inspector-card" aria-labelledby="settings-inspector-models"><div className="sino-settings-context-heading"><h4 id="settings-inspector-models"><List aria-hidden="true" />Provider 模型管理</h4><button type="button" onClick={onRefresh} disabled={busy}>{action.isRefreshingModels ? "正在刷新…" : "刷新模型"}</button></div><ModelChoices models={visibleModels} provider={provider} onChoose={(_, item, checked) => onChoose?.(item, checked)} busy={busy} />{availableModels.length > 3 ? <button type="button" className="sino-settings-models-toggle" aria-expanded={showAllModels} onClick={() => setShowAllModels((value) => !value)}>{showAllModels ? "收起" : `查看全部 ${availableModels.length} 个模型`}<ChevronRight aria-hidden="true" /></button> : null}</section>
-    <section className="sino-settings-inspector-card" aria-labelledby="settings-inspector-config"><h4 id="settings-inspector-config"><Globe2 aria-hidden="true" />Provider 端点</h4><dl className="sino-settings-inspector-facts sino-settings-inspector-facts--stacked"><div><dt>基础地址</dt><dd>{provider.base_url || "Provider 默认地址"}</dd></div></dl></section>
-    <section className="sino-settings-inspector-card sino-settings-connection-test" aria-labelledby="settings-inspector-test"><h4 id="settings-inspector-test"><Activity aria-hidden="true" />连接测试</h4><div><span className="sino-settings-health-value" data-health={provider.health_status}>{stateLabel(provider.health_status)}</span><button type="button" onClick={onHealth} disabled={busy}>{action.isCheckingHealth ? "正在测试…" : "测试连接"}</button></div></section>
+    {successFeedback ? <p className="sino-provider-feedback is-success" role="status">{successFeedback}</p> : null}
+    <section className="sino-provider-connection-control" aria-labelledby="provider-connection-control-title">
+      <h3 id="provider-connection-control-title">Provider 概览与连接控制</h3>
+      <dl>
+        <div><dt>当前模型</dt><dd><strong>{model?.display_name || modelId(model)}</strong><small>{modelId(model)}</small></dd></div>
+        <div><dt>Provider</dt><dd>{provider.display_name} / {provider.provider_type}</dd></div>
+        <div><dt>状态</dt><dd><span className="sino-settings-health-value" data-health={provider.health_status}>{action.isCheckingHealth ? "测试中…" : stateLabel(provider.health_status)}</span><button type="button" onClick={onHealth} disabled={busy}>{action.isCheckingHealth ? "正在测试…" : "测试连接"}</button></dd></div>
+        <div><dt>API Key</dt><dd>{editingKey ? <form className="sino-settings-key-editor" onSubmit={saveKey}><input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="输入新的 API Key" aria-label="新的 API Key" /><span><button type="submit" disabled={!apiKey || busy}>保存</button><button type="button" onClick={() => { setEditingKey(false); setApiKey(""); }}>取消</button></span></form> : <><span>{provider.api_key_mask || "未配置"}</span><button type="button" onClick={() => setEditingKey(true)}>更新 API Key</button></>}</dd></div>
+        {provider.base_url ? <div><dt>Base URL</dt><dd>{provider.base_url}</dd></div> : null}
+      </dl>
+      {action.error ? <p className="sino-provider-inline-error" role="alert">{action.error}</p> : null}
+    </section>
+    <section className="sino-provider-model-management" aria-labelledby="provider-model-management-title"><div className="sino-provider-section-heading"><h3 id="provider-model-management-title">Provider 模型管理</h3><button type="button" onClick={onRefresh} disabled={busy}>{action.isRefreshingModels ? "正在刷新…" : "刷新模型"}</button></div><ModelChoices models={visibleModels} provider={provider} onChoose={(_, item, checked) => onChoose?.(item, checked)} busy={busy} />{availableModels.length > 3 ? <button type="button" className="sino-settings-models-toggle" aria-expanded={showAllModels} onClick={() => setShowAllModels((value) => !value)}>{showAllModels ? "收起" : `查看全部 ${availableModels.length} 个模型`}<ChevronRight aria-hidden="true" /></button> : null}</section>
   </div>;
 }
 

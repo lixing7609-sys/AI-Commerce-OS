@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
 import { ModelCenter, ProviderConfigModal } from "./ModelCenter.jsx";
@@ -39,7 +39,7 @@ function SettingsHarness() {
 
 describe("Founder Settings", () => {
   beforeEach(() => { vi.clearAllMocks(); getModelCenter.mockResolvedValue(center); getRuntimeEnvironmentRegistry.mockResolvedValue(runtimeRegistry); });
-  afterEach(cleanup);
+  afterEach(() => { cleanup(); vi.useRealTimers(); });
 
   it("uses one top-level model navigation and keeps operational domains as page entries", async () => {
     render(<ModelCenter />);
@@ -170,8 +170,10 @@ describe("Founder Settings", () => {
     expect(screen.getByText("Provider 技术配置").closest("header")).toBeTruthy();
     expect(screen.getByText(/DeepSeek \/ deepseek/)).toBeTruthy();
     expect(screen.getByText("****1234")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Provider 概览与连接控制" })).toBeTruthy();
     expect(screen.getByText("Provider 模型管理")).toBeTruthy();
-    expect(screen.getByText("Provider 端点")).toBeTruthy();
+    expect(screen.queryByText("Provider 端点")).toBeNull();
+    expect(screen.queryByText("连接测试", { exact: true })).toBeNull();
     expect(screen.queryByText("当前启用模型")).toBeNull();
     rerender(<ProviderConfigModal />);
     expect(screen.queryByText("Sino Founder AI 系统配置")).toBeNull();
@@ -179,13 +181,22 @@ describe("Founder Settings", () => {
     expect(screen.queryByText("设置详情")).toBeNull();
   });
 
-  it("groups Provider details into cards and progressively reveals available models", () => {
+  it("uses two dense Provider sections and progressively reveals available models", () => {
     const models = Array.from({ length: 5 }, (_, index) => ({ model_id: `model-${index + 1}`, display_name: `Model ${index + 1}`, recommendation_score: index === 0 ? 90 : 50 }));
-    const provider = { ...deepseek, available_models: models, selected_models: ["model-1"] };
+    const provider = { ...deepseek, base_url: "https://api.deepseek.com/v1", available_models: models, selected_models: ["model-1"] };
     const onRefresh = vi.fn();
     const onHealth = vi.fn();
     const { container } = render(<ProviderConfigModal provider={provider} model={models[0]} onRefresh={onRefresh} onHealth={onHealth} onChoose={vi.fn()} />);
-    expect(container.querySelectorAll(".sino-settings-inspector-card")).toHaveLength(5);
+    expect(container.querySelectorAll(".sino-settings-inspector-card")).toHaveLength(0);
+    expect(container.querySelectorAll(".sino-settings-provider-inspector > section")).toHaveLength(2);
+    const apiKeyRow = screen.getByText("API Key", { selector: "dt" }).closest("div");
+    expect(within(apiKeyRow).getByText("****1234")).toBeTruthy();
+    expect(within(apiKeyRow).getByRole("button", { name: "更新 API Key" })).toBeTruthy();
+    const statusRow = screen.getByText("状态", { selector: "dt" }).closest("div");
+    expect(within(statusRow).getByText("正常")).toBeTruthy();
+    expect(within(statusRow).getByRole("button", { name: "测试连接" })).toBeTruthy();
+    const endpointRow = screen.getByText("Base URL", { selector: "dt" }).closest("div");
+    expect(endpointRow.textContent).toContain("api.deepseek.com");
     expect(screen.getByText("Model 3")).toBeTruthy();
     expect(screen.queryByText("Model 4")).toBeNull();
     const toggle = screen.getByRole("button", { name: /查看全部 5 个模型/ });
@@ -198,6 +209,17 @@ describe("Founder Settings", () => {
     fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
     expect(onRefresh).toHaveBeenCalledTimes(1);
     expect(onHealth).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows Provider success feedback transiently without a persistent card", () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(<ProviderConfigModal provider={deepseek} model={deepseek.available_models[0]} action={{}} />);
+    rerender(<ProviderConfigModal provider={deepseek} model={deepseek.available_models[0]} action={{ successMessage: "模型选择已保存" }} />);
+    expect(screen.getByRole("status").textContent).toBe("模型选择已保存");
+    expect(container.querySelector(".sino-settings-inspector-card")).toBeNull();
+    act(() => vi.advanceTimersByTime(2500));
+    expect(screen.queryByRole("status")).toBeNull();
+    vi.useRealTimers();
   });
 
   it("keeps Runtime details collapsed until explicitly requested", async () => {
@@ -359,7 +381,7 @@ describe("Founder Settings", () => {
     render(<SettingsHarness />); await screen.findByRole("heading", { name: "设置" });
     fireEvent.click(screen.getByRole("button", { name: /Claude Sonnet 5/ }));
     fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
-    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("账户额度不足"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("账户额度不足"));
     expect(screen.queryByText("认证失败")).toBeNull();
     expect(screen.getAllByText("DeepSeek Chat").length).toBeGreaterThanOrEqual(1);
   });
