@@ -8,13 +8,9 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  const tabs = page.getByRole("navigation", { name: "设置分类" });
-  await expect(tabs.getByRole("button")).toHaveCount(1);
-  await expect(tabs.getByRole("button", { name: "模型" })).toBeVisible();
-  await expect(tabs.getByRole("button", { name: "Sino AI" })).toHaveCount(0);
-  await expect(tabs.getByRole("button", { name: "系统" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "设置分类" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "模型分配" })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Usage 与成本" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "用量与成本" })).toBeVisible();
   await expect(page.getByLabel("功能页详情")).toHaveCount(0);
   const firstModel = page.getByRole("list", { name: "已接入模型列表" }).locator("button[aria-pressed]").first();
   await expect(firstModel).toBeVisible();

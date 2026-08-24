@@ -49,15 +49,13 @@ describe("Founder Settings", () => {
     expect(screen.queryByText("API Key ****1234")).toBeNull();
     expect(screen.queryByText(/secret-value/)).toBeNull();
     expect(screen.queryByRole("region", { name: "连接状态" })).toBeNull();
-    const navigation = screen.getByRole("navigation", { name: "设置分类" });
-    expect(within(navigation).getAllByRole("button")).toHaveLength(1);
-    expect(within(navigation).getByRole("button", { name: "模型" })).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "设置分类" })).toBeNull();
     expect(screen.getByRole("button", { name: "打开Sino AI" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "打开系统" })).toBeTruthy();
     for (const name of ["模型与 API", "模型能力", "模型路由策略", "执行器", "讨论配置", "运行环境"]) expect(screen.queryByRole("button", { name, exact: true })).toBeNull();
     expect(screen.queryByRole("button", { name: "← 返回 Founder" })).toBeNull();
     expect(screen.queryByRole("button", { name: "关闭设置" })).toBeNull();
-    expect(document.querySelector(".sino-settings-tabs")).toBeTruthy();
+    expect(document.querySelector(".sino-settings-tabs")).toBeNull();
   });
 
   it("uses the compact Settings label as a return-home action", async () => {
@@ -98,12 +96,11 @@ describe("Founder Settings", () => {
   it("separates model resources, Sino intelligence assignment, and system health", async () => {
     const { container } = render(<ModelCenter />);
     await screen.findByRole("heading", { name: "设置" });
-    const primaryTabs = screen.getByRole("navigation", { name: "设置分类" });
-    expect(primaryTabs.querySelectorAll("button")).toHaveLength(1);
+    expect(screen.queryByRole("navigation", { name: "设置分类" })).toBeNull();
     expect(container.querySelector(".sino-settings-content")).toBeTruthy();
     expect(container.querySelector(".sino-settings-page--models")).toBeTruthy();
     expect(screen.getByLabelText("模型摘要").textContent).toContain("1 个模型 · 1 正常");
-    expect(screen.getByRole("heading", { name: "已接入模型" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "模型" })).toBeTruthy();
     expect(screen.queryByText("模型资源池", { exact: true })).toBeNull();
     const modelGrid = screen.getByRole("list", { name: "已接入模型列表" });
     expect(modelGrid.querySelectorAll('button[aria-pressed]')).toHaveLength(1);
@@ -111,7 +108,7 @@ describe("Founder Settings", () => {
     expect(screen.getByRole("button", { name: "＋ 添加模型" }).classList.contains("sino-add-model-card")).toBe(true);
     expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("Sino 主对话");
     expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("多模型讨论");
-    const usage = screen.getByRole("region", { name: "Usage 与成本" });
+    const usage = screen.getByRole("region", { name: "用量与成本" });
     const modelList = screen.getByRole("list", { name: "已接入模型列表" });
     expect(usage.compareDocumentPosition(modelList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const sinoEntry = screen.getByRole("button", { name: "打开Sino AI" });
@@ -123,7 +120,7 @@ describe("Founder Settings", () => {
     expect(screen.getByRole("dialog", { name: "Sino AI" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "模型分配" })).toBeTruthy();
     expect(screen.getByRole("list", { name: "已接入模型列表" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "Usage 与成本" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "用量与成本" })).toBeTruthy();
     expect(screen.queryByText("自动多轮")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "关闭Sino AI" }));
     fireEvent.click(systemEntry);
@@ -137,7 +134,6 @@ describe("Founder Settings", () => {
     saveModelRoutingPreferred.mockResolvedValue(capabilityRegistry);
     render(<ModelCenter />);
     await screen.findByRole("heading", { name: "设置" });
-    expect(screen.getByRole("button", { name: "模型" }).classList.contains("is-active")).toBe(true);
     expect(screen.getByRole("list", { name: "已接入模型列表" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
     const vision = screen.getByRole("combobox", { name: "Vision Primary" });

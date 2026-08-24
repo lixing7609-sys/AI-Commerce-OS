@@ -659,15 +659,11 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-home-link:hover { color: var(--text-primary); background: transparent; }
 .sino-model-center > header p, .sino-model-center-message { margin: 0; color: #7e877b; font-size: 12px; }
 .sino-model-center-message { margin-bottom: 14px; }
-.sino-settings { position: relative; box-sizing: border-box; container-type: inline-size; width: 100%; min-height: 100%; padding: 10px clamp(20px, 2.4vw, 36px); }
+.sino-settings { position: relative; box-sizing: border-box; container-type: inline-size; width: 100%; min-height: 100%; padding: 30px; }
 .sino-founder-main--fixed-workspace > .sino-settings { flex: 1 1 0; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .sino-founder-main--fixed-workspace > .sino-settings::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-settings > header { align-items: flex-start; }
 .sino-settings > header > div { display: grid; gap: 2px; }
-.sino-settings-tabs { display: flex; gap: 20px; margin: 0 0 4px; border-bottom: 1px solid var(--line); }
-.sino-settings-tabs button { min-height: 38px; padding: 8px 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; }
-.sino-settings-tabs button:hover { color: var(--text-primary); }
-.sino-settings-tabs button.is-active { border-bottom-color: var(--accent); color: var(--text-primary); }
 .sino-settings-content { min-width: 0; width: 100%; }
 .sino-settings-page { box-sizing: border-box; width: 100%; padding-block: 6px 10px; }
 .sino-settings-page--models { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
@@ -809,7 +805,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus,
 .sino-settings-context :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus { border-color: color-mix(in srgb, var(--accent) 52%, var(--line)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent); }
 .sino-settings :is(input[type="checkbox"], input[type="radio"]), .sino-settings-context :is(input[type="checkbox"], input[type="radio"]) { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
-@media (max-width: 760px) { .sino-settings > header { flex-direction: column; }.sino-settings-tabs { overflow-x: auto; }.sino-settings-tabs button { white-space: nowrap; } }
+@media (max-width: 760px) { .sino-settings { padding: 24px; }.sino-settings > header { flex-direction: column; } }
 .sino-model-provider-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .sino-model-provider { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.015); }
 .sino-model-provider-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
