@@ -142,7 +142,7 @@ export function ModelCenter({ onHome }) {
 }
 
 function SettingsFeatureEntry({ title, description, summary, onClick }) {
-  return <section className="sino-settings-feature-section" aria-label={title}><h3>{title}</h3><button type="button" aria-label={`打开${title}`} onClick={onClick}><span><strong>{title}</strong><small>{description}</small></span><span><small>{summary}</small><b aria-hidden="true">→</b></span></button></section>;
+  return <section className="sino-settings-feature-section" aria-label={title}><h3>{title}</h3><button type="button" aria-label={`打开${title}`} onClick={onClick}><small>{description}</small><span><small>{summary}</small><b aria-hidden="true">→</b></span></button></section>;
 }
 
 function SettingsFeatureModal({ title, description, dialogRef, onClose, children }) {

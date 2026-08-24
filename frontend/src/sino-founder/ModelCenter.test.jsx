@@ -113,6 +113,10 @@ describe("Founder Settings", () => {
     expect(usage.compareDocumentPosition(modelList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const sinoEntry = screen.getByRole("button", { name: "打开Sino AI" });
     const systemEntry = screen.getByRole("button", { name: "打开系统" });
+    expect(within(sinoEntry).queryByText("Sino AI", { exact: true })).toBeNull();
+    expect(within(systemEntry).queryByText("系统", { exact: true })).toBeNull();
+    expect(sinoEntry.textContent).toContain("模型职责分配、Primary / Fallback 与多模型讨论");
+    expect(systemEntry.textContent).toContain("Executor、Runtime 与 System Health");
     expect(modelGrid.compareDocumentPosition(sinoEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(sinoEntry.compareDocumentPosition(systemEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("region", { name: "模型分配" })).toBeNull();

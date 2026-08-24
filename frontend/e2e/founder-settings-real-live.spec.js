@@ -32,6 +32,10 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     const systemBox = await page.getByRole("region", { name: "系统" }).boundingBox();
     const homeBox = await page.getByRole("button", { name: "← 返回首页" }).boundingBox();
     const titleBox = await page.getByRole("heading", { name: "设置" }).boundingBox();
+    const usageTitleBox = await page.getByRole("heading", { name: "用量与成本" }).boundingBox();
+    const usageSummaryBox = await page.getByText("部分 Provider 已接入统计", { exact: true }).boundingBox();
+    const modelTitleBox = await page.getByRole("heading", { name: "模型", exact: true }).boundingBox();
+    const modelSummaryBox = await page.getByLabel("模型摘要").boundingBox();
     for (const box of [usageBox, modelBox, sinoBox, systemBox]) {
       expect(Math.abs(box.x - 100)).toBeLessThanOrEqual(2);
       expect(Math.abs(viewport.width - box.x - box.width - 100)).toBeLessThanOrEqual(2);
@@ -44,9 +48,15 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     expect(Math.abs(usageBox.width - modelBox.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.width - sinoBox.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.width - systemBox.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(usageTitleBox.y + usageTitleBox.height - usageSummaryBox.y - usageSummaryBox.height)).toBeLessThanOrEqual(2);
+    expect(Math.abs(modelTitleBox.y + modelTitleBox.height - modelSummaryBox.y - modelSummaryBox.height)).toBeLessThanOrEqual(2);
     const modelCardRows = await page.getByRole("list", { name: "已接入模型列表" }).locator("article").evaluateAll((items) => [...new Set(items.map((item) => Math.round(item.getBoundingClientRect().top)))]);
     expect(modelCardRows).toHaveLength(2);
     await expectMinimumVisibleFont(page.locator(".sino-settings-workspace"));
+    const featureHeights = await page.locator(".sino-settings-feature-section > button").evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().height));
+    expect(featureHeights.every((height) => height <= 60)).toBe(true);
+    await expect(page.getByRole("button", { name: "打开Sino AI" }).getByText("Sino AI", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "打开系统" }).getByText("系统", { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.screenshot({ path: `${evidence}/settings-model-control-${viewport.width}x${viewport.height}.png`, fullPage: true });
   }
