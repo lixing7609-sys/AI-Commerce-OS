@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveExecutionEngine, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
-import { ModelCenter, SettingsContext } from "./ModelCenter.jsx";
+import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
+import { ModelCenter, ProviderConfigModal } from "./ModelCenter.jsx";
 import "./sino-founder-ai.css";
 
-vi.mock("../services/founderAiApi.js", () => ({ checkModelProvider: vi.fn(), deleteModelProvider: vi.fn(), discoverProviderModels: vi.fn(), getModelCenter: vi.fn(), getRuntimeEnvironmentRegistry: vi.fn(), installModelProvider: vi.fn(), saveCapabilityAssignment: vi.fn(), saveExecutionEngine: vi.fn(), saveModelRoutingPreferred: vi.fn(), saveMultiModelAssignment: vi.fn(), selectProviderModels: vi.fn(), setModelProviderEnabled: vi.fn(), updateModelProviderCredentials: vi.fn() }));
+vi.mock("../services/founderAiApi.js", () => ({ checkModelProvider: vi.fn(), discoverProviderModels: vi.fn(), getModelCenter: vi.fn(), getRuntimeEnvironmentRegistry: vi.fn(), installModelProvider: vi.fn(), saveCapabilityAssignment: vi.fn(), saveModelRoutingPreferred: vi.fn(), saveMultiModelAssignment: vi.fn(), selectProviderModels: vi.fn(), updateModelProviderCredentials: vi.fn() }));
 
 const deepseek = { provider_key: "deepseek", provider_type: "deepseek", display_name: "DeepSeek", installed: true, configured: true, api_key_mask: "****1234", enabled: true, health_status: "healthy", model: "deepseek-chat", available_models: [{ model_id: "deepseek-chat", display_name: "DeepSeek Chat", recommendation_score: 90 }, { model_id: "deepseek-reasoner", display_name: "DeepSeek Reasoner", recommendation_score: 90 }], selected_models: ["deepseek-chat"] };
 const claude = { provider_key: "claude", provider_type: "anthropic", display_name: "Claude", installed: true, configured: true, enabled: true, health_status: "unhealthy", health_error: "insufficient_quota", model: "claude-sonnet-5", available_models: [{ model_id: "claude-sonnet-5", display_name: "Claude Sonnet 5", recommendation_score: 90 }], selected_models: ["claude-sonnet-5"] };
@@ -85,12 +85,12 @@ describe("Founder Settings", () => {
     const claudeCard = screen.getByRole("button", { name: "Claude Sonnet 5 Claude" });
     fireEvent.click(deepseekCard);
     await waitFor(() => expect(deepseekCard.getAttribute("aria-pressed")).toBe("true"));
-    expect(screen.getByText("Provider 技术配置").closest(".sino-settings-context").textContent).toContain("deepseek-chat");
+    expect(screen.getByText("Provider 技术配置").closest(".sino-provider-config-modal").textContent).toContain("deepseek-chat");
     fireEvent.click(screen.getByRole("button", { name: "关闭 Provider 技术配置" }));
     fireEvent.click(claudeCard);
     await waitFor(() => expect(claudeCard.getAttribute("aria-pressed")).toBe("true"));
     expect(deepseekCard.getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByText("Provider 技术配置").closest(".sino-settings-context").textContent).toContain("claude-sonnet-5");
+    expect(screen.getByText("Provider 技术配置").closest(".sino-provider-config-modal").textContent).toContain("claude-sonnet-5");
   });
 
   it("separates model resources, Sino intelligence assignment, and system health", async () => {
@@ -147,21 +147,21 @@ describe("Founder Settings", () => {
     await waitFor(() => expect(saveModelRoutingPreferred).toHaveBeenCalledWith("VISION_UNDERSTANDING", { provider_id: "ofox", model_id: "gemini-3.6-flash" }, null));
   });
 
-  it("shows selected Provider details and omits empty Settings Context", async () => {
+  it("shows selected Provider details and omits an empty Provider modal", async () => {
     const onClose = vi.fn();
-    const { rerender } = render(<SettingsContext detail={{ section: "models" }} onClose={onClose} />);
+    const { rerender } = render(<ProviderConfigModal onClose={onClose} />);
     expect(screen.queryByRole("dialog", { name: "Provider 技术配置" })).toBeNull();
-    rerender(<SettingsContext detail={{ section: "models", provider: deepseek, model: deepseek.available_models[0] }} onClose={onClose} />);
+    rerender(<ProviderConfigModal provider={deepseek} model={deepseek.available_models[0]} onClose={onClose} />);
     expect(screen.getByRole("dialog", { name: "Provider 技术配置" }).getAttribute("aria-modal")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "关闭 Provider 技术配置" }));
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Provider 技术配置").closest("header")?.classList.contains("sino-settings-context-header")).toBe(true);
+    expect(screen.getByText("Provider 技术配置").closest("header")).toBeTruthy();
     expect(screen.getByText(/DeepSeek \/ deepseek/)).toBeTruthy();
     expect(screen.getByText("****1234")).toBeTruthy();
     expect(screen.getByText("Provider 模型管理")).toBeTruthy();
     expect(screen.getByText("Provider 端点")).toBeTruthy();
     expect(screen.queryByText("当前启用模型")).toBeNull();
-    rerender(<SettingsContext detail={{ section: "sino" }} />);
+    rerender(<ProviderConfigModal />);
     expect(screen.queryByText("Sino Founder AI 系统配置")).toBeNull();
     expect(screen.queryByText("设置上下文")).toBeNull();
     expect(screen.queryByText("设置详情")).toBeNull();
@@ -172,7 +172,7 @@ describe("Founder Settings", () => {
     const provider = { ...deepseek, available_models: models, selected_models: ["model-1"] };
     const onRefresh = vi.fn();
     const onHealth = vi.fn();
-    const { container } = render(<SettingsContext detail={{ section: "models", provider, model: models[0], onRefresh, onHealth, onChoose: vi.fn() }} />);
+    const { container } = render(<ProviderConfigModal provider={provider} model={models[0]} onRefresh={onRefresh} onHealth={onHealth} onChoose={vi.fn()} />);
     expect(container.querySelectorAll(".sino-settings-inspector-card")).toHaveLength(5);
     expect(screen.getByText("Model 3")).toBeTruthy();
     expect(screen.queryByText("Model 4")).toBeNull();
@@ -206,15 +206,15 @@ describe("Founder Settings", () => {
     expect(document.body.textContent).not.toContain("credential-reference://");
   });
 
-  it("uses the middle Settings panel as the sole scroll container and keeps the last runtime card reachable", async () => {
-    render(<div className="sino-founder-shell"><main className="sino-founder-main sino-founder-main--fixed-workspace"><ModelCenter /></main><aside className="sino-founder-context" aria-label="Settings Context">Settings Context</aside></div>);
+  it("uses the Settings panel as the sole scroll container and keeps the last runtime card reachable", async () => {
+    render(<main className="sino-founder-main sino-founder-main--fixed-workspace"><ModelCenter /></main>);
     await screen.findByRole("heading", { name: "设置" });
     fireEvent.click(screen.getByRole("button", { name: "打开系统" }));
     fireEvent.click(screen.getByRole("button", { name: "查看详情" }));
     const settings = screen.getByRole("region", { name: "设置" });
     expect(settings.matches(".sino-founder-main--fixed-workspace > .sino-settings")).toBe(true);
     expect(settings.contains(screen.getByText("网络"))).toBe(true);
-    expect(screen.getByLabelText("Settings Context")).toBeTruthy();
+    expect(screen.queryByRole("complementary")).toBeNull();
     expect(screen.getByRole("main").classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
   });
 
