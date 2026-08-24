@@ -30,6 +30,64 @@ export function resolveAssignmentStatus({ primaryStatus, fallbackStatus, fallbac
   return MODEL_ASSIGNMENT_STATUS.ERROR;
 }
 
+const assignmentStatusPriority = { [MODEL_ASSIGNMENT_STATUS.UNCONFIGURED]: 0, [MODEL_ASSIGNMENT_STATUS.NORMAL]: 1, [MODEL_ASSIGNMENT_STATUS.ERROR]: 2, [MODEL_ASSIGNMENT_STATUS.CONFIG_ERROR]: 3 };
+const referenceKey = (reference) => {
+  const provider = reference?.provider_key || reference?.provider_id;
+  const model = reference?.model || reference?.model_id;
+  return provider && model ? `${provider}::${model}` : "";
+};
+
+export function buildAssignedModelEconomics({ roles = [], options = [], registry = {}, modelUsage = [] }) {
+  const rows = new Map();
+  const registryModels = registry.models || [];
+  const visionChoices = registryModels.filter((item) => item.selected && item.enabled && item.capabilities?.supports_vision_understanding?.status === "VERIFIED").map((item) => ({ value: `${item.provider_id}::${item.model_id}`, label: item.display_name, healthy: Boolean(item.healthy), provider: options.find((option) => option.value === `${item.provider_id}::${item.model_id}`)?.provider }));
+  const usageByModel = new Map(modelUsage.map((item) => [`${item.provider_id}::${item.model_id}`, item]));
+  const merge = (reference, duty, choices = options, invalid = false, discussionTracked = false) => {
+    const key = referenceKey(reference);
+    if (!key) return;
+    const [providerId, modelId] = key.split("::");
+    const choice = choices.find((item) => item.value === key);
+    const registryModel = registryModels.find((item) => item.provider_id === providerId && item.model_id === modelId);
+    const status = resolveModelAssignmentStatus({ value: key, choices, invalid });
+    const current = rows.get(key) || { provider_id: providerId, model_id: modelId, display_name: choice?.label || registryModel?.display_name || modelId, provider_name: choice?.provider?.display_name || options.find((item) => item.value === key)?.provider?.display_name || providerId, roles: [], assignment_status: status, discussion_tracked: false };
+    if (!current.roles.includes(duty)) current.roles.push(duty);
+    if (assignmentStatusPriority[status] > assignmentStatusPriority[current.assignment_status]) current.assignment_status = status;
+    current.discussion_tracked ||= discussionTracked;
+    rows.set(key, current);
+  };
+  const addRole = (roleKey, label) => {
+    const role = roles.find((item) => item.role_key === roleKey) || {};
+    const primary = { provider_key: role.provider_key, model: role.model };
+    const fallback = role.fallbacks?.[0];
+    const sameModel = Boolean(referenceKey(primary) && referenceKey(primary) === referenceKey(fallback));
+    merge(primary, label, options, sameModel);
+    merge(fallback, `${label} Fallback`, options, sameModel);
+  };
+  addRole("sino_conversation", "Sino 主对话");
+  addRole("deep_thinking", "深度推理");
+  addRole("code_execution", "Coding");
+  const vision = (registry.routing_policies || []).find((item) => item.capability === "VISION_UNDERSTANDING") || {};
+  const visionPrimary = vision.preferred_primary || vision.active_primary;
+  const visionFallback = vision.preferred_fallback;
+  const sameVisionModel = Boolean(referenceKey(visionPrimary) && referenceKey(visionPrimary) === referenceKey(visionFallback));
+  merge(visionPrimary, "Vision", visionChoices, sameVisionModel);
+  merge(visionFallback, "Vision Fallback", visionChoices, sameVisionModel);
+  const discussion = roles.find((item) => item.role_key === "multi_model_discussion") || {};
+  const slots = discussion.slots?.length ? discussion.slots.slice(0, 5) : (discussion.models || []).slice(0, 5).map((primary) => ({ primary, fallback: null }));
+  const primaryKeys = slots.map((slot) => referenceKey(slot.primary)).filter(Boolean);
+  slots.forEach((slot, index) => {
+    const primaryKey = referenceKey(slot.primary); const fallbackKey = referenceKey(slot.fallback);
+    const sameModel = Boolean(primaryKey && primaryKey === fallbackKey);
+    merge(slot.primary, `讨论模型 ${index + 1}`, options, sameModel || primaryKeys.filter((key) => key === primaryKey).length > 1, true);
+    merge(slot.fallback, `讨论模型 ${index + 1} Fallback`, options, sameModel, true);
+  });
+  return [...rows.entries()].map(([key, row]) => {
+    const usage = usageByModel.get(key);
+    const usageAvailable = Boolean(usage || row.discussion_tracked);
+    return { ...row, request_count: usage ? Number(usage.request_count || 0) : usageAvailable ? 0 : null, completed_request_count: usage ? Number(usage.completed_request_count || 0) : usageAvailable ? 0 : null, input_tokens: usage?.input_tokens ?? null, output_tokens: usage?.output_tokens ?? null, total_tokens: usage?.total_tokens ?? null, cost: usage?.cost ?? null, average_latency_ms: usage?.average_latency_ms ?? null, usage_status: usage ? "recorded" : usageAvailable ? "available_zero" : "not_integrated" };
+  });
+}
+
 export function ModelCenter({ onHome }) {
   const [center, setCenter] = useState(empty);
   const [adding, setAdding] = useState(false);
@@ -146,12 +204,12 @@ export function ModelCenter({ onHome }) {
     <div className="sino-settings-content">
     {message && <p className="sino-model-center-message" role="status">{message}</p>}
     <section className="sino-capability-section sino-settings-page sino-settings-page--models" aria-label="模型">
-      <UsageCost healthCost={center.health_cost || []} />
       <section className="sino-model-list-pane"><div className="sino-model-list-heading"><h3>模型</h3><div><span aria-label="模型摘要">{modelRows.length} 个模型 · {modelRows.filter((row) => row.health === "healthy").length} 正常 · {modelRows.filter((row) => row.health === "unhealthy").length} 异常 · {installed.length} Provider</span></div></div><div className="sino-model-card-grid" role="list" aria-label="已接入模型列表">{modelRows.map(({ provider, selected, meta, health: healthState }) => { const active = editing === provider.provider_key && selectedModel === selected; const duties = modelDuties(provider.provider_key, selected); return <article role="listitem" key={`${provider.provider_key}-${selected}`}><button type="button" className={active ? "is-selected" : ""} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} onClick={(event) => selectModel(provider, selected, event.currentTarget)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span data-health={healthState}>● {healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span><small>{duties.length ? duties.join(" · ") : "未分配"}</small></button></article>; })}<article role="listitem"><button type="button" className="sino-add-model-card" onClick={() => { setFeatureModal(null); setEditing(null); setSelectedModel(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></article></div></section>
       <div className="sino-settings-control-grid">
         <SettingsFeatureEntry title="Sino AI" description="模型职责分配、Primary / Fallback 与多模型讨论" summary={`${conversationRole?.model || "主对话未配置"} · ${configuredRoles} 个职责`} onClick={(event) => openFeatureModal("sino-ai", event.currentTarget)} />
         <SettingsFeatureEntry title="系统" description="Executor、Runtime 与 System Health" summary={`${activeEngine?.display_name || "Codex"} · ${localRuntime?.status || "LOCAL"}`} onClick={(event) => openFeatureModal("system", event.currentTarget)} />
       </div>
+      <ModelEconomics roles={center.roles || []} options={modelOptions} registry={center.model_capability_registry || {}} modelUsage={center.model_usage || []} />
     </section>
 
     {adding && <AddModelModal step={installStep} center={center} install={install} editing={editing} busy={busy} providerKey={installProviderKey} onSelectProvider={beginProviderConnection} onInstallChange={setInstall} onConnect={addProvider} onChoose={choose} onClose={() => { setAdding(false); setInstallStep(1); setInstallProviderKey(null); }} />}
@@ -204,11 +262,14 @@ function ModelAssignments({ roles, options, registry, busy, onAssign, onVisionAs
 
 function referenceValue(value) { if (!value) return null; const [provider_key, model] = value.split("::"); return { provider_key, model }; }
 
-function UsageCost({ healthCost }) {
-  const providers = healthCost.filter((item) => Number.isFinite(item.usage?.calls));
-  const calls = providers.reduce((sum, item) => sum + Number(item.usage.calls || 0), 0);
-  const latencies = providers.map((item) => item.usage?.average_latency_ms).filter(Number.isFinite);
-  return <section className="sino-usage-cost" aria-label="用量与成本"><div className="sino-settings-domain-heading"><h3>用量与成本</h3><span>部分 Provider 已接入统计</span></div><dl><div><dt>已记录调用</dt><dd>{calls}</dd></div><div><dt>Provider 平均延迟</dt><dd>{latencies.length ? `${Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)} ms` : "未接入"}</dd></div><div><dt>Token</dt><dd>未接入统一统计</dd></div><div><dt>成本</dt><dd>成本未配置</dd></div></dl></section>;
+function ModelEconomics({ roles, options, registry, modelUsage }) {
+  const rows = buildAssignedModelEconomics({ roles, options, registry, modelUsage });
+  const meteredRows = rows.filter((row) => row.request_count !== null);
+  const calls = meteredRows.length ? meteredRows.reduce((sum, row) => sum + row.request_count, 0) : null;
+  const completedCalls = meteredRows.reduce((sum, row) => sum + row.completed_request_count, 0);
+  const averageLatency = completedCalls ? Math.round(meteredRows.reduce((sum, row) => sum + (row.average_latency_ms || 0) * row.completed_request_count, 0) / completedCalls) : null;
+  const metric = (value, unavailable) => value === null || value === undefined ? unavailable : value;
+  return <section className="sino-usage-cost" aria-label="用量与成本"><div className="sino-settings-domain-heading"><h3>用量与成本</h3><span aria-label="已分配模型摘要">{rows.length} 个已分配模型</span></div><dl><div><dt>调用次数</dt><dd>{metric(calls, "未接入")}</dd></div><div><dt>Token</dt><dd>未接入</dd></div><div><dt>成本</dt><dd>成本未配置</dd></div><div><dt>平均延迟</dt><dd>{averageLatency === null ? "—" : `${averageLatency} ms`}</dd></div></dl><div className="sino-model-economics"><h4>已分配模型</h4><div className="sino-model-economics-table" role="table" aria-label="已分配模型经济账"><div className="sino-model-economics-row sino-model-economics-row--header" role="row"><span role="columnheader">模型</span><span role="columnheader">职责</span><span role="columnheader">状态</span><span role="columnheader">调用</span><span role="columnheader">Token</span><span role="columnheader">成本</span><span role="columnheader">平均延迟</span></div>{rows.map((row) => { const view = assignmentStatusView[row.assignment_status]; return <div className="sino-model-economics-row" role="row" key={`${row.provider_id}::${row.model_id}`}><span role="cell"><strong>{row.display_name}</strong><small>{row.provider_name}</small></span><span role="cell">{row.roles.join(" · ")}</span><span role="cell" className="sino-model-status" data-status={view.key}>{view.label}</span><span role="cell">{metric(row.request_count, "未接入")}</span><span role="cell">{metric(row.total_tokens, "未接入")}</span><span role="cell">{metric(row.cost, "成本未配置")}</span><span role="cell">{row.average_latency_ms === null ? "—" : `${Math.round(row.average_latency_ms)} ms`}</span></div>; })}</div></div></section>;
 }
 
 function RuntimeEnvironmentSettings({ registry }) {

@@ -22,6 +22,7 @@ const center = {
     { role_key: "code_execution", label: "代码执行", provider_key: "deepseek", model: "deepseek-chat", execution_engine_id: "codex" },
   ], agents: [], skills: [], applications: [], execution_engines: [{ engine_id: "codex", display_name: "Codex", status: "available" }],
   health_cost: [{ ...provider, usage: { calls: 3, tokens: 1200, cost: 0.03, average_latency_ms: 280, quota: null } }],
+  model_usage: [{ provider_id: "deepseek", model_id: "deepseek-chat", request_count: 3, completed_request_count: 3, average_latency_ms: 280, input_tokens: null, output_tokens: null, total_tokens: null, cost: null, usage_source: "multi_model_discussion" }],
   model_capability_registry: {
     models: [{ provider_id: "deepseek", model_id: "deepseek-chat", display_name: "deepseek-chat", enabled: true, selected: true, healthy: true, capabilities: {
       supports_text_reasoning: { status: "VERIFIED" }, supports_vision_understanding: { status: "UNVERIFIED" },
@@ -67,7 +68,11 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(page.getByRole("list", { name: "已接入模型列表" })).toBeVisible();
   await expect(page.getByRole("region", { name: "模型分配" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "用量与成本" })).toBeVisible();
-  expect((await page.getByRole("region", { name: "用量与成本" }).boundingBox()).y).toBeLessThan((await page.getByRole("list", { name: "已接入模型列表" }).boundingBox()).y);
+  await expect(page.getByLabel("已分配模型摘要")).toHaveText("1 个已分配模型");
+  const economics = page.getByRole("table", { name: "已分配模型经济账" });
+  await expect(economics).toContainText("deepseek-chat");
+  await expect(economics).toContainText("Sino 主对话 · 深度推理 · Coding · 讨论模型 1");
+  await expect(economics).not.toContainText("DeepSeek Model 2");
   await expect(page.getByText(/10 个模型 · 10 正常/)).toBeVisible();
   await expect(page.getByRole("list", { name: "已接入模型列表" }).locator("button[aria-pressed]")).toHaveCount(10);
   await expect(page.getByRole("list", { name: "已接入模型列表" }).locator('[role="listitem"]').last().getByRole("button", { name: "＋ 添加模型" })).toBeVisible();
@@ -75,6 +80,7 @@ test("Settings exposes model control and system health with the real Provider in
   const systemEntry = page.getByRole("button", { name: "打开系统" });
   await expect(sinoEntry).toBeVisible();
   await expect(systemEntry).toBeVisible();
+  expect((await page.getByRole("region", { name: "用量与成本" }).boundingBox()).y).toBeGreaterThan((await systemEntry.boundingBox()).y);
   expect((await sinoEntry.boundingBox()).y).toBeGreaterThan((await page.getByRole("list", { name: "已接入模型列表" }).boundingBox()).y);
   expect(Math.abs((await systemEntry.boundingBox()).y - (await sinoEntry.boundingBox()).y)).toBeLessThanOrEqual(1);
   expect(Math.abs((await systemEntry.boundingBox()).width - (await sinoEntry.boundingBox()).width)).toBeLessThanOrEqual(1);

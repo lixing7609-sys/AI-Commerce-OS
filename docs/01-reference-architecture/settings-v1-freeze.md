@@ -9,9 +9,9 @@ Settings V1 is the Founder-facing control surface for model supply, Sino model a
 The single Settings workspace contains, in order:
 
 1. Header: `← 返回首页` and `设置`.
-2. Usage and cost summary.
-3. Model card grid, including the final Add Model card.
-4. A two-column control grid for Sino AI and System.
+2. Model card grid, including the final Add Model card.
+3. A two-column control grid for Sino AI and System.
+4. Model Economics for currently assigned models.
 
 On desktop the workspace keeps 100 px viewport margins, with existing responsive reductions on narrower screens. The established header alignment, typography, section order, five-column model grid, and Sino AI/System two-column layout are frozen.
 
@@ -31,6 +31,8 @@ Settings dialogs share the same overlay, focus and close behavior, fixed header,
 - **System:** Executor, runtime registry, system health, and technical runtime detail.
 
 Each mutable setting has one editing surface. Read-only summaries may reference a setting elsewhere, but must not create a second mutation path.
+
+Model Economics is a read-only projection over current persisted Assignment/Runtime references. It deduplicates by Provider plus Model ID, merges all Primary/Fallback and discussion-slot duties, and excludes connected models that have no current assignment. Assignment does not imply usage: request count and completed-call latency come only from persisted model invocation records, Token remains unavailable until it is durably metered into this projection, and cost remains unconfigured until an approved Provider cost or Pricing Rule exists. No estimates or catalog-wide Provider models are permitted.
 
 Provider technical configuration uses one shared layout for every Provider. It contains only a compact connection-control section and the Provider model-management section. Connection status and its test action share one row; the masked API key and update action share one row; Base URL and any real Provider-specific fields are ordinary connection rows. Single-field cards and persistent success cards are prohibited. Successful operations use transient feedback, while model management owns the remaining scrollable dialog space.
 

@@ -47,6 +47,30 @@ def test_model_center_preserves_existing_key_and_records_health(monkeypatch, tmp
     assert health["health_checked_at"]
 
 
+def test_model_center_exposes_real_per_model_invocation_counts_and_completed_latency(monkeypatch, tmp_path):
+    factory = _database(monkeypatch, tmp_path)
+    with factory() as session:
+        session.add_all([
+            model_center.CouncilModelRunDB(council_run_id="council-1", provider="deepseek", model="deepseek-chat", role="analyst", status="completed", proposal={}, latency_ms=100, context_references={}),
+            model_center.CouncilModelRunDB(council_run_id="council-1", provider="deepseek", model="deepseek-chat", role="critic", status="completed", proposal={}, latency_ms=200, context_references={}),
+            model_center.CouncilModelRunDB(council_run_id="council-1", provider="deepseek", model="deepseek-chat", role="reviewer", status="failed", proposal={}, latency_ms=900, error_type="provider_unavailable", context_references={}),
+        ])
+        session.commit()
+    usage = model_center.get_model_center()["model_usage"]
+    assert usage == [{
+        "provider_id": "deepseek",
+        "model_id": "deepseek-chat",
+        "request_count": 3,
+        "completed_request_count": 2,
+        "average_latency_ms": 150.0,
+        "input_tokens": None,
+        "output_tokens": None,
+        "total_tokens": None,
+        "cost": None,
+        "usage_source": "multi_model_discussion",
+    }]
+
+
 def test_system_builder_reads_architect_assignment_without_exposing_key(monkeypatch, tmp_path):
     _database(monkeypatch, tmp_path)
     model_center.save_provider("claude", base_url="https://api.anthropic.com/v1", model="claude-runtime", api_key="builder-secret", enabled=True)

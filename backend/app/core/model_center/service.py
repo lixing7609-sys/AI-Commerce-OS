@@ -8,7 +8,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from app.core.council.model import CouncilModelRunDB
 from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
@@ -232,6 +232,17 @@ def get_model_center() -> dict:
         roles = {row.role_key: row.provider_key for row in session.scalars(select(ModelRoleAssignmentDB))}
         assignments = list(session.scalars(select(ApplicationCapabilityAssignmentDB)))
         usage_rows = session.execute(select(CouncilModelRunDB.provider, func.count(CouncilModelRunDB.id), func.avg(CouncilModelRunDB.latency_ms)).group_by(CouncilModelRunDB.provider)).all()
+        model_usage_rows = session.execute(
+            select(
+                CouncilModelRunDB.provider,
+                CouncilModelRunDB.model,
+                func.count(CouncilModelRunDB.id),
+                func.count(case((CouncilModelRunDB.status == "completed", 1))),
+                func.avg(case((CouncilModelRunDB.status == "completed", CouncilModelRunDB.latency_ms))),
+            )
+            .where(CouncilModelRunDB.model.is_not(None))
+            .group_by(CouncilModelRunDB.provider, CouncilModelRunDB.model)
+        ).all()
         capability_configs = {row.capability_key: row for row in session.scalars(select(AICapabilityConfigDB))}
         discussion_config = capability_configs.get("multi_model_discussion")
         if discussion_config and "slots" not in (discussion_config.configuration or {}):
@@ -247,6 +258,7 @@ def get_model_center() -> dict:
         if key not in rows:
             provider_items.append(_serialize(None, key))
     usage = {provider: {"calls": count, "average_latency_ms": round(float(latency), 1) if latency is not None else None, "tokens": None, "cost": None, "quota": None} for provider, count, latency in usage_rows}
+    model_usage = [{"provider_id": provider, "model_id": model, "request_count": count, "completed_request_count": completed_count, "average_latency_ms": round(float(latency), 1) if latency is not None else None, "input_tokens": None, "output_tokens": None, "total_tokens": None, "cost": None, "usage_source": "multi_model_discussion"} for provider, model, count, completed_count, latency in model_usage_rows]
     capability_roles = []
     for capability in CAPABILITIES:
         legacy = next((old for old, new in LEGACY_ROLE_ALIASES.items() if new == capability), None)
@@ -271,6 +283,7 @@ def get_model_center() -> dict:
         "skills": _agent_skills("sino_founder_ai", capability_configs, roles),
         "applications": [{"application_key": key, "label": label, "assignments": [_application_assignment(key, capability, assignments, rows, roles) for capability in CAPABILITIES]} for key, label in APPLICATIONS.items()],
         "health_cost": [{**item, "usage": usage.get(item["provider_key"], {"calls": 0, "average_latency_ms": None, "tokens": None, "cost": None, "quota": None})} for item in provider_items],
+        "model_usage": model_usage,
         "execution_engines": [{"engine_id": key, **value} for key, value in EXECUTION_ENGINE_REGISTRY.items()],
         "model_capability_registry": capability_registry,
     }

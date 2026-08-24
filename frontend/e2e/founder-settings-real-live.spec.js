@@ -33,9 +33,9 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     const homeBox = await page.getByRole("button", { name: "← 返回首页" }).boundingBox();
     const titleBox = await page.getByRole("heading", { name: "设置" }).boundingBox();
     const usageTitleBox = await page.getByRole("heading", { name: "用量与成本" }).boundingBox();
-    const usageSummaryBox = await page.getByText("部分 Provider 已接入统计", { exact: true }).boundingBox();
+    const usageSummaryBox = await page.getByLabel("已分配模型摘要").boundingBox();
     const modelTitleBox = await page.getByRole("heading", { name: "模型", exact: true }).boundingBox();
-    const modelSummaryBox = await page.getByLabel("模型摘要").boundingBox();
+    const modelSummaryBox = await page.getByLabel("模型摘要", { exact: true }).boundingBox();
     for (const box of [usageBox, modelBox]) {
       expect(Math.abs(box.x - 100)).toBeLessThanOrEqual(2);
       expect(Math.abs(viewport.width - box.x - box.width - 100)).toBeLessThanOrEqual(2);
@@ -53,6 +53,8 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     expect(Math.abs(modelTitleBox.y + modelTitleBox.height - modelSummaryBox.y - modelSummaryBox.height)).toBeLessThanOrEqual(2);
     expect(Math.abs(usageSummaryBox.x - usageTitleBox.x - usageTitleBox.width - 16)).toBeLessThanOrEqual(2);
     expect(Math.abs(modelSummaryBox.x - modelTitleBox.x - modelTitleBox.width - 16)).toBeLessThanOrEqual(2);
+    expect(modelBox.y).toBeLessThan(sinoBox.y);
+    expect(sinoBox.y).toBeLessThan(usageBox.y);
     const modelCardLayout = await page.getByRole("list", { name: "已接入模型列表" }).locator("article").evaluateAll((items) => {
       const rows = [...new Set(items.map((item) => Math.round(item.getBoundingClientRect().top)))];
       return { rows, firstRowCount: items.filter((item) => Math.round(item.getBoundingClientRect().top) === rows[0]).length };

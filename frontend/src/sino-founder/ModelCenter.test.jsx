@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
-import { MODEL_ASSIGNMENT_STATUS, ModelCenter, ProviderConfigModal, resolveAssignmentStatus, resolveModelAssignmentStatus } from "./ModelCenter.jsx";
+import { MODEL_ASSIGNMENT_STATUS, ModelCenter, ProviderConfigModal, buildAssignedModelEconomics, resolveAssignmentStatus, resolveModelAssignmentStatus } from "./ModelCenter.jsx";
 import "./sino-founder-ai.css";
 
 vi.mock("../services/founderAiApi.js", () => ({ checkModelProvider: vi.fn(), discoverProviderModels: vi.fn(), getModelCenter: vi.fn(), getRuntimeEnvironmentRegistry: vi.fn(), installModelProvider: vi.fn(), saveCapabilityAssignment: vi.fn(), saveModelRoutingPreferred: vi.fn(), saveMultiModelAssignment: vi.fn(), selectProviderModels: vi.fn(), updateModelProviderCredentials: vi.fn() }));
@@ -64,6 +64,33 @@ describe("Founder Settings", () => {
     for (const [primaryStatus, fallbackStatus, fallbackSupported, expected] of matrix) {
       expect(resolveAssignmentStatus({ primaryStatus, fallbackStatus, fallbackSupported })).toBe(expected);
     }
+  });
+
+  it("aggregates assigned model economics by Provider and model without inventing usage", () => {
+    const roles = [
+      { role_key: "sino_conversation", provider_key: "deepseek", model: "deepseek-chat", fallbacks: [{ provider_key: "claude", model: "claude-sonnet-5" }] },
+      { role_key: "deep_thinking", provider_key: "deepseek", model: "deepseek-chat", fallbacks: [] },
+      { role_key: "code_execution", provider_key: "claude", model: "claude-sonnet-5", fallbacks: [] },
+      { role_key: "multi_model_discussion", slots: [{ primary: { provider_key: "deepseek", model: "deepseek-chat" }, fallback: null }, { primary: { provider_key: "missing", model: "missing-model" }, fallback: null }] },
+    ];
+    const options = [
+      { value: "deepseek::deepseek-chat", label: "DeepSeek Chat", healthy: true, provider: { display_name: "DeepSeek" } },
+      { value: "claude::claude-sonnet-5", label: "Claude Sonnet 5", healthy: false, provider: { display_name: "Claude" } },
+      { value: "unused::unused-model", label: "Unused", healthy: true, provider: { display_name: "Unused" } },
+    ];
+    const result = buildAssignedModelEconomics({ roles, options, registry: {}, modelUsage: [{ provider_id: "deepseek", model_id: "deepseek-chat", request_count: 3, completed_request_count: 2, average_latency_ms: 120.5 }] });
+    expect(result).toHaveLength(3);
+    expect(result.some((item) => item.model_id === "unused-model")).toBe(false);
+    const deepseekEconomics = result.find((item) => item.model_id === "deepseek-chat");
+    expect(deepseekEconomics.roles).toEqual(["Sino 主对话", "深度推理", "讨论模型 1"]);
+    expect(deepseekEconomics.request_count).toBe(3);
+    expect(deepseekEconomics.total_tokens).toBeNull();
+    expect(deepseekEconomics.cost).toBeNull();
+    const claudeEconomics = result.find((item) => item.model_id === "claude-sonnet-5");
+    expect(claudeEconomics.roles).toEqual(["Sino 主对话 Fallback", "Coding"]);
+    expect(claudeEconomics.request_count).toBeNull();
+    expect(claudeEconomics.assignment_status).toBe(MODEL_ASSIGNMENT_STATUS.ERROR);
+    expect(result.find((item) => item.model_id === "missing-model").assignment_status).toBe(MODEL_ASSIGNMENT_STATUS.CONFIG_ERROR);
   });
 
   it("uses one top-level model navigation and keeps operational domains as page entries", async () => {
@@ -136,7 +163,7 @@ describe("Founder Settings", () => {
     expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("多模型讨论");
     const usage = screen.getByRole("region", { name: "用量与成本" });
     const modelList = screen.getByRole("list", { name: "已接入模型列表" });
-    expect(usage.compareDocumentPosition(modelList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(modelList.compareDocumentPosition(usage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const sinoEntry = screen.getByRole("button", { name: "打开Sino AI" });
     const systemEntry = screen.getByRole("button", { name: "打开系统" });
     expect(within(sinoEntry).queryByText("Sino AI", { exact: true })).toBeNull();
@@ -145,6 +172,7 @@ describe("Founder Settings", () => {
     expect(systemEntry.textContent).toContain("Executor、Runtime 与 System Health");
     expect(modelGrid.compareDocumentPosition(sinoEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(sinoEntry.compareDocumentPosition(systemEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(systemEntry.compareDocumentPosition(usage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("region", { name: "模型分配" })).toBeNull();
     fireEvent.click(sinoEntry);
     const sinoDialog = screen.getByRole("dialog", { name: "Sino AI" });
@@ -404,11 +432,13 @@ describe("Founder Settings", () => {
     expect(within(screen.getByRole("combobox", { name: "讨论模型 4 Primary" })).getByRole("option", { name: /DeepSeek Chat.*已用于其他讨论模型/ }).disabled).toBe(true);
   });
 
-  it("keeps configuration fields and hides incomplete or provider-level usage metrics", async () => {
+  it("shows assigned-model economics without reusing incomplete Provider-level metrics", async () => {
     checkModelProvider.mockResolvedValue({ status: "healthy", configuration: deepseek });
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
     expect(screen.getByRole("list", { name: "已接入模型列表" })).toBeTruthy();
-    for (const label of ["调用", "额度"]) expect(screen.queryByText(label, { exact: true })).toBeNull();
+    expect(screen.getByText("调用次数", { exact: true })).toBeTruthy();
+    expect(screen.getByRole("table", { name: "已分配模型经济账" })).toBeTruthy();
+    expect(screen.queryByText("额度", { exact: true })).toBeNull();
     expect(screen.queryByText("120.5 ms")).toBeNull();
   });
 
