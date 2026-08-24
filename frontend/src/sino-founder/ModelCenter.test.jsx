@@ -121,7 +121,10 @@ describe("Founder Settings", () => {
     expect(sinoEntry.compareDocumentPosition(systemEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("region", { name: "模型分配" })).toBeNull();
     fireEvent.click(sinoEntry);
-    expect(screen.getByRole("dialog", { name: "Sino AI" })).toBeTruthy();
+    const sinoDialog = screen.getByRole("dialog", { name: "Sino AI" });
+    const sinoHeader = within(sinoDialog).getByRole("heading", { name: "Sino AI" }).closest("header");
+    expect(within(sinoHeader).getByText("模型职责分配、Fallback 与多模型讨论，Primary 失败时有限切换至 Fallback。")).toBeTruthy();
+    expect(within(sinoDialog).queryByText("Primary 失败时有限切换至 Fallback", { exact: true })).toBeNull();
     expect(screen.getByRole("region", { name: "模型分配" })).toBeTruthy();
     expect(screen.getByRole("list", { name: "已接入模型列表" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "用量与成本" })).toBeTruthy();

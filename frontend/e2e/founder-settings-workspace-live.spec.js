@@ -116,8 +116,13 @@ test("Settings exposes model control and system health with the real Provider in
   await providerDialog.getByRole("button", { name: "关闭 Provider 技术配置" }).click();
 
   await sinoEntry.click();
-  await expect(page.getByRole("dialog", { name: "Sino AI" })).toBeVisible();
-  expect(await page.getByRole("dialog", { name: "Sino AI" }).boundingBox()).toMatchObject({ width: 1100, height: 700 });
+  const sinoDialog = page.getByRole("dialog", { name: "Sino AI" });
+  await expect(sinoDialog).toBeVisible();
+  expect(await sinoDialog.boundingBox()).toMatchObject({ width: 1100, height: 700 });
+  const sinoHeader = sinoDialog.locator(":scope > header");
+  await expect(sinoHeader.getByRole("heading", { name: "Sino AI" })).toBeVisible();
+  await expect(sinoHeader.getByText("模型职责分配、Fallback 与多模型讨论，Primary 失败时有限切换至 Fallback。", { exact: true })).toBeVisible();
+  await expect(sinoDialog.getByText("Primary 失败时有限切换至 Fallback", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "Provider 技术配置" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
   await expect(page.getByRole("list", { name: "已接入模型列表" })).toBeVisible();
