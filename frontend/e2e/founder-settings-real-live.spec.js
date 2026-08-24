@@ -32,6 +32,10 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     await page.screenshot({ path: `${evidence}/settings-model-control-${viewport.width}x${viewport.height}.png`, fullPage: true });
   }
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "选择参与模型" }).click();
+  await expect(page.getByRole("group", { name: "参与模型选项" })).toBeVisible();
+  await page.screenshot({ path: `${evidence}/settings-model-assignment-multiselect-1440x900.png`, fullPage: true });
+  await page.getByRole("button", { name: "选择参与模型" }).click();
   await firstModel.click();
   const inspector = page.getByLabel("功能页详情");
   await expect(inspector).toBeVisible();

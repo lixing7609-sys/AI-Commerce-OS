@@ -34,7 +34,13 @@ const runtime = { environments: [{ environment_type: "LOCAL", status: "ACTIVE", 
 
 test("Settings exposes model control and system health with the real Provider inspector", async ({ page }) => {
   mkdirSync(evidenceDirectory, { recursive: true });
-  await page.route("**/api/v1/founder-ai/model-center", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(center) }));
+  let liveCenter = structuredClone(center);
+  await page.route("**/api/v1/founder-ai/model-center", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(liveCenter) }));
+  await page.route("**/api/v1/founder-ai/model-center/capabilities/multi-model-discussion", async (route) => {
+    const models = route.request().postDataJSON().models;
+    liveCenter = { ...liveCenter, roles: liveCenter.roles.map((item) => item.role_key === "multi_model_discussion" ? { ...item, models } : item) };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(liveCenter) });
+  });
   await page.route("**/api/v1/founder-ai/runtime-environments", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(runtime) }));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
@@ -61,6 +67,16 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(page.getByRole("region", { name: "Usage 与成本" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Primary" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Vision Primary" }).locator("xpath=ancestor::div[contains(@class,'sino-model-assignment-row')]")).toContainText("未配置");
+  const codingRow = page.getByRole("combobox", { name: "Coding Primary" }).locator("xpath=ancestor::div[contains(@class,'sino-model-assignment-row')]");
+  await expect(codingRow).not.toContainText("Codex");
+  await expect(page.getByRole("button", { name: "移除 deepseek-chat" })).toBeVisible();
+  await page.getByRole("button", { name: "选择参与模型" }).click();
+  const discussionOptions = page.getByRole("group", { name: "参与模型选项" });
+  await expect(discussionOptions).toBeVisible();
+  await discussionOptions.getByRole("checkbox", { name: /Claude Sonnet 5/ }).click();
+  await expect(page.getByRole("button", { name: "移除 Claude Sonnet 5" })).toBeVisible();
+  await page.getByRole("button", { name: "选择参与模型" }).click();
   await expect(page.getByText(/10 个模型 · 10 正常/)).toBeVisible();
   await expect(page.getByRole("list", { name: "已接入模型列表" }).locator("button[aria-pressed]")).toHaveCount(10);
   await page.screenshot({ path: `${evidenceDirectory}/settings-models-full-width.png`, fullPage: true });
