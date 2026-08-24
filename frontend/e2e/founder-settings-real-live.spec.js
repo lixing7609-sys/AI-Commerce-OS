@@ -36,18 +36,19 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     const usageSummaryBox = await page.getByText("部分 Provider 已接入统计", { exact: true }).boundingBox();
     const modelTitleBox = await page.getByRole("heading", { name: "模型", exact: true }).boundingBox();
     const modelSummaryBox = await page.getByLabel("模型摘要").boundingBox();
-    for (const box of [usageBox, modelBox, sinoBox, systemBox]) {
+    for (const box of [usageBox, modelBox]) {
       expect(Math.abs(box.x - 100)).toBeLessThanOrEqual(2);
       expect(Math.abs(viewport.width - box.x - box.width - 100)).toBeLessThanOrEqual(2);
     }
     expect(Math.abs(usageBox.x - modelBox.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.x - sinoBox.x)).toBeLessThanOrEqual(1);
-    expect(Math.abs(usageBox.x - systemBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(viewport.width - systemBox.x - systemBox.width - 100)).toBeLessThanOrEqual(2);
+    expect(Math.abs(sinoBox.width - systemBox.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(systemBox.x - sinoBox.x - sinoBox.width - 18)).toBeLessThanOrEqual(2);
+    expect(Math.abs(sinoBox.y - systemBox.y)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.x - homeBox.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.x + usageBox.width - titleBox.x - titleBox.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.width - modelBox.width)).toBeLessThanOrEqual(1);
-    expect(Math.abs(usageBox.width - sinoBox.width)).toBeLessThanOrEqual(1);
-    expect(Math.abs(usageBox.width - systemBox.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageTitleBox.y + usageTitleBox.height - usageSummaryBox.y - usageSummaryBox.height)).toBeLessThanOrEqual(2);
     expect(Math.abs(modelTitleBox.y + modelTitleBox.height - modelSummaryBox.y - modelSummaryBox.height)).toBeLessThanOrEqual(2);
     expect(Math.abs(usageSummaryBox.x - usageTitleBox.x - usageTitleBox.width - 16)).toBeLessThanOrEqual(2);

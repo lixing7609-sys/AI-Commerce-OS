@@ -75,7 +75,9 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(sinoEntry).toBeVisible();
   await expect(systemEntry).toBeVisible();
   expect((await sinoEntry.boundingBox()).y).toBeGreaterThan((await page.getByRole("list", { name: "已接入模型列表" }).boundingBox()).y);
-  expect((await systemEntry.boundingBox()).y).toBeGreaterThan((await sinoEntry.boundingBox()).y);
+  expect(Math.abs((await systemEntry.boundingBox()).y - (await sinoEntry.boundingBox()).y)).toBeLessThanOrEqual(1);
+  expect(Math.abs((await systemEntry.boundingBox()).width - (await sinoEntry.boundingBox()).width)).toBeLessThanOrEqual(1);
+  expect(Math.abs((await systemEntry.boundingBox()).height - (await sinoEntry.boundingBox()).height)).toBeLessThanOrEqual(1);
   await expect(page.locator(".sino-model-list-heading").getByRole("button", { name: "＋ 添加模型" })).toHaveCount(0);
   await page.getByRole("button", { name: "＋ 添加模型" }).click();
   await expect(page.getByRole("dialog", { name: "添加 AI 模型" })).toBeVisible();
