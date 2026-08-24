@@ -725,8 +725,6 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-model-list-heading h3 { margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 600; line-height: 20px; }
 .sino-model-list-heading > div { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
 .sino-model-list-heading span { overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.sino-model-list-heading button { flex: none; min-height: 32px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text-primary); font-size: 12px; cursor: pointer; }
-.sino-model-list-heading button:hover { background: var(--surface-raised); }
 .sino-executor-summary:hover { background: var(--surface-raised); }
 .sino-executor-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; padding: 12px; color: var(--text-primary); text-align: left; cursor: pointer; }
 .sino-executor-summary > span { display: grid; gap: 3px; min-width: 0; }
@@ -902,6 +900,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-model-card-grid > article { min-width: 0; }
 .sino-model-card-grid > article > button { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto; gap: 3px 10px; width: 100%; min-width: 0; min-height: 88px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--line) 84%, transparent); border-radius: 9px; background: color-mix(in srgb, var(--surface-raised) 54%, transparent); color: inherit; text-align: left; cursor: pointer; }
 .sino-model-card-grid > article > button:hover { border-color: color-mix(in srgb, var(--line) 55%, var(--text-secondary)); background: var(--surface-raised); }
+.sino-model-card-grid > article > button.sino-add-model-card { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 13px; font-weight: 500; }
+.sino-model-card-grid > article > button.sino-add-model-card:hover { color: var(--text-primary); }
 .sino-model-card-grid > article > button.is-selected { border-color: color-mix(in srgb, var(--accent) 54%, var(--line)); box-shadow: inset 2px 0 var(--accent); background: var(--surface-selected); }
 .sino-model-card-grid strong { grid-column: 1 / -1; min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .sino-model-card-grid span { min-width: 0; overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }

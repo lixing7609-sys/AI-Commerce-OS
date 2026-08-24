@@ -74,6 +74,12 @@ test("Settings exposes model control and system health with the real Provider in
   expect((await page.getByRole("region", { name: "Usage 与成本" }).boundingBox()).y).toBeLessThan((await page.getByRole("list", { name: "已接入模型列表" }).boundingBox()).y);
   await expect(page.getByText(/10 个模型 · 10 正常/)).toBeVisible();
   await expect(page.getByRole("list", { name: "已接入模型列表" }).locator("button[aria-pressed]")).toHaveCount(10);
+  await expect(page.getByRole("list", { name: "已接入模型列表" }).locator('[role="listitem"]').last().getByRole("button", { name: "＋ 添加模型" })).toBeVisible();
+  await expect(page.locator(".sino-model-list-heading").getByRole("button", { name: "＋ 添加模型" })).toHaveCount(0);
+  await page.getByRole("button", { name: "＋ 添加模型" }).click();
+  await expect(page.getByRole("dialog", { name: "添加 AI 模型" })).toBeVisible();
+  await page.getByRole("button", { name: "关闭添加 AI 模型" }).click();
+  await expect(page.getByRole("dialog", { name: "添加 AI 模型" })).toHaveCount(0);
   await page.screenshot({ path: `${evidenceDirectory}/settings-models-full-width.png`, fullPage: true });
   const settingsScroll = page.locator(".sino-settings");
   for (const viewport of [{ width: 1440, height: 900 }, { width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {

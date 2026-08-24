@@ -104,7 +104,10 @@ describe("Founder Settings", () => {
     expect(screen.getByLabelText("模型摘要").textContent).toContain("1 个模型 · 1 正常");
     expect(screen.getByRole("heading", { name: "已接入模型" })).toBeTruthy();
     expect(screen.queryByText("模型资源池", { exact: true })).toBeNull();
-    expect(screen.getByRole("list", { name: "已接入模型列表" }).querySelectorAll('[role="listitem"]')).toHaveLength(1);
+    const modelGrid = screen.getByRole("list", { name: "已接入模型列表" });
+    expect(modelGrid.querySelectorAll('button[aria-pressed]')).toHaveLength(1);
+    expect(modelGrid.lastElementChild.textContent).toBe("＋ 添加模型");
+    expect(screen.getByRole("button", { name: "＋ 添加模型" }).classList.contains("sino-add-model-card")).toBe(true);
     expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("Sino 主对话");
     expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("多模型讨论");
     const usage = screen.getByRole("region", { name: "Usage 与成本" });

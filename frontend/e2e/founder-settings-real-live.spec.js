@@ -19,7 +19,7 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(inspector).toBeVisible();
   await expect(inspector.getByText("请选择一个模型")).toBeVisible();
   await expect(inspector.getByRole("button", { name: "关闭设置并返回 Sino 首页" })).toHaveCount(0);
-  const firstModel = page.getByRole("list", { name: "已接入模型列表" }).locator("button").first();
+  const firstModel = page.getByRole("list", { name: "已接入模型列表" }).locator("button[aria-pressed]").first();
   await expect(firstModel).toBeVisible();
   await page.screenshot({ path: `${evidence}/settings-model-control-1440x900.png`, fullPage: true });
   for (const viewport of [{ width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
