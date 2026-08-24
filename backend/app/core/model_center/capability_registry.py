@@ -92,15 +92,18 @@ def _resolve_policies(models: list[dict], configuration: dict) -> list[dict]:
     by_ref = {_ref(item["provider_id"], item["model_id"]): item for item in models}
     for capability in CAPABILITIES:
         field = "supports_" + capability.lower()
-        preferred = (configuration.get(capability) or {}).get("preferred_primary", DEFAULT_PREFERRED[capability])
+        configured_policy = configuration.get(capability) or {}
+        preferred = configured_policy.get("preferred_primary", DEFAULT_PREFERRED[capability])
+        preferred_fallback = configured_policy.get("preferred_fallback")
         verified = [item for item in models if item["enabled"] and item["healthy"] and item["capabilities"][field]["verified"]]
         verified.sort(key=lambda item: (-item["priority"], item["provider_id"], item["model_id"]))
         preferred_model = by_ref.get(_ref(preferred["provider_id"], preferred["model_id"])) if preferred else None
         active = preferred_model if preferred_model in verified else (verified[0] if verified else None)
         fallbacks = [item for item in verified if item is not active][:2]
-        configured_fallback = active if preferred and active is not preferred_model else (fallbacks[0] if fallbacks else None)
+        preferred_fallback_model = by_ref.get(_ref(preferred_fallback["provider_id"], preferred_fallback["model_id"])) if preferred_fallback else None
+        configured_fallback = preferred_fallback_model if preferred_fallback_model in verified and preferred_fallback_model is not active else (active if preferred and active is not preferred_model else (fallbacks[0] if fallbacks else None))
         policies.append({
-            "capability": capability, "preferred_primary": preferred,
+            "capability": capability, "preferred_primary": preferred, "preferred_fallback": preferred_fallback,
             "active_primary": _model_ref(active), "fallbacks": [_model_ref(item) for item in fallbacks],
             "configured_fallback": _model_ref(configured_fallback),
             "status": "ACTIVE" if active else "MISSING",
@@ -113,13 +116,13 @@ def _model_ref(model: dict | None) -> dict | None:
     return {key: model[key] for key in ("provider_id", "model_id", "display_name")} if model else None
 
 
-def save_routing_preferred(capability: str, preferred_primary: dict | None) -> dict:
+def save_routing_preferred(capability: str, preferred_primary: dict | None, preferred_fallback: dict | None = None) -> dict:
     if capability not in CAPABILITIES:
         raise ValueError("unsupported_model_capability")
     with SessionLocal() as session:
         record = session.get(AICapabilityConfigDB, POLICY_KEY)
         configuration = dict(record.configuration or {}) if record else {}
-        configuration[capability] = {"preferred_primary": preferred_primary, "updated_at": datetime.now(timezone.utc).isoformat()}
+        configuration[capability] = {"preferred_primary": preferred_primary, "preferred_fallback": preferred_fallback, "updated_at": datetime.now(timezone.utc).isoformat()}
         if record is None:
             session.add(AICapabilityConfigDB(capability_key=POLICY_KEY, configuration=configuration))
         else:

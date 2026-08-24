@@ -12,7 +12,7 @@ from app.llm.deepseek_provider import DeepSeekProvider
 from app.llm.openai_provider import OpenAIProvider
 from app.llm.anthropic_provider import AnthropicProvider
 from app.llm.gemini_provider import GeminiProvider
-from app.llm.exceptions import ConfigurationError
+from app.llm.exceptions import ConfigurationError, LLMGatewayError
 from app.llm.models import LLMRequest, LLMResponse
 from app.llm.ollama_provider import OllamaProvider
 from app.llm.provider import LLMProvider
@@ -116,7 +116,17 @@ class LLMGateway:
         return self._generate(self._resolve_provider(provider_name), request)
 
     def generate_for_model(self, provider_name: str, model: str, request: LLMRequest) -> LLMResponse:
-        """Generate with an explicit installed text model; never fall back to provider default."""
+        """Generate with an explicit model and a bounded configured Runtime fallback chain."""
+        role = request.metadata.get("runtime_role")
+        candidates = []
+        if role:
+            try:
+                from app.core.model_center.service import resolve_runtime_chain
+                configured = resolve_runtime_chain(role)
+                if configured and (configured[0].provider_key, configured[0].model) == (provider_name, model):
+                    candidates = configured
+            except Exception:
+                logger.exception("runtime fallback chain resolution failed")
         try:
             from app.core.model_center.service import resolve_runtime_config
             center_config = resolve_runtime_config(provider_key=provider_name, model=model)
@@ -125,7 +135,22 @@ class LLMGateway:
             center_config = None
         if center_config is None:
             raise ConfigurationError("explicit_model_not_available")
-        return self._generate(self._provider_from_runtime(center_config), request)
+        if not candidates:
+            candidates = [center_config]
+        failures = []
+        for index, candidate in enumerate(candidates):
+            try:
+                response = self._generate(self._provider_from_runtime(candidate), request)
+                if index:
+                    request.metadata["model_fallback"] = {"fallback_from": {"provider": candidates[0].provider_key, "model": candidates[0].model}, "provider": candidate.provider_key, "model": candidate.model, "reason": failures[-1]["error_type"]}
+                    logger.warning("model fallback succeeded role=%s primary=%s/%s fallback=%s/%s reason=%s", role, candidates[0].provider_key, candidates[0].model, candidate.provider_key, candidate.model, failures[-1]["error_type"])
+                return response
+            except LLMGatewayError as error:
+                failures.append({"provider": candidate.provider_key, "model": candidate.model, "error_type": error.error_type})
+                if index + 1 >= len(candidates):
+                    request.metadata["model_fallback_failures"] = failures
+                    raise
+        raise ConfigurationError("model_chain_unavailable")
 
     def stream_for_model(self, provider_name: str, model: str, request: LLMRequest):
         """Yield native provider chunks, or the provider's safe complete-response fallback."""

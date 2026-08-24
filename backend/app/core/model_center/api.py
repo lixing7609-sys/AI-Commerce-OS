@@ -55,9 +55,15 @@ class MultiModelAssignmentIn(BaseModel):
     models: list[dict[str, str]]
 
 
+class ModelReferenceIn(BaseModel):
+    provider_key: str
+    model: str
+
+
 class CapabilityAssignmentIn(BaseModel):
     provider_key: str | None = None
     model: str | None = None
+    fallbacks: list[ModelReferenceIn] = Field(default_factory=list, max_length=2)
 
 
 class ExecutionEngineAssignmentIn(BaseModel):
@@ -66,6 +72,7 @@ class ExecutionEngineAssignmentIn(BaseModel):
 
 class RoutingPreferredIn(BaseModel):
     preferred_primary: dict | None = None
+    preferred_fallback: dict | None = None
 
 
 @router.get("")
@@ -191,7 +198,7 @@ def update_multi_model_discussion(request: MultiModelAssignmentIn):
 @router.put("/capabilities/{capability_key}")
 def update_capability(capability_key: str, request: CapabilityAssignmentIn):
     try:
-        return save_capability_assignment(capability_key, request.provider_key, request.model)
+        return save_capability_assignment(capability_key, request.provider_key, request.model, [item.model_dump() for item in request.fallbacks])
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -207,7 +214,7 @@ def update_execution_engine(request: ExecutionEngineAssignmentIn):
 @router.put("/routing-policies/{capability}")
 def update_routing_preferred(capability: str, request: RoutingPreferredIn):
     try:
-        return save_routing_preferred(capability, request.preferred_primary)
+        return save_routing_preferred(capability, request.preferred_primary, request.preferred_fallback)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 

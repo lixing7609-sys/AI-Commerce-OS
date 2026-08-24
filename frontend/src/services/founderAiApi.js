@@ -322,12 +322,12 @@ export function saveMultiModelAssignment(models) {
   return request("/founder-ai/model-center/capabilities/multi-model-discussion", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ models }) }, "保存多模型讨论配置失败");
 }
 
-export function saveCapabilityAssignment(capabilityKey, providerKey, model) {
-  return request(`/founder-ai/model-center/capabilities/${encodeURIComponent(capabilityKey)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider_key: providerKey || null, model: model || null }) }, "保存能力分配失败");
+export function saveCapabilityAssignment(capabilityKey, providerKey, model, fallbacks = []) {
+  return request(`/founder-ai/model-center/capabilities/${encodeURIComponent(capabilityKey)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider_key: providerKey || null, model: model || null, fallbacks }) }, "保存能力分配失败");
 }
 
-export function saveModelRoutingPreferred(capability, preferredPrimary) {
-  return request(`/founder-ai/model-center/routing-policies/${encodeURIComponent(capability)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferred_primary: preferredPrimary }) }, "保存模型路由策略失败");
+export function saveModelRoutingPreferred(capability, preferredPrimary, preferredFallback = null) {
+  return request(`/founder-ai/model-center/routing-policies/${encodeURIComponent(capability)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferred_primary: preferredPrimary, preferred_fallback: preferredFallback }) }, "保存模型路由策略失败");
 }
 
 export function saveExecutionEngine(engineId) {

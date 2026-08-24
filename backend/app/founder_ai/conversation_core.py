@@ -13,7 +13,7 @@ from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
 from app.core.task_asset.model import TaskAssetDB
 from app.core.asset_lifecycle.model import AssetCatalogDB
-from app.core.model_center.service import resolve_runtime_config
+from app.core.model_center.service import resolve_runtime_chain, resolve_runtime_config
 from app.database.db import SessionLocal
 from app.llm.gateway import llm_gateway
 from app.llm.models import LLMRequest
@@ -84,6 +84,13 @@ def configured_model_roles() -> dict:
         "executor": "codex",
     }
     try:
+        chain = resolve_runtime_chain("sino_conversation")
+        if chain:
+            roles["conversation"] = chain[0]
+            roles["fallback"] = chain[1] if len(chain) > 1 else None
+    except Exception:
+        pass
+    try:
         from app.core.model_center.capability_registry import resolve_model_route
         vision = resolve_model_route("VISION_UNDERSTANDING")
         text = resolve_model_route("TEXT_REASONING")
@@ -91,7 +98,7 @@ def configured_model_roles() -> dict:
             roles["vision"] = resolve_runtime_config(provider_key=vision[0]["provider_id"], model=vision[0]["model_id"])
         primary = roles["conversation"]
         fallback = next((item for item in text if not primary or (item["provider_id"], item["model_id"]) != (primary.provider_key, primary.model)), None)
-        if fallback:
+        if fallback and roles["fallback"] is None:
             roles["fallback"] = resolve_runtime_config(provider_key=fallback["provider_id"], model=fallback["model_id"])
     except Exception:
         pass
@@ -325,7 +332,9 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
                     visible = partial_json_string(raw)
                     if visible and visible != published:
                         publisher(visible); published = visible
-                return json.loads(raw.strip().removeprefix("```json").removesuffix("```").strip())
+                payload = json.loads(raw.strip().removeprefix("```json").removesuffix("```").strip())
+                payload["_model_fallback"] = request.metadata.get("model_fallback")
+                return payload
             except Exception:
                 # A provider stream may fail independently of ordinary completion. Reuse the
                 # same idempotent message round and publish only its complete fallback result.
@@ -333,17 +342,25 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
                 payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
                 if str(payload.get("response") or "").strip():
                     publisher(str(payload["response"]))
+                payload["_model_fallback"] = request.metadata.get("model_fallback")
                 return payload
         response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
-        return json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
+        payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
+        payload["_model_fallback"] = request.metadata.get("model_fallback")
+        return payload
 
     for role in ("conversation", "fallback"):
         runtime = roles.get(role)
         if runtime is None:
             continue
         try:
-            result = _validate_decision(invoke(runtime), current_message=current_message)
-            result["model_role"] = role; result["provider"] = runtime.provider_key; result["model"] = runtime.model
+            payload = invoke(runtime)
+            fallback_event = payload.pop("_model_fallback", None) if isinstance(payload, dict) else None
+            result = _validate_decision(payload, current_message=current_message)
+            result["model_role"] = role; result["provider"] = fallback_event.get("provider") if fallback_event else runtime.provider_key; result["model"] = fallback_event.get("model") if fallback_event else runtime.model
+            result["model_fallback"] = fallback_event
+            if fallback_event:
+                result["response"] = f"Primary 不可用，已自动切换到 Fallback（{fallback_event['model']}）。\n\n{result['response']}"
             result["context"] = context
             return result
         except Exception:
@@ -368,7 +385,7 @@ def persist_conversation_decision(conversation_id: str, decision: dict) -> None:
             "conversation_state": decision["conversation_state"], "task_candidate": decision.get("task_candidate"),
             "tool_intent": decision.get("tool_intent"), "founder_action_intent": decision.get("founder_action_intent"),
             "context_updates": decision.get("context_updates") or {}, "model_role": decision.get("model_role"),
-            "provider": decision.get("provider"), "model": decision.get("model"), "updated_at": datetime.now(timezone.utc).isoformat(),
+            "provider": decision.get("provider"), "model": decision.get("model"), "model_fallback": decision.get("model_fallback"), "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         requested_action = _safe_mapping(decision.get("founder_action_intent"))
         queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]

@@ -127,6 +127,17 @@ def test_capability_assignment_persists_exact_healthy_model(monkeypatch, tmp_pat
     assert model_center.resolve_runtime_config(role="system_builder").model == "deepseek-chat"
 
 
+def test_capability_assignment_persists_bounded_runtime_fallback_chain(monkeypatch, tmp_path):
+    _database(monkeypatch, tmp_path)
+    for key, model in (("deepseek", "deepseek-chat"), ("gpt", "gpt-5-pro")):
+        model_center.save_provider(key, base_url="https://provider.example/v1", model=model, api_key=f"{key}-secret", enabled=True)
+        model_center.record_health(key, "healthy")
+    result = model_center.save_capability_assignment("sino_conversation", "deepseek", "deepseek-chat", [{"provider_key": "gpt", "model": "gpt-5-pro"}])
+    assigned = next(item for item in result["roles"] if item["role_key"] == "sino_conversation")
+    assert assigned["fallbacks"] == [{"provider_key": "gpt", "model": "gpt-5-pro"}]
+    assert [(item.provider_key, item.model) for item in model_center.resolve_runtime_chain("sino_conversation")] == [("deepseek", "deepseek-chat"), ("gpt", "gpt-5-pro")]
+
+
 def test_sino_skill_assignment_overrides_stale_application_assignment(monkeypatch, tmp_path):
     _database(monkeypatch, tmp_path)
     model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="deepseek-secret", enabled=True)

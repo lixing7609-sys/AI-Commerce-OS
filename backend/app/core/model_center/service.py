@@ -245,7 +245,7 @@ def get_model_center() -> dict:
     for capability in CAPABILITIES:
         legacy = next((old for old, new in LEGACY_ROLE_ALIASES.items() if new == capability), None)
         config = (capability_configs.get(capability).configuration if capability_configs.get(capability) else {}) or {}
-        capability_roles.append({"role_key": capability, "label": CAPABILITY_LABELS[capability], "provider_key": config.get("provider_key") or roles.get(capability) or roles.get(legacy), "model": config.get("model"), "fixed": False, "multiple": capability == "multi_model_discussion", "models": list(config.get("models", [])) if capability == "multi_model_discussion" else [], "execution_engine_id": config.get("execution_engine_id", "codex") if capability == "code_execution" else None})
+        capability_roles.append({"role_key": capability, "label": CAPABILITY_LABELS[capability], "provider_key": config.get("provider_key") or roles.get(capability) or roles.get(legacy), "model": config.get("model"), "fallbacks": list(config.get("fallbacks", [])), "fixed": False, "multiple": capability == "multi_model_discussion", "models": list(config.get("models", [])) if capability == "multi_model_discussion" else [], "execution_engine_id": config.get("execution_engine_id", "codex") if capability == "code_execution" else None})
     vision_probes = dict(((capability_configs.get("vision_model_routing").configuration if capability_configs.get("vision_model_routing") else {}) or {}).get("model_probes") or {})
     image_generation_probes = dict(((capability_configs.get("image_generation_model_routing").configuration if capability_configs.get("image_generation_model_routing") else {}) or {}).get("model_probes") or {})
     from app.core.model_center.capability_registry import build_model_capability_registry
@@ -392,24 +392,64 @@ def save_multi_model_assignment(models: list[dict]) -> dict:
     return get_model_center()
 
 
-def save_capability_assignment(capability: str, provider_key: str | None, model: str | None) -> dict:
+def _validated_model_reference(session, provider_key: str | None, model: str | None, *, require_healthy: bool = True) -> dict | None:
+    if not provider_key:
+        return None
+    provider = session.get(ModelProviderConfigDB, provider_key)
+    if (not provider or not provider.enabled or (require_healthy and provider.health_status != "healthy")
+            or model not in (provider.selected_models or [])):
+        raise ValueError("model_not_available")
+    return {"provider_key": provider_key, "model": model}
+
+
+def save_capability_assignment(capability: str, provider_key: str | None, model: str | None, fallbacks: list[dict] | None = None) -> dict:
     if capability not in CAPABILITIES or capability == "multi_model_discussion":
         raise ValueError("capability_not_assignable")
     with SessionLocal() as session:
-        if provider_key:
-            provider = session.get(ModelProviderConfigDB, provider_key)
-            if not provider or not provider.enabled or provider.health_status != "healthy" or model not in (provider.selected_models or []):
-                raise ValueError("model_not_available")
+        primary = _validated_model_reference(session, provider_key, model)
+        fallback_refs = []
+        seen = {(provider_key, model)} if provider_key else set()
+        for item in (fallbacks or [])[:2]:
+            ref = _validated_model_reference(session, item.get("provider_key"), item.get("model"))
+            identity = (ref["provider_key"], ref["model"])
+            if identity not in seen:
+                fallback_refs.append(ref); seen.add(identity)
         config = session.get(AICapabilityConfigDB, capability)
         if config is None:
             config = AICapabilityConfigDB(capability_key=capability); session.add(config)
         previous = dict(config.configuration or {})
-        configuration = {"provider_key": provider_key, "model": model} if provider_key else {}
+        configuration = {**(primary or {}), "fallbacks": fallback_refs} if primary else {}
         if capability == "code_execution":
             configuration["execution_engine_id"] = previous.get("execution_engine_id", "codex")
         config.configuration = configuration
         session.commit()
     return get_model_center()
+
+
+def resolve_runtime_chain(role: str) -> list[RuntimeModelConfig]:
+    """Resolve one bounded, provider-independent model chain for a Runtime role."""
+    capability = LEGACY_ROLE_ALIASES.get(role, role)
+    with SessionLocal() as session:
+        config = session.get(AICapabilityConfigDB, capability)
+        configuration = dict(config.configuration or {}) if config else {}
+    references = []
+    if configuration.get("provider_key") and configuration.get("model"):
+        references.append({"provider_key": configuration["provider_key"], "model": configuration["model"]})
+    references.extend(configuration.get("fallbacks") or [])
+    resolved, seen = [], set()
+    for ref in references[:3]:
+        identity = (ref.get("provider_key"), ref.get("model"))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        runtime = resolve_runtime_config(provider_key=identity[0], model=identity[1])
+        if runtime:
+            resolved.append(runtime)
+    if not resolved:
+        runtime = resolve_runtime_config(role=role)
+        if runtime:
+            resolved.append(runtime)
+    return resolved
 
 
 def save_execution_engine(engine_id: str) -> dict:

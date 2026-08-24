@@ -32,7 +32,7 @@ const center = {
 };
 const runtime = { environments: [{ environment_type: "LOCAL", status: "ACTIVE", services: [{ service_id: "founder_frontend", protocol: "http", host: "127.0.0.1", port: 5173, status: "ACTIVE", health: "healthy" }, { service_id: "founder_backend", protocol: "http", host: "127.0.0.1", port: 8000, status: "ACTIVE", health: "healthy" }], database: { type: "PostgreSQL", connectivity_status: "verified", health_status: "healthy", credential_reference_exists: true }, iam: { type: "HTTP Bearer RBAC", verification_status: "verified" }, network: { boundary: "loopback", verification_status: "verified" } }, { environment_type: "NAS", status: "PLANNED" }, { environment_type: "COMMERCIAL_CLOUD", status: "NOT_CONFIGURED" }] };
 
-test("Settings consolidates into three domains and keeps the real model inspector", async ({ page }) => {
+test("Settings exposes model control and system health with the real Provider inspector", async ({ page }) => {
   mkdirSync(evidenceDirectory, { recursive: true });
   await page.route("**/api/v1/founder-ai/model-center", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(center) }));
   await page.route("**/api/v1/founder-ai/runtime-environments", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(runtime) }));
@@ -50,21 +50,18 @@ test("Settings consolidates into three domains and keeps the real model inspecto
   expect(initialMain.width).toBeGreaterThan(1430);
   await expect(page.getByText("Model Capabilities")).toHaveCount(0);
   const settingsTabs = page.getByRole("navigation", { name: "设置分类" });
-  await expect(settingsTabs.getByRole("button")).toHaveCount(3);
-  for (const name of ["模型", "Sino AI", "执行与运行"]) await expect(settingsTabs.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(settingsTabs.getByRole("button")).toHaveCount(2);
+  for (const name of ["模型", "系统"]) await expect(settingsTabs.getByRole("button", { name, exact: true })).toBeVisible();
+  for (const name of ["Sino AI", "执行与运行"]) await expect(settingsTabs.getByRole("button", { name, exact: true })).toHaveCount(0);
   for (const name of ["模型与 API", "模型能力", "模型路由策略", "执行器", "讨论配置", "运行环境"]) await expect(settingsTabs.getByRole("button", { name, exact: true })).toHaveCount(0);
   await expect(page.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
   await expect(settingsTabs.getByRole("button", { name: "模型" })).toHaveClass(/is-active/);
   await expect(page.getByRole("table", { name: "模型状态列表" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "模型能力", exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "模型路由策略", exact: true })).toBeVisible();
-  const modelSummary = page.getByRole("complementary", { name: "模型概览" });
-  await expect(modelSummary).toBeVisible();
-  await expect(modelSummary.locator("dl > div")).toHaveCount(7);
-  const summaryBox = await modelSummary.boundingBox();
-  const listBox = await page.locator(".sino-model-list-pane").boundingBox();
-  expect(summaryBox.y + summaryBox.height).toBeLessThanOrEqual(listBox.y);
-  expect(listBox.width).toBeGreaterThan(1300);
+  await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Usage 与成本" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Sino 主对话 Primary" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
+  await expect(page.getByText(/10 个模型 · 10 正常/)).toBeVisible();
   await expect(page.getByRole("table", { name: "模型状态列表" }).locator("button[aria-pressed]")).toHaveCount(10);
   await page.screenshot({ path: `${evidenceDirectory}/settings-models-full-width.png`, fullPage: true });
   const settingsScroll = page.locator(".sino-settings");
@@ -87,33 +84,20 @@ test("Settings consolidates into three domains and keeps the real model inspecto
   await expect(inspector.getByText("GPT 5 Pro", { exact: true }).first()).toBeVisible();
   await page.screenshot({ path: `${evidenceDirectory}/settings-model-inspector-selected.png`, fullPage: true });
 
-  await page.getByRole("button", { name: "Sino AI" }).click();
-  await expect(inspector).toHaveCount(0);
-  await settingsTabs.getByRole("button", { name: "模型" }).click();
-  await expect(inspector).toHaveCount(0);
-
-  await settingsTabs.getByRole("button", { name: "Sino AI" }).click();
-  await expect(page.getByRole("region", { name: "Sino AI" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Sino 核心" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "多模型讨论" })).toBeVisible();
-  await expect(page.getByText("自动多轮", { exact: true })).toHaveCount(0);
-  await expect(inspector).toHaveCount(0);
-  await expect(page.getByText("设置上下文")).toHaveCount(0);
-  await page.getByRole("region", { name: "Sino 核心" }).getByRole("button").click();
-  await expect(inspector).toBeVisible();
-  expect(await settingsScroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 2)).toBe(true);
-  await page.screenshot({ path: `${evidenceDirectory}/settings-sino-ai.png`, fullPage: true });
-
-  await settingsTabs.getByRole("button", { name: "执行与运行" }).click();
-  await expect(page.getByRole("region", { name: "执行与运行" })).toBeVisible();
+  await settingsTabs.getByRole("button", { name: "系统" }).click();
+  await expect(page.getByRole("region", { name: "系统" })).toBeVisible();
   await expect(page.getByRole("region", { name: "执行器" })).toBeVisible();
   await expect(page.getByRole("region", { name: "运行环境" })).toBeVisible();
   await expect(inspector).toHaveCount(0);
-  await page.getByRole("region", { name: "执行器" }).getByRole("button").click();
-  await expect(inspector).toBeVisible();
+  await expect(page.getByText("Codex", { exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "执行引擎" })).toHaveCount(0);
+  await expect(page.getByText("5/5 services healthy")).toBeVisible();
+  await expect(page.getByText("http://127.0.0.1:5173")).toHaveCount(0);
+  await page.getByRole("button", { name: "查看详情" }).click();
+  await expect(page.getByText("http://127.0.0.1:5173")).toBeVisible();
   await expect(page.getByText("NAS", { exact: true })).toHaveCount(0);
   await expect(page.getByText("商业云", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("未接入 Runtime", { exact: true })).toBeVisible();
+  await expect(page.getByText(/执行系统模型尚未接入 Runtime/)).toBeVisible();
   await page.screenshot({ path: `${evidenceDirectory}/settings-execution-runtime.png`, fullPage: true });
 
   await page.getByRole("button", { name: "⬅️ 返回首页" }).click();
