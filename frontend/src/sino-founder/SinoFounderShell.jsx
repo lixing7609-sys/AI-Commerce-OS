@@ -119,7 +119,7 @@ export function SinoFounderShell({ active, onNavigate, sidebarProps, main, conte
     return <div className={`sino-founder-asset-route${isSettings ? " is-settings" : ""}${resizing ? " is-resizing" : ""}`}>
       {!isSettings ? navigation : null}
       <main ref={surfaceRef} className={`sino-founder-asset-page${isSettings ? " sino-scrollbar-hidden" : ""}`} tabIndex={0} aria-label="Founder AI 功能页面">{main}</main>
-      {context ? <aside className={`sino-founder-asset-inspector${isSettings ? " sino-settings-provider-pane sino-scrollbar-hidden" : ""}`} aria-label="功能页详情">
+      {context ? <aside className="sino-founder-asset-inspector" aria-label="功能页详情">
         {context}
       </aside> : null}
     </div>;

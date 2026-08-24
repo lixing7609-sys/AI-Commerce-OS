@@ -7,7 +7,7 @@ import { AssetContext, AssetLifecycleCenter, ExecutionContext, LifecycleExecutio
 import { ConversationThread } from "./ConversationThread.jsx";
 import { ImplementationWorkspace } from "./ImplementationWorkspace.jsx";
 import { CapabilityCenter, CapabilityContext, CapabilityObjectWorkspace, DraftContext } from "./CapabilityWorkspace.jsx";
-import { ModelCenter, SettingsContext } from "./ModelCenter.jsx";
+import { ModelCenter } from "./ModelCenter.jsx";
 import { ComposerContextControls } from "./ComposerContextControls.jsx";
 import { ExecutionCard } from "./ExecutionCard.jsx";
 import { ExecutionContextComposer } from "./ExecutionContextComposer.jsx";
@@ -103,7 +103,6 @@ export function ConversationWorkspace() {
   const [conversationId, setConversationId] = useState(() => stored(CONVERSATION_KEY));
   const [view, setView] = useState(() => normalizeFounderView(queryView() || stored(WORKSPACE_VIEW_KEY) || "conversation"));
   const previousFounderViewRef = useRef(view === "settings" ? "conversation" : view);
-  const [settingsContext, setSettingsContext] = useState(null);
   const [selectedConstitutionWorkItemId, setSelectedConstitutionWorkItemId] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [conversations, setConversations] = useState(storedHistory);
@@ -999,7 +998,7 @@ export function ConversationWorkspace() {
   if (view === "assets") { main = <AssetLifecycleCenter selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} initialAsset={selectedWorkspaceObject?.asset_id ? selectedWorkspaceObject : null} onStartNewGoal={newConversation} />; context = <AssetContext selected={selectedLifecycleAsset} onSelect={setSelectedLifecycleAsset} conversationId={conversationId} projectId={activeProjectId} onOpenExecution={openLifecycleExecution} onContinue={continueAsset} />; }
   if (view === "library") { main = <LibraryWorkspace />; context = null; }
   if (view === "builder") { main = <SystemBuilderPanel projectId={activeProjectId} selected={selectedSystemAsset} onSelect={setSelectedSystemAsset} />; context = <SystemContext selected={selectedSystemAsset} onOpenAsset={openAssetRecord} />; }
-  if (view === "settings") { const closeSettings = () => { persistWorkspace("conversation", null); setSettingsContext(null); goHome(); }; main = <ModelCenter onContextChange={setSettingsContext} onHome={closeSettings} />; context = settingsContext?.section === "models" || !settingsContext ? <SettingsContext detail={settingsContext || { section: "models" }} /> : null; }
+  if (view === "settings") { const closeSettings = () => { persistWorkspace("conversation", null); goHome(); }; main = <ModelCenter onHome={closeSettings} />; context = null; }
 
   const conversationSelector = <SinoModelSelector conversation={snapshot?.conversation || null} preselected={preselectedConversationModel} onPreselect={setPreselectedConversationModel} onConversationChanged={(updated) => setSnapshot((current) => ({ ...(current || {}), conversation: { ...(current?.conversation || {}), ...updated } }))} />;
   return <><SinoFounderShell active={normalizeFounderView(view)} onNavigate={(next) => { if (["home", "conversation"].includes(next)) { persistWorkspace("conversation", null); goHome(); } else { const normalized = normalizeFounderView(next); if (normalized === "settings" && view !== "settings") previousFounderViewRef.current = view; if (normalized === "execution") { setExecutionId(null); remember(EXECUTION_KEY, null); } persistWorkspace(normalized, selectedWorkspaceObject?.object_id || null); setView(normalized); } }} sidebarProps={{ conversations, activeConversationId: conversationId, onNewConversation: newConversation, onSelectConversation: selectConversation, onDeleteConversation: setDeleteTarget, projects, activeProjectId, onSelectProject: openProject, onProjectsChanged: refreshProjects }} main={<>{conversationInitializing ? <div className="sino-initializing" role="status">Initializing Sino...</div> : null}{error && <div className="sino-error" role="alert"><span>{error}</span>{replyPending && <button type="button" onClick={retryReply} disabled={busy}>重试 Sino 回复</button>}</div>}{main}</>} context={context} conversationSelector={conversationSelector} />{deleteTarget && <div className="sino-delete-confirm-backdrop" role="presentation"><div className="sino-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-conversation-title"><h2 id="delete-conversation-title">删除这个会话？</h2><p>删除后聊天记录将从历史会话中移除。已经形成的正式 Object 不会被删除。</p><footer><button type="button" onClick={() => setDeleteTarget(null)} disabled={busy}>取消</button><button type="button" onClick={confirmDeleteConversation} disabled={busy}>删除</button></footer></div></div>}</>;

@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveExecutionEngine, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
@@ -34,8 +33,7 @@ const capabilityRegistry = { registry_id: "model-capability-registry-v1", models
 ] };
 
 function SettingsHarness() {
-  const [detail, setDetail] = useState(null);
-  return <><ModelCenter onContextChange={setDetail} /><SettingsContext detail={detail} /></>;
+  return <ModelCenter />;
 }
 
 describe("Founder Settings", () => {
@@ -43,8 +41,7 @@ describe("Founder Settings", () => {
   afterEach(cleanup);
 
   it("uses the Settings identity and two operational domains", async () => {
-    const onContextChange = vi.fn();
-    render(<ModelCenter onContextChange={onContextChange} />);
+    render(<ModelCenter />);
     expect(await screen.findByRole("heading", { name: "设置" })).toBeTruthy();
     expect(screen.queryByText("Sino Founder AI 系统配置")).toBeNull();
     expect(screen.queryByText("配置 Sino Founder AI 使用的模型、API、讨论与执行环境。")).toBeNull();
@@ -68,26 +65,26 @@ describe("Founder Settings", () => {
     expect(onHome).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the Provider pane mounted and selects concrete model details", async () => {
-    const onContextChange = vi.fn();
-    render(<ModelCenter onContextChange={onContextChange} />);
+  it("keeps the model page full width until a concrete model opens the Provider dialog", async () => {
+    render(<ModelCenter />);
     const model = await screen.findByRole("button", { name: "DeepSeek Chat DeepSeek" });
-    await waitFor(() => expect(onContextChange).toHaveBeenLastCalledWith({ section: "models" }));
+    expect(screen.queryByRole("dialog", { name: "Provider 技术配置" })).toBeNull();
     expect(model.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(model);
-    await waitFor(() => expect(onContextChange.mock.calls.at(-1)[0]).toMatchObject({ section: "models", provider: deepseek, model: deepseek.available_models[0] }));
+    expect(await screen.findByRole("dialog", { name: "Provider 技术配置" })).toBeTruthy();
   });
 
-  it("switches the fixed Provider pane in sync with the selected model card", async () => {
+  it("opens different Provider dialogs in sync with the selected model card", async () => {
     getModelCenter.mockResolvedValue({ ...center, providers: [deepseek, claude] });
     render(<SettingsHarness />);
     await screen.findByRole("heading", { name: "设置" });
-    expect(await screen.findByText("请选择一个模型")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Provider 技术配置" })).toBeNull();
     const deepseekCard = screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" });
     const claudeCard = screen.getByRole("button", { name: "Claude Sonnet 5 Claude" });
     fireEvent.click(deepseekCard);
     await waitFor(() => expect(deepseekCard.getAttribute("aria-pressed")).toBe("true"));
     expect(screen.getByText("Provider 技术配置").closest(".sino-settings-context").textContent).toContain("deepseek-chat");
+    fireEvent.click(screen.getByRole("button", { name: "关闭 Provider 技术配置" }));
     fireEvent.click(claudeCard);
     await waitFor(() => expect(claudeCard.getAttribute("aria-pressed")).toBe("true"));
     expect(deepseekCard.getAttribute("aria-pressed")).toBe("false");
@@ -141,10 +138,13 @@ describe("Founder Settings", () => {
   });
 
   it("shows selected Provider details and omits empty Settings Context", async () => {
-    const { rerender } = render(<SettingsContext detail={{ section: "models" }} />);
-    expect(screen.getByText("请选择一个模型")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "关闭设置并返回 Sino 首页" })).toBeNull();
-    rerender(<SettingsContext detail={{ section: "models", provider: deepseek, model: deepseek.available_models[0] }} />);
+    const onClose = vi.fn();
+    const { rerender } = render(<SettingsContext detail={{ section: "models" }} onClose={onClose} />);
+    expect(screen.queryByRole("dialog", { name: "Provider 技术配置" })).toBeNull();
+    rerender(<SettingsContext detail={{ section: "models", provider: deepseek, model: deepseek.available_models[0] }} onClose={onClose} />);
+    expect(screen.getByRole("dialog", { name: "Provider 技术配置" }).getAttribute("aria-modal")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "关闭 Provider 技术配置" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Provider 技术配置").closest("header")?.classList.contains("sino-settings-context-header")).toBe(true);
     expect(screen.getByText(/DeepSeek \/ deepseek/)).toBeTruthy();
     expect(screen.getByText("****1234")).toBeTruthy();

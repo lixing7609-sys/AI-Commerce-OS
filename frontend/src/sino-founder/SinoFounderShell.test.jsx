@@ -135,22 +135,14 @@ describe("formal Sino Founder workspace shell", () => {
     expect(screen.getByLabelText("功能页详情").textContent).toContain("Detail");
   });
 
-  it("removes the navigation track from Settings while keeping its configuration inspector", () => {
-    const { container } = render(<SinoFounderShell {...props} active="settings" main={<section>设置</section>} context={<section aria-label="系统配置面板">配置</section>} />);
+  it("removes both navigation and fixed inspector tracks from Settings", () => {
+    const { container } = render(<SinoFounderShell {...props} active="settings" main={<section>设置</section>} context={null} />);
     expect(container.querySelector(".sino-founder-asset-route.is-settings")).toBeTruthy();
     expect(screen.queryByLabelText("Founder Navigation")).toBeNull();
     expect(screen.getByRole("main", { name: "Founder AI 功能页面" }).textContent).toContain("设置");
-    expect(screen.getByLabelText("功能页详情").textContent).toContain("配置");
+    expect(screen.queryByLabelText("功能页详情")).toBeNull();
     expect(screen.getByRole("main", { name: "Founder AI 功能页面" }).classList.contains("sino-scrollbar-hidden")).toBe(true);
-    expect(screen.getByLabelText("功能页详情").classList.contains("sino-settings-provider-pane")).toBe(true);
-    expect(screen.getByLabelText("功能页详情").classList.contains("sino-scrollbar-hidden")).toBe(true);
-    expect(container.querySelector(".sino-founder-asset-route.is-settings").children).toHaveLength(2);
-  });
-
-  it("uses a fixed Settings Provider pane without resize controls", () => {
-    render(<SinoFounderShell {...props} active="settings" main={<section>设置</section>} context={<section>配置</section>} />);
-    expect(screen.getByLabelText("功能页详情").classList.contains("sino-settings-provider-pane")).toBe(true);
-    expect(screen.queryByRole("separator", { name: "调整系统配置面板宽度" })).toBeNull();
+    expect(container.querySelector(".sino-founder-asset-route.is-settings").children).toHaveLength(1);
   });
 
   it("expands Library across the execution column without a model selector or Composer", () => {
