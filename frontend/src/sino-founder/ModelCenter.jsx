@@ -147,7 +147,8 @@ function SettingsFeatureEntry({ title, description, summary, onClick }) {
 }
 
 function SettingsFeatureModal({ title, description, inlineDescription = false, dialogRef, onClose, children }) {
-  return <div className="sino-add-model-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialogRef} className="sino-add-model-modal sino-settings-feature-modal" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}><header><div className={inlineDescription ? "sino-settings-modal-heading-inline" : undefined}><h2>{title}</h2><p>{description}</p></div><button type="button" aria-label={`关闭${title}`} onClick={onClose}>×</button></header><div className="sino-settings-feature-modal__content">{children}</div></section></div>;
+  const modalClassName = `sino-add-model-modal sino-settings-feature-modal${inlineDescription ? " sino-settings-feature-modal--inline-heading" : ""}`;
+  return <div className="sino-add-model-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialogRef} className={modalClassName} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}><header><div className={inlineDescription ? "sino-settings-modal-heading-inline" : undefined}><h2>{title}</h2><p>{description}</p></div><button type="button" aria-label={`关闭${title}`} onClick={onClose}>×</button></header><div className="sino-settings-feature-modal__content">{children}</div></section></div>;
 }
 
 function modelValue(reference) { return reference?.provider_key && reference?.model ? `${reference.provider_key}::${reference.model}` : ""; }
@@ -157,11 +158,17 @@ function ModelAssignments({ roles, options, registry, busy, onAssign, onVisionAs
   const conversation = role("sino_conversation"); const reasoning = role("deep_thinking"); const coding = role("code_execution"); const council = role("multi_model_discussion");
   const vision = registry?.routing_policies?.find((item) => item.capability === "VISION_UNDERSTANDING") || {};
   const visionOptions = (registry?.models || []).filter((item) => item.selected && item.enabled && item.capabilities?.supports_vision_understanding?.status === "VERIFIED").map((item) => { const match = options.find((option) => option.value === `${item.provider_id}::${item.model_id}`); return { value: `${item.provider_id}::${item.model_id}`, label: item.display_name, provider: match?.provider, healthy: Boolean(item.healthy) }; });
-  const statusFor = (primary, fallback, choices) => {
+  const primaryStatusFor = (primary, choices) => {
     if (!primary) return { key: "unconfigured", label: "○ 未配置" };
-    if (primary === fallback || !choices.some((item) => item.value === primary)) return { key: "invalid", label: "● 配置错误" };
+    if (!choices.some((item) => item.value === primary)) return { key: "invalid", label: "● 配置错误" };
     const primaryHealthy = choices.find((item) => item.value === primary)?.healthy;
     if (primaryHealthy) return { key: "healthy", label: "● 正常" };
+    return { key: "unhealthy", label: "● 异常" };
+  };
+  const assignmentStatusFor = (primary, fallback, choices, primaryStatus, duplicate) => {
+    if (primaryStatus.key === "unconfigured") return primaryStatus;
+    if (duplicate || primary === fallback || primaryStatus.key === "invalid" || (fallback && !choices.some((item) => item.value === fallback))) return { key: "invalid", label: "● 配置错误" };
+    if (primaryStatus.key === "healthy") return primaryStatus;
     if (fallback && choices.find((item) => item.value === fallback)?.healthy) return { key: "fallback", label: "● Fallback 可用" };
     return { key: "unhealthy", label: "● 异常" };
   };
@@ -170,11 +177,12 @@ function ModelAssignments({ roles, options, registry, busy, onAssign, onVisionAs
     const fallback = routing ? routingValue(assignment.preferred_fallback) : modelValue(assignment.fallbacks?.[0]);
     const save = onSave || ((nextPrimary, nextFallback) => routing ? onVisionAssign("VISION_UNDERSTANDING", nextPrimary, nextFallback) : onAssign(roleKey, nextPrimary, nextFallback));
     const duplicate = primary && primaryValues.filter((value) => value === primary).length > 1;
-    const status = duplicate ? { key: "invalid", label: "● 配置错误" } : statusFor(primary, fallback, choices);
+    const modelStatus = duplicate ? { key: "invalid", label: "● 配置错误" } : primaryStatusFor(primary, choices);
+    const status = assignmentStatusFor(primary, fallback, choices, modelStatus, duplicate);
     const optionLabel = (item) => `${item.label}${item.provider?.display_name ? ` · ${item.provider.display_name}` : ""}`;
     const renderedChoices = [...choices];
     for (const value of [primary, fallback]) if (value && !renderedChoices.some((item) => item.value === value)) { const [providerId, model] = value.split("::"); const known = (registry?.models || []).find((item) => item.provider_id === providerId && item.model_id === model); renderedChoices.push({ value, label: known?.display_name || model, provider: { display_name: options.find((item) => item.value === value)?.provider?.display_name || providerId }, invalid: true }); }
-    return <div className="sino-model-assignment-row" key={label}><strong>{label}</strong><label><span>Primary</span><select aria-label={`${label} Primary`} value={primary} disabled={busy.includes(roleKey || "routing")} onChange={(event) => save(event.target.value, fallback === event.target.value ? "" : fallback)}><option value="">未分配</option>{renderedChoices.map((item) => { const usedByOtherSlot = primaryValues.some((value) => value === item.value && value !== primary); return <option key={`${label}-primary-${item.value}`} value={item.value} disabled={item.invalid || usedByOtherSlot}>{optionLabel(item)}{item.invalid ? "（能力不匹配）" : usedByOtherSlot ? "（已用于其他讨论模型）" : ""}</option>; })}</select></label><label><span>Fallback</span><select aria-label={`${label} Fallback`} value={fallback} disabled={!primary || busy.includes(roleKey || "routing")} onChange={(event) => save(primary, event.target.value)}><option value="">未配置</option>{renderedChoices.map((item) => <option key={`${label}-fallback-${item.value}`} value={item.value} disabled={item.value === primary || item.invalid}>{optionLabel(item)}{item.invalid ? "（能力不匹配）" : ""}</option>)}</select></label><span className="sino-model-assignment-status" data-status={status.key}>{status.label}</span></div>;
+    return <div className="sino-model-assignment-row" key={label}><strong>{label}</strong><label><span>Primary</span><select aria-label={`${label} Primary`} value={primary} disabled={busy.includes(roleKey || "routing")} onChange={(event) => save(event.target.value, fallback === event.target.value ? "" : fallback)}><option value="">未分配</option>{renderedChoices.map((item) => { const usedByOtherSlot = primaryValues.some((value) => value === item.value && value !== primary); return <option key={`${label}-primary-${item.value}`} value={item.value} disabled={item.invalid || usedByOtherSlot}>{optionLabel(item)}{item.invalid ? "（能力不匹配）" : usedByOtherSlot ? "（已用于其他讨论模型）" : ""}</option>; })}</select></label><span className="sino-model-primary-status" data-status={modelStatus.key} aria-label={`${label} Primary 状态`}>{modelStatus.label}</span><label><span>Fallback</span><select aria-label={`${label} Fallback`} value={fallback} disabled={!primary || busy.includes(roleKey || "routing")} onChange={(event) => save(primary, event.target.value)}><option value="">未配置</option>{renderedChoices.map((item) => <option key={`${label}-fallback-${item.value}`} value={item.value} disabled={item.value === primary || item.invalid}>{optionLabel(item)}{item.invalid ? "（能力不匹配）" : ""}</option>)}</select></label><span className="sino-model-assignment-status" data-status={status.key}>{status.label}</span></div>;
   };
   const slots = council.slots?.length ? council.slots : [...(council.models || []).map((primary) => ({ primary, fallback: null })), ...Array.from({ length: Math.max(0, 5 - (council.models || []).length) }, () => ({ primary: null, fallback: null }))];
   const normalizedSlots = [...slots.slice(0, 5), ...Array.from({ length: Math.max(0, 5 - slots.length) }, () => ({ primary: null, fallback: null }))];

@@ -26,6 +26,7 @@ const runtimeRegistry = { registry_id: "runtime-environment-registry-founder-ai"
 
 const capabilityRegistry = { registry_id: "model-capability-registry-v1", models: [
   { provider_id: "gpt", model_id: "gpt-5-pro", display_name: "GPT 5 Pro", enabled: true, selected: true, healthy: true, capabilities: { supports_text_reasoning: { status: "UNVERIFIED" }, supports_vision_understanding: { status: "BLOCKED" }, supports_image_generation: { status: "UNVERIFIED" }, supports_tool_use: { status: "UNVERIFIED" }, supports_structured_output: { status: "UNVERIFIED" } } },
+  { provider_id: "deepseek", model_id: "deepseek-chat", display_name: "DeepSeek Chat", enabled: true, selected: true, healthy: true, capabilities: { supports_text_reasoning: { status: "VERIFIED" }, supports_vision_understanding: { status: "UNVERIFIED" }, supports_image_generation: { status: "UNVERIFIED" }, supports_tool_use: { status: "UNVERIFIED" }, supports_structured_output: { status: "UNVERIFIED" } } },
   { provider_id: "ofox", model_id: "gemini-3.6-flash", display_name: "Gemini 3.6 Flash", enabled: true, selected: true, healthy: true, capabilities: { supports_text_reasoning: { status: "UNVERIFIED" }, supports_vision_understanding: { status: "VERIFIED" }, supports_image_generation: { status: "UNVERIFIED" }, supports_tool_use: { status: "UNVERIFIED" }, supports_structured_output: { status: "VERIFIED" } } },
 ], routing_policies: [
   { capability: "VISION_UNDERSTANDING", preferred_primary: { provider_id: "gpt", model_id: "gpt-5-pro" }, active_primary: { provider_id: "ofox", model_id: "gemini-3.6-flash", display_name: "Gemini 3.6 Flash" }, configured_fallback: { provider_id: "ofox", model_id: "gemini-3.6-flash", display_name: "Gemini 3.6 Flash" }, fallbacks: [], status: "ACTIVE", preferred_status: "UNVERIFIED_OR_UNHEALTHY" },
@@ -138,16 +139,24 @@ describe("Founder Settings", () => {
 
   it("constrains Vision assignments to verified models and persists its chain", async () => {
     getModelCenter.mockResolvedValue({ ...center, model_capability_registry: capabilityRegistry });
-    saveModelRoutingPreferred.mockResolvedValue(capabilityRegistry);
+    const correctedRegistry = { ...capabilityRegistry, routing_policies: capabilityRegistry.routing_policies.map((item) => item.capability === "VISION_UNDERSTANDING" ? { ...item, preferred_primary: { provider_id: "ofox", model_id: "gemini-3.6-flash" }, preferred_fallback: null } : item) };
+    saveModelRoutingPreferred.mockResolvedValue(correctedRegistry);
     render(<ModelCenter />);
     await screen.findByRole("heading", { name: "设置" });
     expect(screen.getByRole("list", { name: "已接入模型列表" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
     const vision = screen.getByRole("combobox", { name: "Vision Primary" });
     expect(within(vision).getByRole("option", { name: /GPT 5 Pro.*能力不匹配/ }).disabled).toBe(true);
+    expect(within(vision).queryByRole("option", { name: /DeepSeek Chat/ })).toBeNull();
     expect(within(vision).getByRole("option", { name: "Gemini 3.6 Flash" })).toBeTruthy();
+    const visionFallback = screen.getByRole("combobox", { name: "Vision Fallback" });
+    expect(within(visionFallback).getByRole("option", { name: /GPT 5 Pro.*能力不匹配/ }).disabled).toBe(true);
+    expect(within(visionFallback).queryByRole("option", { name: /DeepSeek Chat/ })).toBeNull();
+    expect(screen.getByLabelText("Vision Primary 状态").textContent).toBe("● 配置错误");
+    expect(vision.closest(".sino-model-assignment-row").querySelector(".sino-model-assignment-status").textContent).toBe("● 配置错误");
     fireEvent.change(vision, { target: { value: "ofox::gemini-3.6-flash" } });
     await waitFor(() => expect(saveModelRoutingPreferred).toHaveBeenCalledWith("VISION_UNDERSTANDING", { provider_id: "ofox", model_id: "gemini-3.6-flash" }, null));
+    await waitFor(() => expect(screen.getByLabelText("Vision Primary 状态").textContent).toBe("● 正常"));
   });
 
   it("shows selected Provider details and omits an empty Provider modal", async () => {
@@ -284,6 +293,9 @@ describe("Founder Settings", () => {
     saveCapabilityAssignment.mockResolvedValue({ ...center, providers: [deepseek, claude], roles });
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
     fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
+    expect(screen.getByLabelText("Sino 主对话 Primary 状态").textContent).toBe("● 正常");
+    expect(screen.getByLabelText("Sino 主对话 Primary 状态").getAttribute("data-status")).toBe("healthy");
+    expect(screen.getByLabelText("深度推理 Primary 状态").textContent).toBe("● 异常");
     expect(screen.getByRole("combobox", { name: "Sino 主对话 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("正常");
     expect(screen.getByRole("combobox", { name: "深度推理 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("Fallback 可用");
     expect(screen.getByRole("combobox", { name: "Vision Primary" }).closest(".sino-model-assignment-row").textContent).toContain("未配置");
@@ -309,6 +321,10 @@ describe("Founder Settings", () => {
     getModelCenter.mockResolvedValue({ ...center, providers: [deepseek, claude], roles });
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
     fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
+    for (let index = 1; index <= 5; index += 1) expect(screen.getByLabelText(`讨论模型 ${index} Primary 状态`)).toBeTruthy();
+    expect(screen.getByLabelText("讨论模型 1 Primary 状态").textContent).toBe("● 配置错误");
+    expect(screen.getByLabelText("讨论模型 3 Primary 状态").textContent).toBe("● 异常");
+    expect(screen.getByLabelText("讨论模型 4 Primary 状态").textContent).toBe("○ 未配置");
     expect(screen.getByRole("combobox", { name: "讨论模型 1 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("配置错误");
     expect(screen.getByRole("combobox", { name: "讨论模型 3 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("Fallback 可用");
     expect(screen.getByRole("combobox", { name: "讨论模型 4 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("未配置");

@@ -123,12 +123,18 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(sinoHeader.getByRole("heading", { name: "Sino AI" })).toBeVisible();
   await expect(sinoHeader.getByText("模型职责分配、Fallback 与多模型讨论，Primary 失败时有限切换至 Fallback。", { exact: true })).toBeVisible();
   await expect(sinoDialog.getByText("Primary 失败时有限切换至 Fallback", { exact: true })).toHaveCount(0);
+  const headerBox = await sinoHeader.boundingBox();
+  const assignmentHeadingBox = await sinoDialog.getByRole("heading", { name: "模型分配" }).boundingBox();
+  expect(assignmentHeadingBox.y - (headerBox.y + headerBox.height)).toBeGreaterThanOrEqual(24);
   await expect(page.getByRole("dialog", { name: "Provider 技术配置" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
   await expect(page.getByRole("list", { name: "已接入模型列表" })).toBeVisible();
   await expect(page.getByRole("region", { name: "用量与成本" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Primary" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
+  const conversationPrimaryStatus = page.getByLabel("Sino 主对话 Primary 状态");
+  await expect(conversationPrimaryStatus).toHaveText("● 正常");
+  expect(await conversationPrimaryStatus.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(19, 52, 99)");
   await page.getByRole("combobox", { name: "Sino 主对话 Fallback" }).selectOption("claude::claude-sonnet-5");
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toHaveValue("claude::claude-sonnet-5");
   await page.reload();
@@ -137,7 +143,10 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(page.getByRole("combobox", { name: "Vision Primary" }).locator("xpath=ancestor::div[contains(@class,'sino-model-assignment-row')]")).toContainText("未配置");
   const codingRow = page.getByRole("combobox", { name: "Coding Primary" }).locator("xpath=ancestor::div[contains(@class,'sino-model-assignment-row')]");
   await expect(codingRow).not.toContainText("Codex");
-  for (let index = 1; index <= 5; index += 1) await expect(page.getByRole("combobox", { name: `讨论模型 ${index} Primary` })).toBeVisible();
+  for (let index = 1; index <= 5; index += 1) {
+    await expect(page.getByRole("combobox", { name: `讨论模型 ${index} Primary` })).toBeVisible();
+    await expect(page.getByLabel(`讨论模型 ${index} Primary 状态`)).toBeVisible();
+  }
   await expect(page.getByRole("combobox", { name: "讨论模型 1 Primary" })).toHaveValue("deepseek::deepseek-chat");
   await page.getByRole("combobox", { name: "讨论模型 2 Primary" }).selectOption("claude::claude-sonnet-5");
   await page.getByRole("combobox", { name: "讨论模型 2 Fallback" }).selectOption("gpt::gpt-5-pro");

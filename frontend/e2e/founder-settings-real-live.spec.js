@@ -99,6 +99,13 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Primary" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
+  const visionPrimary = page.getByRole("combobox", { name: "Vision Primary" });
+  const selectedVisionOption = visionPrimary.locator("option:checked");
+  if ((await visionPrimary.inputValue()) === "gpt::gpt-5-pro") {
+    await expect(selectedVisionOption).toContainText("能力不匹配");
+    expect(await selectedVisionOption.getAttribute("disabled")).not.toBeNull();
+    await expect(page.getByLabel("Vision Primary 状态")).toHaveText("● 配置错误");
+  }
   await expectMinimumVisibleFont(page.getByRole("dialog", { name: "Sino AI" }));
   for (const viewport of [{ width: 1440, height: 900 }, { width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
     await page.setViewportSize(viewport);
