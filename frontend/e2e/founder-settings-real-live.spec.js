@@ -111,14 +111,17 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   for (const providerName of [/ Claude$/, / DeepSeek Official$/, / GPT$/, / OfoxAI$/]) {
     await page.getByRole("list", { name: "已接入模型列表" }).getByRole("button", { name: providerName }).first().click();
     const providerModal = page.getByRole("dialog", { name: "Provider 技术配置" });
-    await expect(providerModal.getByRole("heading", { name: "Provider 概览与连接控制" })).toBeVisible();
-    await expect(providerModal.getByRole("heading", { name: "Provider 模型管理" })).toBeVisible();
+    await expect(providerModal.getByRole("heading", { name: "概览与连接控制" })).toBeVisible();
+    await expect(providerModal.getByRole("heading", { name: "模型管理" })).toBeVisible();
     await expect(providerModal.locator(".sino-settings-provider-inspector > section")).toHaveCount(2);
     await expect(providerModal.locator(".sino-settings-inspector-card")).toHaveCount(0);
     await expect(providerModal.locator(".sino-provider-summary-row")).toHaveCount(2);
     const currentModelRow = providerModal.locator(".sino-provider-summary-row--identity");
     await expect(currentModelRow.getByText("Provider", { exact: true })).toBeVisible();
     await expect(currentModelRow.getByText("Base URL", { exact: true })).toBeVisible();
+    const baseUrlValue = currentModelRow.locator(".sino-provider-endpoint-summary > span").last();
+    const refreshModelsButton = providerModal.getByRole("button", { name: "刷新模型" });
+    expect(Math.abs((await baseUrlValue.boundingBox()).x + (await baseUrlValue.boundingBox()).width - ((await refreshModelsButton.boundingBox()).x + (await refreshModelsButton.boundingBox()).width))).toBeLessThanOrEqual(2);
     await expect(currentModelRow.locator("small, em")).toHaveCount(0);
     await expect(providerModal.locator(".sino-provider-model-management em").first()).toBeVisible();
     await expect(providerModal.getByText("状态", { exact: true })).toHaveCount(0);

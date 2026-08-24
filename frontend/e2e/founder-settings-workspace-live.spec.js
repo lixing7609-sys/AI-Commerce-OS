@@ -114,14 +114,17 @@ test("Settings exposes model control and system health with the real Provider in
   expect(await providerDialog.boundingBox()).toMatchObject({ width: 1100, height: 700 });
   await expect(page.getByRole("dialog", { name: "添加 AI 模型" })).toHaveCount(0);
   await expect(providerDialog.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
-  await expect(providerDialog.getByRole("heading", { name: "Provider 概览与连接控制" })).toBeVisible();
-  await expect(providerDialog.getByRole("heading", { name: "Provider 模型管理" })).toBeVisible();
+  await expect(providerDialog.getByRole("heading", { name: "概览与连接控制" })).toBeVisible();
+  await expect(providerDialog.getByRole("heading", { name: "模型管理" })).toBeVisible();
   await expect(providerDialog.locator(".sino-settings-provider-inspector > section")).toHaveCount(2);
   await expect(providerDialog.locator(".sino-settings-inspector-card")).toHaveCount(0);
   await expect(providerDialog.locator(".sino-provider-summary-row")).toHaveCount(2);
   const currentModelRow = providerDialog.locator(".sino-provider-summary-row--identity");
   await expect(currentModelRow.getByText("Provider", { exact: true })).toBeVisible();
   await expect(currentModelRow.getByText("Base URL", { exact: true })).toBeVisible();
+  const baseUrlValue = currentModelRow.locator(".sino-provider-endpoint-summary > span").last();
+  const refreshModelsButton = providerDialog.getByRole("button", { name: "刷新模型" });
+  expect(Math.abs((await baseUrlValue.boundingBox()).x + (await baseUrlValue.boundingBox()).width - ((await refreshModelsButton.boundingBox()).x + (await refreshModelsButton.boundingBox()).width))).toBeLessThanOrEqual(2);
   await expect(currentModelRow.locator("small, em")).toHaveCount(0);
   await expect(providerDialog.locator(".sino-provider-model-management em").filter({ hasText: "deepseek-chat" })).toBeVisible();
   await expect(providerDialog.getByText("状态", { exact: true })).toHaveCount(0);
@@ -132,6 +135,8 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(currentModelRow).toContainText("https://api.deepseek.com/v1");
   await expect(providerDialog.getByText("Provider 端点", { exact: true })).toHaveCount(0);
   await expect(providerDialog.getByText("连接测试", { exact: true })).toHaveCount(0);
+  await expect(providerDialog.getByText("Provider 概览与连接控制", { exact: true })).toHaveCount(0);
+  await expect(providerDialog.getByText("Provider 模型管理", { exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(providerDialog).toHaveCount(0);
   await expect(page.getByRole("button", { name: "deepseek-chat DeepSeek" })).toBeFocused();

@@ -741,9 +741,11 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-provider-connection-control { min-width: 0; }
 .sino-provider-summary { display: grid; margin-top: 8px; }
 .sino-provider-summary-row { align-items: center; min-height: 42px; border-bottom: 1px solid color-mix(in srgb, var(--line) 58%, transparent); color: var(--text-primary); font-size: 14px; line-height: 1.45; }
-.sino-provider-summary-row--identity { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1.4fr); gap: 12px; }
-.sino-provider-summary-row--identity > :nth-child(odd), .sino-provider-summary-row--actions > :first-child { color: var(--text-label); }
-.sino-provider-summary-row--identity > :nth-child(even), .sino-provider-key-mask { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sino-provider-summary-row--identity { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) minmax(0, 1.4fr); gap: 12px; }
+.sino-provider-summary-label, .sino-provider-summary-row--actions > :first-child { color: var(--text-label); }
+.sino-provider-summary-row--identity > :not(.sino-provider-summary-label), .sino-provider-key-mask { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sino-provider-endpoint-summary { display: flex; justify-self: end; gap: 12px; min-width: 0; }
+.sino-provider-endpoint-summary > :last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sino-provider-summary-row--actions { display: flex; gap: 10px; }
 .sino-provider-summary-row--actions > :first-child { flex: 0 0 auto; }
 .sino-provider-key-mask { flex: 1 1 auto; min-width: 0; }
@@ -820,7 +822,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-add-model-selection { display: grid; gap: 14px; }
 .sino-add-model-selection > details { color: #aeb6aa; font-size: 14px; }
 @media (max-width: 760px) { .sino-add-model-modal .sino-provider-catalog { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
-@media (max-width: 700px) { .sino-provider-summary-row--identity { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; }.sino-provider-summary-row--identity > :nth-last-child(-n+2) { display: none; } }
+@media (max-width: 700px) { .sino-provider-summary-row--identity { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; }.sino-provider-endpoint-summary { display: none; } }
 @media (max-width: 520px) { .sino-add-model-overlay { padding: 12px; }.sino-add-model-modal { width: calc(100vw - 24px); height: calc(100dvh - 24px); padding: 20px; }.sino-add-model-modal .sino-provider-catalog { grid-template-columns: 1fr; }.sino-add-model-modal .sino-provider-catalog > button { min-width: 0; }.sino-add-model-modal__body > nav { gap: 10px; font-size: 14px; } }
 .sino-settings-header h2 { font-size: 24px; font-weight: 600; }
 .sino-settings-header p, .sino-capability-section-heading p, .sino-model-center-message { font-size: 14px; line-height: 1.55; }

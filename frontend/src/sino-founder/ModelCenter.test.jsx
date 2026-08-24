@@ -282,8 +282,10 @@ describe("Founder Settings", () => {
     expect(screen.getByText("Provider 技术配置").closest("header")).toBeTruthy();
     expect(screen.getByText(/DeepSeek \/ deepseek/)).toBeTruthy();
     expect(screen.getByText("****1234")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Provider 概览与连接控制" })).toBeTruthy();
-    expect(screen.getByText("Provider 模型管理")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "概览与连接控制" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "模型管理" })).toBeTruthy();
+    expect(screen.queryByText("Provider 概览与连接控制", { exact: true })).toBeNull();
+    expect(screen.queryByText("Provider 模型管理", { exact: true })).toBeNull();
     expect(screen.queryByText("Provider 端点")).toBeNull();
     expect(screen.queryByText("连接测试", { exact: true })).toBeNull();
     expect(screen.queryByText("当前启用模型")).toBeNull();
