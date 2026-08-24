@@ -701,9 +701,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-usage-cost dt { color: var(--text-label); font-size: 14px; }
 .sino-usage-cost dd { margin: 3px 0 0; font-size: 14px; line-height: 1.4; }
 .sino-usage-cost { min-width: 0; padding-top: 10px; border-top: 1px solid var(--line); }
-.sino-model-economics { margin-top: 12px; }
-.sino-model-economics h4 { margin: 0 0 7px; color: var(--text-primary); font-size: 15px; font-weight: 600; }
-.sino-model-economics-table { display: grid; min-width: 0; border-block: 1px solid color-mix(in srgb,var(--line) 75%,transparent); }
+.sino-model-economics-table { display: grid; min-width: 0; margin-top: 8px; border-block: 1px solid color-mix(in srgb,var(--line) 75%,transparent); }
 .sino-model-economics-row { display: grid; grid-template-columns: minmax(150px,1.1fr) minmax(240px,2fr) minmax(90px,.7fr) minmax(62px,.45fr) minmax(76px,.55fr) minmax(105px,.7fr) minmax(86px,.65fr); gap: 12px; align-items: center; min-height: 45px; padding: 5px 8px; border-bottom: 1px solid color-mix(in srgb,var(--line) 58%,transparent); font-size: 14px; line-height: 1.4; }
 .sino-model-economics-row:last-child { border-bottom: 0; }
 .sino-model-economics-row--header { min-height: 34px; color: var(--text-label); }

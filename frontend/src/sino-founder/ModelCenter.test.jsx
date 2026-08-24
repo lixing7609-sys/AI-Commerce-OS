@@ -438,6 +438,7 @@ describe("Founder Settings", () => {
     expect(screen.getByRole("list", { name: "已接入模型列表" })).toBeTruthy();
     expect(screen.getByText("调用次数", { exact: true })).toBeTruthy();
     expect(screen.getByRole("table", { name: "已分配模型经济账" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "已分配模型", exact: true })).toBeNull();
     expect(screen.queryByText("额度", { exact: true })).toBeNull();
     expect(screen.queryByText("120.5 ms")).toBeNull();
   });
