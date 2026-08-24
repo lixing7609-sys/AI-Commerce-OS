@@ -219,7 +219,7 @@ function ProviderSettingsContext({ detail }) {
   </div>;
 }
 
-function ExecutorSettings({ roles, engines, onSelect }) {
+function ExecutorSettings({ roles, engines }) {
   const execution = roles.find((role) => role.role_key === "code_execution") || {};
   const engine = engines.find((item) => item.engine_id === execution.execution_engine_id);
   return <section className="sino-capability-section sino-settings-domain-panel" aria-label="执行器"><div className="sino-capability-section-heading"><div><h3>Executor</h3><p>当前唯一真实执行器，无无效选择控件。</p></div></div><div className="sino-settings-section-card sino-executor-summary"><span><small>当前执行器</small><strong>{engine?.display_name || "Codex"}</strong></span><span><small>状态</small><strong>{engine?.status === "available" ? "● 可用" : "● 不可用"}</strong></span></div><p className="sino-settings-empty">执行系统模型尚未接入 Runtime，仅作为诊断信息保留。</p></section>;

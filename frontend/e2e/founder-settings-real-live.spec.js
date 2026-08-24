@@ -24,8 +24,8 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     const homeBox = await page.getByRole("button", { name: "⬅️ 返回首页" }).boundingBox();
     const titleBox = await page.getByRole("heading", { name: "设置" }).boundingBox();
     for (const box of [usageBox, modelBox, sinoBox, systemBox]) {
-      expect(box.x).toBeGreaterThanOrEqual(68);
-      expect(viewport.width - box.x - box.width).toBeGreaterThanOrEqual(68);
+      expect(Math.abs(box.x - 100)).toBeLessThanOrEqual(2);
+      expect(Math.abs(viewport.width - box.x - box.width - 100)).toBeLessThanOrEqual(2);
     }
     expect(Math.abs(usageBox.x - modelBox.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(usageBox.x - sinoBox.x)).toBeLessThanOrEqual(1);
