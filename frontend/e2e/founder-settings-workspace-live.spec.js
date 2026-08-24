@@ -137,7 +137,7 @@ test("Settings exposes model control and system health with the real Provider in
   await expect(sinoDialog.getByText("Primary 失败时有限切换至 Fallback", { exact: true })).toHaveCount(0);
   const headerBox = await sinoHeader.boundingBox();
   const assignmentHeadingBox = await sinoDialog.getByRole("heading", { name: "模型分配" }).boundingBox();
-  expect(assignmentHeadingBox.y - (headerBox.y + headerBox.height)).toBeGreaterThanOrEqual(24);
+  expect(Math.abs(assignmentHeadingBox.y - (headerBox.y + headerBox.height) - 50)).toBeLessThanOrEqual(1);
   await expect(page.getByRole("dialog", { name: "Provider 技术配置" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
   await expect(page.getByRole("list", { name: "已接入模型列表" })).toBeVisible();
@@ -147,6 +147,8 @@ test("Settings exposes model control and system health with the real Provider in
   const conversationPrimaryStatus = page.getByLabel("Sino 主对话 Primary 状态");
   await expect(conversationPrimaryStatus).toHaveText("● 正常");
   expect(await conversationPrimaryStatus.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(19, 52, 99)");
+  await expect(page.getByLabel("Sino 主对话 Fallback 状态")).toHaveText("○ 未配置");
+  await expect(page.getByLabel("Sino 主对话 Assignment 状态")).toHaveText("● 正常");
   await page.getByRole("combobox", { name: "Sino 主对话 Fallback" }).selectOption("claude::claude-sonnet-5");
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toHaveValue("claude::claude-sonnet-5");
   await page.reload();
@@ -158,6 +160,8 @@ test("Settings exposes model control and system health with the real Provider in
   for (let index = 1; index <= 5; index += 1) {
     await expect(page.getByRole("combobox", { name: `讨论模型 ${index} Primary` })).toBeVisible();
     await expect(page.getByLabel(`讨论模型 ${index} Primary 状态`)).toBeVisible();
+    await expect(page.getByLabel(`讨论模型 ${index} Fallback 状态`)).toBeVisible();
+    await expect(page.getByLabel(`讨论模型 ${index} Assignment 状态`)).toBeVisible();
   }
   await expect(page.getByRole("combobox", { name: "讨论模型 1 Primary" })).toHaveValue("deepseek::deepseek-chat");
   await page.getByRole("combobox", { name: "讨论模型 2 Primary" }).selectOption("claude::claude-sonnet-5");

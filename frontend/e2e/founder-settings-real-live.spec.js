@@ -53,8 +53,13 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     expect(Math.abs(modelTitleBox.y + modelTitleBox.height - modelSummaryBox.y - modelSummaryBox.height)).toBeLessThanOrEqual(2);
     expect(Math.abs(usageSummaryBox.x - usageTitleBox.x - usageTitleBox.width - 16)).toBeLessThanOrEqual(2);
     expect(Math.abs(modelSummaryBox.x - modelTitleBox.x - modelTitleBox.width - 16)).toBeLessThanOrEqual(2);
-    const modelCardRows = await page.getByRole("list", { name: "已接入模型列表" }).locator("article").evaluateAll((items) => [...new Set(items.map((item) => Math.round(item.getBoundingClientRect().top)))]);
-    expect(modelCardRows).toHaveLength(2);
+    const modelCardLayout = await page.getByRole("list", { name: "已接入模型列表" }).locator("article").evaluateAll((items) => {
+      const rows = [...new Set(items.map((item) => Math.round(item.getBoundingClientRect().top)))];
+      return { rows, firstRowCount: items.filter((item) => Math.round(item.getBoundingClientRect().top) === rows[0]).length };
+    });
+    expect(modelCardLayout.firstRowCount).toBe(5);
+    expect(modelCardLayout.rows.length).toBeGreaterThanOrEqual(2);
+    expect(modelCardLayout.rows.length).toBeLessThanOrEqual(3);
     await expectMinimumVisibleFont(page.locator(".sino-settings-workspace"));
     const featureHeights = await page.locator(".sino-settings-feature-section > button").evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().height));
     expect(featureHeights.every((height) => height <= 60)).toBe(true);
@@ -117,6 +122,11 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(page.getByRole("region", { name: "模型分配" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Primary" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
+  const conversationFallback = page.getByRole("combobox", { name: "Sino 主对话 Fallback" });
+  if ((await conversationFallback.inputValue()) === "") {
+    await expect(page.getByLabel("Sino 主对话 Fallback 状态")).toHaveText("○ 未配置");
+    await expect(page.getByLabel("Sino 主对话 Assignment 状态")).toHaveText("● 正常");
+  }
   const visionPrimary = page.getByRole("combobox", { name: "Vision Primary" });
   const selectedVisionOption = visionPrimary.locator("option:checked");
   if ((await visionPrimary.inputValue()) === "gpt::gpt-5-pro") {
@@ -131,7 +141,11 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     await page.screenshot({ path: `${evidence}/settings-sino-ai-${viewport.width}x${viewport.height}.png`, fullPage: true });
   }
   await page.setViewportSize({ width: 1440, height: 900 });
-  for (let index = 1; index <= 5; index += 1) await expect(page.getByRole("combobox", { name: `讨论模型 ${index} Primary` })).toBeVisible();
+  for (let index = 1; index <= 5; index += 1) {
+    await expect(page.getByRole("combobox", { name: `讨论模型 ${index} Primary` })).toBeVisible();
+    await expect(page.getByLabel(`讨论模型 ${index} Fallback 状态`)).toBeVisible();
+    await expect(page.getByLabel(`讨论模型 ${index} Assignment 状态`)).toBeVisible();
+  }
   await expect(page.locator(".sino-discussion-chips")).toHaveCount(0);
   await page.screenshot({ path: `${evidence}/settings-model-assignment-slots-1440x900.png`, fullPage: true });
   await page.getByRole("button", { name: "关闭Sino AI" }).click();

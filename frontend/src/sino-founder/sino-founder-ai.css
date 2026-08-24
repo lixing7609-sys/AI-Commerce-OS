@@ -686,7 +686,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-empty { margin: 8px 0; color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
 .sino-model-assignments { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
 .sino-model-assignment-table { display: grid; width: 100%; max-width: 1100px; }
-.sino-model-assignment-row { display: grid; grid-template-columns: minmax(110px,135px) minmax(200px,1fr) minmax(76px,88px) minmax(200px,1fr) minmax(82px,98px); justify-content: start; gap: 10px; align-items: center; min-height: 48px; border-bottom: 1px solid color-mix(in srgb,var(--line) 66%,transparent); font-size: 14px; line-height: 1.4; }
+.sino-model-assignment-row { display: grid; grid-template-columns: minmax(100px,125px) minmax(190px,1fr) minmax(76px,88px) minmax(190px,1fr) minmax(76px,88px) minmax(82px,98px); justify-content: start; gap: 8px; align-items: center; min-height: 48px; border-bottom: 1px solid color-mix(in srgb,var(--line) 66%,transparent); font-size: 14px; line-height: 1.4; }
 .sino-model-assignment-row > label { display: grid; grid-template-columns: 54px minmax(0,1fr); align-items: center; gap: 6px; color: var(--text-secondary); }
 .sino-model-assignment-row select { width: 100%; min-height: 32px !important; padding: 4px 7px; }
 .sino-model-assignment-row > button { justify-self: start; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
@@ -695,10 +695,10 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-model-assignment-status[data-status="fallback"] { color: #b8a46d; }
 .sino-model-assignment-status[data-status="invalid"], .sino-model-assignment-status[data-status="unhealthy"] { color: #c97878; }
 .sino-model-assignment-status[data-status="unconfigured"] { color: var(--text-label); }
-.sino-model-primary-status { white-space: nowrap; }
-.sino-model-primary-status[data-status="healthy"] { color: #133463; }
-.sino-model-primary-status[data-status="invalid"], .sino-model-primary-status[data-status="unhealthy"] { color: #c97878; }
-.sino-model-primary-status[data-status="unconfigured"] { color: var(--text-label); }
+.sino-model-option-status { white-space: nowrap; }
+.sino-model-option-status[data-status="healthy"] { color: #133463; }
+.sino-model-option-status[data-status="invalid"], .sino-model-option-status[data-status="unhealthy"] { color: #c97878; }
+.sino-model-option-status[data-status="unconfigured"] { color: var(--text-label); }
 .sino-discussion-slots-heading { margin: 18px 0 4px; color: var(--text-primary); font-size: 15px; font-weight: 600; line-height: 22px; }
 .sino-usage-cost dl { display: grid; grid-template-columns: repeat(4,minmax(150px,1fr)); gap: 8px; width: 100%; margin: 0; }
 .sino-usage-cost dl > div { min-width: 0; padding: 8px 10px; background: color-mix(in srgb,var(--surface-raised) 55%,transparent); border-radius: 8px; }
@@ -707,7 +707,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-runtime-summary { display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
 .sino-runtime-summary span:last-child { justify-self: end; color: var(--text-secondary); font-size: 14px; }
 .sino-settings-page .sino-capability-section-heading button { border: 0; background: transparent; color: var(--accent); cursor: pointer; }
-@container (max-width: 760px) { .sino-model-assignment-row { grid-template-columns: minmax(100px,.6fr) minmax(150px,1fr) auto; }.sino-model-assignment-row > :nth-child(4),.sino-model-assignment-row > :nth-child(5){grid-column:2 / -1}.sino-usage-cost dl{grid-template-columns:repeat(2,minmax(0,1fr));} }
+@container (max-width: 760px) { .sino-model-assignment-row { grid-template-columns: minmax(100px,.6fr) minmax(150px,1fr) auto; }.sino-model-assignment-row > :nth-child(4){grid-column:2}.sino-model-assignment-row > :nth-child(5),.sino-model-assignment-row > :nth-child(6){grid-column:3}.sino-usage-cost dl{grid-template-columns:repeat(2,minmax(0,1fr));} }
 .sino-model-list-pane { min-width: 0; }
 .sino-model-list-heading { display: flex; align-items: baseline; justify-content: flex-start; gap: 16px; min-height: 38px; margin-bottom: 6px; }
 .sino-model-list-heading h3 { margin: 0; color: var(--text-primary); font-size: 16px; font-weight: 600; line-height: 22px; }
@@ -792,7 +792,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-add-model-modal__body::-webkit-scrollbar, .sino-provider-config-modal > article::-webkit-scrollbar, .sino-settings-feature-modal__content::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .sino-provider-config-modal > article { overflow: hidden; }
 .sino-settings-feature-modal__content { margin-top: 20px; overflow-y: auto; }
-.sino-settings-feature-modal--inline-heading .sino-settings-feature-modal__content { margin-top: 26px; }
+.sino-settings-feature-modal--inline-heading .sino-settings-feature-modal__content { margin-top: 50px; }
 .sino-settings-feature-modal .sino-model-assignments { margin-top: 0; padding-top: 0; border-top: 0; }
 .sino-settings-feature-modal .sino-settings-domain-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sino-add-model-modal__body > nav { display: flex; gap: 22px; margin: 24px 0; padding-bottom: 16px; border-bottom: 1px solid var(--line); color: #6f776c; font-size: 14px; }
