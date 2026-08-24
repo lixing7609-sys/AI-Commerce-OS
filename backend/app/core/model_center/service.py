@@ -233,6 +233,12 @@ def get_model_center() -> dict:
         assignments = list(session.scalars(select(ApplicationCapabilityAssignmentDB)))
         usage_rows = session.execute(select(CouncilModelRunDB.provider, func.count(CouncilModelRunDB.id), func.avg(CouncilModelRunDB.latency_ms)).group_by(CouncilModelRunDB.provider)).all()
         capability_configs = {row.capability_key: row for row in session.scalars(select(AICapabilityConfigDB))}
+        discussion_config = capability_configs.get("multi_model_discussion")
+        if discussion_config and "slots" not in (discussion_config.configuration or {}):
+            previous = dict(discussion_config.configuration or {})
+            discussion_config.configuration = {**previous, "slots": _discussion_slots(previous)}
+            session.commit()
+            capability_configs = {row.capability_key: row for row in session.scalars(select(AICapabilityConfigDB))}
         registry_rows = list(session.scalars(select(ModelRegistryDB)))
         from app.core.conversation_first.model import SinoBrainSessionDB
         brain_states = list(session.scalars(select(SinoBrainSessionDB)))
@@ -245,7 +251,8 @@ def get_model_center() -> dict:
     for capability in CAPABILITIES:
         legacy = next((old for old, new in LEGACY_ROLE_ALIASES.items() if new == capability), None)
         config = (capability_configs.get(capability).configuration if capability_configs.get(capability) else {}) or {}
-        capability_roles.append({"role_key": capability, "label": CAPABILITY_LABELS[capability], "provider_key": config.get("provider_key") or roles.get(capability) or roles.get(legacy), "model": config.get("model"), "fallbacks": list(config.get("fallbacks", [])), "fixed": False, "multiple": capability == "multi_model_discussion", "models": list(config.get("models", [])) if capability == "multi_model_discussion" else [], "execution_engine_id": config.get("execution_engine_id", "codex") if capability == "code_execution" else None})
+        discussion_slots = _discussion_slots(config) if capability == "multi_model_discussion" else []
+        capability_roles.append({"role_key": capability, "label": CAPABILITY_LABELS[capability], "provider_key": config.get("provider_key") or roles.get(capability) or roles.get(legacy), "model": config.get("model"), "fallbacks": list(config.get("fallbacks", [])), "fixed": False, "multiple": capability == "multi_model_discussion", "models": [slot["primary"] for slot in discussion_slots if slot.get("primary")], "slots": discussion_slots, "execution_engine_id": config.get("execution_engine_id", "codex") if capability == "code_execution" else None})
     vision_probes = dict(((capability_configs.get("vision_model_routing").configuration if capability_configs.get("vision_model_routing") else {}) or {}).get("model_probes") or {})
     image_generation_probes = dict(((capability_configs.get("image_generation_model_routing").configuration if capability_configs.get("image_generation_model_routing") else {}) or {}).get("model_probes") or {})
     from app.core.model_center.capability_registry import build_model_capability_registry
@@ -376,19 +383,38 @@ def save_roles(assignments: dict[str, str | None]) -> dict:
     return get_model_center()
 
 
-def save_multi_model_assignment(models: list[dict]) -> dict:
+def _discussion_slots(configuration: dict | None) -> list[dict]:
+    configuration = configuration or {}
+    raw = configuration.get("slots")
+    if raw is None:
+        raw = [{"primary": item, "fallback": None} for item in configuration.get("models", [])]
+    slots = []
+    for item in list(raw)[:5]:
+        slots.append({"primary": item.get("primary") or None, "fallback": item.get("fallback") or None})
+    return slots + [{"primary": None, "fallback": None} for _ in range(5 - len(slots))]
+
+
+def save_multi_model_assignment(*, slots: list[dict] | None = None, legacy_models: list[dict] | None = None) -> dict:
     with SessionLocal() as session:
-        clean = []
-        for item in models:
-            provider_key, model = item.get("provider_key"), item.get("model")
-            row = session.get(ModelProviderConfigDB, provider_key) if provider_key else None
-            if not row or not row.enabled or row.health_status != "healthy" or model not in (row.selected_models or []):
-                raise ValueError("model_not_available")
-            clean.append({"provider_key": provider_key, "model": model})
+        incoming = slots if slots is not None else [{"primary": item, "fallback": None} for item in (legacy_models or [])]
+        clean, primary_ids = [], set()
+        for item in list(incoming)[:5]:
+            primary = _validated_model_reference(session, **(item.get("primary") or {}), require_healthy=False) if item.get("primary") else None
+            fallback = _validated_model_reference(session, **(item.get("fallback") or {}), require_healthy=False) if item.get("fallback") else None
+            primary_id = (primary["provider_key"], primary["model"]) if primary else None
+            fallback_id = (fallback["provider_key"], fallback["model"]) if fallback else None
+            if primary_id and primary_id in primary_ids:
+                raise ValueError("duplicate_discussion_primary")
+            if primary_id and primary_id == fallback_id:
+                raise ValueError("primary_fallback_must_differ")
+            if primary_id:
+                primary_ids.add(primary_id)
+            clean.append({"primary": primary, "fallback": fallback})
+        clean += [{"primary": None, "fallback": None} for _ in range(5 - len(clean))]
         config = session.get(AICapabilityConfigDB, "multi_model_discussion")
         if config is None:
             config = AICapabilityConfigDB(capability_key="multi_model_discussion"); session.add(config)
-        config.configuration = {"models": clean}; session.commit()
+        config.configuration = {"slots": clean, "models": [item["primary"] for item in clean if item["primary"]]}; session.commit()
     return get_model_center()
 
 
@@ -468,16 +494,37 @@ def save_execution_engine(engine_id: str) -> dict:
     return get_model_center()
 
 
-def resolve_multi_model_configs() -> list[RuntimeModelConfig]:
+def resolve_multi_model_slot_configs() -> list[dict]:
+    """Resolve usable runtime configs while preserving the five-slot shape."""
+    references = resolve_multi_model_slot_references()
+    resolved = []
+    for item in references:
+        primary = item["primary"]
+        primary_runtime = resolve_runtime_config(provider_key=primary.get("provider_key"), model=primary.get("model"))
+        fallback = item.get("fallback")
+        fallback_runtime = resolve_runtime_config(provider_key=fallback.get("provider_key"), model=fallback.get("model")) if fallback else None
+        if primary_runtime:
+            resolved.append({"slot": item["slot"], "primary": primary_runtime, "fallback": fallback_runtime})
+    return resolved
+
+
+def resolve_multi_model_slot_references() -> list[dict]:
+    """Return persisted slot references even when a Primary is currently unavailable."""
     with SessionLocal() as session:
         config = session.get(AICapabilityConfigDB, "multi_model_discussion")
-        items = list((config.configuration if config else {}).get("models", []))
-    configs = []
-    for item in items:
-        runtime = resolve_runtime_config(provider_key=item.get("provider_key"), model=item.get("model"))
-        if runtime:
-            configs.append(runtime)
-    return configs
+        slots = _discussion_slots(config.configuration if config else {})
+    references = []
+    for index, item in enumerate(slots):
+        primary = item.get("primary")
+        if not primary:
+            continue
+        references.append({"slot": index + 1, "primary": primary, "fallback": item.get("fallback")})
+    return references
+
+
+def resolve_multi_model_configs() -> list[RuntimeModelConfig]:
+    """Compatibility view for consumers that only need configured primaries."""
+    return [item["primary"] for item in resolve_multi_model_slot_configs()]
 
 
 def resolve_execution_capability() -> dict:

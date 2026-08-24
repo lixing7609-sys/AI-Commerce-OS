@@ -106,10 +106,9 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     await page.screenshot({ path: `${evidence}/settings-sino-ai-${viewport.width}x${viewport.height}.png`, fullPage: true });
   }
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole("button", { name: "选择参与模型" }).click();
-  await expect(page.getByRole("group", { name: "参与模型选项" })).toBeVisible();
-  await page.screenshot({ path: `${evidence}/settings-model-assignment-multiselect-1440x900.png`, fullPage: true });
-  await page.getByRole("button", { name: "选择参与模型" }).click();
+  for (let index = 1; index <= 5; index += 1) await expect(page.getByRole("combobox", { name: `讨论模型 ${index} Primary` })).toBeVisible();
+  await expect(page.locator(".sino-discussion-chips")).toHaveCount(0);
+  await page.screenshot({ path: `${evidence}/settings-model-assignment-slots-1440x900.png`, fullPage: true });
   await page.getByRole("button", { name: "关闭Sino AI" }).click();
   await page.getByRole("button", { name: "打开系统" }).click();
   await expect(page.getByRole("dialog", { name: "系统" })).toBeVisible();

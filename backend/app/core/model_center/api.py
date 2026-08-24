@@ -51,13 +51,19 @@ class ApplicationAssignmentsIn(BaseModel):
     assignments: dict[str, dict | None]
 
 
-class MultiModelAssignmentIn(BaseModel):
-    models: list[dict[str, str]]
-
-
 class ModelReferenceIn(BaseModel):
     provider_key: str
     model: str
+
+
+class DiscussionSlotIn(BaseModel):
+    primary: ModelReferenceIn | None = None
+    fallback: ModelReferenceIn | None = None
+
+
+class MultiModelAssignmentIn(BaseModel):
+    slots: list[DiscussionSlotIn] | None = Field(default=None, max_length=5)
+    models: list[dict[str, str]] | None = None
 
 
 class CapabilityAssignmentIn(BaseModel):
@@ -190,7 +196,8 @@ def update_roles(request: RolesUpdateIn):
 @router.put("/capabilities/multi-model-discussion")
 def update_multi_model_discussion(request: MultiModelAssignmentIn):
     try:
-        return save_multi_model_assignment(request.models)
+        slots = [item.model_dump() for item in request.slots] if request.slots is not None else None
+        return save_multi_model_assignment(slots=slots, legacy_models=request.models)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 

@@ -261,19 +261,18 @@ describe("Founder Settings", () => {
 
   it("persists Primary/Fallback and multi-model assignments from model control", async () => {
     saveCapabilityAssignment.mockResolvedValue(center);
-    saveMultiModelAssignment.mockImplementation(async (models) => ({ ...center, roles: capabilities.map((item) => item.role_key === "multi_model_discussion" ? { ...item, models } : item) }));
+    saveMultiModelAssignment.mockImplementation(async (slots) => ({ ...center, roles: capabilities.map((item) => item.role_key === "multi_model_discussion" ? { ...item, slots, models: slots.flatMap((slot) => slot.primary ? [slot.primary] : []) } : item) }));
     render(<SettingsHarness />); await screen.findByRole("heading", { name: "设置" });
     fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Sino 主对话 Primary" }), { target: { value: "deepseek::deepseek-chat" } });
     await waitFor(() => expect(saveCapabilityAssignment).toHaveBeenCalledWith("sino_conversation", "deepseek", "deepseek-chat", []));
-    expect(screen.getByRole("button", { name: "移除 DeepSeek Chat" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "移除 DeepSeek Chat" }));
-    await waitFor(() => expect(saveMultiModelAssignment).toHaveBeenLastCalledWith([]));
-    expect(screen.queryByRole("button", { name: "移除 DeepSeek Chat" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "选择参与模型" }));
-    fireEvent.click(within(screen.getByRole("group", { name: "参与模型选项" })).getByRole("checkbox", { name: /DeepSeek Chat/ }));
-    await waitFor(() => expect(saveMultiModelAssignment).toHaveBeenLastCalledWith([{ provider_key: "deepseek", model: "deepseek-chat" }]));
-    expect(await screen.findByRole("button", { name: "移除 DeepSeek Chat" })).toBeTruthy();
+    for (let index = 1; index <= 5; index += 1) expect(screen.getByRole("combobox", { name: `讨论模型 ${index} Primary` })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "讨论模型 1 Primary" }).value).toBe("deepseek::deepseek-chat");
+    expect(screen.getByRole("combobox", { name: "讨论模型 5 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("未配置");
+    fireEvent.change(screen.getByRole("combobox", { name: "讨论模型 1 Primary" }), { target: { value: "" } });
+    await waitFor(() => expect(saveMultiModelAssignment).toHaveBeenLastCalledWith(expect.arrayContaining([{ primary: null, fallback: null }])));
+    fireEvent.change(screen.getByRole("combobox", { name: "讨论模型 1 Primary" }), { target: { value: "deepseek::deepseek-chat" } });
+    await waitFor(() => expect(saveMultiModelAssignment).toHaveBeenLastCalledWith(expect.arrayContaining([{ primary: { provider_key: "deepseek", model: "deepseek-chat" }, fallback: null }])));
   });
 
   it("uses operational assignment status and keeps Coding intelligence separate from Codex", async () => {
@@ -293,6 +292,24 @@ describe("Founder Settings", () => {
     await waitFor(() => expect(saveCapabilityAssignment).toHaveBeenCalledWith("code_execution", "deepseek", "deepseek-chat", []));
     const fallback = screen.getByRole("combobox", { name: "Sino 主对话 Fallback" });
     expect(within(fallback).getByRole("option", { name: /DeepSeek Chat/ }).disabled).toBe(true);
+  });
+
+  it("applies assignment status and duplicate-primary constraints to each discussion slot", async () => {
+    const slots = [
+      { primary: { provider_key: "deepseek", model: "deepseek-chat" }, fallback: null },
+      { primary: { provider_key: "deepseek", model: "deepseek-chat" }, fallback: null },
+      { primary: { provider_key: "claude", model: "claude-sonnet-5" }, fallback: { provider_key: "deepseek", model: "deepseek-chat" } },
+      { primary: null, fallback: null },
+      { primary: null, fallback: null },
+    ];
+    const roles = capabilities.map((item) => item.role_key === "multi_model_discussion" ? { ...item, slots, models: slots.flatMap((slot) => slot.primary ? [slot.primary] : []) } : item);
+    getModelCenter.mockResolvedValue({ ...center, providers: [deepseek, claude], roles });
+    render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
+    fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
+    expect(screen.getByRole("combobox", { name: "讨论模型 1 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("配置错误");
+    expect(screen.getByRole("combobox", { name: "讨论模型 3 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("Fallback 可用");
+    expect(screen.getByRole("combobox", { name: "讨论模型 4 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("未配置");
+    expect(within(screen.getByRole("combobox", { name: "讨论模型 4 Primary" })).getByRole("option", { name: /DeepSeek Chat.*已用于其他讨论模型/ }).disabled).toBe(true);
   });
 
   it("keeps configuration fields and hides incomplete or provider-level usage metrics", async () => {

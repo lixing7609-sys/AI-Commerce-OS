@@ -318,8 +318,8 @@ export function saveModelRoles(assignments) {
   return request("/founder-ai/model-center/roles", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assignments }) }, "保存模型角色失败");
 }
 
-export function saveMultiModelAssignment(models) {
-  return request("/founder-ai/model-center/capabilities/multi-model-discussion", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ models }) }, "保存多模型讨论配置失败");
+export function saveMultiModelAssignment(slots) {
+  return request("/founder-ai/model-center/capabilities/multi-model-discussion", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slots }) }, "保存多模型讨论配置失败");
 }
 
 export function saveCapabilityAssignment(capabilityKey, providerKey, model, fallbacks = []) {

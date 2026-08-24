@@ -127,7 +127,7 @@ def test_council_uses_concrete_models_and_falls_back_synthesis_to_successful_pro
         type("Runtime", (), {"provider_key": "claude", "model": "claude-sonnet-5"})(),
         type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})(),
     ]
-    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_configs", lambda: targets)
+    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_slot_references", lambda: [{"slot": index + 1, "primary": {"provider_key": target.provider_key, "model": target.model}, "fallback": None} for index, target in enumerate(targets)])
     monkeypatch.setattr("app.core.model_center.service.resolve_runtime_config", lambda **kwargs: type("Runtime", (), {"provider_key": "claude", "model": "claude-sonnet-5"})() if kwargs.get("role") else None)
     calls = []
 
@@ -160,7 +160,7 @@ def test_council_accepts_ofoxai_models_and_preserves_provider_identity(monkeypat
         type("Runtime", (), {"provider_key": "ofoxai-main", "model": "gpt-5-pro"})(),
         type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})(),
     ]
-    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_configs", lambda: targets)
+    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_slot_references", lambda: [{"slot": index + 1, "primary": {"provider_key": target.provider_key, "model": target.model}, "fallback": None} for index, target in enumerate(targets)])
     monkeypatch.setattr("app.core.model_center.service.resolve_runtime_config", lambda **_kwargs: targets[1])
 
     def generate(provider, model, request):
@@ -181,11 +181,28 @@ def test_council_accepts_ofoxai_models_and_preserves_provider_identity(monkeypat
     ])
 
 
+def test_discussion_slot_falls_back_once_and_records_switch_metadata():
+    calls = []
+    primary = type("Definition", (), {"key": "primary", "role": "participant"})()
+    fallback = type("Definition", (), {"key": "fallback", "role": "participant"})()
+    def runner(definition, _context):
+        calls.append(definition.key)
+        if definition.key == "primary":
+            raise RateLimitedError()
+        return {"provider": "fallback", "model": "fallback-model", "proposal": {"recommendation": "continue"}}
+    service = council_module.MultiModelCouncilService(model_runner=runner)
+    service._dynamic_model_definition = lambda provider, _model: primary if provider == "primary" else fallback
+    result = service._run_participant({"slot": 1, "provider_key": "primary", "model": "primary-model", "fallback": {"provider_key": "fallback", "model": "fallback-model"}}, {}, {})
+    assert calls == ["primary", "fallback"]
+    assert result["provider"] == "fallback"
+    assert result["fallback_metadata"] == {"slot": 1, "from_provider": "primary", "from_model": "primary-model", "reason": "rate_limited", "to_provider": "fallback", "to_model": "fallback-model"}
+
+
 def test_council_records_parse_failure_separately_from_provider_unavailable(monkeypatch):
     factory = _database(monkeypatch)
     conversation = conversation_service.create_conversation()
     targets = [type("Runtime", (), {"provider_key": "ofoxai-main", "model": "openai/gpt-5.5"})()]
-    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_configs", lambda: targets)
+    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_slot_references", lambda: [{"slot": index + 1, "primary": {"provider_key": target.provider_key, "model": target.model}, "fallback": None} for index, target in enumerate(targets)])
     monkeypatch.setattr(council_module.llm_gateway, "generate_for_model", lambda *_args: LLMResponse(content="{broken", provider="openai", model="openai/gpt-5.5", usage=None, latency_ms=1))
 
     with pytest.raises(LookupError):
@@ -202,7 +219,7 @@ def test_council_accepts_recoverable_markdown_proposal(monkeypatch):
     _database(monkeypatch)
     conversation = conversation_service.create_conversation()
     targets = [type("Runtime", (), {"provider_key": "ofoxai-main", "model": "openai/gpt-5.5"})()]
-    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_configs", lambda: targets)
+    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_slot_references", lambda: [{"slot": index + 1, "primary": {"provider_key": target.provider_key, "model": target.model}, "fallback": None} for index, target in enumerate(targets)])
     monkeypatch.setattr("app.core.model_center.service.resolve_runtime_config", lambda **_kwargs: targets[0])
 
     def generate(_provider, _model, request):
@@ -226,7 +243,7 @@ def test_three_model_council_injects_distinct_perspectives_and_synthesis_metadat
         ("ofoxai-main", "openai/gpt-5.5"),
         ("deepseek", "deepseek-chat"),
     ]]
-    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_configs", lambda: targets)
+    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_slot_references", lambda: [{"slot": index + 1, "primary": {"provider_key": target.provider_key, "model": target.model}, "fallback": None} for index, target in enumerate(targets)])
     monkeypatch.setattr("app.core.model_center.service.resolve_runtime_config", lambda **_kwargs: targets[2])
     requests = []
 
@@ -259,7 +276,7 @@ def test_all_provider_failure_finalizes_run_and_filters_image_models(monkeypatch
     factory = _database(monkeypatch)
     conversation = conversation_service.create_conversation()
     targets = [type("Runtime", (), {"provider_key": "gpt", "model": "chatgpt-image-latest"})(), type("Runtime", (), {"provider_key": "deepseek", "model": "deepseek-chat"})()]
-    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_configs", lambda: targets)
+    monkeypatch.setattr("app.core.model_center.service.resolve_multi_model_slot_references", lambda: [{"slot": index + 1, "primary": {"provider_key": target.provider_key, "model": target.model}, "fallback": None} for index, target in enumerate(targets)])
     monkeypatch.setattr(council_module.llm_gateway, "generate_for_model", lambda *_args: (_ for _ in ()).throw(ProviderUnavailableError()))
     try:
         council_module.MultiModelCouncilService().run(conversation.id, "All fail")

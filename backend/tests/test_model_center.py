@@ -277,6 +277,40 @@ def test_sino_skill_registry_belongs_to_agent_and_contains_only_real_skills(monk
     assert skills["conversation"]["tool_refs"] == ()
 
 
+def test_legacy_discussion_models_are_exposed_as_five_slots_without_fake_fallbacks(monkeypatch, tmp_path):
+    factory = _database(monkeypatch, tmp_path)
+    legacy = [{"provider_key": f"provider-{index}", "model": f"model-{index}"} for index in range(1, 5)]
+    with factory() as session:
+        session.add(model_center.AICapabilityConfigDB(capability_key="multi_model_discussion", configuration={"models": legacy}))
+        session.commit()
+    discussion = next(item for item in model_center.get_model_center()["roles"] if item["role_key"] == "multi_model_discussion")
+    assert len(discussion["slots"]) == 5
+    assert [item["primary"] for item in discussion["slots"][:4]] == legacy
+    assert all(item["fallback"] is None for item in discussion["slots"])
+    assert discussion["slots"][4]["primary"] is None
+    with factory() as session:
+        persisted = session.get(model_center.AICapabilityConfigDB, "multi_model_discussion").configuration
+        assert persisted["slots"] == discussion["slots"]
+
+
+def test_discussion_slots_persist_fallbacks_and_reject_duplicate_primaries(monkeypatch, tmp_path):
+    _database(monkeypatch, tmp_path)
+    for provider, model in (("deepseek", "deepseek-chat"), ("claude", "claude-sonnet-5"), ("gpt", "gpt-5-pro")):
+        model_center.save_provider(provider, base_url=f"https://{provider}.example/v1", model=model, api_key=f"{provider}-secret", enabled=True)
+    slots = [
+        {"primary": {"provider_key": "deepseek", "model": "deepseek-chat"}, "fallback": {"provider_key": "gpt", "model": "gpt-5-pro"}},
+        {"primary": {"provider_key": "claude", "model": "claude-sonnet-5"}, "fallback": {"provider_key": "gpt", "model": "gpt-5-pro"}},
+    ]
+    result = model_center.save_multi_model_assignment(slots=slots)
+    discussion = next(item for item in result["roles"] if item["role_key"] == "multi_model_discussion")
+    assert discussion["slots"][:2] == slots
+    assert len(discussion["slots"]) == 5
+    with pytest.raises(ValueError, match="duplicate_discussion_primary"):
+        model_center.save_multi_model_assignment(slots=[slots[0], {"primary": slots[0]["primary"], "fallback": None}])
+    with pytest.raises(ValueError, match="primary_fallback_must_differ"):
+        model_center.save_multi_model_assignment(slots=[{"primary": slots[0]["primary"], "fallback": slots[0]["primary"]}])
+
+
 def test_skill_model_assignment_persists_via_internal_capability(monkeypatch, tmp_path):
     _database(monkeypatch, tmp_path)
     model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)

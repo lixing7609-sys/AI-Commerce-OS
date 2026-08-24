@@ -21,7 +21,6 @@ export function ModelCenter({ onHome }) {
   const [message, setMessage] = useState("");
   const [providerActionState, setProviderActionState] = useState({});
   const [runtimeRegistry, setRuntimeRegistry] = useState(null);
-  const [discussionOpen, setDiscussionOpen] = useState(false);
   const providerDialogRef = useRef(null);
   const providerTriggerRef = useRef(null);
   const featureDialogRef = useRef(null);
@@ -74,7 +73,7 @@ export function ModelCenter({ onHome }) {
   async function updateCredentials(provider, values) { const key = provider.provider_key; updateProviderState(key, { isConnecting: true, error: "", successMessage: "正在保存…" }); try { const result = await updateModelProviderCredentials(key, values); mergeProvider(result); updateProviderState(key, { isConnecting: false, error: "", successMessage: "Provider 配置已保存" }); } catch (error) { updateProviderState(key, { isConnecting: false, error: actionFailure("Provider 配置"), successMessage: "" }); } }
   async function assignCapability(capabilityKey, value, fallbackValue) { const [providerKey, model] = value ? value.split("::") : [null, null]; const [fallbackProvider, fallbackModel] = fallbackValue ? fallbackValue.split("::") : [null, null]; setBusy(`capability:${capabilityKey}`); try { setCenter(await saveCapabilityAssignment(capabilityKey, providerKey, model, fallbackProvider ? [{ provider_key: fallbackProvider, model: fallbackModel }] : [])); setMessage("模型分配已保存并接入 Runtime"); } catch (error) { setMessage(actionFailure("模型分配")); } finally { setBusy(""); } }
   const modelOptions = installed.filter((item) => item.enabled).flatMap((provider) => provider.selected_models.map((model) => ({ value: `${provider.provider_key}::${model}`, provider, model, healthy: provider.health_status === "healthy", label: (provider.available_models.find((item) => modelId(item) === model) || {}).display_name || model })));
-  async function saveCouncil(models) { setBusy("multi"); try { setCenter(await saveMultiModelAssignment(models)); setMessage("多模型讨论配置已保存"); } catch (error) { setMessage(actionFailure("多模型讨论配置")); } finally { setBusy(""); } }
+  async function saveCouncil(slots) { setBusy("multi"); try { setCenter(await saveMultiModelAssignment(slots)); setMessage("多模型讨论配置已保存"); } catch (error) { setMessage(actionFailure("多模型讨论配置")); } finally { setBusy(""); } }
   async function savePreferred(capability, value, fallbackValue) { const [provider_id, model_id] = value ? value.split("::") : [null, null]; const [fallback_provider_id, fallback_model_id] = fallbackValue ? fallbackValue.split("::") : [null, null]; setBusy(`routing:${capability}`); try { const registry = await saveModelRoutingPreferred(capability, value ? { provider_id, model_id } : null, fallbackValue ? { provider_id: fallback_provider_id, model_id: fallback_model_id } : null); setCenter((current) => ({ ...current, model_capability_registry: registry })); setMessage("Vision Primary / Fallback 已保存"); } catch (error) { setMessage(actionFailure("Vision 分配")); } finally { setBusy(""); } }
   const selectedProvider = installed.find((provider) => provider.provider_key === editing);
   const selectedModelMeta = selectedProvider?.available_models.find((model) => modelId(model) === selectedModel) || (selectedModel ? { model_id: selectedModel, display_name: selectedModel } : null);
@@ -98,7 +97,7 @@ export function ModelCenter({ onHome }) {
     if (matches(vision?.preferred_primary || vision?.active_primary)) duties.push("Vision");
     if (matches(vision?.preferred_fallback)) duties.push("Vision Fallback");
     const discussion = center.roles.find((item) => item.role_key === "multi_model_discussion");
-    if (discussion?.models?.some(matches)) duties.push("多模型讨论");
+    if (discussion?.slots?.some((slot) => matches(slot.primary) || matches(slot.fallback)) || discussion?.models?.some(matches)) duties.push("多模型讨论");
     return duties;
   }
   useEffect(() => {
@@ -136,7 +135,7 @@ export function ModelCenter({ onHome }) {
     {adding && <AddModelModal step={installStep} center={center} install={install} editing={editing} busy={busy} providerKey={installProviderKey} onSelectProvider={beginProviderConnection} onInstallChange={setInstall} onConnect={addProvider} onChoose={choose} onClose={() => { setAdding(false); setInstallStep(1); setInstallProviderKey(null); }} />}
 
     {selectedProvider && selectedModelMeta ? <ProviderConfigModal dialogRef={providerDialogRef} provider={selectedProvider} model={selectedModelMeta} action={providerState(selectedProvider.provider_key)} onCredentialSave={(values) => updateCredentials(selectedProvider, values)} onRefresh={() => refresh(selectedProvider)} onHealth={() => health(selectedProvider)} onChoose={(model, checked) => choose(selectedProvider, model, checked)} onClose={closeProviderModal} /> : null}
-    {featureModal === "sino-ai" ? <SettingsFeatureModal title="Sino AI" description="模型职责分配、Fallback 与多模型讨论。" dialogRef={featureDialogRef} onClose={closeFeatureModal}><ModelAssignments roles={center.roles || []} options={modelOptions} registry={center.model_capability_registry} busy={busy} discussionOpen={discussionOpen} onDiscussionToggle={() => setDiscussionOpen((value) => !value)} onAssign={assignCapability} onVisionAssign={savePreferred} onCouncilSave={saveCouncil} /></SettingsFeatureModal> : null}
+    {featureModal === "sino-ai" ? <SettingsFeatureModal title="Sino AI" description="模型职责分配、Fallback 与多模型讨论。" dialogRef={featureDialogRef} onClose={closeFeatureModal}><ModelAssignments roles={center.roles || []} options={modelOptions} registry={center.model_capability_registry} busy={busy} onAssign={assignCapability} onVisionAssign={savePreferred} onCouncilSave={saveCouncil} /></SettingsFeatureModal> : null}
     {featureModal === "system" ? <SettingsFeatureModal title="系统" description="Executor、Runtime 与系统健康。" dialogRef={featureDialogRef} onClose={closeFeatureModal}><div className="sino-settings-domain-grid sino-settings-domain-grid--execution"><ExecutorSettings roles={center.roles || []} engines={center.execution_engines || []} /><RuntimeEnvironmentSettings registry={runtimeRegistry} /></div></SettingsFeatureModal> : null}
     </div>
     </div>
@@ -153,7 +152,7 @@ function SettingsFeatureModal({ title, description, dialogRef, onClose, children
 
 function modelValue(reference) { return reference?.provider_key && reference?.model ? `${reference.provider_key}::${reference.model}` : ""; }
 function routingValue(reference) { return reference?.provider_id && reference?.model_id ? `${reference.provider_id}::${reference.model_id}` : ""; }
-function ModelAssignments({ roles, options, registry, busy, discussionOpen, onDiscussionToggle, onAssign, onVisionAssign, onCouncilSave }) {
+function ModelAssignments({ roles, options, registry, busy, onAssign, onVisionAssign, onCouncilSave }) {
   const role = (key) => roles.find((item) => item.role_key === key) || {};
   const conversation = role("sino_conversation"); const reasoning = role("deep_thinking"); const coding = role("code_execution"); const council = role("multi_model_discussion");
   const vision = registry?.routing_policies?.find((item) => item.capability === "VISION_UNDERSTANDING") || {};
@@ -166,18 +165,25 @@ function ModelAssignments({ roles, options, registry, busy, discussionOpen, onDi
     if (fallback && choices.find((item) => item.value === fallback)?.healthy) return { key: "fallback", label: "● Fallback 可用" };
     return { key: "unhealthy", label: "● 异常" };
   };
-  const AssignmentRow = ({ label, assignment, roleKey, choices = options, routing = false }) => {
+  const renderAssignmentRow = ({ label, assignment, roleKey, choices = options, routing = false, primaryValues = [], onSave }) => {
     const primary = routing ? routingValue(assignment.preferred_primary || assignment.active_primary) : modelValue(assignment);
     const fallback = routing ? routingValue(assignment.preferred_fallback) : modelValue(assignment.fallbacks?.[0]);
-    const save = (nextPrimary, nextFallback) => routing ? onVisionAssign("VISION_UNDERSTANDING", nextPrimary, nextFallback) : onAssign(roleKey, nextPrimary, nextFallback);
-    const status = statusFor(primary, fallback, choices);
+    const save = onSave || ((nextPrimary, nextFallback) => routing ? onVisionAssign("VISION_UNDERSTANDING", nextPrimary, nextFallback) : onAssign(roleKey, nextPrimary, nextFallback));
+    const duplicate = primary && primaryValues.filter((value) => value === primary).length > 1;
+    const status = duplicate ? { key: "invalid", label: "● 配置错误" } : statusFor(primary, fallback, choices);
     const optionLabel = (item) => `${item.label}${item.provider?.display_name ? ` · ${item.provider.display_name}` : ""}`;
     const renderedChoices = [...choices];
     for (const value of [primary, fallback]) if (value && !renderedChoices.some((item) => item.value === value)) { const [providerId, model] = value.split("::"); const known = (registry?.models || []).find((item) => item.provider_id === providerId && item.model_id === model); renderedChoices.push({ value, label: known?.display_name || model, provider: { display_name: options.find((item) => item.value === value)?.provider?.display_name || providerId }, invalid: true }); }
-    return <div className="sino-model-assignment-row"><strong>{label}</strong><label><span>Primary</span><select aria-label={`${label} Primary`} value={primary} disabled={busy.includes(roleKey || "routing")} onChange={(event) => save(event.target.value, fallback === event.target.value ? "" : fallback)}><option value="">未分配</option>{renderedChoices.map((item) => <option key={`${label}-primary-${item.value}`} value={item.value} disabled={item.invalid}>{optionLabel(item)}{item.invalid ? "（能力不匹配）" : ""}</option>)}</select></label><label><span>Fallback</span><select aria-label={`${label} Fallback`} value={fallback} disabled={!primary || busy.includes(roleKey || "routing")} onChange={(event) => save(primary, event.target.value)}><option value="">未配置</option>{renderedChoices.map((item) => <option key={`${label}-fallback-${item.value}`} value={item.value} disabled={item.value === primary || item.invalid}>{optionLabel(item)}{item.invalid ? "（能力不匹配）" : ""}</option>)}</select></label><span className="sino-model-assignment-status" data-status={status.key}>{status.label}</span></div>;
+    return <div className="sino-model-assignment-row" key={label}><strong>{label}</strong><label><span>Primary</span><select aria-label={`${label} Primary`} value={primary} disabled={busy.includes(roleKey || "routing")} onChange={(event) => save(event.target.value, fallback === event.target.value ? "" : fallback)}><option value="">未分配</option>{renderedChoices.map((item) => { const usedByOtherSlot = primaryValues.some((value) => value === item.value && value !== primary); return <option key={`${label}-primary-${item.value}`} value={item.value} disabled={item.invalid || usedByOtherSlot}>{optionLabel(item)}{item.invalid ? "（能力不匹配）" : usedByOtherSlot ? "（已用于其他讨论模型）" : ""}</option>; })}</select></label><label><span>Fallback</span><select aria-label={`${label} Fallback`} value={fallback} disabled={!primary || busy.includes(roleKey || "routing")} onChange={(event) => save(primary, event.target.value)}><option value="">未配置</option>{renderedChoices.map((item) => <option key={`${label}-fallback-${item.value}`} value={item.value} disabled={item.value === primary || item.invalid}>{optionLabel(item)}{item.invalid ? "（能力不匹配）" : ""}</option>)}</select></label><span className="sino-model-assignment-status" data-status={status.key}>{status.label}</span></div>;
   };
-  return <section className="sino-model-assignments" aria-label="模型分配"><div className="sino-settings-domain-heading"><h3>模型分配</h3><span>Primary 失败时有限切换至 Fallback</span></div><div className="sino-model-assignment-table"><AssignmentRow label="Sino 主对话" assignment={conversation} roleKey="sino_conversation" /><AssignmentRow label="深度推理" assignment={reasoning} roleKey="deep_thinking" /><AssignmentRow label="Vision" assignment={vision} roleKey="routing:VISION_UNDERSTANDING" choices={visionOptions} routing /><AssignmentRow label="Coding" assignment={coding} roleKey="code_execution" /><DiscussionMultiSelect role={council} options={options} open={discussionOpen} onToggle={onDiscussionToggle} onSave={onCouncilSave} /></div></section>;
+  const slots = council.slots?.length ? council.slots : [...(council.models || []).map((primary) => ({ primary, fallback: null })), ...Array.from({ length: Math.max(0, 5 - (council.models || []).length) }, () => ({ primary: null, fallback: null }))];
+  const normalizedSlots = [...slots.slice(0, 5), ...Array.from({ length: Math.max(0, 5 - slots.length) }, () => ({ primary: null, fallback: null }))];
+  const discussionPrimaries = normalizedSlots.map((slot) => modelValue(slot.primary)).filter(Boolean);
+  const saveSlot = (index, nextPrimary, nextFallback) => onCouncilSave(normalizedSlots.map((slot, slotIndex) => slotIndex === index ? { primary: referenceValue(nextPrimary), fallback: referenceValue(nextFallback) } : slot));
+  return <section className="sino-model-assignments" aria-label="模型分配"><div className="sino-settings-domain-heading"><h3>模型分配</h3><span>Primary 失败时有限切换至 Fallback</span></div><div className="sino-model-assignment-table">{renderAssignmentRow({ label: "Sino 主对话", assignment: conversation, roleKey: "sino_conversation" })}{renderAssignmentRow({ label: "深度推理", assignment: reasoning, roleKey: "deep_thinking" })}{renderAssignmentRow({ label: "Vision", assignment: vision, roleKey: "routing:VISION_UNDERSTANDING", choices: visionOptions, routing: true })}{renderAssignmentRow({ label: "Coding", assignment: coding, roleKey: "code_execution" })}<h4 className="sino-discussion-slots-heading">多模型讨论</h4>{normalizedSlots.map((slot, index) => renderAssignmentRow({ label: `讨论模型 ${index + 1}`, assignment: { provider_key: slot.primary?.provider_key, model: slot.primary?.model, fallbacks: slot.fallback ? [slot.fallback] : [] }, roleKey: "multi", primaryValues: discussionPrimaries, onSave: (primary, fallback) => saveSlot(index, primary, fallback) }))}</div></section>;
 }
+
+function referenceValue(value) { if (!value) return null; const [provider_key, model] = value.split("::"); return { provider_key, model }; }
 
 function UsageCost({ healthCost }) {
   const providers = healthCost.filter((item) => Number.isFinite(item.usage?.calls));
@@ -237,15 +243,4 @@ function AddModelModal({ step, center, install, editing, busy, providerKey, onSe
 
 function ModelChoices({ models, provider, onChoose, busy }) {
   return <div className="sino-model-choices">{models.map((model) => <label key={modelId(model)}><input type="checkbox" checked={provider.selected_models.includes(modelId(model))} onChange={(event) => onChoose(provider, model, event.target.checked)} disabled={Boolean(busy)} /><span><strong>{model.display_name || modelId(model)}</strong><small>{model.recommended_for?.join(" · ") || "通用能力"}</small><em>{modelId(model)}</em></span>{model.recommendation_score >= 80 && <b>推荐</b>}</label>)}</div>;
-}
-
-function DiscussionMultiSelect({ role, options, open, onToggle, onSave }) {
-  const selectedValues = (role.models || []).map((item) => `${item.provider_key}::${item.model}`);
-  const selected = new Set(selectedValues);
-  const selectedEntries = selectedValues.map((value) => options.find((item) => item.value === value) || { value, label: value.split("::")[1], provider: { display_name: value.split("::")[0] }, healthy: false });
-  const healthyCount = selectedEntries.filter((item) => item.healthy).length;
-  const status = !selectedValues.length ? { key: "unconfigured", label: "○ 未配置" } : selectedValues.length < 2 ? { key: "invalid", label: "● 配置错误" } : healthyCount < 2 ? { key: "unhealthy", label: "● 异常" } : { key: "healthy", label: "● 正常" };
-  function saveValues(values) { onSave(values.map((item) => { const [provider_key, model] = item.split("::"); return { provider_key, model }; })); }
-  function toggle(value) { saveValues(selected.has(value) ? selectedValues.filter((item) => item !== value) : [...selectedValues, value]); }
-  return <div className="sino-model-assignment-row sino-model-assignment-row--discussion"><strong>多模型讨论</strong><div className="sino-discussion-multiselect"><div className="sino-discussion-chips">{selectedEntries.map((item) => <button type="button" key={item.value} aria-label={`移除 ${item.label}`} onClick={() => toggle(item.value)}><span>{item.label}</span><b aria-hidden="true">×</b></button>)}<button type="button" className="sino-discussion-trigger" aria-label="选择参与模型" aria-expanded={open} onClick={onToggle}>{selectedEntries.length ? "＋" : "选择模型"}<span aria-hidden="true">⌄</span></button></div>{open ? <div className="sino-discussion-dropdown" role="group" aria-label="参与模型选项">{options.map((option) => <label key={option.value}><input type="checkbox" checked={selected.has(option.value)} onChange={() => toggle(option.value)} /><span><strong>{option.label}</strong><small>{option.provider.display_name}</small></span><em data-health={option.healthy ? "healthy" : "unhealthy"}>● {option.healthy ? "正常" : "异常"}</em></label>)}</div> : null}</div><span className="sino-model-assignment-status" data-status={status.key}>{status.label}</span></div>;
 }

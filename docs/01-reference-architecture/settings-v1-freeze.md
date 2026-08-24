@@ -32,6 +32,8 @@ Settings dialogs share the same overlay, focus and close behavior, fixed header,
 
 Each mutable setting has one editing surface. Read-only summaries may reference a setting elsewhere, but must not create a second mutation path.
 
+Multi-model discussion is a Founder-approved V1 capability extension. It provides five ordered discussion slots; each slot has one optional Primary, one optional Fallback, and operational status derived from the same model health rules as other assignments. Only slots with a configured Primary participate at Runtime. Existing `models` configurations migrate in order to slot Primaries without inventing Fallbacks.
+
 ## Change policy
 
 The Settings V1 UI and information architecture are frozen. They may change only when:

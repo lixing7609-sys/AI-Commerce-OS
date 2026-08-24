@@ -129,10 +129,12 @@ class MultiModelCouncilService:
                 continue
             started = monotonic()
             parse_metadata = {}
+            fallback_metadata = {}
             try:
-                result = self._model_runner(definition, context, selected_model, perspective) if self._uses_default_runner else self._model_runner(definition, context)
+                result = self._run_participant(target, context, perspective)
                 proposal, provider, model = result["proposal"], result["provider"], result["model"]
                 parse_metadata = result.get("parse_metadata") or {}
+                fallback_metadata = result.get("fallback_metadata") or {}
                 assigned_role = result.get("role") or definition.role
                 status, error_type = "completed", None
                 successful.append({"provider": provider, "model": model, "label": definition.label, "proposal": proposal, **perspective})
@@ -161,6 +163,8 @@ class MultiModelCouncilService:
                 references["perspective"] = perspective
                 if parse_metadata:
                     references["proposal_parse"] = parse_metadata
+                if fallback_metadata:
+                    references["fallback"] = fallback_metadata
                 session.add(CouncilModelRunDB(council_run_id=run_id, provider=provider, model=model, role=assigned_role, status=status, proposal=proposal, latency_ms=latency, error_type=error_type, context_references=references))
                 session.commit()
 
@@ -270,11 +274,11 @@ class MultiModelCouncilService:
                 current = []
                 for target in targets:
                     key, model, perspective = target["provider_key"], target["model"], target["perspective"]
-                    definition = model_registry.get(key) or self._dynamic_model_definition(key, model); started = monotonic(); proposal = {}; error_type = None; parse_metadata = {}
+                    definition = model_registry.get(key) or self._dynamic_model_definition(key, model); started = monotonic(); proposal = {}; error_type = None; parse_metadata = {}; fallback_metadata = {}
                     try:
-                        result = self._model_runner(definition, round_context, model, perspective) if self._uses_default_runner else self._model_runner(definition, round_context)
+                        result = self._run_participant(target, round_context, perspective)
                         proposal, provider, actual_model, status = result["proposal"], result["provider"], result["model"], "completed"
-                        parse_metadata = result.get("parse_metadata") or {}; role = result.get("role") or definition.role
+                        parse_metadata = result.get("parse_metadata") or {}; fallback_metadata = result.get("fallback_metadata") or {}; role = result.get("role") or definition.role
                         item = {"provider": provider, "model": actual_model, "label": definition.label, "proposal": proposal, **perspective, "round": round_number}; current.append(item); successful.append(item)
                     except ProposalParseError as error:
                         provider, actual_model, role, status, error_type = key, model, definition.role, "parse_failed", error.error_type
@@ -287,6 +291,7 @@ class MultiModelCouncilService:
                     failures += status != "completed"
                     refs = {**dict(context["grounding"]), "perspective": perspective, "deliberation_round": round_number}
                     if parse_metadata: refs["proposal_parse"] = parse_metadata
+                    if fallback_metadata: refs["fallback"] = fallback_metadata
                     with SessionLocal() as session:
                         model_record = CouncilModelRunDB(council_run_id=run_id, provider=provider, model=actual_model, role=role, status=status, proposal=proposal, latency_ms=(monotonic()-started)*1000, error_type=error_type, context_references=refs)
                         session.add(model_record); session.commit(); session.refresh(model_record)
@@ -366,13 +371,30 @@ class MultiModelCouncilService:
             except Exception: pass
 
     def _resolve_targets(self, selected_models: list[str] | None) -> list[dict]:
-        from app.core.model_center.service import resolve_multi_model_configs
-        configured = [{"provider_key": item.provider_key, "model": item.model} for item in resolve_multi_model_configs()]
+        from app.core.model_center.service import resolve_multi_model_slot_references
+        configured = [{"provider_key": item["primary"]["provider_key"], "model": item["primary"]["model"], "slot": item["slot"], "fallback": item.get("fallback")} for item in resolve_multi_model_slot_references()]
         if not configured and not self._uses_default_runner:
             configured = [{"provider_key": item.key, "model": f"{item.key}-model"} for item in model_registry.list()]
         if selected_models:
             configured = [item for item in configured if item["provider_key"] in selected_models]
         return [item for item in configured if not self._image_or_non_text_model(item["model"])]
+
+    def _run_participant(self, target: dict, context: dict, perspective: dict) -> dict:
+        primary = {"provider_key": target["provider_key"], "model": target["model"]}
+        candidates = [primary, target.get("fallback")]
+        first_error = None
+        for index, candidate in enumerate(item for item in candidates if item):
+            definition = model_registry.get(candidate["provider_key"]) or self._dynamic_model_definition(candidate["provider_key"], candidate["model"])
+            try:
+                result = self._model_runner(definition, context, candidate["model"], perspective) if self._uses_default_runner else self._model_runner(definition, context)
+                if index:
+                    result = {**result, "fallback_metadata": {"slot": target.get("slot"), "from_provider": primary["provider_key"], "from_model": primary["model"], "reason": getattr(first_error, "error_type", type(first_error).__name__), "to_provider": candidate["provider_key"], "to_model": candidate["model"]}}
+                return result
+            except (ConfigurationError, AuthenticationError, LLMGatewayError, LookupError) as error:
+                first_error = first_error or error
+                if index + 1 < len([item for item in candidates if item]):
+                    continue
+                raise
 
     @staticmethod
     def _assign_perspectives(targets: list[dict]) -> list[dict]:
@@ -565,7 +587,7 @@ class MultiModelCouncilService:
                 "provider_display_name": provider.display_name if provider else ({"deepseek": "DeepSeek", "gpt": "OpenAI", "claude": "Anthropic"}.get(provider_id) or "AI 服务"),
                 "model_display_name": self._display_model_name(model_id) if "/" in (model_id or "") else (model.display_name if model else self._display_model_name(model_id)),
             }
-        snapshot["council_runs"] = [{"council_run_id": run.id, "conversation_id": run.conversation_id, "project_id": run.project_id, "question": run.question, "discussion_mode": (run.context_package or {}).get("discussion_mode", "council"), "deliberation": (run.context_package or {}).get("deliberation"), "consensus": run.consensus, "disagreements": run.disagreements, "unique_insights": run.unique_insights, "risks": run.risks, "unknowns": run.unknowns, "recommendation": run.recommendation, "candidate_decision": run.candidate_decision, "candidate_goal": run.candidate_goal, "decision_status": run.decision_status, "asset_id": run.asset_id, "status": run.status, "failure_reason": (run.context_package or {}).get("failure_reason"), "participants": [{**item, **identity(item.get("provider"), item.get("model"))} for item in list((run.context_package or {}).get("participant_models") or [])], "created_at": run.created_at.isoformat(), "model_runs": [{"model_run_id": item.id, "provider": item.provider, "model": item.model, **identity(item.provider, item.model), "round_number": (item.context_references or {}).get("deliberation_round"), "role": item.role, "perspective_role": ((item.context_references or {}).get("perspective") or {}).get("perspective_role"), "perspective_label": ((item.context_references or {}).get("perspective") or {}).get("perspective_label"), "status": item.status, "proposal": item.proposal, "parse_metadata": (item.context_references or {}).get("proposal_parse"), "latency_ms": item.latency_ms, "error_type": item.error_type} for item in model_runs if item.council_run_id == run.id]} for run in runs]
+        snapshot["council_runs"] = [{"council_run_id": run.id, "conversation_id": run.conversation_id, "project_id": run.project_id, "question": run.question, "discussion_mode": (run.context_package or {}).get("discussion_mode", "council"), "deliberation": (run.context_package or {}).get("deliberation"), "consensus": run.consensus, "disagreements": run.disagreements, "unique_insights": run.unique_insights, "risks": run.risks, "unknowns": run.unknowns, "recommendation": run.recommendation, "candidate_decision": run.candidate_decision, "candidate_goal": run.candidate_goal, "decision_status": run.decision_status, "asset_id": run.asset_id, "status": run.status, "failure_reason": (run.context_package or {}).get("failure_reason"), "participants": [{**item, **identity(item.get("provider"), item.get("model"))} for item in list((run.context_package or {}).get("participant_models") or [])], "created_at": run.created_at.isoformat(), "model_runs": [{"model_run_id": item.id, "provider": item.provider, "model": item.model, **identity(item.provider, item.model), "round_number": (item.context_references or {}).get("deliberation_round"), "role": item.role, "perspective_role": ((item.context_references or {}).get("perspective") or {}).get("perspective_role"), "perspective_label": ((item.context_references or {}).get("perspective") or {}).get("perspective_label"), "status": item.status, "proposal": item.proposal, "parse_metadata": (item.context_references or {}).get("proposal_parse"), "fallback": (item.context_references or {}).get("fallback"), "latency_ms": item.latency_ms, "error_type": item.error_type} for item in model_runs if item.council_run_id == run.id]} for run in runs]
         return snapshot
 
     @staticmethod
