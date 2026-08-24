@@ -92,8 +92,11 @@ describe("Founder Settings", () => {
     expect(screen.getByRole("list", { name: "已接入模型列表" }).querySelectorAll('[role="listitem"]')).toHaveLength(1);
     expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("Sino 主对话");
     expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("多模型讨论");
-    expect(screen.getByRole("region", { name: "模型分配" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "Usage 与成本" })).toBeTruthy();
+    const modelList = screen.getByRole("list", { name: "已接入模型列表" });
+    const assignments = screen.getByRole("region", { name: "模型分配" });
+    const usage = screen.getByRole("region", { name: "Usage 与成本" });
+    expect(modelList.compareDocumentPosition(assignments) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(assignments.compareDocumentPosition(usage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText("自动多轮")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "系统" }));
     expect(screen.getByRole("region", { name: "执行器" })).toBeTruthy();

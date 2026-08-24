@@ -670,10 +670,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-tabs button.is-active { border-bottom-color: var(--accent); color: var(--text-primary); }
 .sino-settings-content { min-width: 0; width: 100%; }
 .sino-settings-page { box-sizing: border-box; width: 100%; padding-block: 6px 10px; }
-.sino-settings-page--models { display: grid; grid-template-columns: minmax(440px, 1.25fr) minmax(390px, .95fr); grid-template-areas: "pool assignments" "pool usage"; gap: 10px 16px; align-items: start; }
-.sino-settings-page--models > .sino-model-list-pane { grid-area: pool; }
-.sino-settings-page--models > .sino-model-assignments { grid-area: assignments; margin-top: 0; padding-top: 0; border-top: 0; }
-.sino-settings-page--models > .sino-usage-cost { grid-area: usage; margin-top: 0; }
+.sino-settings-page--models { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 .sino-settings-domain-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .sino-settings-domain-panel { min-width: 0; padding: 0; }
 .sino-settings-domain-section { min-width: 0; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -688,14 +685,14 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-settings-empty { margin: 8px 0; color: var(--text-secondary); font-size: 13px; }
 .sino-model-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; }
 .sino-model-assignments, .sino-usage-cost { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
-.sino-model-assignment-table { display: grid; }
-.sino-model-assignment-row { display: grid; grid-template-columns: minmax(120px,.8fr) minmax(160px,1fr) minmax(160px,1fr) 82px; gap: 10px; align-items: center; min-height: 44px; border-bottom: 1px solid color-mix(in srgb,var(--line) 66%,transparent); font-size: 12px; }
+.sino-model-assignment-table { display: grid; width: 100%; max-width: 1100px; }
+.sino-model-assignment-row { display: grid; grid-template-columns: minmax(120px,150px) minmax(210px,340px) minmax(210px,340px) minmax(82px,100px); justify-content: start; gap: 12px; align-items: center; min-height: 44px; border-bottom: 1px solid color-mix(in srgb,var(--line) 66%,transparent); font-size: 12px; }
 .sino-model-assignment-row > label { display: grid; grid-template-columns: 54px minmax(0,1fr); align-items: center; gap: 6px; color: var(--text-secondary); }
 .sino-model-assignment-row select { width: 100%; min-height: 32px !important; padding: 4px 7px; }
 .sino-model-assignment-row > button { justify-self: start; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
 .sino-model-assignment-status { color: var(--text-secondary); text-align: right; }
 .sino-model-discussion-editor { padding: 8px 0; }
-.sino-usage-cost dl { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin: 0; }
+.sino-usage-cost dl { display: grid; grid-template-columns: repeat(4,minmax(150px,1fr)); gap: 8px; max-width: 920px; margin: 0; }
 .sino-usage-cost dl > div { min-width: 0; padding: 8px 10px; background: color-mix(in srgb,var(--surface-raised) 55%,transparent); border-radius: 8px; }
 .sino-usage-cost dt { color: var(--text-label); font-size: 11px; }
 .sino-usage-cost dd { margin: 3px 0 0; font-size: 13px; }
@@ -703,7 +700,6 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-runtime-summary span:last-child { justify-self: end; color: var(--text-secondary); font-size: 12px; }
 .sino-settings-page .sino-capability-section-heading button { border: 0; background: transparent; color: var(--accent); cursor: pointer; }
 @container (max-width: 760px) { .sino-model-assignment-row { grid-template-columns: minmax(100px,.6fr) minmax(150px,1fr); }.sino-model-assignment-row > :nth-child(3),.sino-model-assignment-row > :nth-child(4){grid-column:2}.sino-usage-cost dl{grid-template-columns:repeat(2,minmax(0,1fr));} }
-@container (max-width: 980px) { .sino-settings-page--models { grid-template-columns:minmax(0,1fr);grid-template-areas:"pool" "assignments" "usage"; } }
 .sino-model-list-pane { min-width: 0; }
 .sino-model-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; margin-bottom: 6px; }
 .sino-model-list-heading h3 { margin: 0; color: var(--text-primary); font-size: 14px; font-weight: 600; line-height: 20px; }

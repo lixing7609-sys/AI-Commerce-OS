@@ -17,6 +17,13 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
   const firstModel = page.getByRole("list", { name: "已接入模型列表" }).locator("button").first();
   await expect(firstModel).toBeVisible();
+  const stacked = await page.evaluate(() => {
+    const pool = document.querySelector('[aria-label="已接入模型列表"]')?.getBoundingClientRect();
+    const assignments = document.querySelector('[aria-label="模型分配"]')?.getBoundingClientRect();
+    const usage = document.querySelector('[aria-label="Usage 与成本"]')?.getBoundingClientRect();
+    return Boolean(pool && assignments && usage && assignments.top >= pool.bottom && usage.top >= assignments.bottom);
+  });
+  expect(stacked).toBe(true);
   await page.screenshot({ path: `${evidence}/settings-model-control-1440x900.png`, fullPage: true });
   for (const viewport of [{ width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
     await page.setViewportSize(viewport);
