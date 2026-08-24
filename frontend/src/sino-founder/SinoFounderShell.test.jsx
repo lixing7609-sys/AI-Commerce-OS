@@ -147,7 +147,7 @@ describe("formal Sino Founder workspace shell", () => {
     expect(container.querySelector(".sino-founder-asset-route.is-settings").children).toHaveLength(2);
   });
 
-  it("resizes the floating Settings inspector without adding a layout track", () => {
+  it("lets the floating Settings inspector shrink without exceeding its 340px maximum", () => {
     const { container } = render(<SinoFounderShell {...props} active="settings" main={<section>设置</section>} context={<section>配置</section>} />);
     const route = container.querySelector(".sino-founder-asset-route.is-settings");
     const handle = screen.getByRole("separator", { name: "调整系统配置面板宽度" });
@@ -155,8 +155,8 @@ describe("formal Sino Founder workspace shell", () => {
     fireEvent.pointerDown(handle, { clientX: 1100, pointerId: 5 });
     fireEvent.pointerMove(window, { clientX: 1000 });
     fireEvent.pointerUp(window);
-    expect(handle.getAttribute("aria-valuenow")).toBe("440");
-    expect(route.style.getPropertyValue("--settings-inspector-width")).toBe("440px");
+    expect(handle.getAttribute("aria-valuenow")).toBe("340");
+    expect(route.style.getPropertyValue("--settings-inspector-width")).toBe("340px");
     fireEvent.pointerDown(handle, { clientX: 1000, pointerId: 6 });
     fireEvent.pointerMove(window, { clientX: 1400 });
     fireEvent.pointerUp(window);

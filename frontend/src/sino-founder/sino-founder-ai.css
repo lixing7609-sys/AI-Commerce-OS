@@ -1937,7 +1937,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   margin: 8px 0;
   width: var(--settings-inspector-width, 340px);
   min-width: 300px;
-  max-width: min(640px, 48vw);
+  max-width: min(340px, 48vw);
   overflow: hidden;
   overscroll-behavior: contain;
   border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);

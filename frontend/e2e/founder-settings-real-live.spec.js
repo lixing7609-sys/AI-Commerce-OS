@@ -30,7 +30,21 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(inspector).toBeVisible();
   await expect(inspector.getByText("Provider 技术配置")).toBeVisible();
   await expect(inspector.getByRole("button", { name: "测试连接" })).toBeVisible();
+  const initialInspectorBox = await inspector.boundingBox();
+  expect(initialInspectorBox.width).toBeLessThanOrEqual(341);
   await page.screenshot({ path: `${evidence}/settings-provider-inspector-1440x900.png`, fullPage: true });
+  let previousMainWidth = 0;
+  for (const viewport of [{ width: 1512, height: 982 }, { width: 1728, height: 1117 }]) {
+    await page.setViewportSize(viewport);
+    const inspectorBox = await inspector.boundingBox();
+    const mainBox = await page.getByRole("main", { name: "Founder AI 功能页面" }).boundingBox();
+    expect(inspectorBox.width).toBeLessThanOrEqual(341);
+    expect(inspectorBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width);
+    expect(mainBox.width).toBeGreaterThan(previousMainWidth);
+    previousMainWidth = mainBox.width;
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.screenshot({ path: `${evidence}/settings-provider-inspector-${viewport.width}x${viewport.height}.png`, fullPage: true });
+  }
 
   await tabs.getByRole("button", { name: "Sino AI" }).click();
   await expect(inspector).toHaveCount(0);
