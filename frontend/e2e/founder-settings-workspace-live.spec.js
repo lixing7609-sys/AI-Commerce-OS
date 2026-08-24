@@ -147,7 +147,7 @@ test("Settings exposes model control and system health with the real Provider in
   const conversationPrimaryStatus = page.getByLabel("Sino 主对话 Primary 状态");
   await expect(conversationPrimaryStatus).toHaveText("● 正常");
   expect(await conversationPrimaryStatus.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(19, 52, 99)");
-  await expect(page.getByLabel("Sino 主对话 Fallback 状态")).toHaveText("○ 未配置");
+  await expect(page.getByLabel("Sino 主对话 Fallback 状态")).toHaveText("● 未配置");
   await expect(page.getByLabel("Sino 主对话 Assignment 状态")).toHaveText("● 正常");
   await page.getByRole("combobox", { name: "Sino 主对话 Fallback" }).selectOption("claude::claude-sonnet-5");
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toHaveValue("claude::claude-sonnet-5");
@@ -163,6 +163,9 @@ test("Settings exposes model control and system health with the real Provider in
     await expect(page.getByLabel(`讨论模型 ${index} Fallback 状态`)).toBeVisible();
     await expect(page.getByLabel(`讨论模型 ${index} Assignment 状态`)).toBeVisible();
   }
+  const assignmentStatuses = await sinoDialog.locator(".sino-model-status").allTextContents();
+  expect(assignmentStatuses).toHaveLength(27);
+  expect(assignmentStatuses.every((status) => ["● 正常", "● 配置错误", "● 异常", "● 未配置"].includes(status.trim()))).toBe(true);
   await expect(page.getByRole("combobox", { name: "讨论模型 1 Primary" })).toHaveValue("deepseek::deepseek-chat");
   await page.getByRole("combobox", { name: "讨论模型 2 Primary" }).selectOption("claude::claude-sonnet-5");
   await page.getByRole("combobox", { name: "讨论模型 2 Fallback" }).selectOption("gpt::gpt-5-pro");

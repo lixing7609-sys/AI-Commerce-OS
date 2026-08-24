@@ -124,7 +124,7 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(page.getByRole("combobox", { name: "Sino 主对话 Fallback" })).toBeVisible();
   const conversationFallback = page.getByRole("combobox", { name: "Sino 主对话 Fallback" });
   if ((await conversationFallback.inputValue()) === "") {
-    await expect(page.getByLabel("Sino 主对话 Fallback 状态")).toHaveText("○ 未配置");
+    await expect(page.getByLabel("Sino 主对话 Fallback 状态")).toHaveText("● 未配置");
     await expect(page.getByLabel("Sino 主对话 Assignment 状态")).toHaveText("● 正常");
   }
   const visionPrimary = page.getByRole("combobox", { name: "Vision Primary" });

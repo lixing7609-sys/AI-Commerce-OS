@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
-import { ModelCenter, ProviderConfigModal } from "./ModelCenter.jsx";
+import { MODEL_ASSIGNMENT_STATUS, ModelCenter, ProviderConfigModal, resolveAssignmentStatus, resolveModelAssignmentStatus } from "./ModelCenter.jsx";
 import "./sino-founder-ai.css";
 
 vi.mock("../services/founderAiApi.js", () => ({ checkModelProvider: vi.fn(), discoverProviderModels: vi.fn(), getModelCenter: vi.fn(), getRuntimeEnvironmentRegistry: vi.fn(), installModelProvider: vi.fn(), saveCapabilityAssignment: vi.fn(), saveModelRoutingPreferred: vi.fn(), saveMultiModelAssignment: vi.fn(), selectProviderModels: vi.fn(), updateModelProviderCredentials: vi.fn() }));
@@ -40,6 +40,31 @@ function SettingsHarness() {
 describe("Founder Settings", () => {
   beforeEach(() => { vi.clearAllMocks(); getModelCenter.mockResolvedValue(center); getRuntimeEnvironmentRegistry.mockResolvedValue(runtimeRegistry); });
   afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+  it("resolves every model and assignment state through the four-state truth matrix", () => {
+    const { NORMAL, CONFIG_ERROR, ERROR, UNCONFIGURED } = MODEL_ASSIGNMENT_STATUS;
+    const choices = [{ value: "healthy", healthy: true }, { value: "unhealthy", healthy: false }];
+    expect(resolveModelAssignmentStatus({ value: "", choices })).toBe(UNCONFIGURED);
+    expect(resolveModelAssignmentStatus({ value: "healthy", choices })).toBe(NORMAL);
+    expect(resolveModelAssignmentStatus({ value: "missing", choices })).toBe(CONFIG_ERROR);
+    expect(resolveModelAssignmentStatus({ value: "healthy", choices, invalid: true })).toBe(CONFIG_ERROR);
+    expect(resolveModelAssignmentStatus({ value: "unhealthy", choices })).toBe(ERROR);
+
+    const matrix = [
+      [UNCONFIGURED, UNCONFIGURED, true, UNCONFIGURED],
+      [NORMAL, UNCONFIGURED, true, NORMAL],
+      [NORMAL, ERROR, true, NORMAL],
+      [CONFIG_ERROR, UNCONFIGURED, true, CONFIG_ERROR],
+      [ERROR, UNCONFIGURED, true, ERROR],
+      [ERROR, NORMAL, true, NORMAL],
+      [ERROR, ERROR, true, ERROR],
+      [NORMAL, CONFIG_ERROR, true, NORMAL],
+      [ERROR, NORMAL, false, ERROR],
+    ];
+    for (const [primaryStatus, fallbackStatus, fallbackSupported, expected] of matrix) {
+      expect(resolveAssignmentStatus({ primaryStatus, fallbackStatus, fallbackSupported })).toBe(expected);
+    }
+  });
 
   it("uses one top-level model navigation and keeps operational domains as page entries", async () => {
     render(<ModelCenter />);
@@ -153,7 +178,7 @@ describe("Founder Settings", () => {
     expect(within(visionFallback).getByRole("option", { name: /GPT 5 Pro.*能力不匹配/ }).disabled).toBe(true);
     expect(within(visionFallback).queryByRole("option", { name: /DeepSeek Chat/ })).toBeNull();
     expect(screen.getByLabelText("Vision Primary 状态").textContent).toBe("● 配置错误");
-    expect(screen.getByLabelText("Vision Fallback 状态").textContent).toBe("○ 未配置");
+    expect(screen.getByLabelText("Vision Fallback 状态").textContent).toBe("● 未配置");
     expect(screen.getByLabelText("Vision Assignment 状态").textContent).toBe("● 配置错误");
     fireEvent.change(vision, { target: { value: "ofox::gemini-3.6-flash" } });
     await waitFor(() => expect(saveModelRoutingPreferred).toHaveBeenCalledWith("VISION_UNDERSTANDING", { provider_id: "ofox", model_id: "gemini-3.6-flash" }, null));
@@ -170,7 +195,7 @@ describe("Founder Settings", () => {
     expect(within(fallback).getByRole("option", { name: /GPT 5 Pro.*能力不匹配/ }).disabled).toBe(true);
     expect(screen.getByLabelText("Vision Primary 状态").textContent).toBe("● 正常");
     expect(screen.getByLabelText("Vision Fallback 状态").textContent).toBe("● 配置错误");
-    expect(screen.getByLabelText("Vision Assignment 状态").textContent).toBe("● 配置错误");
+    expect(screen.getByLabelText("Vision Assignment 状态").textContent).toBe("● 正常");
   });
 
   it("shows selected Provider details and omits an empty Provider modal", async () => {
@@ -330,17 +355,17 @@ describe("Founder Settings", () => {
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
     fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
     expect(screen.getByLabelText("Sino 主对话 Primary 状态").textContent).toBe("● 正常");
-    expect(screen.getByLabelText("Sino 主对话 Primary 状态").getAttribute("data-status")).toBe("healthy");
-    expect(screen.getByLabelText("Sino 主对话 Fallback 状态").textContent).toBe("○ 未配置");
+    expect(screen.getByLabelText("Sino 主对话 Primary 状态").getAttribute("data-status")).toBe("normal");
+    expect(screen.getByLabelText("Sino 主对话 Fallback 状态").textContent).toBe("● 未配置");
     expect(screen.getByLabelText("Sino 主对话 Assignment 状态").textContent).toBe("● 正常");
     expect(screen.getByLabelText("深度推理 Primary 状态").textContent).toBe("● 异常");
     expect(screen.getByLabelText("深度推理 Fallback 状态").textContent).toBe("● 正常");
-    expect(screen.getByLabelText("深度推理 Assignment 状态").textContent).toBe("● Fallback 可用");
+    expect(screen.getByLabelText("深度推理 Assignment 状态").textContent).toBe("● 正常");
     expect(screen.getByRole("combobox", { name: "Sino 主对话 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("正常");
-    expect(screen.getByRole("combobox", { name: "深度推理 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("Fallback 可用");
+    expect(screen.getByRole("combobox", { name: "深度推理 Primary" }).closest(".sino-model-assignment-row").textContent).not.toContain("Fallback 可用");
     expect(screen.getByRole("combobox", { name: "Vision Primary" }).closest(".sino-model-assignment-row").textContent).toContain("未配置");
     const coding = screen.getByRole("combobox", { name: "Coding Primary" });
-    expect(screen.getByLabelText("Coding Fallback 状态").textContent).toBe("○ 未配置");
+    expect(screen.getByLabelText("Coding Fallback 状态").textContent).toBe("● 未配置");
     expect(screen.getByLabelText("Coding Assignment 状态").textContent).toBe("● 异常");
     expect(coding.closest(".sino-model-assignment-row").textContent).toContain("异常");
     expect(within(coding).getByRole("option", { name: /DeepSeek Chat/ })).toBeTruthy();
@@ -365,16 +390,16 @@ describe("Founder Settings", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
     for (let index = 1; index <= 5; index += 1) expect(screen.getByLabelText(`讨论模型 ${index} Primary 状态`)).toBeTruthy();
     expect(screen.getByLabelText("讨论模型 1 Primary 状态").textContent).toBe("● 配置错误");
-    expect(screen.getByLabelText("讨论模型 1 Fallback 状态").textContent).toBe("○ 未配置");
+    expect(screen.getByLabelText("讨论模型 1 Fallback 状态").textContent).toBe("● 未配置");
     expect(screen.getByLabelText("讨论模型 1 Assignment 状态").textContent).toBe("● 配置错误");
     expect(screen.getByLabelText("讨论模型 3 Primary 状态").textContent).toBe("● 异常");
     expect(screen.getByLabelText("讨论模型 3 Fallback 状态").textContent).toBe("● 正常");
-    expect(screen.getByLabelText("讨论模型 3 Assignment 状态").textContent).toBe("● Fallback 可用");
-    expect(screen.getByLabelText("讨论模型 4 Primary 状态").textContent).toBe("○ 未配置");
-    expect(screen.getByLabelText("讨论模型 4 Fallback 状态").textContent).toBe("○ 未配置");
-    expect(screen.getByLabelText("讨论模型 4 Assignment 状态").textContent).toBe("○ 未配置");
+    expect(screen.getByLabelText("讨论模型 3 Assignment 状态").textContent).toBe("● 正常");
+    expect(screen.getByLabelText("讨论模型 4 Primary 状态").textContent).toBe("● 未配置");
+    expect(screen.getByLabelText("讨论模型 4 Fallback 状态").textContent).toBe("● 未配置");
+    expect(screen.getByLabelText("讨论模型 4 Assignment 状态").textContent).toBe("● 未配置");
     expect(screen.getByRole("combobox", { name: "讨论模型 1 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("配置错误");
-    expect(screen.getByRole("combobox", { name: "讨论模型 3 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("Fallback 可用");
+    expect(screen.getByRole("combobox", { name: "讨论模型 3 Primary" }).closest(".sino-model-assignment-row").textContent).not.toContain("Fallback 可用");
     expect(screen.getByRole("combobox", { name: "讨论模型 4 Primary" }).closest(".sino-model-assignment-row").textContent).toContain("未配置");
     expect(within(screen.getByRole("combobox", { name: "讨论模型 4 Primary" })).getByRole("option", { name: /DeepSeek Chat.*已用于其他讨论模型/ }).disabled).toBe(true);
   });
