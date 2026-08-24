@@ -301,17 +301,22 @@ describe("Founder Settings", () => {
     const { container } = render(<ProviderConfigModal provider={provider} model={models[0]} onRefresh={onRefresh} onHealth={onHealth} onChoose={vi.fn()} />);
     expect(container.querySelectorAll(".sino-settings-inspector-card")).toHaveLength(0);
     expect(container.querySelectorAll(".sino-settings-provider-inspector > section")).toHaveLength(2);
+    expect(container.querySelectorAll(".sino-provider-connection-control .sino-provider-summary-row")).toHaveLength(3);
     const currentModelRow = screen.getByText("当前模型", { selector: "dt" }).closest("div");
     expect(within(currentModelRow).getByText("Model 1")).toBeTruthy();
+    expect(within(currentModelRow).getByText("Base URL", { selector: "dt" })).toBeTruthy();
+    expect(within(currentModelRow).getByText("https://api.deepseek.com/v1")).toBeTruthy();
     expect(within(currentModelRow).queryByText("model-1")).toBeNull();
     expect(screen.getByText("model-1")).toBeTruthy();
     const apiKeyRow = screen.getByText("API Key", { selector: "dt" }).closest("div");
     expect(within(apiKeyRow).getByText("****1234")).toBeTruthy();
     expect(within(apiKeyRow).getByRole("button", { name: "更新 API Key" })).toBeTruthy();
     const statusRow = screen.getByText("状态", { selector: "dt" }).closest("div");
+    expect(within(statusRow).getByText("Provider", { selector: "dt" })).toBeTruthy();
     expect(within(statusRow).getByText("正常")).toBeTruthy();
     expect(within(statusRow).getByRole("button", { name: "测试连接" })).toBeTruthy();
     const endpointRow = screen.getByText("Base URL", { selector: "dt" }).closest("div");
+    expect(endpointRow).toBe(currentModelRow);
     expect(endpointRow.textContent).toContain("api.deepseek.com");
     expect(screen.getByText("Model 3")).toBeTruthy();
     expect(screen.queryByText("Model 4")).toBeNull();
@@ -344,6 +349,13 @@ describe("Founder Settings", () => {
     const statusRow = screen.getByText("状态", { selector: "dt" }).closest("div");
     expect(within(statusRow).getByText("异常")).toBeTruthy();
     expect(within(statusRow).queryByRole("alert")).toBeNull();
+  });
+
+  it("omits the API Key row when a Provider explicitly does not require credentials", () => {
+    const provider = { ...deepseek, requires_api_key: false };
+    const { container } = render(<ProviderConfigModal provider={provider} model={provider.available_models[0]} action={{}} />);
+    expect(container.querySelectorAll(".sino-provider-summary-row")).toHaveLength(2);
+    expect(screen.queryByText("API Key", { selector: "dt" })).toBeNull();
   });
 
   it("shows Provider success feedback transiently without a persistent card", () => {
