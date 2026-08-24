@@ -296,11 +296,12 @@ describe("Founder Settings", () => {
   });
 
   it("uses two dense Provider sections and progressively reveals available models", () => {
-    const models = Array.from({ length: 5 }, (_, index) => ({ model_id: `model-${index + 1}`, display_name: `Model ${index + 1}`, recommendation_score: index === 0 ? 90 : 50 }));
+    const models = Array.from({ length: 5 }, (_, index) => ({ model_id: `model-${index + 1}`, display_name: `Model ${index + 1}`, recommendation_score: index === 0 ? 90 : 50, recommended_for: index === 0 ? ["Sino 对话", "项目分析", "系统构建"] : [] }));
     const provider = { ...deepseek, base_url: "https://api.deepseek.com/v1", available_models: models, selected_models: ["model-1"] };
     const onRefresh = vi.fn();
     const onHealth = vi.fn();
-    const { container } = render(<ProviderConfigModal provider={provider} model={models[0]} onRefresh={onRefresh} onHealth={onHealth} onChoose={vi.fn()} />);
+    const onChoose = vi.fn();
+    const { container } = render(<ProviderConfigModal provider={provider} model={models[0]} onRefresh={onRefresh} onHealth={onHealth} onChoose={onChoose} />);
     expect(container.querySelectorAll(".sino-settings-inspector-card")).toHaveLength(0);
     expect(container.querySelectorAll(".sino-settings-provider-inspector > section")).toHaveLength(2);
     expect(container.querySelectorAll(".sino-provider-connection-control .sino-provider-summary-row")).toHaveLength(2);
@@ -317,11 +318,24 @@ describe("Founder Settings", () => {
     expect(within(apiKeyRow).getByRole("button", { name: "更新 API Key" })).toBeTruthy();
     expect(within(apiKeyRow).getByRole("button", { name: "测试连接" })).toBeTruthy();
     expect(within(screen.getByRole("dialog", { name: "Provider 技术配置" })).queryByText("状态", { exact: true })).toBeNull();
+    const modelGrid = container.querySelector(".sino-provider-model-card-grid");
+    expect(modelGrid.querySelectorAll(":scope > article")).toHaveLength(3);
+    expect(modelGrid.querySelector(":scope > article").classList.contains("is-selected")).toBe(true);
+    expect(within(modelGrid).queryByText("Sino 对话")).toBeNull();
+    expect(within(modelGrid).queryByText("项目分析")).toBeNull();
+    expect(within(modelGrid).queryByText("系统构建")).toBeNull();
+    fireEvent.click(within(modelGrid).getByText("推荐"));
+    fireEvent.click(within(modelGrid).getByText("model-1"));
+    expect(onChoose).not.toHaveBeenCalled();
+    fireEvent.click(within(modelGrid).getByRole("checkbox", { name: "Model 1 model-1" }));
+    expect(onChoose).toHaveBeenCalledWith(models[0], false);
     expect(screen.getByText("Model 3")).toBeTruthy();
     expect(screen.queryByText("Model 4")).toBeNull();
     const toggle = screen.getByRole("button", { name: /查看全部 5 个模型/ });
     fireEvent.click(toggle);
     expect(screen.getByText("Model 5")).toBeTruthy();
+    expect(modelGrid.querySelectorAll(":scope > article")).toHaveLength(5);
+    expect(modelGrid.classList.contains("sino-provider-model-card-grid")).toBe(true);
     expect(screen.getByRole("button", { name: "收起" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
     expect(screen.queryByText("Model 4")).toBeNull();

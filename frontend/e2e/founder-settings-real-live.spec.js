@@ -115,6 +115,12 @@ test("real Settings keeps model control, Provider inspector, and compact system 
     await expect(providerModal.getByRole("heading", { name: "模型管理" })).toBeVisible();
     await expect(providerModal.locator(".sino-settings-provider-inspector > section")).toHaveCount(2);
     await expect(providerModal.locator(".sino-settings-inspector-card")).toHaveCount(0);
+    const providerModelGrid = providerModal.locator(".sino-provider-model-card-grid");
+    await expect(providerModelGrid).toHaveCSS("display", "grid");
+    expect((await providerModelGrid.evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(" ").length))).toBe(4);
+    await expect(providerModelGrid.getByText("Sino 对话", { exact: true })).toHaveCount(0);
+    await expect(providerModelGrid.getByText("项目分析", { exact: true })).toHaveCount(0);
+    await expect(providerModelGrid.getByText("系统构建", { exact: true })).toHaveCount(0);
     await expect(providerModal.locator(".sino-provider-summary-row")).toHaveCount(2);
     const currentModelRow = providerModal.locator(".sino-provider-summary-row--identity");
     await expect(currentModelRow.getByText("Provider", { exact: true })).toBeVisible();
