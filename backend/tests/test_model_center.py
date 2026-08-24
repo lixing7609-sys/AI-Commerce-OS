@@ -131,6 +131,59 @@ def test_provider_install_discovers_and_selects_models(monkeypatch, tmp_path):
     assert selected["configured"] is True
 
 
+def test_unassigned_model_removal_preserves_provider_catalog_credentials_and_usage(monkeypatch, tmp_path):
+    factory = _database(monkeypatch, tmp_path)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-reasoner", api_key=None, enabled=True)
+    with factory() as session:
+        session.add(model_center.CouncilModelRunDB(council_run_id="council-history", provider="deepseek", model="deepseek-reasoner", role="analyst", status="completed", proposal={}, latency_ms=120, context_references={}))
+        session.commit()
+    result = model_center.select_models("deepseek", ["deepseek-chat"])
+    assert result["selected_models"] == ["deepseek-chat"]
+    assert "deepseek-reasoner" in [item["model_id"] for item in result["available_models"]]
+    assert result["credential_configured"] is True
+    with factory() as session:
+        assert session.query(model_center.CouncilModelRunDB).filter_by(model="deepseek-reasoner").count() == 1
+
+
+def test_last_unassigned_model_can_be_removed_without_disconnecting_provider(monkeypatch, tmp_path):
+    _database(monkeypatch, tmp_path)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)
+    result = model_center.select_models("deepseek", [])
+    assert result["selected_models"] == []
+    assert result["installed"] is True
+    assert result["credential_configured"] is True
+    assert result["enabled"] is True
+    assert "deepseek-chat" in [item["model_id"] for item in result["available_models"]]
+
+
+def test_model_removal_rejects_primary_fallback_and_discussion_dependencies(monkeypatch, tmp_path):
+    _database(monkeypatch, tmp_path)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-reasoner", api_key=None, enabled=True)
+    model_center.record_health("deepseek", "healthy")
+    model_center.save_capability_assignment("sino_conversation", "deepseek", "deepseek-chat", [{"provider_key": "deepseek", "model": "deepseek-reasoner"}])
+    with pytest.raises(ValueError, match="model_in_use:Sino 主对话$"):
+        model_center.select_models("deepseek", ["deepseek-reasoner"])
+    with pytest.raises(ValueError, match="model_in_use:Sino 主对话 Fallback"):
+        model_center.select_models("deepseek", ["deepseek-chat"])
+    model_center.save_capability_assignment("sino_conversation", None, None, [])
+    model_center.save_multi_model_assignment(slots=[{"primary": {"provider_key": "deepseek", "model": "deepseek-chat"}, "fallback": {"provider_key": "deepseek", "model": "deepseek-reasoner"}}])
+    with pytest.raises(ValueError, match="model_in_use:讨论模型 1$"):
+        model_center.select_models("deepseek", ["deepseek-reasoner"])
+    with pytest.raises(ValueError, match="model_in_use:讨论模型 1 Fallback"):
+        model_center.select_models("deepseek", ["deepseek-chat"])
+
+
+def test_model_removal_rejects_application_runtime_dependency(monkeypatch, tmp_path):
+    _database(monkeypatch, tmp_path)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-reasoner", api_key=None, enabled=True)
+    model_center.save_application_assignments("operator_ai", {"deep_thinking": {"provider_key": "deepseek", "model": "deepseek-reasoner"}})
+    with pytest.raises(ValueError, match="model_in_use:Operator AI · 深度推理"):
+        model_center.select_models("deepseek", ["deepseek-chat"])
+
+
 def test_application_assignment_drives_founder_runtime(monkeypatch, tmp_path):
     _database(monkeypatch, tmp_path)
     model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)

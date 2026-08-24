@@ -675,13 +675,51 @@ def select_models(provider_key: str, models: list[str]) -> dict:
         if row is None:
             raise LookupError("provider_not_configured")
         selected = list(dict.fromkeys(item for item in models if item in (row.available_models or [])))
-        if not selected:
-            raise ValueError("at_least_one_available_model_required")
-        row.selected_models, row.model = selected, selected[0]
+        removed = set(row.selected_models or []) - set(selected)
+        for model in removed:
+            dependencies = model_assignment_dependencies(session, provider_key, model)
+            if dependencies:
+                raise ValueError(f"model_in_use:{'|'.join(dependencies)}")
+        row.selected_models, row.model = selected, selected[0] if selected else ""
         row.enabled = True
         _sync_model_registry(session, row, row.available_models or [])
         session.commit(); session.refresh(row)
         return _serialize(row, provider_key)
+
+
+def model_assignment_dependencies(session, provider_key: str, model: str) -> list[str]:
+    dependencies = []
+    def add(label: str) -> None:
+        if label not in dependencies:
+            dependencies.append(label)
+
+    def matches(reference: dict | None) -> bool:
+        value = reference or {}
+        return value.get("provider_key", value.get("provider_id")) == provider_key and value.get("model", value.get("model_id")) == model
+
+    labels = {"sino_conversation": "Sino 主对话", "deep_thinking": "深度推理", "code_execution": "Coding"}
+    for config in session.scalars(select(AICapabilityConfigDB)):
+        configuration = dict(config.configuration or {})
+        if config.capability_key in labels:
+            if matches(configuration): add(labels[config.capability_key])
+            for fallback in configuration.get("fallbacks") or []:
+                if matches(fallback): add(f"{labels[config.capability_key]} Fallback")
+        elif config.capability_key == "multi_model_discussion":
+            for index, slot in enumerate(_discussion_slots(configuration), start=1):
+                if matches(slot.get("primary")): add(f"讨论模型 {index}")
+                if matches(slot.get("fallback")): add(f"讨论模型 {index} Fallback")
+        elif config.capability_key == "model_routing_policy_v1":
+            vision = configuration.get("VISION_UNDERSTANDING") or {}
+            if matches(vision.get("preferred_primary")): add("Vision")
+            if matches(vision.get("preferred_fallback")): add("Vision Fallback")
+    for assignment in session.scalars(select(ApplicationCapabilityAssignmentDB).where(ApplicationCapabilityAssignmentDB.provider_key == provider_key, ApplicationCapabilityAssignmentDB.model == model)):
+        capability_label = labels.get(assignment.capability_key, CAPABILITY_LABELS.get(assignment.capability_key, assignment.capability_key))
+        add(f"{APPLICATIONS.get(assignment.application_key, assignment.application_key)} · {capability_label}")
+    provider = session.get(ModelProviderConfigDB, provider_key)
+    if provider and provider.model == model:
+        for role in session.scalars(select(ModelRoleAssignmentDB).where(ModelRoleAssignmentDB.provider_key == provider_key)):
+            add(labels.get(role.role_key, role.role_key))
+    return dependencies
 
 
 def set_provider_enabled(provider_key: str, enabled: bool) -> dict:

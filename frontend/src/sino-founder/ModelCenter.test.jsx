@@ -129,6 +129,51 @@ describe("Founder Settings", () => {
     expect(await screen.findByRole("dialog", { name: "Provider 技术配置" })).toBeTruthy();
   });
 
+  it("removes an unassigned model through the persisted Provider selection without opening its config", async () => {
+    const provider = { ...deepseek, selected_models: ["deepseek-chat", "deepseek-reasoner"] };
+    const updatedProvider = { ...provider, model: "deepseek-chat", selected_models: ["deepseek-chat"] };
+    const updatedCenter = { ...center, providers: [updatedProvider], health_cost: [{ ...updatedProvider, usage: {} }] };
+    getModelCenter.mockResolvedValueOnce({ ...center, providers: [provider], health_cost: [{ ...provider, usage: {} }] }).mockResolvedValue(updatedCenter);
+    selectProviderModels.mockResolvedValue(updatedProvider);
+    const { unmount } = render(<ModelCenter />);
+    await screen.findByRole("button", { name: "DeepSeek Reasoner DeepSeek" });
+    expect(screen.getAllByRole("button", { name: /^移除 / })).toHaveLength(2);
+    expect(within(screen.getByRole("button", { name: "＋ 添加模型" })).queryByText("×")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "移除 DeepSeek Reasoner" }));
+    expect(screen.queryByRole("dialog", { name: "Provider 技术配置" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "移除模型？" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "移除", exact: true }));
+    await waitFor(() => expect(selectProviderModels).toHaveBeenCalledWith("deepseek", ["deepseek-chat"]));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "DeepSeek Reasoner DeepSeek" })).toBeNull());
+    expect(screen.getByLabelText("模型摘要", { exact: true }).textContent).toContain("1 个模型");
+    unmount();
+    render(<ModelCenter />);
+    await screen.findByRole("button", { name: "DeepSeek Chat DeepSeek" });
+    expect(screen.queryByRole("button", { name: "DeepSeek Reasoner DeepSeek" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }));
+    expect(screen.getByRole("checkbox", { name: /DeepSeek Reasoner/ }).checked).toBe(false);
+  });
+
+  it("blocks removal for Primary, Fallback, and discussion dependencies and opens Sino AI", async () => {
+    const provider = { ...deepseek, selected_models: ["deepseek-chat", "deepseek-reasoner"] };
+    const roles = capabilities.map((item) => item.role_key === "sino_conversation" ? { ...item, fallbacks: [{ provider_key: "deepseek", model: "deepseek-reasoner" }] } : item.role_key === "multi_model_discussion" ? { ...item, slots: [{ primary: { provider_key: "deepseek", model: "deepseek-chat" }, fallback: { provider_key: "deepseek", model: "deepseek-reasoner" } }] } : item);
+    getModelCenter.mockResolvedValue({ ...center, providers: [provider], roles, health_cost: [{ ...provider, usage: {} }] });
+    render(<ModelCenter />);
+    await screen.findByRole("button", { name: "DeepSeek Reasoner DeepSeek" });
+    fireEvent.click(screen.getByRole("button", { name: "移除 DeepSeek Chat" }));
+    expect(screen.getByRole("dialog", { name: "模型正在使用" }).textContent).toContain("Sino 主对话");
+    expect(screen.getByRole("dialog", { name: "模型正在使用" }).textContent).toContain("讨论模型 1");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    fireEvent.click(screen.getByRole("button", { name: "移除 DeepSeek Reasoner" }));
+    const blocked = screen.getByRole("dialog", { name: "模型正在使用" });
+    expect(blocked.textContent).toContain("Sino 主对话 Fallback");
+    expect(blocked.textContent).toContain("讨论模型 1 Fallback");
+    expect(within(blocked).queryByRole("button", { name: "移除", exact: true })).toBeNull();
+    fireEvent.click(within(blocked).getByRole("button", { name: "前往 Sino AI" }));
+    expect(screen.getByRole("dialog", { name: "Sino AI" })).toBeTruthy();
+    expect(selectProviderModels).not.toHaveBeenCalled();
+  });
+
   it("opens different Provider dialogs in sync with the selected model card", async () => {
     getModelCenter.mockResolvedValue({ ...center, providers: [deepseek, claude] });
     render(<SettingsHarness />);
@@ -461,7 +506,7 @@ describe("Founder Settings", () => {
     getModelCenter.mockResolvedValue(multi);
     checkModelProvider.mockResolvedValue({ status: "unhealthy", configuration: claude });
     render(<SettingsHarness />); await screen.findByRole("heading", { name: "设置" });
-    fireEvent.click(screen.getByRole("button", { name: /Claude Sonnet 5/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Claude Sonnet 5 Claude" }));
     fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("账户额度不足"));
     expect(screen.queryByText("认证失败")).toBeNull();

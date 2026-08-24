@@ -49,6 +49,13 @@ test("Settings exposes model control and system health with the real Provider in
     liveCenter = { ...liveCenter, roles: liveCenter.roles.map((item) => item.role_key === "multi_model_discussion" ? { ...item, slots, models } : item) };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(liveCenter) });
   });
+  await page.route("**/api/v1/founder-ai/model-center/providers/*/models", async (route) => {
+    const providerKey = route.request().url().split("/").at(-2);
+    const selectedModels = route.request().postDataJSON().models;
+    let updatedProvider;
+    liveCenter = { ...liveCenter, providers: liveCenter.providers.map((item) => { if (item.provider_key !== providerKey) return item; updatedProvider = { ...item, selected_models: selectedModels, model: selectedModels[0] || "" }; return updatedProvider; }) };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(updatedProvider) });
+  });
   await page.route("**/api/v1/founder-ai/runtime-environments", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(runtime) }));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
@@ -200,6 +207,24 @@ test("Settings exposes model control and system health with the real Provider in
   await page.screenshot({ path: `${evidenceDirectory}/settings-execution-runtime.png`, fullPage: true });
 
   await page.getByRole("button", { name: "关闭系统" }).click();
+  await expect(page.getByRole("button", { name: /^移除 / })).toHaveCount(10);
+  await expect(page.getByRole("list", { name: "已接入模型列表" }).getByRole("listitem").last().getByRole("button", { name: "＋ 添加模型" })).toBeVisible();
+  await page.getByRole("button", { name: "移除 DeepSeek Model 2" }).click();
+  await expect(page.getByRole("dialog", { name: "Provider 技术配置" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "移除模型？" })).toContainText("当前没有被 Sino AI 或 Runtime 使用");
+  await page.getByRole("button", { name: "移除", exact: true }).click();
+  await expect(page.getByRole("button", { name: "DeepSeek Model 2 DeepSeek" })).toHaveCount(0);
+  await expect(page.getByLabel("模型摘要", { exact: true })).toContainText("9 个模型");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "DeepSeek Model 2 DeepSeek" })).toHaveCount(0);
+  await page.getByRole("button", { name: "deepseek-chat DeepSeek" }).click();
+  await expect(page.getByRole("dialog", { name: "Provider 技术配置" }).getByRole("checkbox", { name: /DeepSeek Model 2/ })).not.toBeChecked();
+  await page.getByRole("button", { name: "关闭 Provider 技术配置" }).click();
+  await page.getByRole("button", { name: "移除 deepseek-chat" }).click();
+  await expect(page.getByRole("dialog", { name: "模型正在使用" })).toContainText("Sino 主对话");
+  await expect(page.getByRole("dialog", { name: "模型正在使用" })).toContainText("讨论模型 1");
+  await expect(page.getByRole("dialog", { name: "模型正在使用" }).getByRole("button", { name: "移除", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "取消" }).click();
   await page.getByRole("button", { name: "← 返回首页" }).click();
   await expect(page.getByLabel("Founder Navigation")).toBeVisible();
   await expect(page.getByRole("main", { name: "Sino Natural Conversation" })).toBeVisible();

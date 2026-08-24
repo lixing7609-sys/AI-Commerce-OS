@@ -829,9 +829,12 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-capability-section-heading h3 { font-size: 21px; font-weight: 600; }
 .sino-capability-section { padding-block: 8px 22px; }
 .sino-model-card-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; width: 100%; }
-.sino-model-card-grid > article { min-width: 0; }
-.sino-model-card-grid > article > button { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto; gap: 3px 10px; width: 100%; min-width: 0; min-height: 88px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--line) 84%, transparent); border-radius: 9px; background: color-mix(in srgb, var(--surface-raised) 54%, transparent); color: inherit; text-align: left; cursor: pointer; }
-.sino-model-card-grid > article > button:hover { border-color: color-mix(in srgb, var(--line) 55%, var(--text-secondary)); background: var(--surface-raised); }
+.sino-model-card-grid > article { position: relative; min-width: 0; }
+.sino-model-card-grid > article > .sino-model-card-button, .sino-model-card-grid > article > .sino-add-model-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto; gap: 3px 10px; width: 100%; min-width: 0; min-height: 88px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--line) 84%, transparent); border-radius: 9px; background: color-mix(in srgb, var(--surface-raised) 54%, transparent); color: inherit; text-align: left; cursor: pointer; }
+.sino-model-card-grid > article > .sino-model-card-button { padding-right: 30px; }
+.sino-model-card-grid > article > .sino-model-card-button:hover, .sino-model-card-grid > article > .sino-add-model-card:hover { border-color: color-mix(in srgb, var(--line) 55%, var(--text-secondary)); background: var(--surface-raised); }
+.sino-model-remove-button { position: absolute; top: 6px; right: 7px; z-index: 1; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: color-mix(in srgb,var(--text-label) 65%,transparent); font-size: 16px; line-height: 22px; cursor: pointer; }
+.sino-model-card-grid > article:hover .sino-model-remove-button, .sino-model-remove-button:focus-visible { color: var(--text-secondary); }
 .sino-model-card-grid > article > button.sino-add-model-card { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 14px; font-weight: 500; }
 .sino-model-card-grid > article > button.sino-add-model-card:hover { color: var(--text-primary); }
 .sino-model-card-grid > article > button.is-selected { border-color: color-mix(in srgb, var(--accent) 54%, var(--line)); box-shadow: inset 2px 0 var(--accent); background: var(--surface-selected); }
@@ -841,6 +844,9 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-model-card-grid span[data-health="healthy"] { color: var(--text-secondary); }
 .sino-model-card-grid span[data-health="unhealthy"] { color: #c97878; }
 .sino-model-card-grid small { grid-column: 1 / -1; overflow: hidden; color: var(--text-label); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.sino-model-removal-dialog { width: min(460px,calc(100vw - 48px)); }
+.sino-model-removal-dialog > strong { display: block; margin-top: 10px; color: var(--text-primary); font-size: 15px; }
+.sino-model-removal-dialog ul { margin: 8px 0 0; padding-left: 20px; color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
 @container (max-width: 1100px) { .sino-model-card-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @container (max-width: 820px) { .sino-model-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @container (max-width: 760px) { .sino-settings-control-grid { grid-template-columns: minmax(0, 1fr); } }
