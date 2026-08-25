@@ -53,6 +53,16 @@ try {
     evidence.center_column_visible = await page.locator(".founder-conversation-surface").isVisible().catch(() => false);
     evidence.right_column_visible = await page.getByText("执行中心", { exact: true }).isVisible().catch(() => false);
     evidence.three_columns_in_viewport = evidence.left_column_visible && evidence.center_column_visible && evidence.right_column_visible;
+  } else if (artifactType === "semantic_ui" && contract.interaction === "drawer") {
+    const trigger = page.getByRole(contract.trigger_role || "button", { name: contract.trigger_name, exact: true });
+    evidence.trigger_visible = await trigger.isVisible();
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: contract.dialog_name, exact: true });
+    evidence.dialog_visible = await dialog.isVisible();
+    evidence.dialog_within_container = await dialog.evaluate((node, selector) => Boolean(node.closest(selector)), contract.container_selector);
+    evidence.dialog_outside_excluded_container = await dialog.evaluate((node, selector) => !node.closest(selector), contract.excluded_container_selector);
+    await page.getByRole("button", { name: contract.close_button_name, exact: true }).click();
+    evidence.close_action_works = !(await dialog.isVisible().catch(() => false));
   } else {
     const localhostReachable = await body.isVisible();
     await browser.close();

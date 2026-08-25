@@ -65,3 +65,16 @@ def test_codex_command_results_require_explicit_evidence_not_expected_labels():
                                            required=["targeted tests", "frontend build", "git diff --check"])
     assert [item["status"] for item in missing] == [UNAVAILABLE, UNAVAILABLE, UNAVAILABLE]
     assert [item["status"] for item in passed_checks] == [PASS, PASS, PASS]
+
+
+def test_codex_command_results_accept_chinese_counted_test_summary():
+    checks = codex_command_evidence("定向测试：24 项全部通过\nFrontend Build：PASS\ngit diff --check：PASS", exit_code=0,
+                                    required=["targeted frontend tests", "frontend build", "git diff --check"])
+    assert [item["status"] for item in checks] == [PASS, PASS, PASS]
+
+
+def test_codex_command_results_accept_verified_section_with_test_ratio():
+    summary = "已通过：\n- `FounderNavigationPanel.test.jsx`：24/24\n- 前端生产构建\n- scoped `git diff --check`"
+    checks = codex_command_evidence(summary, exit_code=0,
+                                    required=["targeted frontend tests", "frontend build", "git diff --check"])
+    assert [item["status"] for item in checks[:2]] == [PASS, PASS]

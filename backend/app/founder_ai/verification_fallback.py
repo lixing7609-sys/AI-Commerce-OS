@@ -77,9 +77,9 @@ def codex_command_evidence(stdout: str, *, exit_code: int, required: list[str]) 
     checks = []
     definitions = (
         ("targeted_tests", any("test" in item.lower() for item in required),
-         bool(re.search(r"(?:\d+\s*(?:/\s*\d+)?\s*(?:tests?\s*)?(?:passed|通过)|targeted tests?\s*[:：]\s*(?:pass|passed|通过))", lowered, re.I))),
+         bool(re.search(r"(?:\d+\s*(?:/\s*\d+)?\s*(?:项|个)?\s*(?:tests?\s*)?(?:全部\s*)?(?:passed|通过)|targeted tests?\s*[:：]\s*(?:pass|passed|通过)|test(?:\.jsx|\.tsx|\.js|\.ts|\.py)?[^\n]*[:：]\s*\d+\s*/\s*\d+)", lowered, re.I))),
         ("build", any("build" in item.lower() for item in required),
-         bool(re.search(r"(?:build|构建)\s*[:：]?\s*(?:pass|passed|通过|成功)", lowered, re.I))),
+         bool(re.search(r"(?:build|构建)\s*[:：]?\s*(?:pass|passed|通过|成功)|已通过\s*[:：][\s\S]{0,400}(?:前端生产构建|production build)", lowered, re.I))),
         ("git_diff_check", any("diff" in item.lower() for item in required),
          bool(re.search(r"git diff --check`?\s*[:：]?\s*(?:pass|passed|通过|clean|无错误)", lowered, re.I))),
     )

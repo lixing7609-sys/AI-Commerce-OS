@@ -293,6 +293,7 @@ def _capability_repository_search_contract(*, conversation_id: str, goal: str, t
 
 
 def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: str | None = None, discussion_context: list[str] | None = None) -> dict:
+    from app.founder_ai.semantic_scope import HIGH, resolve_task_scope
     from app.founder_ai.technical_resolution import is_local_health_check_goal
     if is_local_health_check_goal(goal):
         return {
@@ -312,40 +313,72 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
         marker in combined_context for marker in ("projects", "conversation", "task status")
     )
     if has_new_discussion and has_three_columns:
-        return _new_discussion_three_column_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+        return _with_explicit_scope(_new_discussion_three_column_contract(conversation_id=conversation_id, goal=goal, task_id=task_id))
     sidebar_spacing = (("左边栏" in goal_context or "左侧栏" in goal_context or "侧边栏" in goal_context)
                        and "新建讨论" in goal_context and "项目" in goal_context
                        and any(marker in goal_context for marker in ("距离", "间距", "靠近", "调小")))
     if sidebar_spacing:
-        return _founder_sidebar_spacing_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+        return _with_explicit_scope(_founder_sidebar_spacing_contract(conversation_id=conversation_id, goal=goal, task_id=task_id))
     sidebar_typography = (("左边栏" in goal_context or "左侧栏" in goal_context or "侧边栏" in goal_context)
                           and "项目" in goal_context and "会话" in goal_context
                           and any(marker in goal_context for marker in ("字体", "字号", "一样大")))
     if sidebar_typography:
-        return _founder_sidebar_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+        return _with_explicit_scope(_founder_sidebar_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id))
     runtime_url_typography = ("runtime" in goal_context and "url" in goal_context
                               and ("前端" in goal_context or "后端" in goal_context)
                               and any(marker in goal_context for marker in ("字体", "字号", "缩小")))
     if runtime_url_typography:
-        return _runtime_url_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+        return _with_explicit_scope(_runtime_url_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id))
     product_matrix_typography = (
         "产品矩阵" in goal_context
         and any(marker in goal_context for marker in ("左侧栏", "左边栏", "侧边栏"))
         and any(marker in goal_context for marker in ("字体", "字号", "字重", "行高", "文字颜色"))
     )
     if product_matrix_typography:
-        return _sino_product_matrix_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+        return _with_explicit_scope(_sino_product_matrix_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id))
     product_matrix = (
         any(marker in goal_context for marker in ("产品矩阵", "sino studio ai", "sino operator ai"))
         and any(marker in goal_context for marker in ("左侧栏", "左边栏", "侧边栏", "设置"))
         and any(marker in goal_context for marker in ("入口", "气泡", "菜单"))
+        and any(marker in goal_context for marker in ("添加", "增加", "加入", "新增"))
     )
     if product_matrix:
-        return _sino_product_matrix_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+        return _with_explicit_scope(_sino_product_matrix_contract(conversation_id=conversation_id, goal=goal, task_id=task_id))
     capability_search = (("能力仓库" in goal_context or "capability repository" in goal_context)
                          and any(marker in goal_context for marker in ("搜索", "筛选", "search", "filter")))
     if capability_search:
-        return _capability_repository_search_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+        return _with_explicit_scope(_capability_repository_search_contract(conversation_id=conversation_id, goal=goal, task_id=task_id))
+    resolution = resolve_task_scope(goal=goal, risk_level="low")
+    if resolution["scope_source"] == "semantic_module" and resolution["confidence"] == HIGH:
+        target = resolution["allowed_modules"][0]
+        contract = {
+            "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
+            "task_type": "STANDARD_TASK", "target_surface": target, "target_component": target,
+            "objective": goal,
+            "acceptance_criteria": [
+                "The requested UI behavior is implemented within the resolved semantic module.",
+                "No denied module or unrelated UI surface changes.",
+                "Targeted tests, production build, git diff --check and real localhost UI verification pass.",
+            ],
+            "constraints": ["semantic_module_only", "preserve_unrelated_founder_surfaces", "frontend_presentation_only"],
+            "implementation_scope": resolution["allowed_file_patterns"],
+            "module_boundary": [],
+            "prohibited_scope": resolution["denied_modules"],
+            "semantic_scope": resolution,
+            "scope_source": "semantic_module", "scope_confidence": HIGH,
+            "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
+            "inspect_status": "ready_for_discovery",
+            "implementation_plan": [
+                "Use read-only repository discovery to confirm the smallest matching component, stylesheet and tests.",
+                "Freeze the semantic-module write scope before editing.",
+                "Implement only the requested UI behavior and verify changed hunks against the same semantic module.",
+                "Run targeted tests, build, git diff --check and real localhost UI verification.",
+            ],
+            "source_goal": goal,
+        }
+        if resolution.get("visible_artifact_contract"):
+            contract["visible_artifact_contract"] = resolution["visible_artifact_contract"]
+        return contract
     return {
         "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
         "task_type": "STANDARD_TASK", "target_surface": "Unresolved bounded task",
@@ -353,8 +386,19 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
         "constraints": ["read_only_inspection_until_scope_resolved"], "implementation_scope": [], "module_boundary": [],
         "prohibited_scope": ["all_repository_writes_until_scope_resolved"],
         "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
+        "scope_source": "approval_required", "scope_confidence": resolution["confidence"], "semantic_scope": resolution,
         "inspect_status": "scope_resolution_required", "implementation_plan": ["Resolve target surface, module boundary and expected artifact before dispatch."], "source_goal": goal,
     }
+
+
+def _with_explicit_scope(contract: dict) -> dict:
+    from app.founder_ai.semantic_scope import resolve_task_scope
+    contract = dict(contract)
+    resolution = resolve_task_scope(goal=str(contract.get("source_goal") or contract.get("objective") or ""), explicit_contract=contract)
+    contract["scope_source"] = "explicit_contract"
+    contract["scope_confidence"] = resolution["confidence"]
+    contract["semantic_scope"] = resolution
+    return contract
 
 
 def _save_route(conversation_id: str, route: dict, *, stage: str = "standard_task") -> dict:
