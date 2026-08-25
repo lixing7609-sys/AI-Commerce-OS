@@ -218,5 +218,40 @@ def test_current_capabilities_come_from_persisted_state_not_a_static_answer(monk
     context = core.current_system_capabilities_context(tasks=[task], assets=[asset], discovery={"conversation_core": {"mode": "LLM_FIRST"}})
     assert context["source"] == "persisted_system_state"
     assert context["recent_tasks"][0]["title"] == "Conversation-first"
+    assert "backend" in context["task_identity_policy"]
     assert context["capability_repository"]["by_status"]["ready"] == 1
     assert "conversation_core" in context["current_conversation_features"]
+
+
+def test_model_duplicate_claim_cannot_suppress_a_new_source_message(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    import app.core.task_asset.service as task_service
+    monkeypatch.setattr(task_service, "find_task_by_source_message", lambda _source: None)
+    decision = core.reason_about_message("conv-llm", "增加新的产品矩阵入口",
+        interaction_context={"source_message_id": "message-new"}, generator=lambda *_: {
+            "response": "系统里已经有一项同名需求处于排队中，我不会重复创建任务。",
+            "semantic_intent": "founder_decision", "conversation_state": "requirement_captured_existing_task_queued",
+            "task_candidate": {"title": "调整页面", "goal": "增加新的产品矩阵入口", "task_type": "STANDARD_TASK",
+                "scope": ["Sidebar"], "constraints": ["复用当前已排队的同名任务，不重复创建"],
+                "acceptance_criteria": ["入口可见"], "confirmed_decisions": [], "dependencies": [], "risks": []},
+        })
+    assert decision["semantic_intent"] == "execute_current_task"
+    assert decision["conversation_state"] == "new_task_requested"
+    assert "新的独立任务" in decision["response"]
+    assert decision["task_candidate"]["constraints"] == []
+
+
+def test_canonical_same_message_duplicate_returns_existing_task_identity(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    import app.core.task_asset.service as task_service
+    existing = SimpleNamespace(id="task-existing")
+    monkeypatch.setattr(task_service, "find_task_by_source_message", lambda _source: existing)
+    decision = core.reason_about_message("conv-llm", "重复发送",
+        interaction_context={"source_message_id": "message-same"}, generator=lambda *_: {
+            "response": "系统里已经有一项同名需求处于排队中，我不会重复创建任务。",
+            "semantic_intent": "conversation", "conversation_state": "duplicate",
+            "task_candidate": {"title": "任务", "goal": "重复发送", "scope": ["Sidebar"],
+                "constraints": [], "acceptance_criteria": ["完成"], "confirmed_decisions": []},
+        })
+    assert decision["duplicate_task"] == {"duplicate_of_task_id": "task-existing", "duplicate_reason": "same_source_message_id"}
+    assert "task-existing" in decision["response"]

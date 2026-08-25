@@ -143,3 +143,19 @@ def test_missing_browser_or_failed_build_prevents_verification_completion():
     assert missing_browser["missing_evidence"] == ["visible_artifact_pass"]
     assert failed_build["verification_complete"] is False
     assert failed_build["missing_evidence"] == ["build_pass"]
+
+
+def test_new_source_message_does_not_reuse_previous_conversation_execution(monkeypatch):
+    import app.founder_ai.standard_task_execution as execution
+    monkeypatch.setattr(execution, "_save_route", lambda _conversation_id, route, **_: route)
+    old_route = {
+        "classification": "STANDARD_TASK",
+        "task_identity": {"source_message_id": "message-old"},
+        "autonomous_execution": {"task_id": "task-old", "execution_session_id": "execution-old"},
+        "technical_blocker": {"type": "old"},
+    }
+    fresh = execution.begin_standard_task(conversation_id="conv-one", goal=GOAL, route=old_route,
+                                          source_message_id="message-new")
+    assert "autonomous_execution" not in fresh
+    assert "technical_blocker" not in fresh
+    assert fresh["task_identity"]["source_message_id"] == "message-new"

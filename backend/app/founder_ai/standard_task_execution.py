@@ -273,12 +273,22 @@ def _save_route(conversation_id: str, route: dict, *, stage: str = "standard_tas
     return route
 
 
-def begin_standard_task(*, conversation_id: str, goal: str, route: dict) -> dict:
+def begin_standard_task(*, conversation_id: str, goal: str, route: dict, source_message_id: str | None = None) -> dict:
     result = dict(route)
+    prior_identity = dict(result.get("task_identity") or {})
+    if source_message_id and prior_identity.get("source_message_id") != source_message_id:
+        for key in ("autonomous_execution", "technical_blocker", "visible_result", "founder_acceptance"):
+            result.pop(key, None)
     result.update({"clarification_required": False, "founder_gate_required": False, "manual_continue_required": False,
                    "manual_continue_count": 0, "manual_codex_instruction_count": 0, "current_step": "inspect",
                    "execution_status": "inspecting", "progress_log": ["inspect"]})
     result["standard_task_contract"] = build_standard_task_contract(conversation_id=conversation_id, goal=goal, discussion_context=list(route.get("discussion_context") or []))
+    if source_message_id:
+        from app.founder_ai.task_identity import build_task_identity
+        result["task_identity"] = build_task_identity(source_message_id=source_message_id,
+            conversation_id=conversation_id, goal=goal,
+            target_module=result["standard_task_contract"].get("target_surface"),
+            target_object=result["standard_task_contract"].get("target_component"))
     if route.get("discussion_context"):
         result["standard_task_contract"]["confirmed_conversation_context"] = list(route["discussion_context"])
     return _save_route(conversation_id, result)
@@ -312,20 +322,27 @@ def project_scope_mismatch(*, conversation_id: str, execution_id: str, evidence:
     }, execution={"execution_session_id": execution_id, "dispatch_status": "blocked", "scope_verification": scope})
 
 
-def dispatch_standard_task(*, conversation_id: str, goal: str, enqueue=enqueue_execution) -> dict:
+def dispatch_standard_task(*, conversation_id: str, goal: str, source_message_id: str | None = None,
+                           enqueue=enqueue_execution) -> dict:
     with SessionLocal() as db:
         state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
         route = dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
         if route.get("classification") != "STANDARD_TASK" or route.get("clarification_required") or route.get("founder_gate_required"):
             return route
-        if (route.get("autonomous_execution") or {}).get("execution_session_id"):
+        route_identity = dict(route.get("task_identity") or {})
+        if ((route.get("autonomous_execution") or {}).get("execution_session_id")
+                and (not source_message_id or route_identity.get("source_message_id") == source_message_id)):
             return route
     existing_contract = dict(route.get("standard_task_contract") or {})
     discussion_context = list(route.get("discussion_context") or existing_contract.get("confirmed_conversation_context") or [])
     contract = build_standard_task_contract(conversation_id=conversation_id, goal=goal, discussion_context=discussion_context)
     task = create_task_asset(title=goal[:200], description=goal, conversation_id=conversation_id,
         scope={"lane": "STANDARD_TASK", "target_surface": contract["target_surface"], "target_route": contract.get("target_route"), "target_component": contract.get("target_component")}, status="in_progress",
-        approval_status="not_required", execution_status="inspecting")
+        approval_status="not_required", execution_status="inspecting", source_message_id=source_message_id,
+        target_module=contract.get("target_surface"), target_object=contract.get("target_component"))
+    if getattr(task, "duplicate_reason", None):
+        route["task_duplicate"] = {"duplicate_of_task_id": task.id, "duplicate_reason": task.duplicate_reason}
+        return _save_route(conversation_id, route)
     contract = build_standard_task_contract(conversation_id=conversation_id, goal=goal, task_id=task.id, discussion_context=discussion_context)
     if discussion_context:
         contract["confirmed_conversation_context"] = discussion_context

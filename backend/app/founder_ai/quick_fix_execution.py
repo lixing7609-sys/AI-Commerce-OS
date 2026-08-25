@@ -87,7 +87,8 @@ def _build_package(goal: str, conversation_id: str, contract: dict) -> Execution
     )
 
 
-def dispatch_quick_fix(*, conversation_id: str, goal: str, enqueue=enqueue_execution) -> dict:
+def dispatch_quick_fix(*, conversation_id: str, goal: str, source_message_id: str | None = None,
+                       enqueue=enqueue_execution) -> dict:
     """Create real execution lineage once inspect is evidence-bound, then enqueue Codex."""
     with SessionLocal() as db:
         state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
@@ -98,14 +99,20 @@ def dispatch_quick_fix(*, conversation_id: str, goal: str, enqueue=enqueue_execu
         if route.get("classification") != "QUICK_FIX" or route.get("clarification_required") or route.get("founder_gate_required"):
             return route
         existing = dict(route.get("autonomous_execution") or {})
-        if existing.get("execution_session_id"):
+        route_identity = dict(route.get("task_identity") or {})
+        if existing.get("execution_session_id") and (not source_message_id or route_identity.get("source_message_id") == source_message_id):
             return route
 
     task = create_task_asset(
         title=goal[:200], description=goal, conversation_id=conversation_id,
         scope={"lane": "QUICK_FIX", "functional_verification": False}, status="in_progress",
-        approval_status="not_required", execution_status="inspecting",
+        approval_status="not_required", execution_status="inspecting", source_message_id=source_message_id,
+        target_module=(route.get("quick_fix_contract") or {}).get("target_area"),
+        target_object=(route.get("quick_fix_contract") or {}).get("visual_target"),
     )
+    if getattr(task, "duplicate_reason", None):
+        return _update_projection(conversation_id, execution={"task_id": task.id, "duplicate_of_task_id": task.id,
+            "duplicate_reason": task.duplicate_reason, "dispatch_status": task.execution_status})
     contract = build_quick_fix_contract(route, conversation_id=conversation_id, task_id=task.id)
     if contract["inspect_status"] != "ready_for_fix":
         _update_task(task.id, status="blocked", execution_status="clarification_required")

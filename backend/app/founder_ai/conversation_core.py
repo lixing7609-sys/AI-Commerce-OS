@@ -58,7 +58,9 @@ def current_system_capabilities_context(*, tasks: list, assets: list, discovery:
         "source": "persisted_system_state",
         "applications": applications,
         "recent_tasks": [{"task_id": item.id, "title": item.title, "status": item.status,
-                          "execution_status": item.execution_status} for item in tasks[:12]],
+                          "execution_status": item.execution_status,
+                          "task_identity": dict((getattr(item, "scope", None) or {}).get("task_identity") or {})} for item in tasks[:12]],
+        "task_identity_policy": "Recent tasks are historical context, not duplicate authority. Only the backend may declare a duplicate from the same source_message_id.",
         "capability_repository": {"total": len(assets), "by_status": status_counts, "by_type": type_counts,
                                   "ready_examples": [item.name for item in assets if item.status == "ready"][:8]},
         "execution_runtime": {"recent_count": len(executions), "statuses": sorted({item.status for item in executions}),
@@ -315,7 +317,7 @@ def reason_about_message(conversation_id: str, current_message: str, *, interact
                 runtime_mode = "override"
     prompt = """You are the conversation intelligence of Sino Founder AI and the Founder's long-term AI partner. Use the supplied relevant evidence to understand the Founder's real purpose, reason with judgment, surface overlooked implications, and offer a better direction or respectful disagreement when useful. Calibrate depth to the question. Respond naturally; do not follow a fixed structure, mechanically restate the request, or turn every answer into a report. Preserve useful Markdown chosen naturally by the model.
 
-Discussion, exploration, correction and agreement are not tasks by default. Decide execution only when the current message semantically authorizes executing an already mature understanding in the preceding context; negation, hypotheticals, questions and deferred consent never authorize execution. If executing, task_candidate.goal/scope/constraints/acceptance_criteria must be derived from the preceding conversation rather than the confirmation phrase. You may propose a Founder action only when Founder input is genuinely required. Return JSON with: response, semantic_intent, conversation_state, task_candidate, tool_intent, founder_action_intent, context_updates. semantic_intent is one of conversation, execute_current_task, stop_current_task, runtime_intervention, founder_decision, founder_authorization, founder_acceptance. The response is the exact Founder-visible natural answer."""
+Discussion, exploration, correction and agreement are not tasks by default. Decide execution only when the current message semantically authorizes executing an already mature understanding in the preceding context; negation, hypotheticals, questions and deferred consent never authorize execution. If executing, task_candidate.goal/scope/constraints/acceptance_criteria must be derived from the preceding conversation rather than the confirmation phrase. Recent tasks are context only: never claim that a request is duplicate, queued already, or should reuse another task. Duplicate identity is decided exclusively by the backend from the persisted source_message_id. A task with the same title, project, conversation, module, or status is not proof of duplication. You may propose a Founder action only when Founder input is genuinely required. Return JSON with: response, semantic_intent, conversation_state, task_candidate, tool_intent, founder_action_intent, context_updates. semantic_intent is one of conversation, execute_current_task, stop_current_task, runtime_intervention, founder_decision, founder_authorization, founder_acceptance. The response is the exact Founder-visible natural answer."""
 
     def invoke(runtime):
         if generator:
@@ -365,6 +367,29 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
             if fallback_event:
                 result["response"] = f"Primary 不可用，已自动切换到 Fallback（{fallback_event['model']}）。\n\n{result['response']}"
             result["context"] = context
+            duplicate_text = " ".join([result["response"], result.get("conversation_state") or "",
+                *list((result.get("task_candidate") or {}).get("constraints") or [])]).casefold()
+            duplicate_claim = any(marker in duplicate_text for marker in (
+                "同名需求", "不会重复创建", "已有一项", "复用当前已排队", "duplicate", "existing_task", "reuse existing"))
+            if duplicate_claim:
+                from app.core.task_asset.service import find_task_by_source_message
+                source_message_id = str((interaction_context or {}).get("source_message_id") or "")
+                existing = find_task_by_source_message(source_message_id)
+                if existing is None and result.get("task_candidate"):
+                    # The model already treated the request as an executable queued task. When
+                    # canonical identity disproves that claim, preserve the intent but create a
+                    # fresh Task instead of silently dropping it.
+                    result["semantic_intent"] = "execute_current_task"
+                    result["conversation_state"] = "new_task_requested"
+                    result["response"] = "已识别为新的独立任务，正在创建并按执行器状态进入执行或队列。"
+                    candidate = dict(result["task_candidate"])
+                    candidate["constraints"] = [item for item in candidate.get("constraints") or []
+                                                if not any(marker in item for marker in ("不重复创建", "复用当前已排队"))]
+                    result["task_candidate"] = candidate
+                elif existing is not None:
+                    result["duplicate_task"] = {"duplicate_of_task_id": existing.id,
+                                                "duplicate_reason": "same_source_message_id"}
+                    result["response"] = f"这条请求已经创建任务（{existing.id}），我继续跟踪原任务，不重复创建。"
             return result
         except Exception:
             continue

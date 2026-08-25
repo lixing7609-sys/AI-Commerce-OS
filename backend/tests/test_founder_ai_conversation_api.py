@@ -140,7 +140,7 @@ def test_discuss_route_accepts_and_forwards_constitution_interaction_context(mon
     request = api.DiscussionMessageIn(content="基于新证据重新判断", interaction_context={"active_surface": "constitution_review", "selected_constitution_work_item_id": "work-1"})
     result = api.discuss_with_sino("conv-1", request)
     assert result["conversation"]["id"] == "conv-1"
-    assert captured["interaction_context"] == {"active_surface": "constitution_review", "selected_constitution_work_item_id": "work-1"}
+    assert captured["interaction_context"] == {"active_surface": "constitution_review", "selected_constitution_work_item_id": "work-1", "source_message_id": "message-test"}
 
 
 def test_clear_quick_fix_message_stays_in_conversation_until_explicit_execution(monkeypatch):
@@ -194,7 +194,7 @@ def test_explicit_execution_intent_dispatches_the_previously_discussed_quick_fix
     monkeypatch.setattr(api, "_candidate_snapshot", lambda snapshot, _cid: snapshot)
     result = api.discuss_with_sino("functional-verification-v1-a", api.DiscussionMessageIn(content="可以了，执行吧。"))
     assert result["conversation"]["id"] == "functional-verification-v1-a"
-    assert dispatched == [{"conversation_id": "functional-verification-v1-a", "goal": "修一下左边栏按钮点不了的问题"}]
+    assert dispatched == [{"conversation_id": "functional-verification-v1-a", "goal": "修一下左边栏按钮点不了的问题", "source_message_id": "message-test"}]
 
 
 def test_strategic_topic_remains_conversation_until_founder_explicitly_executes(monkeypatch):
