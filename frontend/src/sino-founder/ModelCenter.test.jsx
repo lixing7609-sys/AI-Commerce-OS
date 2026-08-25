@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
-import { MODEL_ASSIGNMENT_STATUS, ModelCenter, ProviderConfigModal, buildAssignedModelEconomics, resolveAssignmentStatus, resolveModelAssignmentStatus } from "./ModelCenter.jsx";
+import { MODEL_ASSIGNMENT_STATUS, ModelCenter, ProviderConfigModal, buildAssignedModelEconomics, formatRuntimeTimestamp, formatStableAssignmentRoles, resolveAssignmentStatus, resolveModelAssignmentStatus } from "./ModelCenter.jsx";
 import "./sino-founder-ai.css";
 
 vi.mock("../services/founderAiApi.js", () => ({ checkModelProvider: vi.fn(), discoverProviderModels: vi.fn(), getModelCenter: vi.fn(), getRuntimeEnvironmentRegistry: vi.fn(), installModelProvider: vi.fn(), saveCapabilityAssignment: vi.fn(), saveModelRoutingPreferred: vi.fn(), saveMultiModelAssignment: vi.fn(), selectProviderModels: vi.fn(), updateModelProviderCredentials: vi.fn() }));
@@ -43,6 +43,9 @@ function SettingsHarness() {
 }
 
 describe("Founder Settings", () => {
+  it("formats only stable assignment responsibilities in their fixed order", () => {
+    expect(formatStableAssignmentRoles(["Conversation Override · conv-1", "讨论模型 4", "founder_ai · Sino 主对话", "Coding", "Sino 主对话", "Coding", "Vision Fallback"])).toEqual(["Sino 主对话", "Vision", "Coding", "讨论模型 4"]);
+  });
   beforeEach(() => { vi.clearAllMocks(); getModelCenter.mockResolvedValue(center); getRuntimeEnvironmentRegistry.mockResolvedValue(runtimeRegistry); });
   afterEach(() => { cleanup(); vi.useRealTimers(); });
 
@@ -119,7 +122,11 @@ describe("Founder Settings", () => {
     render(<ModelCenter />);
     await screen.findByRole("heading", { name: "设置" });
     expect(screen.getByLabelText("已分配模型摘要").textContent).toBe("0 个有效已分配模型 · 1 个失效引用");
-    expect(screen.getByRole("table", { name: "已分配模型经济账" }).textContent).not.toContain("deepseek-chat");
+    const economicsTable = screen.getByRole("table", { name: "已分配模型经济账" });
+    expect(economicsTable.textContent).toContain("deepseek-chat");
+    expect(economicsTable.textContent).toContain("讨论模型 3");
+    expect(economicsTable.textContent).toContain("配置错误 / 失效引用");
+    expect(screen.queryByRole("region", { name: "失效引用" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
     expect(screen.getByLabelText("讨论模型 1 Primary 状态").textContent).toBe("● 配置错误");
     const orphanOption = within(screen.getByRole("combobox", { name: "讨论模型 1 Primary" })).getByRole("option", { name: /deepseek-chat.*能力不匹配/ });
@@ -235,6 +242,8 @@ describe("Founder Settings", () => {
     expect(screen.queryByText("模型资源池", { exact: true })).toBeNull();
     const modelGrid = screen.getByRole("list", { name: "已接入模型列表" });
     expect(modelGrid.querySelectorAll('button[aria-pressed]')).toHaveLength(1);
+    expect(modelGrid.querySelectorAll('[data-health="healthy"] .sino-model-health-dot')).toHaveLength(1);
+    expect(modelGrid.querySelector('[data-health="healthy"] .sino-model-health-dot').textContent).toBe("●");
     expect(modelGrid.lastElementChild.textContent).toBe("＋ 添加模型");
     expect(screen.getByRole("button", { name: "＋ 添加模型" }).classList.contains("sino-add-model-card")).toBe(true);
     expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("Sino 主对话");
@@ -408,14 +417,15 @@ describe("Founder Settings", () => {
     vi.useRealTimers();
   });
 
-  it("keeps Runtime details collapsed until explicitly requested", async () => {
+  it("shows compact Runtime details by default without a collapse control", async () => {
     render(<ModelCenter />); await screen.findByRole("heading", { name: "设置" });
     fireEvent.click(screen.getByRole("button", { name: "打开系统" }));
     expect(screen.getByText("5/5 services healthy")).toBeTruthy();
-    expect(screen.queryByText("http://127.0.0.1:5173")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "查看详情" }));
     expect(await screen.findByText("http://127.0.0.1:5173")).toBeTruthy();
     expect(screen.getByText("http://127.0.0.1:8000")).toBeTruthy();
+    expect(screen.getAllByText("2026-08-17 05:49").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "查看详情" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "收起详情" })).toBeNull();
     expect(screen.getByText("PostgreSQL / LOCAL")).toBeTruthy();
     expect(screen.getByText("application-level HTTP Bearer RBAC")).toBeTruthy();
     expect(screen.getByText("loopback")).toBeTruthy();
@@ -430,12 +440,16 @@ describe("Founder Settings", () => {
     render(<main className="sino-founder-main sino-founder-main--fixed-workspace"><ModelCenter /></main>);
     await screen.findByRole("heading", { name: "设置" });
     fireEvent.click(screen.getByRole("button", { name: "打开系统" }));
-    fireEvent.click(screen.getByRole("button", { name: "查看详情" }));
     const settings = screen.getByRole("region", { name: "设置" });
     expect(settings.matches(".sino-founder-main--fixed-workspace > .sino-settings")).toBe(true);
     expect(settings.contains(screen.getByText("网络"))).toBe(true);
     expect(screen.queryByRole("complementary")).toBeNull();
     expect(screen.getByRole("main").classList.contains("sino-founder-main--fixed-workspace")).toBe(true);
+  });
+
+  it("formats Runtime verification timestamps without exposing ISO precision", () => {
+    expect(formatRuntimeTimestamp("2026-08-17T05:49:31.207896+00:00")).toBe("2026-08-17 05:49");
+    expect(formatRuntimeTimestamp(null)).toBe("—");
   });
 
   it("shows the single real executor without a meaningless selector", async () => {
@@ -503,6 +517,8 @@ describe("Founder Settings", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开Sino AI" }));
     expect(screen.getByLabelText("Sino 主对话 Primary 状态").textContent).toBe("● 正常");
     expect(screen.getByLabelText("Sino 主对话 Primary 状态").getAttribute("data-status")).toBe("normal");
+    expect(screen.getByLabelText("Sino 主对话 Primary 状态").querySelector(".sino-assignment-status-dot").textContent).toBe("●");
+    expect(screen.getByLabelText("Sino 主对话 Primary 状态").querySelector(".sino-assignment-status-label").textContent).toBe("正常");
     expect(screen.getByLabelText("Sino 主对话 Fallback 状态").textContent).toBe("● 未配置");
     expect(screen.getByLabelText("Sino 主对话 Assignment 状态").textContent).toBe("● 正常");
     expect(screen.getByLabelText("深度推理 Primary 状态").textContent).toBe("● 异常");
