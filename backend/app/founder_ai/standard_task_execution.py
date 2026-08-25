@@ -712,19 +712,38 @@ def evaluate_standard_verification_evidence(
     checkpoint_exists: bool,
     task_owned_files_clean: bool,
     scope_verification_pass: bool = True,
+    diff_check_pass: bool = True,
+    checkpoint_requested: bool = False,
 ) -> dict:
-    """Return the canonical closure decision from task-scoped durable evidence."""
-    evidence = {
+    """Separate verified task completion from optional version-control closure."""
+    task_completion_evidence = {
         "implementation_complete": implementation_complete,
         "task_owned_tests_pass": task_owned_tests_pass,
         "build_pass": build_pass,
+        "diff_check_pass": diff_check_pass,
         "visible_artifact_pass": visible_artifact_pass,
-        "checkpoint_exists": checkpoint_exists,
-        "task_owned_files_clean": task_owned_files_clean,
         "scope_verification_pass": scope_verification_pass,
     }
-    missing = [name for name, passed in evidence.items() if not passed]
-    return {**evidence, "verification_complete": not missing, "missing_evidence": missing}
+    missing = [name for name, passed in task_completion_evidence.items() if not passed]
+    checkpoint_status = (
+        "NOT_REQUESTED" if not checkpoint_requested
+        else "CREATED" if checkpoint_exists and task_owned_files_clean
+        else "PENDING"
+    )
+    version_control_evidence = {
+        "checkpoint_requested": checkpoint_requested,
+        "checkpoint_exists": checkpoint_exists,
+        "task_owned_files_clean": task_owned_files_clean,
+        "checkpoint_status": checkpoint_status,
+    }
+    return {
+        **task_completion_evidence,
+        **version_control_evidence,
+        "task_completion_evidence": task_completion_evidence,
+        "version_control_evidence": version_control_evidence,
+        "verification_complete": not missing,
+        "missing_evidence": missing,
+    }
 
 
 def refresh_completed_execution_artifacts(*, execution_id: str, repo_root: Path = REPO_ROOT) -> bool:
@@ -878,7 +897,11 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
     tests_required = any("test" in item.lower() for item in required_verification)
     build_required = any("build" in item.lower() for item in required_verification)
     browser_evidence = dict((session.result or {}).get("browser_verification") or {})
-    visible_gate = None
+    visible_gate = ({
+        "status": "PASS", "completion_allowed": True,
+        "evidence": list(browser_evidence.get("evidence") or [browser_evidence]),
+        "failure_reason": None,
+    } if browser_evidence.get("status") == "PASS" else None)
     if contract.get("visible_artifact_contract", {}).get("required"):
         from app.founder_ai.verification_fallback import (
             PASS, UNAVAILABLE, evidence, execute_ui_verification_chain, system_chrome_playwright_verifier,
@@ -927,19 +950,25 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
                      message=f"Verification fallback finished: {chain['status']}",
                      metadata={"verification": chain, "founder_summary": narration})
         save_execution_session(session, package)
+    checkpoint_requirement = str(package.commit_requirement if package else "").strip().lower()
+    checkpoint_requested = bool(checkpoint_requirement and checkpoint_requirement not in {"none", "not requested", "not_required"})
     closure_evidence = evaluate_standard_verification_evidence(
         implementation_complete=session.status == "completed" and executor_passed,
         task_owned_tests_pass=executor_passed and (not tests_required or command_evidence.get("targeted_tests", {}).get("status") == "PASS"),
         build_pass=executor_passed and (not build_required or command_evidence.get("build", {}).get("status") == "PASS"),
         visible_artifact_pass=visible_gate is None or visible_gate["completion_allowed"],
-        checkpoint_exists=bool(session.commit_hash) or not task_owned_paths or (verification_only and not task_owned_dirty),
+        checkpoint_exists=(bool(session.commit_hash) and not task_owned_dirty) or not task_owned_paths or (verification_only and not task_owned_dirty),
         task_owned_files_clean=clean and diff_ok,
         scope_verification_pass=dict((session.result or {}).get("scope_verification") or {}).get("status") == "PASS",
+        diff_check_pass=diff_ok,
+        checkpoint_requested=checkpoint_requested,
     )
     passed = closure_evidence["verification_complete"]
-    verification = {"status": "PASS" if passed else "FAIL", "targeted_tests": command_evidence.get("targeted_tests"), "build": command_evidence.get("build"), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": "NOT_REQUIRED" if verification_only and not task_owned_dirty else "PASS" if session.commit_hash or not task_owned_paths else "FAIL",
+    verification = {"status": "PASS" if passed else "FAIL", "targeted_tests": command_evidence.get("targeted_tests"), "build": command_evidence.get("build"), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": closure_evidence["checkpoint_status"],
                     "working_tree": "task_owned_clean" if clean else "task_owned_dirty", "task_owned_dirty": task_owned_dirty,
                     "unrelated_dirty_preserved": unrelated_dirty, "browser_verification": visible_gate,
+                    "task_completion_evidence": closure_evidence["task_completion_evidence"],
+                    "version_control_evidence": closure_evidence["version_control_evidence"],
                     "closure_evidence": closure_evidence}
     if verification["status"] != "PASS":
         outcome = str((visible_gate or {}).get("status") or "BLOCKED")

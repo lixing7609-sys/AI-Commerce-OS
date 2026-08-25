@@ -170,6 +170,62 @@ def test_missing_browser_or_failed_build_prevents_verification_completion():
     assert failed_build["missing_evidence"] == ["build_pass"]
 
 
+def test_verified_dirty_patch_completes_without_checkpoint():
+    result = evaluate_standard_verification_evidence(
+        implementation_complete=True, task_owned_tests_pass=True, build_pass=True,
+        visible_artifact_pass=True, checkpoint_exists=False, task_owned_files_clean=False,
+        diff_check_pass=True, checkpoint_requested=False,
+    )
+    assert result["verification_complete"] is True
+    assert result["missing_evidence"] == []
+    assert result["version_control_evidence"]["checkpoint_status"] == "NOT_REQUESTED"
+
+
+def test_requested_checkpoint_is_post_completion_pending_state():
+    result = evaluate_standard_verification_evidence(
+        implementation_complete=True, task_owned_tests_pass=True, build_pass=True,
+        visible_artifact_pass=True, checkpoint_exists=False, task_owned_files_clean=False,
+        diff_check_pass=True, checkpoint_requested=True,
+    )
+    assert result["verification_complete"] is True
+    assert result["version_control_evidence"] == {
+        "checkpoint_requested": True,
+        "checkpoint_exists": False,
+        "task_owned_files_clean": False,
+        "checkpoint_status": "PENDING",
+    }
+
+
+def test_checkpoint_cannot_override_failed_task_verification():
+    browser_failed = evaluate_standard_verification_evidence(
+        implementation_complete=True, task_owned_tests_pass=True, build_pass=True,
+        visible_artifact_pass=False, checkpoint_exists=True, task_owned_files_clean=True,
+        checkpoint_requested=True,
+    )
+    tests_failed = evaluate_standard_verification_evidence(
+        implementation_complete=True, task_owned_tests_pass=False, build_pass=True,
+        visible_artifact_pass=True, checkpoint_exists=True, task_owned_files_clean=True,
+        checkpoint_requested=True,
+    )
+    assert browser_failed["verification_complete"] is False
+    assert tests_failed["verification_complete"] is False
+
+
+def test_diff_and_scope_remain_completion_gates_independent_of_git_state():
+    diff_failed = evaluate_standard_verification_evidence(
+        implementation_complete=True, task_owned_tests_pass=True, build_pass=True,
+        visible_artifact_pass=True, checkpoint_exists=True, task_owned_files_clean=True,
+        diff_check_pass=False,
+    )
+    scope_failed = evaluate_standard_verification_evidence(
+        implementation_complete=True, task_owned_tests_pass=True, build_pass=True,
+        visible_artifact_pass=True, checkpoint_exists=True, task_owned_files_clean=True,
+        scope_verification_pass=False,
+    )
+    assert diff_failed["missing_evidence"] == ["diff_check_pass"]
+    assert scope_failed["missing_evidence"] == ["scope_verification_pass"]
+
+
 def test_new_source_message_does_not_reuse_previous_conversation_execution(monkeypatch):
     import app.founder_ai.standard_task_execution as execution
     monkeypatch.setattr(execution, "_save_route", lambda _conversation_id, route, **_: route)
