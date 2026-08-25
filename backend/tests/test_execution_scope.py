@@ -8,7 +8,7 @@ from app.founder_ai.codex_adapter import CodexExecutionResult
 from app.founder_ai.execution_loop import ExecutionScopeBlocked, ExecutionSession, FounderExecutionLoop
 from app.founder_ai.execution_scope import (
     SCOPE_MISMATCH, SCOPE_PASS, attribute_execution_changes, capture_execution_baseline,
-    codex_run_id, rollback_execution_owned_patch, verify_execution_scope,
+    codex_run_id, rollback_execution_owned_patch, rollback_scope_mismatch_patch, verify_execution_scope,
 )
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 
@@ -71,6 +71,30 @@ def test_rollback_reverses_only_execution_owned_patch_and_preserves_preexisting(
     assert (repo / "existing.txt").read_text() == "pre-existing\n"
 
 
+@pytest.mark.parametrize("verification_outcome", ["VERIFIED", "BLOCKED_BROWSER", "FAILED_BUILD", "FAILED_TEST"])
+def test_scope_pass_patch_cannot_be_rolled_back_by_verification_cleanup(repo, verification_outcome):
+    baseline, contents = capture_execution_baseline(repo)
+    (repo / "allowed.txt").write_text("valid task artifact\n")
+    attribution = attribute_execution_changes(repo, baseline=baseline, dirty_contents_before=contents)
+    scope = verify_execution_scope(contract=contract(), attribution=attribution)
+    assert scope["status"] == SCOPE_PASS
+    # A later verification outcome is intentionally not an input to rollback authority.
+    assert verification_outcome in {"VERIFIED", "BLOCKED_BROWSER", "FAILED_BUILD", "FAILED_TEST"}
+    assert rollback_scope_mismatch_patch(repo, scope_verification=scope, attribution=attribution) is False
+    assert (repo / "allowed.txt").read_text() == "valid task artifact\n"
+
+
+def test_scope_mismatch_authorizes_only_execution_owned_patch_rollback(repo):
+    (repo / "existing.txt").write_text("pre-existing\n")
+    baseline, contents = capture_execution_baseline(repo)
+    (repo / "unrelated.txt").write_text("wrong\n")
+    attribution = attribute_execution_changes(repo, baseline=baseline, dirty_contents_before=contents)
+    scope = verify_execution_scope(contract=contract(), attribution=attribution)
+    assert rollback_scope_mismatch_patch(repo, scope_verification=scope, attribution=attribution) is True
+    assert (repo / "unrelated.txt").read_text() == "base\n"
+    assert (repo / "existing.txt").read_text() == "pre-existing\n"
+
+
 def test_committed_change_is_still_attributed_and_marked_non_reversible(repo):
     baseline, contents = capture_execution_baseline(repo)
     (repo / "unrelated.txt").write_text("committed wrong\n")
@@ -101,6 +125,7 @@ def test_low_risk_scope_mismatch_is_corrected_once_without_preserving_wrong_patc
     completed, artifact, _ = FounderExecutionLoop(adapter).run(session, package(), cwd=repo)
     assert adapter.calls == 2
     assert completed.result["scope_verification"]["status"] == SCOPE_PASS
+    assert completed.result["task_owned_patch_persisted"] is True
     assert completed.result["codex_run_id"] == "run-2"
     assert artifact.changed_files == ["allowed.txt"]
     assert (repo / "unrelated.txt").read_text() == "base\n"

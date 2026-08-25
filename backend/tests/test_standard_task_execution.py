@@ -92,6 +92,21 @@ def test_runtime_url_typography_gets_its_own_scope_contract():
     assert "capability_repository" in contract["prohibited_scope"]
 
 
+def test_sino_product_matrix_gets_a_persistent_sidebar_scope_contract():
+    goal = "在左侧栏底部、设置上方增加固定的 Sino AI 产品矩阵入口气泡，展开 Sino Studio AI、Sino Operator AI，未开放产品显示即将推出。"
+    contract = build_standard_task_contract(conversation_id="conv-products", task_id="task-products", goal=goal)
+    assert contract["target_surface"] == "Founder Sidebar / Sino AI Product Matrix"
+    assert contract["inspect_status"] == "ready_for_plan"
+    assert contract["implementation_scope"] == [
+        "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+        "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
+        "frontend/src/sino-founder/FounderWorkspaceIcons.jsx",
+        "frontend/src/sino-founder/sino-founder-ai.css",
+    ]
+    assert "capability_repository" in contract["prohibited_scope"]
+    assert contract["visible_artifact_contract"]["required"] is True
+
+
 def test_new_task_does_not_inherit_previous_semantic_goal_from_discussion_context():
     contract = build_standard_task_contract(
         conversation_id="conv-isolated", task_id="task-runtime",

@@ -111,8 +111,23 @@ def verify_execution_scope(*, contract: dict[str, Any], attribution: dict[str, A
     }
 
 
+def rollback_scope_mismatch_patch(
+    repo_root: Path, *, scope_verification: dict[str, Any], attribution: dict[str, Any],
+) -> bool:
+    """Reverse an execution-owned patch only when scope verification explicitly failed.
+
+    Verification failures never authorize a rollback. A patch that passed scope is a
+    durable task artifact even when later tests, builds, or UI acceptance are blocked.
+    """
+    if scope_verification.get("status") != SCOPE_MISMATCH:
+        return False
+    if attribution.get("head_changed"):
+        return False
+    return rollback_execution_owned_patch(repo_root, str(attribution.get("execution_owned_patch") or ""))
+
+
 def rollback_execution_owned_patch(repo_root: Path, patch: str) -> bool:
-    """Reverse only the before/after patch owned by this execution."""
+    """Low-level reverse-patch primitive; callers must establish scope mismatch first."""
     if not patch:
         return True
     result = _run(repo_root, "apply", "--reverse", "--whitespace=nowarn", "-", input_text=patch)

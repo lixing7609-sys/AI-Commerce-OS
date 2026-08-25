@@ -133,7 +133,7 @@ class FounderExecutionLoop:
                                   "execution_attribution": result.execution_attribution, "codex_run_id": result.codex_run_id}
                 session.subprocess_exit_status = result.exit_code
                 raise RuntimeError(result.stderr or "Codex execution failed")
-            from .execution_scope import SCOPE_PASS, rollback_execution_owned_patch, verify_execution_scope
+            from .execution_scope import SCOPE_PASS, rollback_scope_mismatch_patch, verify_execution_scope
             contract = dict(package.context.get("standard_task_contract") or {})
             scope_result = verify_execution_scope(contract=contract, attribution=dict(result.execution_attribution or {}))
             append_event(session, "scope_verification_started", status="scope_verifying", message="Task-owned patch scope verification started")
@@ -141,12 +141,14 @@ class FounderExecutionLoop:
                          message=f"Task scope verification: {scope_result['status']}", metadata={"scope_verification": scope_result})
             correction_attempts = []
             if scope_result["status"] != SCOPE_PASS:
-                patch = str((result.execution_attribution or {}).get("execution_owned_patch") or "")
                 append_event(session, "scope_correction_started", status="correcting_scope",
                              message="检测到本次代码改动超出了任务范围，正在撤销本次错误改动并重新执行；不会影响任务开始前已有的工作区修改。",
                              metadata={"scope_verification": scope_result, "attempt": 1})
-                head_changed = bool((result.execution_attribution or {}).get("head_changed"))
-                rolled_back = False if head_changed else rollback_execution_owned_patch(cwd, patch)
+                attribution = dict(result.execution_attribution or {})
+                head_changed = bool(attribution.get("head_changed"))
+                rolled_back = rollback_scope_mismatch_patch(
+                    cwd, scope_verification=scope_result, attribution=attribution,
+                )
                 correction_attempts.append({"attempt": 1, "rollback_succeeded": rolled_back, "scope_verification": scope_result})
                 if not rolled_back:
                     session.result = {"scope_verification": scope_result, "scope_correction_attempts": correction_attempts}
@@ -176,9 +178,21 @@ class FounderExecutionLoop:
                              message="已重新按正确范围完成修改，正在验证。" if scope_result["status"] == SCOPE_PASS else "范围纠偏后仍发生错位，执行已停止。",
                              metadata={"scope_verification": scope_result, "attempt": 1})
                 if scope_result["status"] != SCOPE_PASS:
-                    rollback_execution_owned_patch(cwd, str((result.execution_attribution or {}).get("execution_owned_patch") or ""))
-                    session.result = {"scope_verification": scope_result, "scope_correction_attempts": correction_attempts}
+                    corrected_attribution = dict(result.execution_attribution or {})
+                    corrected_rollback = rollback_scope_mismatch_patch(
+                        cwd, scope_verification=scope_result, attribution=corrected_attribution,
+                    )
+                    correction_attempts[-1]["corrected_rollback_succeeded"] = corrected_rollback
+                    session.result = {
+                        "scope_verification": scope_result,
+                        "scope_correction_attempts": correction_attempts,
+                        "task_owned_patch_persisted": not corrected_rollback,
+                    }
                     session.status = "blocked"
+                    if corrected_attribution.get("head_changed"):
+                        raise ExecutionScopeBlocked("scope mismatch after correction-owned commit; automatic history rewrite is forbidden")
+                    if not corrected_rollback:
+                        raise ExecutionScopeBlocked("scope mismatch after correction; execution-owned patch could not be safely reversed")
                     raise ExecutionScopeBlocked("scope mismatch after one automatic correction")
             from .verification_fallback import codex_command_evidence
             command_evidence = codex_command_evidence(result.stdout, exit_code=result.exit_code, required=list(package.verification or []))
@@ -193,6 +207,7 @@ class FounderExecutionLoop:
                 "execution_baseline": result.execution_baseline,
                 "execution_attribution": result.execution_attribution,
                 "scope_verification": scope_result,
+                "task_owned_patch_persisted": scope_result["status"] == SCOPE_PASS,
                 "scope_correction_attempts": correction_attempts,
                 "task_id": session.task_asset_id,
                 "execution_id": session.id,

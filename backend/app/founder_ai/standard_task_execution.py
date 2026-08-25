@@ -181,6 +181,50 @@ def _runtime_url_typography_contract(*, conversation_id: str, goal: str, task_id
     }
 
 
+def _sino_product_matrix_contract(*, conversation_id: str, goal: str, task_id: str | None) -> dict:
+    return {
+        "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
+        "task_type": "STANDARD_TASK", "target_surface": "Founder Sidebar / Sino AI Product Matrix",
+        "target_route": "Sino Founder shell / all Founder views",
+        "target_component": "FounderNavigationPanel / FounderWorkspaceIcons / sino-founder-ai.css",
+        "objective": "Add a fixed Sino AI product matrix entry above Settings in the Founder sidebar.",
+        "acceptance_criteria": [
+            "A fixed product matrix entry renders above Settings and outside the scrollable conversation history.",
+            "Activating the entry opens Sino Studio AI and Sino Operator AI product destinations.",
+            "Unavailable products are visibly marked 即将推出 and do not navigate.",
+            "Existing sidebar navigation, history scrolling and Settings remain unchanged.",
+        ],
+        "visible_artifact_contract": {
+            "required": True, "artifact_type": "sino_ai_product_matrix_entry",
+            "target_route": "Sino Founder shell / all Founder views",
+            "required_assertions": [
+                "product_matrix_entry_visible", "entry_above_settings", "entry_fixed_outside_history_scroll",
+                "product_matrix_opens", "studio_ai_visible", "operator_ai_visible", "unavailable_products_marked_coming_soon",
+            ],
+        },
+        "constraints": ["preserve_sidebar_navigation", "preserve_history_scroll", "preserve_settings_entry", "frontend_presentation_only"],
+        "implementation_scope": [
+            "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+            "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
+            "frontend/src/sino-founder/FounderWorkspaceIcons.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ],
+        "module_boundary": [],
+        "prohibited_scope": [
+            "conversation_backend", "task_lifecycle", "capability_repository", "model_center", "provider", "database", "runtime",
+        ],
+        "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
+        "inspect_status": "ready_for_plan",
+        "implementation_plan": [
+            "Inspect the existing fixed navigation/footer boundary and icon system.",
+            "Add the bounded product matrix trigger and product menu without changing history scrolling.",
+            "Represent unavailable destinations with the existing disabled/coming-soon semantics.",
+            "Run targeted navigation tests, build, git diff --check and real localhost verification.",
+        ],
+        "source_goal": goal,
+    }
+
+
 def _capability_repository_search_contract(*, conversation_id: str, goal: str, task_id: str | None) -> dict:
     return {
         "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
@@ -245,6 +289,13 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
                               and any(marker in goal_context for marker in ("字体", "字号", "缩小")))
     if runtime_url_typography:
         return _runtime_url_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+    product_matrix = (
+        any(marker in goal_context for marker in ("产品矩阵", "sino studio ai", "sino operator ai"))
+        and any(marker in goal_context for marker in ("左侧栏", "左边栏", "侧边栏", "设置"))
+        and any(marker in goal_context for marker in ("入口", "气泡", "菜单"))
+    )
+    if product_matrix:
+        return _sino_product_matrix_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
     capability_search = (("能力仓库" in goal_context or "capability repository" in goal_context)
                          and any(marker in goal_context for marker in ("搜索", "筛选", "search", "filter")))
     if capability_search:
