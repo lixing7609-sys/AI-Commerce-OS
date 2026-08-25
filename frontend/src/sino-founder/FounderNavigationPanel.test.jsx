@@ -40,6 +40,17 @@ describe("Founder sidebar information architecture", () => {
     expect(screen.queryByRole("dialog", { name: "Sino AI 产品矩阵" })).toBeNull();
   });
 
+  it("floats the Sino AI product matrix beside the sidebar at the viewport midpoint", () => {
+    render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "Sino AI 产品矩阵" });
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({ right: 264 });
+    fireEvent.click(trigger);
+    const panel = screen.getByRole("dialog", { name: "Sino AI 产品矩阵" });
+    expect(panel.style.left).toBe("276px");
+    expect(panel.style.bottom).toBe("");
+    expect(panel.classList.contains("sino-product-matrix__panel")).toBe(true);
+  });
+
   it("closes the Sino AI product matrix with Escape", () => {
     render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Sino AI 产品矩阵" }));

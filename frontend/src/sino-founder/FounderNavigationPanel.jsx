@@ -60,7 +60,7 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   const [productMatrixOpen, setProductMatrixOpen] = useState(false);
   const productMatrixTriggerRef = useRef(null);
   const productMatrixPanelRef = useRef(null);
-  const [productMatrixPosition, setProductMatrixPosition] = useState({ left: 0, bottom: 0 });
+  const [productMatrixLeft, setProductMatrixLeft] = useState(0);
   const createProjectTriggerRef = useRef(null);
   const createProjectPopoverRef = useRef(null);
   const [createProjectPopoverPosition, setCreateProjectPopoverPosition] = useState({ top: 0, left: 0, arrowTop: 0 });
@@ -116,7 +116,7 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
     if (!productMatrixOpen) return undefined;
     const position = () => {
       const bounds = productMatrixTriggerRef.current?.getBoundingClientRect();
-      if (bounds) setProductMatrixPosition({ left: bounds.right + 12, bottom: Math.max(12, window.innerHeight - bounds.bottom) });
+      if (bounds) setProductMatrixLeft(bounds.right + 12);
     };
     const close = (event) => {
       if (!productMatrixTriggerRef.current?.contains(event.target) && !productMatrixPanelRef.current?.contains(event.target)) setProductMatrixOpen(false);
@@ -190,7 +190,7 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
       </div>
       <button type="button" className="sino-sidebar-settings sino-sidebar-row" title="设置" aria-label="设置" onClick={() => onNavigate("settings")} aria-current={active === "settings" ? "page" : undefined}><SettingsIcon /><span>设置</span></button>
     </footer>
-    {productMatrixOpen && typeof document !== "undefined" ? createPortal(<section ref={productMatrixPanelRef} className="sino-product-matrix__panel" role="dialog" aria-label="Sino AI 产品矩阵" style={{ left: productMatrixPosition.left, bottom: productMatrixPosition.bottom }}>
+    {productMatrixOpen && typeof document !== "undefined" ? createPortal(<section ref={productMatrixPanelRef} className="sino-product-matrix__panel" role="dialog" aria-label="Sino AI 产品矩阵" style={{ left: productMatrixLeft }}>
       <header><span>产品矩阵</span><small>Sino AI</small></header>
       <div className="sino-product-matrix__list">
         {SINO_AI_PRODUCTS.map((product) => product.available ? (
