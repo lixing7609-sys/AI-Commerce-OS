@@ -17,7 +17,7 @@ def understand_images(conversation_id: str, text: str, attachment_ids: list[str]
     prompt = """Analyze the attached Founder UI screenshot as image evidence only. Prioritize red arrows, circles, boxes, and other Founder annotations and identify exactly which visible UI element they point to. Do not infer hidden state. Return JSON only with: image_type, observed_ui_area, observed_elements (array), likely_target, visible_issue, founder_annotation_context, confidence (0..1)."""
     for provider_id, model_id in candidates:
         try:
-            response = llm_gateway.generate_for_model(provider_id, model_id, LLMRequest(system_prompt=prompt, user_prompt=text, temperature=0, max_tokens=800, response_format="json", metadata={"images": images, "conversation_id": conversation_id, "capability_probe": "image_input"}))
+            response = llm_gateway.generate_for_model(provider_id, model_id, LLMRequest(system_prompt=prompt, user_prompt=text, temperature=0, max_tokens=800, response_format="json", metadata={"images": images, "conversation_id": conversation_id, "capability_probe": "image_input", "runtime_role": "vision", "assignment_role": "vision", "invocation_source": "vision", "runtime_mode": "default"}))
             payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
             required = ("image_type", "observed_ui_area", "observed_elements", "likely_target", "visible_issue", "founder_annotation_context", "confidence")
             if not isinstance(payload, dict) or any(key not in payload for key in required):

@@ -22,7 +22,7 @@ test("real Settings keeps model control, Provider inspector, and compact system 
   await expect(page.getByRole("region", { name: "用量与成本" })).toBeVisible();
   await expect(page.getByRole("list", { name: "已接入模型列表" }).getByText("deepseek-chat", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("table", { name: "已分配模型经济账" }).getByText("deepseek-chat", { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("已分配模型摘要")).toHaveText("5 个已分配模型");
+  await expect(page.getByLabel("已分配模型摘要")).toHaveText("5 个有效已分配模型 · 1 个失效引用");
   await expect(page.getByLabel("功能页详情")).toHaveCount(0);
   const firstModel = page.getByRole("list", { name: "已接入模型列表" }).locator("button[aria-pressed]").first();
   await expect(firstModel).toBeVisible();

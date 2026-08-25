@@ -176,7 +176,7 @@ def resolve_task_navigation(conversation_id: str, *, generator: Callable | None 
                                             "recent_conversation_context": conversation_context,
                                             "tasks": compact}, ensure_ascii=False),
                     temperature=.1, max_tokens=300, response_format="json",
-                    metadata={"runtime_role": "sino_conversation", "purpose": "task_navigation"}))
+                    metadata={"runtime_role": "sino_conversation", "conversation_id": conversation_id, "invocation_source": "task_navigation", "runtime_mode": "default", "purpose": "task_navigation"}))
                 payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
             break
         except Exception:

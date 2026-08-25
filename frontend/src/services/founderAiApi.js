@@ -302,6 +302,13 @@ export function getModelCenter() {
   return request("/founder-ai/model-center", undefined, "获取模型中心失败");
 }
 
+export function getEligibleModels(role, capability) {
+  const query = new URLSearchParams();
+  if (role) query.set("role", role);
+  if (capability) query.set("capability", capability);
+  return request(`/founder-ai/model-center/eligible-models?${query}`, undefined, "获取可用模型失败");
+}
+
 export function getRuntimeEnvironmentRegistry() {
   return request("/founder-ai/runtime-environments", undefined, "获取运行环境注册表失败");
 }

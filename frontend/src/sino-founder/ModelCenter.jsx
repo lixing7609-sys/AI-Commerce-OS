@@ -170,10 +170,11 @@ export function ModelCenter({ onHome }) {
   function closeFeatureModal() { setFeatureModal(null); requestAnimationFrame(() => featureTriggerRef.current?.focus()); }
   async function updateCredentials(provider, values) { const key = provider.provider_key; updateProviderState(key, { isConnecting: true, error: "", successMessage: "正在保存…" }); try { const result = await updateModelProviderCredentials(key, values); mergeProvider(result); updateProviderState(key, { isConnecting: false, error: "", successMessage: "Provider 配置已保存" }); } catch (error) { updateProviderState(key, { isConnecting: false, error: actionFailure("Provider 配置"), successMessage: "" }); } }
   async function assignCapability(capabilityKey, value, fallbackValue) { const [providerKey, model] = value ? value.split("::") : [null, null]; const [fallbackProvider, fallbackModel] = fallbackValue ? fallbackValue.split("::") : [null, null]; setBusy(`capability:${capabilityKey}`); try { setCenter(await saveCapabilityAssignment(capabilityKey, providerKey, model, fallbackProvider ? [{ provider_key: fallbackProvider, model: fallbackModel }] : [])); setMessage("模型分配已保存并接入 Runtime"); } catch (error) { setMessage(actionFailure("模型分配")); } finally { setBusy(""); } }
-  const modelOptions = installed.filter((item) => item.enabled).flatMap((provider) => provider.selected_models.map((model) => ({ value: `${provider.provider_key}::${model}`, provider, model, healthy: provider.health_status === "healthy", label: (provider.available_models.find((item) => modelId(item) === model) || {}).display_name || model })));
-  const assignedEconomics = buildAssignedModelEconomics({ roles: center.roles || [], options: modelOptions, registry: center.model_capability_registry || {}, modelUsage: center.model_usage || [] });
+  const toOptions = (models = []) => models.map((item) => { const provider = installed.find((value) => value.provider_key === item.provider_id); return { value: item.identity, provider, model: item.model_id, healthy: item.health_status === "healthy", label: item.display_name }; });
+  const modelOptions = toOptions(center.connected_models || []);
+  const eligibleOptions = Object.fromEntries(Object.entries(center.eligible_models || {}).map(([role, models]) => [role, toOptions(models)]));
   const modelDependencies = (providerKey, model) => {
-    const duties = [...(assignedEconomics.find((item) => item.provider_id === providerKey && item.model_id === model)?.roles || [])];
+    const duties = [...modelDuties(providerKey, model)];
     for (const application of center.applications || []) for (const assignment of application.assignments || []) {
       if (assignment.provider_key !== providerKey || assignment.model !== model || assignment.fixed) continue;
       const label = `${application.label} · ${assignment.label}`;
@@ -205,7 +206,11 @@ export function ModelCenter({ onHome }) {
     if (matches(vision?.preferred_primary || vision?.active_primary)) duties.push("Vision");
     if (matches(vision?.preferred_fallback)) duties.push("Vision Fallback");
     const discussion = center.roles.find((item) => item.role_key === "multi_model_discussion");
-    if (discussion?.slots?.some((slot) => matches(slot.primary) || matches(slot.fallback)) || discussion?.models?.some(matches)) duties.push("多模型讨论");
+    (discussion?.slots || []).forEach((slot, index) => {
+      if (matches(slot.primary)) duties.push(`讨论模型 ${index + 1}`);
+      if (matches(slot.fallback)) duties.push(`讨论模型 ${index + 1} Fallback`);
+    });
+    if (!discussion?.slots?.length && discussion?.models?.some(matches)) duties.push("多模型讨论");
     return duties;
   }
   useEffect(() => {
@@ -237,13 +242,13 @@ export function ModelCenter({ onHome }) {
         <SettingsFeatureEntry title="Sino AI" description="模型职责分配、Primary / Fallback 与多模型讨论" summary={`${conversationRole?.model || "主对话未配置"} · ${configuredRoles} 个职责`} onClick={(event) => openFeatureModal("sino-ai", event.currentTarget)} />
         <SettingsFeatureEntry title="系统" description="Executor、Runtime 与 System Health" summary={`${activeEngine?.display_name || "Codex"} · ${localRuntime?.status || "LOCAL"}`} onClick={(event) => openFeatureModal("system", event.currentTarget)} />
       </div>
-      <ModelEconomics roles={center.roles || []} options={modelOptions} registry={center.model_capability_registry || {}} modelUsage={center.model_usage || []} />
+      <ModelEconomics economics={center.model_economics || { models: [], orphan_references: [] }} />
     </section>
 
     {adding && <AddModelModal step={installStep} center={center} install={install} editing={editing} busy={busy} providerKey={installProviderKey} onSelectProvider={beginProviderConnection} onInstallChange={setInstall} onConnect={addProvider} onChoose={choose} onClose={() => { setAdding(false); setInstallStep(1); setInstallProviderKey(null); }} />}
 
     {selectedProvider && selectedModelMeta ? <ProviderConfigModal dialogRef={providerDialogRef} provider={selectedProvider} model={selectedModelMeta} action={providerState(selectedProvider.provider_key)} onCredentialSave={(values) => updateCredentials(selectedProvider, values)} onRefresh={() => refresh(selectedProvider)} onHealth={() => health(selectedProvider)} onChoose={(model, checked) => choose(selectedProvider, model, checked)} onClose={closeProviderModal} /> : null}
-    {featureModal === "sino-ai" ? <SettingsFeatureModal title="Sino AI" description="模型职责分配、Fallback 与多模型讨论，Primary 失败时有限切换至 Fallback。" inlineDescription dialogRef={featureDialogRef} onClose={closeFeatureModal}><ModelAssignments roles={center.roles || []} options={modelOptions} registry={center.model_capability_registry} busy={busy} onAssign={assignCapability} onVisionAssign={savePreferred} onCouncilSave={saveCouncil} /></SettingsFeatureModal> : null}
+    {featureModal === "sino-ai" ? <SettingsFeatureModal title="Sino AI" description="模型职责分配、Fallback 与多模型讨论，Primary 失败时有限切换至 Fallback。" inlineDescription dialogRef={featureDialogRef} onClose={closeFeatureModal}><ModelAssignments roles={center.roles || []} options={modelOptions} eligible={eligibleOptions} registry={center.model_capability_registry} busy={busy} onAssign={assignCapability} onVisionAssign={savePreferred} onCouncilSave={saveCouncil} /></SettingsFeatureModal> : null}
     {featureModal === "system" ? <SettingsFeatureModal title="系统" description="Executor、Runtime 与系统健康。" dialogRef={featureDialogRef} onClose={closeFeatureModal}><div className="sino-settings-domain-grid sino-settings-domain-grid--execution"><ExecutorSettings roles={center.roles || []} engines={center.execution_engines || []} /><RuntimeEnvironmentSettings registry={runtimeRegistry} /></div></SettingsFeatureModal> : null}
     {removalTarget ? <ModelRemovalDialog target={removalTarget} busy={busy.startsWith("remove:")} onCancel={() => setRemovalTarget(null)} onRemove={removeModel} onOpenAssignments={() => { setRemovalTarget(null); openFeatureModal("sino-ai", null); }} /> : null}
     </div>
@@ -267,11 +272,11 @@ function SettingsFeatureModal({ title, description, inlineDescription = false, d
 
 function modelValue(reference) { return reference?.provider_key && reference?.model ? `${reference.provider_key}::${reference.model}` : ""; }
 function routingValue(reference) { return reference?.provider_id && reference?.model_id ? `${reference.provider_id}::${reference.model_id}` : ""; }
-function ModelAssignments({ roles, options, registry, busy, onAssign, onVisionAssign, onCouncilSave }) {
+function ModelAssignments({ roles, options, eligible, registry, busy, onAssign, onVisionAssign, onCouncilSave }) {
   const role = (key) => roles.find((item) => item.role_key === key) || {};
   const conversation = role("sino_conversation"); const reasoning = role("deep_thinking"); const coding = role("code_execution"); const council = role("multi_model_discussion");
   const vision = registry?.routing_policies?.find((item) => item.capability === "VISION_UNDERSTANDING") || {};
-  const visionOptions = (registry?.models || []).filter((item) => item.selected && item.enabled && item.capabilities?.supports_vision_understanding?.status === "VERIFIED").map((item) => { const match = options.find((option) => option.value === `${item.provider_id}::${item.model_id}`); return { value: `${item.provider_id}::${item.model_id}`, label: item.display_name, provider: match?.provider, healthy: Boolean(item.healthy) }; });
+  const visionOptions = eligible.vision || [];
   const renderAssignmentRow = ({ label, assignment, roleKey, choices = options, routing = false, primaryValues = [], onSave }) => {
     const primary = routing ? routingValue(assignment.preferred_primary || assignment.active_primary) : modelValue(assignment);
     const fallback = routing ? routingValue(assignment.preferred_fallback) : modelValue(assignment.fallbacks?.[0]);
@@ -291,19 +296,17 @@ function ModelAssignments({ roles, options, registry, busy, onAssign, onVisionAs
   const normalizedSlots = [...slots.slice(0, 5), ...Array.from({ length: Math.max(0, 5 - slots.length) }, () => ({ primary: null, fallback: null }))];
   const discussionPrimaries = normalizedSlots.map((slot) => modelValue(slot.primary)).filter(Boolean);
   const saveSlot = (index, nextPrimary, nextFallback) => onCouncilSave(normalizedSlots.map((slot, slotIndex) => slotIndex === index ? { primary: referenceValue(nextPrimary), fallback: referenceValue(nextFallback) } : slot));
-  return <section className="sino-model-assignments" aria-label="模型分配"><div className="sino-settings-domain-heading"><h3>模型分配</h3></div><div className="sino-model-assignment-table">{renderAssignmentRow({ label: "Sino 主对话", assignment: conversation, roleKey: "sino_conversation" })}{renderAssignmentRow({ label: "深度推理", assignment: reasoning, roleKey: "deep_thinking" })}{renderAssignmentRow({ label: "Vision", assignment: vision, roleKey: "routing:VISION_UNDERSTANDING", choices: visionOptions, routing: true })}{renderAssignmentRow({ label: "Coding", assignment: coding, roleKey: "code_execution" })}<h4 className="sino-discussion-slots-heading">多模型讨论</h4>{normalizedSlots.map((slot, index) => renderAssignmentRow({ label: `讨论模型 ${index + 1}`, assignment: { provider_key: slot.primary?.provider_key, model: slot.primary?.model, fallbacks: slot.fallback ? [slot.fallback] : [] }, roleKey: "multi", primaryValues: discussionPrimaries, onSave: (primary, fallback) => saveSlot(index, primary, fallback) }))}</div></section>;
+  return <section className="sino-model-assignments" aria-label="模型分配"><div className="sino-settings-domain-heading"><h3>模型分配</h3></div><div className="sino-model-assignment-table">{renderAssignmentRow({ label: "Sino 主对话", assignment: conversation, roleKey: "sino_conversation", choices: eligible.sino_conversation || [] })}{renderAssignmentRow({ label: "深度推理", assignment: reasoning, roleKey: "deep_thinking", choices: eligible.deep_thinking || [] })}{renderAssignmentRow({ label: "Vision", assignment: vision, roleKey: "routing:VISION_UNDERSTANDING", choices: visionOptions, routing: true })}{renderAssignmentRow({ label: "Coding", assignment: coding, roleKey: "code_execution", choices: eligible.code_execution || [] })}<h4 className="sino-discussion-slots-heading">多模型讨论</h4>{normalizedSlots.map((slot, index) => renderAssignmentRow({ label: `讨论模型 ${index + 1}`, assignment: { provider_key: slot.primary?.provider_key, model: slot.primary?.model, fallbacks: slot.fallback ? [slot.fallback] : [] }, roleKey: "multi", choices: eligible.multi_model_discussion || [], primaryValues: discussionPrimaries, onSave: (primary, fallback) => saveSlot(index, primary, fallback) }))}</div></section>;
 }
 
 function referenceValue(value) { if (!value) return null; const [provider_key, model] = value.split("::"); return { provider_key, model }; }
 
-function ModelEconomics({ roles, options, registry, modelUsage }) {
-  const rows = buildAssignedModelEconomics({ roles, options, registry, modelUsage });
-  const meteredRows = rows.filter((row) => row.request_count !== null);
-  const calls = meteredRows.length ? meteredRows.reduce((sum, row) => sum + row.request_count, 0) : null;
-  const completedCalls = meteredRows.reduce((sum, row) => sum + row.completed_request_count, 0);
-  const averageLatency = completedCalls ? Math.round(meteredRows.reduce((sum, row) => sum + (row.average_latency_ms || 0) * row.completed_request_count, 0) / completedCalls) : null;
-  const metric = (value, unavailable) => value === null || value === undefined ? unavailable : value;
-  return <section className="sino-usage-cost" aria-label="用量与成本"><div className="sino-settings-domain-heading"><h3>用量与成本</h3><span aria-label="已分配模型摘要">{rows.length} 个已分配模型</span></div><dl><div><dt>调用次数</dt><dd>{metric(calls, "未接入")}</dd></div><div><dt>Token</dt><dd>未接入</dd></div><div><dt>成本</dt><dd>成本未配置</dd></div><div><dt>平均延迟</dt><dd>{averageLatency === null ? "—" : `${averageLatency} ms`}</dd></div></dl><div className="sino-model-economics-table" role="table" aria-label="已分配模型经济账"><div className="sino-model-economics-row sino-model-economics-row--header" role="row"><span role="columnheader">模型</span><span role="columnheader">职责</span><span role="columnheader">状态</span><span role="columnheader">调用</span><span role="columnheader">Token</span><span role="columnheader">成本</span><span role="columnheader">平均延迟</span></div>{rows.map((row) => { const view = assignmentStatusView[row.assignment_status]; return <div className="sino-model-economics-row" role="row" key={`${row.provider_id}::${row.model_id}`}><span role="cell"><strong>{row.display_name}</strong><small>{row.provider_name}</small></span><span role="cell">{row.roles.join(" · ")}</span><span role="cell" className="sino-model-status" data-status={view.key}>{view.label}</span><span role="cell">{metric(row.request_count, "未接入")}</span><span role="cell">{metric(row.total_tokens, "未接入")}</span><span role="cell">{metric(row.cost, "成本未配置")}</span><span role="cell">{row.average_latency_ms === null ? "—" : `${Math.round(row.average_latency_ms)} ms`}</span></div>; })}</div></section>;
+function ModelEconomics({ economics }) {
+  const rows = economics.models || [];
+  const orphanCount = economics.orphan_reference_count || 0;
+  const coverage = economics.telemetry_coverage || {};
+  const coverageText = (value) => value ? `${value.covered} / ${value.total}` : "统计未接入";
+  return <section className="sino-usage-cost" aria-label="用量与成本"><div className="sino-settings-domain-heading"><h3>用量与成本</h3><span aria-label="已分配模型摘要">{rows.length} 个有效已分配模型{orphanCount ? ` · ${orphanCount} 个失效引用` : ""}</span></div><dl><div><dt>Connected Models</dt><dd>{economics.connected_model_count ?? "统计未接入"}</dd></div><div><dt>有效已分配模型</dt><dd>{rows.length}</dd></div><div><dt>失效引用</dt><dd>{orphanCount}</dd></div><div><dt>Invocation 覆盖</dt><dd>{coverageText(coverage.invocation)}</dd></div><div><dt>Token 覆盖</dt><dd>{coverageText(coverage.token)}</dd></div><div><dt>Pricing 覆盖</dt><dd>{coverageText(coverage.pricing)}</dd></div></dl><div className="sino-model-economics-table" role="table" aria-label="已分配模型经济账"><div className="sino-model-economics-row sino-model-economics-row--header" role="row"><span role="columnheader">模型</span><span role="columnheader">职责</span><span role="columnheader">连接 / 健康</span><span role="columnheader">调用</span><span role="columnheader">Token</span><span role="columnheader">成本</span><span role="columnheader">平均延迟</span></div>{rows.map((row) => <div className="sino-model-economics-row" role="row" key={`${row.provider_id}::${row.model_id}`}><span role="cell"><strong>{row.display_name}</strong><small>{row.provider_name}</small></span><span role="cell">{row.roles.join(" · ")}</span><span role="cell">已连接 · {row.health_status === "healthy" ? "正常" : row.health_status === "unhealthy" ? "异常" : "未测试"}<small>{row.telemetry_status === "recorded" ? "调用统计已记录" : "调用统计已接入 · 无记录"}</small></span><span role="cell">{row.request_count}</span><span role="cell">{row.token_status === "recorded" ? row.total_tokens : row.token_status === "unavailable" ? "Token 不可用" : "0"}</span><span role="cell">{row.cost !== null ? row.cost : row.pricing_status === "not_configured" ? "成本规则未配置" : "无法计算"}</span><span role="cell">{row.average_latency_ms === null ? "—" : `${Math.round(row.average_latency_ms)} ms`}</span></div>)}</div>{orphanCount ? <section aria-label="失效引用"><h4>失效引用</h4>{economics.orphan_references.map((item) => <p key={`${item.provider_id}::${item.model_id}`}><strong>{item.model_id}</strong> · {item.roles.join(" · ")} · 配置错误 / 失效引用</p>)}</section> : null}</section>;
 }
 
 function RuntimeEnvironmentSettings({ registry }) {

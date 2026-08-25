@@ -11,7 +11,7 @@ test("formal Founder workspace resizes and fully hides the GPT-style navigation 
   const navigation = page.getByLabel("Founder Navigation");
   const expanded = await navigation.boundingBox();
   const centerBefore = await page.getByRole("main", { name: "Sino Natural Conversation" }).boundingBox();
-  const selector = page.getByRole("button", { name: "Sino AI" });
+  const selector = page.getByRole("button", { name: "Sino AI · 选择模型" });
   await expect(selector).toBeVisible();
   const selectorBefore = await selector.boundingBox();
   const handle = page.getByRole("separator", { name: "调整左侧导航宽度" });
@@ -47,12 +47,18 @@ test("formal Founder workspace resizes and fully hides the GPT-style navigation 
 });
 
 test("Sino AI selects and restores a conversation-scoped configured model", async ({ page, request }) => {
+  const eligibleResponse = await request.get(`${API}/founder-ai/model-center/eligible-models?role=sino_conversation`);
+  expect(eligibleResponse.ok()).toBeTruthy();
+  const eligible = (await eligibleResponse.json()).models.filter((model) => model.health_status !== "unhealthy" && model.availability !== "unavailable");
+  expect(eligible.length).toBeGreaterThanOrEqual(2);
+  const initialModel = eligible[0];
+  const overrideModel = eligible.find((model) => model.identity !== initialModel.identity);
   const created = await request.post(`${API}/conversations`, { data: {
     title: "Model selector isolated verification",
     conversation_type: "USER_CONVERSATION",
     created_by: "VERIFICATION",
-    conversation_model_provider: "deepseek",
-    conversation_model: "deepseek-chat",
+    conversation_model_provider: initialModel.provider_id,
+    conversation_model: initialModel.model_id,
   }});
   expect(created.ok()).toBeTruthy();
   const conversation = await created.json();
@@ -61,20 +67,21 @@ test("Sino AI selects and restores a conversation-scoped configured model", asyn
     await page.evaluate(() => localStorage.clear());
     await page.reload();
     await page.locator(".sino-conversation-item__open", { hasText: "Model selector isolated verification" }).click();
-    await page.getByRole("button", { name: "Sino AI" }).click();
-    const deepseek = page.getByRole("menuitemradio", { name: /DeepSeek.*deepseek-chat/i });
-    await expect(deepseek).toHaveAttribute("aria-checked", "true");
-    const gpt = page.getByRole("menuitemradio", { name: /GPT 5 Pro.*gpt-5-pro/i });
-    await expect(gpt).toBeEnabled();
+    await page.getByRole("button", { name: "Model selector isolated verification · 选择模型" }).click();
+    const initial = page.getByRole("menuitemradio").filter({ hasText: initialModel.model_id });
+    await expect(initial).toHaveAttribute("aria-checked", "true");
+    const override = page.getByRole("menuitemradio").filter({ hasText: overrideModel.model_id });
+    await expect(override).toBeEnabled();
     const updatedResponse = page.waitForResponse((response) => response.url().endsWith(`/conversations/${conversation.id}/conversation-model`) && response.request().method() === "PATCH");
-    await gpt.click();
+    await override.click();
     expect((await updatedResponse).status()).toBe(200);
     const persisted = await request.get(`${API}/conversations/${conversation.id}`);
-    expect((await persisted.json()).conversation_model).toBe("gpt-5-pro");
+    expect((await persisted.json()).conversation_model_provider).toBe(overrideModel.provider_id);
+    expect((await persisted.json()).conversation_model).toBe(overrideModel.model_id);
     await page.reload();
     await page.locator(".sino-conversation-item__open", { hasText: "Model selector isolated verification" }).click();
-    await page.getByRole("button", { name: "Sino AI" }).click();
-    await expect(page.getByRole("menuitemradio", { name: /GPT 5 Pro.*gpt-5-pro/i })).toHaveAttribute("aria-checked", "true");
+    await page.getByRole("button", { name: "Model selector isolated verification · 选择模型" }).click();
+    await expect(page.getByRole("menuitemradio").filter({ hasText: overrideModel.model_id })).toHaveAttribute("aria-checked", "true");
     await expect(page.getByText(/api[_ -]?key|credential|密钥/i)).toHaveCount(0);
   } finally {
     await request.delete(`${API}/conversations/${conversation.id}`);

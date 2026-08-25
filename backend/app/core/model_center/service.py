@@ -11,7 +11,7 @@ import httpx
 from sqlalchemy import case, func, select
 
 from app.core.council.model import CouncilModelRunDB
-from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
+from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelInvocationDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
 from app.database.db import SessionLocal
 
 
@@ -190,7 +190,7 @@ def _model_metadata(model: str, provider_type: str) -> dict:
 
 
 def _sync_model_registry(session, row: ModelProviderConfigDB, model_ids: list[str]) -> None:
-    selected = set(row.selected_models or [])
+    selected = set(row.selected_models or []) if row.enabled else set()
     for model_id in model_ids:
         metadata = _model_metadata(model_id, row.provider_type)
         record = session.scalar(select(ModelRegistryDB).where(ModelRegistryDB.provider_id == row.provider_key, ModelRegistryDB.model_id == model_id))
@@ -219,46 +219,22 @@ def _friendly_model_name(model: str, provider_type: str) -> str:
 
 
 def get_model_center() -> dict:
-    _bootstrap_legacy_runtime_once()
     with SessionLocal() as session:
-        rows = {row.provider_key: row for row in session.scalars(select(ModelProviderConfigDB))}
-        # Backfill Provider Registry V1 discoveries into the normalized V2 model
-        # registry. This is idempotent and keeps existing installed models usable
-        # immediately after the migration.
-        for row in rows.values():
-            _sync_model_registry(session, row, row.available_models or [])
-        session.commit()
         rows = {row.provider_key: row for row in session.scalars(select(ModelProviderConfigDB))}
         roles = {row.role_key: row.provider_key for row in session.scalars(select(ModelRoleAssignmentDB))}
         assignments = list(session.scalars(select(ApplicationCapabilityAssignmentDB)))
-        usage_rows = session.execute(select(CouncilModelRunDB.provider, func.count(CouncilModelRunDB.id), func.avg(CouncilModelRunDB.latency_ms)).group_by(CouncilModelRunDB.provider)).all()
-        model_usage_rows = session.execute(
-            select(
-                CouncilModelRunDB.provider,
-                CouncilModelRunDB.model,
-                func.count(CouncilModelRunDB.id),
-                func.count(case((CouncilModelRunDB.status == "completed", 1))),
-                func.avg(case((CouncilModelRunDB.status == "completed", CouncilModelRunDB.latency_ms))),
-            )
-            .where(CouncilModelRunDB.model.is_not(None))
-            .group_by(CouncilModelRunDB.provider, CouncilModelRunDB.model)
-        ).all()
         capability_configs = {row.capability_key: row for row in session.scalars(select(AICapabilityConfigDB))}
-        discussion_config = capability_configs.get("multi_model_discussion")
-        if discussion_config and "slots" not in (discussion_config.configuration or {}):
-            previous = dict(discussion_config.configuration or {})
-            discussion_config.configuration = {**previous, "slots": _discussion_slots(previous)}
-            session.commit()
-            capability_configs = {row.capability_key: row for row in session.scalars(select(AICapabilityConfigDB))}
         registry_rows = list(session.scalars(select(ModelRegistryDB)))
         from app.core.conversation_first.model import SinoBrainSessionDB
         brain_states = list(session.scalars(select(SinoBrainSessionDB)))
+        from app.core.model_center.runtime_chain import connected_model_registry, eligible_models, invocation_economics
+        connected_models = connected_model_registry(session=session)
+        economics = invocation_economics(session=session)
+        eligible_by_role = {role: eligible_models(role=role, session=session) for role in ("sino_conversation", "deep_thinking", "code_execution", "multi_model_discussion", "vision")}
     provider_items = [_serialize(row, key) for key, row in rows.items()]
     for key in PROVIDERS:
         if key not in rows:
             provider_items.append(_serialize(None, key))
-    usage = {provider: {"calls": count, "average_latency_ms": round(float(latency), 1) if latency is not None else None, "tokens": None, "cost": None, "quota": None} for provider, count, latency in usage_rows}
-    model_usage = [{"provider_id": provider, "model_id": model, "request_count": count, "completed_request_count": completed_count, "average_latency_ms": round(float(latency), 1) if latency is not None else None, "input_tokens": None, "output_tokens": None, "total_tokens": None, "cost": None, "usage_source": "multi_model_discussion"} for provider, model, count, completed_count, latency in model_usage_rows]
     capability_roles = []
     for capability in CAPABILITIES:
         legacy = next((old for old, new in LEGACY_ROLE_ALIASES.items() if new == capability), None)
@@ -280,13 +256,16 @@ def get_model_center() -> dict:
     return {
         "provider_catalog": [{"provider_type": key, "display_name": value["display_name"], "default_base_url": value["default_base_url"], "requires_base_url": not bool(value["default_base_url"])} for key, value in PROVIDER_CATALOG.items()],
         "providers": provider_items,
-        "models": [{"provider_id": item.provider_id, "model_id": item.model_id, "display_name": item.display_name, "capability": list(item.capability or []), "context_window": item.context_window, "supports_text": bool(item.enabled and rows.get(item.provider_id) and rows[item.provider_id].health_status == "healthy"), "supports_reasoning": item.supports_reasoning, "supports_vision": bool(registry_capabilities[(item.provider_id, item.model_id)]["supports_vision_understanding"]["verified"]), "supports_image": bool(registry_capabilities[(item.provider_id, item.model_id)]["supports_vision_understanding"]["verified"]), "supports_image_generation": bool(image_generation_probes.get(f"{item.provider_id}:{item.model_id}", {}).get("supports_image_generation")), "image_generation_capability_source": image_generation_probes.get(f"{item.provider_id}:{item.model_id}", {}).get("source"), "supports_structured_output": bool(registry_capabilities[(item.provider_id, item.model_id)]["supports_structured_output"]["verified"]), "vision_capability_source": registry_capabilities[(item.provider_id, item.model_id)]["supports_vision_understanding"]["source"], "supports_tools": item.supports_tools, "selected": item.selected, "enabled": item.enabled} for item in registry_rows],
+        "models": connected_models,
         "roles": capability_roles,
         "agents": [{"agent_id": agent_id, **definition} for agent_id, definition in AGENT_REGISTRY.items() if definition["application_system_id"] == "founder_ai"],
         "skills": _agent_skills("sino_founder_ai", capability_configs, roles),
         "applications": [{"application_key": key, "label": label, "assignments": [_application_assignment(key, capability, assignments, rows, roles) for capability in CAPABILITIES]} for key, label in APPLICATIONS.items()],
-        "health_cost": [{**item, "usage": usage.get(item["provider_key"], {"calls": 0, "average_latency_ms": None, "tokens": None, "cost": None, "quota": None})} for item in provider_items],
-        "model_usage": model_usage,
+        "connected_models": connected_models,
+        "eligible_models": eligible_by_role,
+        "health_cost": [{**item, "usage": {"calls": None, "average_latency_ms": None, "tokens": None, "cost": None, "quota": None, "telemetry_status": "use_model_economics"}} for item in provider_items],
+        "model_usage": economics["models"],
+        "model_economics": economics,
         "execution_engines": [{"engine_id": key, **value} for key, value in EXECUTION_ENGINE_REGISTRY.items()],
         "model_capability_registry": capability_registry,
     }
@@ -718,10 +697,19 @@ def model_assignment_dependencies(session, provider_key: str, model: str) -> lis
     for assignment in session.scalars(select(ApplicationCapabilityAssignmentDB).where(ApplicationCapabilityAssignmentDB.provider_key == provider_key, ApplicationCapabilityAssignmentDB.model == model)):
         capability_label = labels.get(assignment.capability_key, CAPABILITY_LABELS.get(assignment.capability_key, assignment.capability_key))
         add(f"{APPLICATIONS.get(assignment.application_key, assignment.application_key)} · {capability_label}")
+    from app.core.conversation.model import ConversationDB
+    for conversation in session.scalars(select(ConversationDB).where(
+        ConversationDB.conversation_model_provider == provider_key,
+        ConversationDB.conversation_model == model,
+    )):
+        add(f"Conversation Override · {conversation.id}")
     provider = session.get(ModelProviderConfigDB, provider_key)
     if provider and provider.model == model:
+        configured_capabilities = set(session.scalars(select(AICapabilityConfigDB.capability_key)))
         for role in session.scalars(select(ModelRoleAssignmentDB).where(ModelRoleAssignmentDB.provider_key == provider_key)):
-            add(labels.get(role.role_key, role.role_key))
+            capability = LEGACY_ROLE_ALIASES.get(role.role_key, role.role_key)
+            if capability not in configured_capabilities:
+                add(labels.get(capability, capability))
     return dependencies
 
 
@@ -729,7 +717,10 @@ def set_provider_enabled(provider_key: str, enabled: bool) -> dict:
     with SessionLocal() as session:
         row = session.get(ModelProviderConfigDB, provider_key)
         if row is None: raise LookupError("provider_not_configured")
-        row.enabled = enabled; session.commit(); session.refresh(row)
+        if not enabled:
+            dependencies = [dependency for model in row.selected_models or [] for dependency in model_assignment_dependencies(session, provider_key, model)]
+            if dependencies: raise ValueError(f"provider_in_use:{'|'.join(dict.fromkeys(dependencies))}")
+        row.enabled = enabled; _sync_model_registry(session, row, row.available_models or []); session.commit(); session.refresh(row)
         return _serialize(row, provider_key)
 
 
@@ -737,8 +728,8 @@ def delete_provider(provider_key: str) -> None:
     with SessionLocal() as session:
         row = session.get(ModelProviderConfigDB, provider_key)
         if row is None: raise LookupError("provider_not_configured")
-        session.query(ModelRoleAssignmentDB).filter(ModelRoleAssignmentDB.provider_key == provider_key).update({"provider_key": None})
-        session.query(ApplicationCapabilityAssignmentDB).filter(ApplicationCapabilityAssignmentDB.provider_key == provider_key).update({"provider_key": None, "model": None})
+        dependencies = [dependency for model in row.selected_models or [] for dependency in model_assignment_dependencies(session, provider_key, model)]
+        if dependencies: raise ValueError(f"provider_in_use:{'|'.join(dict.fromkeys(dependencies))}")
         session.query(ModelRegistryDB).filter(ModelRegistryDB.provider_id == provider_key).delete()
         session.delete(row); session.commit()
 

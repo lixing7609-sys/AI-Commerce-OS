@@ -1,3 +1,3 @@
-from core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
+from core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelInvocationDB, ModelPricingRuleDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
 
-__all__ = ["AICapabilityConfigDB", "ApplicationCapabilityAssignmentDB", "ModelProviderConfigDB", "ModelRegistryDB", "ModelRoleAssignmentDB"]
+__all__ = ["AICapabilityConfigDB", "ApplicationCapabilityAssignmentDB", "ModelInvocationDB", "ModelPricingRuleDB", "ModelProviderConfigDB", "ModelRegistryDB", "ModelRoleAssignmentDB"]

@@ -2,9 +2,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SinoModelSelector, configuredConversationModels } from "./SinoModelSelector.jsx";
-import { getModelCenter, setFounderConversationModel } from "../services/founderAiApi.js";
+import { getEligibleModels, getModelCenter, setFounderConversationModel } from "../services/founderAiApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({ getModelCenter: vi.fn(), setFounderConversationModel: vi.fn() }));
+vi.mock("../services/founderAiApi.js", () => ({ getEligibleModels: vi.fn(), getModelCenter: vi.fn(), setFounderConversationModel: vi.fn() }));
 
 const center = {
   roles: [{ role_key: "sino_conversation", provider_key: "deepseek", model: "deepseek-chat" }],
@@ -14,12 +14,17 @@ const center = {
     { provider_key: "claude", display_name: "Claude", configured: true, enabled: true, health_status: "unhealthy", selected_models: ["claude-sonnet"], available_models: [{ model_id: "claude-sonnet", display_name: "Claude Sonnet", capability_tags: ["对话"] }] },
   ],
 };
+const eligible = { models: [
+  { identity: "deepseek::deepseek-chat", provider_id: "deepseek", provider_name: "DeepSeek", model_id: "deepseek-chat", display_name: "DeepSeek Chat", health_status: "healthy", availability: "available" },
+  { identity: "gpt::gpt-5-pro", provider_id: "gpt", provider_name: "GPT", model_id: "gpt-5-pro", display_name: "GPT 5 Pro", health_status: "healthy", availability: "available" },
+  { identity: "claude::claude-sonnet", provider_id: "claude", provider_name: "Claude", model_id: "claude-sonnet", display_name: "Claude Sonnet", health_status: "unhealthy", availability: "unavailable" },
+] };
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Sino AI Conversation Model selector", () => {
   it("reads configured conversation models without exposing credentials", () => {
-    const models = configuredConversationModels({ ...center, providers: center.providers.map((item) => ({ ...item, api_key_mask: "****secret" })) });
+    const models = configuredConversationModels(eligible);
     expect(models.map((item) => item.model)).toEqual(["deepseek-chat", "gpt-5-pro", "claude-sonnet"]);
     expect(JSON.stringify(models)).not.toContain("secret");
     expect(models.at(-1).available).toBe(false);
@@ -27,6 +32,7 @@ describe("Sino AI Conversation Model selector", () => {
 
   it("shows Sino identity, opens the menu, marks the configured default, and preselects before creation", async () => {
     getModelCenter.mockResolvedValue(center);
+    getEligibleModels.mockResolvedValue(eligible);
     const onPreselect = vi.fn();
     render(<SinoModelSelector conversation={null} onPreselect={onPreselect} />);
     const trigger = screen.getByRole("button", { name: /Sino AI/ });
@@ -46,6 +52,7 @@ describe("Sino AI Conversation Model selector", () => {
 
   it("closes the floating popover on outside click and Escape", async () => {
     getModelCenter.mockResolvedValue(center);
+    getEligibleModels.mockResolvedValue(eligible);
     render(<div><SinoModelSelector conversation={null} /><button type="button">Outside</button></div>);
     const trigger = screen.getByRole("button", { name: /Sino AI/ });
     fireEvent.click(trigger);
@@ -60,6 +67,7 @@ describe("Sino AI Conversation Model selector", () => {
 
   it("projects the current Conversation title into the same ellipsized model trigger", async () => {
     getModelCenter.mockResolvedValue(center);
+    getEligibleModels.mockResolvedValue(eligible);
     const title = "供应链金融模式分析与跨区域长期运营策略讨论";
     render(<SinoModelSelector conversation={{ id: "conv-project", title }} />);
     const trigger = screen.getByRole("button", { name: `${title} · 选择模型` });
@@ -71,6 +79,7 @@ describe("Sino AI Conversation Model selector", () => {
 
   it("persists an existing conversation override and safely retains the previous model on failure", async () => {
     getModelCenter.mockResolvedValue(center);
+    getEligibleModels.mockResolvedValue(eligible);
     setFounderConversationModel.mockResolvedValue({ id: "conv-1", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro" });
     const changed = vi.fn();
     const { rerender } = render(<SinoModelSelector conversation={{ id: "conv-1" }} onConversationChanged={changed} />);

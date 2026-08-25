@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
+from app.core.conversation.model import ConversationDB
 import app.core.model_center.service as model_center
 import app.core.model_center.api as model_center_api
 from app.founder_ai.system_builder import SinoSystemBuilder
@@ -63,28 +64,26 @@ def test_model_center_projects_persisted_vision_capability_into_connected_regist
     assert registry_model["capabilities"]["supports_vision_understanding"]["status"] == "VERIFIED"
 
 
-def test_model_center_exposes_real_per_model_invocation_counts_and_completed_latency(monkeypatch, tmp_path):
+def test_model_center_exposes_unified_invocation_counts_tokens_and_latency(monkeypatch, tmp_path):
     factory = _database(monkeypatch, tmp_path)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)
+    model_center.record_health("deepseek", "healthy")
+    model_center.save_capability_assignment("sino_conversation", "deepseek", "deepseek-chat")
     with factory() as session:
         session.add_all([
-            model_center.CouncilModelRunDB(council_run_id="council-1", provider="deepseek", model="deepseek-chat", role="analyst", status="completed", proposal={}, latency_ms=100, context_references={}),
-            model_center.CouncilModelRunDB(council_run_id="council-1", provider="deepseek", model="deepseek-chat", role="critic", status="completed", proposal={}, latency_ms=200, context_references={}),
-            model_center.CouncilModelRunDB(council_run_id="council-1", provider="deepseek", model="deepseek-chat", role="reviewer", status="failed", proposal={}, latency_ms=900, error_type="provider_unavailable", context_references={}),
+            model_center.ModelInvocationDB(invocation_id="inv-1", provider_id="deepseek", model_id="deepseek-chat", assignment_role="sino_conversation", invocation_source="founder_conversation", runtime_mode="default", status="completed", input_tokens=10, output_tokens=20, total_tokens=30, latency_ms=100),
+            model_center.ModelInvocationDB(invocation_id="inv-2", provider_id="deepseek", model_id="deepseek-chat", assignment_role="multi_model_discussion", invocation_source="council_participant", runtime_mode="default", status="completed", input_tokens=15, output_tokens=25, total_tokens=40, latency_ms=200),
+            model_center.ModelInvocationDB(invocation_id="inv-3", provider_id="deepseek", model_id="deepseek-chat", assignment_role="multi_model_discussion", invocation_source="council_participant", runtime_mode="fallback", status="failed", error_code="provider_unavailable", latency_ms=900),
         ])
         session.commit()
     usage = model_center.get_model_center()["model_usage"]
-    assert usage == [{
-        "provider_id": "deepseek",
-        "model_id": "deepseek-chat",
-        "request_count": 3,
-        "completed_request_count": 2,
-        "average_latency_ms": 150.0,
-        "input_tokens": None,
-        "output_tokens": None,
-        "total_tokens": None,
-        "cost": None,
-        "usage_source": "multi_model_discussion",
-    }]
+    assert len(usage) == 1
+    assert usage[0]["provider_id"] == "deepseek"
+    assert usage[0]["model_id"] == "deepseek-chat"
+    assert usage[0]["request_count"] == 3
+    assert usage[0]["total_tokens"] == 70
+    assert usage[0]["average_latency_ms"] == 150.0
+    assert usage[0]["telemetry_status"] == "recorded"
 
 
 def test_system_builder_reads_architect_assignment_without_exposing_key(monkeypatch, tmp_path):
@@ -383,7 +382,7 @@ def test_legacy_discussion_models_are_exposed_as_five_slots_without_fake_fallbac
     assert discussion["slots"][4]["primary"] is None
     with factory() as session:
         persisted = session.get(model_center.AICapabilityConfigDB, "multi_model_discussion").configuration
-        assert persisted["slots"] == discussion["slots"]
+        assert persisted == {"models": legacy}
 
 
 def test_discussion_slots_persist_fallbacks_and_reject_duplicate_primaries(monkeypatch, tmp_path):
@@ -415,6 +414,16 @@ def test_assigned_discussion_model_cannot_be_removed_and_usage_history_is_untouc
         model_center.select_models("deepseek", [])
     with factory() as session:
         assert session.query(model_center.CouncilModelRunDB).filter_by(model="deepseek-chat").count() == 1
+
+
+def test_conversation_override_blocks_model_removal(monkeypatch, tmp_path):
+    factory = _database(monkeypatch, tmp_path)
+    model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)
+    with factory() as session:
+        session.add(ConversationDB(id="conv-model-override", system_id="founder_ai", title="Override", conversation_model_provider="deepseek", conversation_model="deepseek-chat"))
+        session.commit()
+    with pytest.raises(ValueError, match="Conversation Override · conv-model-override"):
+        model_center.select_models("deepseek", [])
 
 
 def test_skill_model_assignment_persists_via_internal_capability(monkeypatch, tmp_path):

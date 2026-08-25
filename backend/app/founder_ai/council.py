@@ -119,6 +119,8 @@ class MultiModelCouncilService:
         run = CouncilRunDB(conversation_id=conversation_id, project_id=context.get("project_id"), question=text, context_package=context, status="running")
         with SessionLocal() as session:
             session.add(run); session.commit(); session.refresh(run); run_id = run.id
+        context["conversation_id"] = conversation_id
+        context["council_id"] = run_id
 
         successful, failed_count = [], 0
         for target in targets:
@@ -485,7 +487,7 @@ class MultiModelCouncilService:
         assigned_role = perspective["perspective_label"]
         anti_consensus = "不要主动寻求共识，不要为了完整而覆盖所有角度，只负责自己的 Perspective；若判断与常见观点不同，明确保留异议。目标是提高信息增量，不是提高答案相似度。"
         incremental = "本轮处于自动连续讨论中，只补充此前未覆盖的信息、异议、证据或修正，禁止复述。" if context.get("discussion_mode") == "auto_deliberation" else ""
-        response = llm_gateway.generate_for_model(definition.key, selected_model, LLMRequest(system_prompt=f"你是独立委员会成员。本轮唯一职责：【{assigned_role}】。{perspective['perspective_prompt']}{anti_consensus}{incremental} 只返回 JSON，字段：core_judgment, key_reasons, recommendation, risks, objections, founder_next_step。所有字段围绕本视角。", user_prompt=json.dumps(context, ensure_ascii=False), temperature=0.25, max_tokens=1400, response_format="json", metadata={"council_model": definition.key, "model": selected_model, "perspective_role": perspective["perspective_role"], "perspective_label": assigned_role, "discussion_mode": context.get("discussion_mode") or "single_round"}))
+        response = llm_gateway.generate_for_model(definition.key, selected_model, LLMRequest(system_prompt=f"你是独立委员会成员。本轮唯一职责：【{assigned_role}】。{perspective['perspective_prompt']}{anti_consensus}{incremental} 只返回 JSON，字段：core_judgment, key_reasons, recommendation, risks, objections, founder_next_step。所有字段围绕本视角。", user_prompt=json.dumps(context, ensure_ascii=False), temperature=0.25, max_tokens=1400, response_format="json", metadata={"council_model": definition.key, "model": selected_model, "perspective_role": perspective["perspective_role"], "perspective_label": assigned_role, "discussion_mode": context.get("discussion_mode") or "single_round", "conversation_id": context.get("conversation_id"), "council_id": context.get("council_id"), "runtime_role": "multi_model_discussion", "invocation_source": "council_participant", "runtime_mode": "default"}))
         parsed = parse_council_proposal(response.content)
         # Preserve the selected Provider Registry identity. Compatible adapters
         # report their protocol family (for example ``openai``), which is not the
@@ -502,7 +504,7 @@ class MultiModelCouncilService:
 
     @staticmethod
     def _synthesize_with_model(question: str, context: dict, proposals: list[dict], provider: str, model: str) -> dict:
-        response = llm_gateway.generate_for_model(provider, model, LLMRequest(system_prompt="你是 Sino。各 Proposal 来自不同 Perspective。比较其公开观点，不得输出隐藏推理；提炼共识、主要分歧、互补观点、各模型的独特信息、风险、Founder 应采用的判断与仍未解决的问题，不要简单拼接原文。只返回 JSON：consensus[], disagreements[], unique_insights[], risks[], unknowns[], recommendation, candidate_decision, candidate_goal。候选项不得自动确认为正式 Decision/Goal。", user_prompt=json.dumps({"question": question, "context_grounding": context["grounding"], "proposals": proposals}, ensure_ascii=False), temperature=0.2, max_tokens=1600, response_format="json", metadata={"council_synthesis": True, "model": model, "perspective_aware": True}))
+        response = llm_gateway.generate_for_model(provider, model, LLMRequest(system_prompt="你是 Sino。各 Proposal 来自不同 Perspective。比较其公开观点，不得输出隐藏推理；提炼共识、主要分歧、互补观点、各模型的独特信息、风险、Founder 应采用的判断与仍未解决的问题，不要简单拼接原文。只返回 JSON：consensus[], disagreements[], unique_insights[], risks[], unknowns[], recommendation, candidate_decision, candidate_goal。候选项不得自动确认为正式 Decision/Goal。", user_prompt=json.dumps({"question": question, "context_grounding": context["grounding"], "proposals": proposals}, ensure_ascii=False), temperature=0.2, max_tokens=1600, response_format="json", metadata={"council_synthesis": True, "model": model, "perspective_aware": True, "conversation_id": context.get("conversation_id"), "council_id": context.get("council_id"), "runtime_role": "sino_conversation", "invocation_source": "council_synthesis", "runtime_mode": "default"}))
         try: return json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
         except Exception as error: raise InvalidResponseError() from error
 

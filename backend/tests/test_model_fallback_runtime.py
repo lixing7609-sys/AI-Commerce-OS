@@ -18,6 +18,8 @@ def test_runtime_primary_failure_switches_once_to_fallback(monkeypatch, failure)
     monkeypatch.setattr(model_center, "resolve_runtime_chain", lambda _role: [primary, fallback])
     monkeypatch.setattr(model_center, "resolve_runtime_config", lambda **kwargs: primary)
     gateway = LLMGateway(); monkeypatch.setattr(gateway, "_provider_from_runtime", lambda config: config)
+    ledger = []
+    monkeypatch.setattr(gateway, "_record_invocation", lambda provider, model, status, request, **details: ledger.append((provider, model, status, details)) or f"inv-{len(ledger)}")
     attempts = []
     def generate(candidate, _request):
         attempts.append(candidate.provider_key)
@@ -28,6 +30,8 @@ def test_runtime_primary_failure_switches_once_to_fallback(monkeypatch, failure)
     response = gateway.generate_for_model("primary", "model-a", request)
     assert response.content == "ok" and attempts == ["primary", "fallback"]
     assert request.metadata["model_fallback"]["reason"] == failure.error_type
+    assert [(item[0], item[1], item[2]) for item in ledger] == [("primary", "model-a", "failed"), ("fallback", "model-b", "completed")]
+    assert ledger[1][3]["fallback_from"] == {"provider": "primary", "model": "model-a"}
 
 
 def test_runtime_chain_failure_is_bounded_and_records_reasons(monkeypatch):
@@ -35,6 +39,8 @@ def test_runtime_chain_failure_is_bounded_and_records_reasons(monkeypatch):
     monkeypatch.setattr(model_center, "resolve_runtime_chain", lambda _role: [primary, fallback])
     monkeypatch.setattr(model_center, "resolve_runtime_config", lambda **kwargs: primary)
     gateway = LLMGateway(); monkeypatch.setattr(gateway, "_provider_from_runtime", lambda config: config)
+    ledger = []
+    monkeypatch.setattr(gateway, "_record_invocation", lambda provider, model, status, request, **details: ledger.append((provider, model, status, details)) or f"inv-{len(ledger)}")
     attempts = []
     def fail(candidate, _request): attempts.append(candidate.provider_key); raise ProviderUnavailableError()
     monkeypatch.setattr(gateway, "_generate", fail)
@@ -42,3 +48,4 @@ def test_runtime_chain_failure_is_bounded_and_records_reasons(monkeypatch):
     with pytest.raises(ProviderUnavailableError): gateway.generate_for_model("primary", "model-a", request)
     assert attempts == ["primary", "fallback"]
     assert len(request.metadata["model_fallback_failures"]) == 2
+    assert [item[2] for item in ledger] == ["failed", "failed"]

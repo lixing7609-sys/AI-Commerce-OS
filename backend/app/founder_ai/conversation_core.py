@@ -302,6 +302,7 @@ def reason_about_message(conversation_id: str, current_message: str, *, interact
                          generator: Callable | None = None) -> dict:
     context = build_conversation_context(conversation_id, current_message, interaction_context=interaction_context)
     roles = configured_model_roles()
+    runtime_mode = "default"
     with SessionLocal() as db:
         conversation = db.get(ConversationDB, conversation_id)
         if conversation and conversation.conversation_model_provider and conversation.conversation_model:
@@ -311,6 +312,7 @@ def reason_about_message(conversation_id: str, current_message: str, *, interact
                 override = None
             if override is not None:
                 roles["conversation"] = override
+                runtime_mode = "override"
     prompt = """You are the conversation intelligence of Sino Founder AI and the Founder's long-term AI partner. Use the supplied relevant evidence to understand the Founder's real purpose, reason with judgment, surface overlooked implications, and offer a better direction or respectful disagreement when useful. Calibrate depth to the question. Respond naturally; do not follow a fixed structure, mechanically restate the request, or turn every answer into a report. Preserve useful Markdown chosen naturally by the model.
 
 Discussion, exploration, correction and agreement are not tasks by default. Decide execution only when the current message semantically authorizes executing an already mature understanding in the preceding context; negation, hypotheticals, questions and deferred consent never authorize execution. If executing, task_candidate.goal/scope/constraints/acceptance_criteria must be derived from the preceding conversation rather than the confirmation phrase. You may propose a Founder action only when Founder input is genuinely required. Return JSON with: response, semantic_intent, conversation_state, task_candidate, tool_intent, founder_action_intent, context_updates. semantic_intent is one of conversation, execute_current_task, stop_current_task, runtime_intervention, founder_decision, founder_authorization, founder_acceptance. The response is the exact Founder-visible natural answer."""
@@ -320,7 +322,8 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
             return generator(context, runtime)
         request = LLMRequest(
             system_prompt=prompt, user_prompt=json.dumps(context, ensure_ascii=False), temperature=.45,
-            max_tokens=1800, response_format="json", metadata={"runtime_role": "sino_conversation", "conversation_core": "llm_first", "answer_grounding": True})
+            max_tokens=1800, response_format="json", metadata={"runtime_role": "sino_conversation", "conversation_core": "llm_first", "answer_grounding": True,
+                "conversation_id": conversation_id, "invocation_source": "founder_conversation", "runtime_mode": runtime_mode})
         from app.founder_ai.conversation_streaming import partial_json_string, publisher_for
         publisher = publisher_for((interaction_context or {}).get("client_message_id"))
         if publisher:

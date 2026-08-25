@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -6,6 +8,7 @@ from app.llm.exceptions import AuthenticationError, ConfigurationError, LLMGatew
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMRequest
 from app.core.model_center.capability_registry import save_routing_preferred
+from app.core.model_center.runtime_chain import eligible_models, invocation_economics, reconcile_model_registry, save_pricing_rule
 
 
 router = APIRouter(prefix="/founder-ai/model-center", tags=["Founder Model Center"])
@@ -81,9 +84,43 @@ class RoutingPreferredIn(BaseModel):
     preferred_fallback: dict | None = None
 
 
+class PricingRuleIn(BaseModel):
+    provider_id: str = Field(min_length=1, max_length=80)
+    model_id: str = Field(min_length=1, max_length=160)
+    effective_from: datetime
+    input_price_per_1m_tokens: float = Field(ge=0)
+    output_price_per_1m_tokens: float = Field(ge=0)
+    currency: str = Field(default="USD", min_length=3, max_length=12)
+    pricing_source: str = Field(min_length=1, max_length=120)
+    pricing_status: str = Field(default="active", pattern="^(active|inactive)$")
+
+
 @router.get("")
 def read_model_center():
     return get_model_center()
+
+
+@router.get("/eligible-models")
+def read_eligible_models(role: str | None = None, capability: str | None = None):
+    return {"role": role, "capability": capability, "models": eligible_models(role=role, capability=capability)}
+
+
+@router.get("/economics")
+def read_model_economics():
+    return invocation_economics()
+
+
+@router.post("/pricing-rules", status_code=201)
+def create_pricing_rule(request: PricingRuleIn):
+    try:
+        return save_pricing_rule(**request.model_dump())
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.post("/registry/reconcile")
+def reconcile_registry():
+    return {"providers_reconciled": reconcile_model_registry()}
 
 
 @router.put("/providers/{provider_key}")
@@ -148,6 +185,8 @@ def update_provider_enabled(provider_key: str, request: ProviderEnabledIn):
         return set_provider_enabled(provider_key, request.enabled)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.delete("/providers/{provider_key}", status_code=204)
@@ -156,6 +195,8 @@ def remove_provider(provider_key: str):
         delete_provider(provider_key)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.post("/providers/{provider_key}/health")

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base
@@ -74,3 +74,45 @@ class AICapabilityConfigDB(Base):
     capability_key: Mapped[str] = mapped_column(String(60), primary_key=True)
     configuration: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP"))
+
+
+class ModelPricingRuleDB(Base):
+    __tablename__ = "model_pricing_rules"
+    __table_args__ = (UniqueConstraint("provider_id", "model_id", "effective_from", name="uq_model_pricing_rule_identity"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    model_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    input_price_per_1m_tokens: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    output_price_per_1m_tokens: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    currency: Mapped[str] = mapped_column(String(12), nullable=False, default="USD", server_default="USD")
+    pricing_source: Mapped[str] = mapped_column(String(120), nullable=False)
+    pricing_status: Mapped[str] = mapped_column(String(24), nullable=False, default="active", server_default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+
+class ModelInvocationDB(Base):
+    __tablename__ = "model_invocations"
+
+    invocation_id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"), index=True)
+    provider_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    model_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    council_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    council_model_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    assignment_role: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    invocation_source: Mapped[str] = mapped_column(String(80), nullable=False, default="runtime", server_default="runtime")
+    runtime_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="default", server_default="default")
+    fallback_from_provider: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    fallback_from_model: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pricing_rule_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_cost: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(12), nullable=True)

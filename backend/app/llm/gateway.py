@@ -1,4 +1,5 @@
 import logging
+import time
 
 from app.core.config import (
     get_deepseek_llm_config,
@@ -139,13 +140,22 @@ class LLMGateway:
             candidates = [center_config]
         failures = []
         for index, candidate in enumerate(candidates):
+            started = time.monotonic()
+            fallback_from = {"provider": candidates[0].provider_key, "model": candidates[0].model} if index else None
             try:
                 response = self._generate(self._provider_from_runtime(candidate), request)
+                invocation_id = self._record_invocation(candidate.provider_key, candidate.model, "completed", request,
+                                                        response=response, latency_ms=response.latency_ms, fallback_from=fallback_from)
+                request.metadata["model_invocation_id"] = invocation_id
                 if index:
                     request.metadata["model_fallback"] = {"fallback_from": {"provider": candidates[0].provider_key, "model": candidates[0].model}, "provider": candidate.provider_key, "model": candidate.model, "reason": failures[-1]["error_type"]}
                     logger.warning("model fallback succeeded role=%s primary=%s/%s fallback=%s/%s reason=%s", role, candidates[0].provider_key, candidates[0].model, candidate.provider_key, candidate.model, failures[-1]["error_type"])
                 return response
             except LLMGatewayError as error:
+                invocation_id = self._record_invocation(candidate.provider_key, candidate.model, "failed", request,
+                                                        latency_ms=(time.monotonic() - started) * 1000,
+                                                        error_code=error.error_type, fallback_from=fallback_from)
+                request.metadata["model_invocation_id"] = invocation_id
                 failures.append({"provider": candidate.provider_key, "model": candidate.model, "error_type": error.error_type})
                 if index + 1 >= len(candidates):
                     request.metadata["model_fallback_failures"] = failures
@@ -164,7 +174,30 @@ class LLMGateway:
             raise ConfigurationError("explicit_model_not_available")
         provider = self._provider_from_runtime(center_config)
         logger.info("llm stream requested: provider=%s", type(provider).__name__)
-        yield from provider.stream(request)
+        started = time.monotonic()
+        try:
+            yield from provider.stream(request)
+            request.metadata["model_invocation_id"] = self._record_invocation(
+                center_config.provider_key, center_config.model, "completed", request,
+                latency_ms=(time.monotonic() - started) * 1000,
+            )
+        except LLMGatewayError as error:
+            request.metadata["model_invocation_id"] = self._record_invocation(
+                center_config.provider_key, center_config.model, "failed", request,
+                latency_ms=(time.monotonic() - started) * 1000, error_code=error.error_type,
+            )
+            raise
+
+    @staticmethod
+    def _record_invocation(provider_id, model_id, status, request, *, response=None, latency_ms=None, error_code=None, fallback_from=None):
+        try:
+            from app.core.model_center.runtime_chain import record_model_invocation
+            return record_model_invocation(provider_id=provider_id, model_id=model_id, status=status,
+                metadata=request.metadata, usage=response.usage if response else None,
+                latency_ms=latency_ms, error_code=error_code, fallback_from=fallback_from)
+        except Exception:
+            logger.exception("model invocation ledger write failed provider=%s model=%s", provider_id, model_id)
+            return None
 
     @staticmethod
     def _provider_from_runtime(center_config) -> LLMProvider:

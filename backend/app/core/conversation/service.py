@@ -37,7 +37,9 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
         raise ConversationBoundaryError("Conversation model provider and model must be selected together")
     if conversation_model_provider:
         from app.core.model_center.service import resolve_runtime_config
-        if resolve_runtime_config(provider_key=conversation_model_provider, model=conversation_model) is None:
+        from app.core.model_center.runtime_chain import eligible_models, identity
+        eligible = {item["identity"] for item in eligible_models(role="sino_conversation")}
+        if identity(conversation_model_provider, conversation_model) not in eligible or resolve_runtime_config(provider_key=conversation_model_provider, model=conversation_model) is None:
             raise ConversationBoundaryError("Conversation model is unavailable")
     hidden = conversation_type in {"SYSTEM_RUN", "VERIFICATION_RUN", "TEMPORARY_CONVERSATION"}
     with SessionLocal() as session:
@@ -69,7 +71,9 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
 
 def set_conversation_model(conversation_id: str, provider_key: str, model: str) -> ConversationDB:
     from app.core.model_center.service import resolve_runtime_config
-    if resolve_runtime_config(provider_key=provider_key, model=model) is None:
+    from app.core.model_center.runtime_chain import eligible_models, identity
+    eligible = {item["identity"] for item in eligible_models(role="sino_conversation")}
+    if identity(provider_key, model) not in eligible or resolve_runtime_config(provider_key=provider_key, model=model) is None:
         raise ConversationBoundaryError("Conversation model is unavailable")
     with SessionLocal() as session:
         record = session.get(ConversationDB, conversation_id)
