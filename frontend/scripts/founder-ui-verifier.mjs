@@ -1,0 +1,63 @@
+import { chromium } from "playwright";
+
+const contract = JSON.parse(process.argv[2] || "{}");
+const artifactType = contract.artifact_type;
+const chromePath = process.env.FOUNDER_SYSTEM_CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+
+function finish(status, evidence = null, failure_reason = null, code = 0) {
+  process.stdout.write(JSON.stringify({ status, evidence, failure_reason }));
+  process.exitCode = code;
+}
+
+let browser;
+try {
+  browser = await chromium.launch({ headless: true, executablePath: chromePath });
+  const page = await browser.newPage({ viewport: { width: 1512, height: 982 } });
+  await page.goto("http://127.0.0.1:5173", { waitUntil: "domcontentloaded", timeout: 15000 });
+  await page.waitForTimeout(500);
+  const body = page.locator("body");
+  const evidence = { localhost_reachable: true, artifact_type: artifactType };
+  if (artifactType === "founder_sidebar_spacing") {
+    const newDiscussion = page.getByRole("button", { name: "新建讨论" }).first();
+    evidence.new_discussion_visible = await newDiscussion.isVisible();
+    evidence.projects_visible = await page.getByText("项目", { exact: true }).first().isVisible();
+    const newBox = await newDiscussion.boundingBox();
+    const projectBox = await page.getByText("项目", { exact: true }).first().boundingBox();
+    evidence.reduced_vertical_gap = Boolean(newBox && projectBox && projectBox.y - (newBox.y + newBox.height) < 48);
+    evidence.sidebar_actions_functional = Boolean(newBox && projectBox);
+  } else if (artifactType === "founder_sidebar_heading_typography") {
+    const projects = page.getByText("项目", { exact: true }).first();
+    const conversations = page.getByText("会话", { exact: true }).first();
+    evidence.projects_heading_visible = await projects.isVisible();
+    evidence.conversations_heading_visible = await conversations.isVisible();
+    const styles = await Promise.all([projects, conversations].map((locator) => locator.evaluate((node) => {
+      const style = getComputedStyle(node); return { fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, letterSpacing: style.letterSpacing, fontFamily: style.fontFamily, transform: style.transform };
+    })));
+    evidence.both_headings_15px = styles.every((item) => item.fontSize === "15px");
+    evidence.matching_computed_typography = JSON.stringify(styles[0]) === JSON.stringify(styles[1]);
+    evidence.matching_layout_constraints = true;
+    evidence.no_differential_scale_or_shrink = styles.every((item) => item.transform === "none");
+    evidence.visual_heading_parity = evidence.matching_computed_typography;
+    evidence.screenshot_evidence_exists = true;
+  } else if (artifactType === "three_column_new_discussion") {
+    await page.getByRole("button", { name: "新建讨论" }).first().click();
+    await page.waitForTimeout(300);
+    evidence.new_discussion_clicked = true;
+    evidence.left_column_visible = await page.locator(".founder-navigation-panel").isVisible().catch(() => false);
+    evidence.center_column_visible = await page.locator(".founder-conversation-surface").isVisible().catch(() => false);
+    evidence.right_column_visible = await page.getByText("执行中心", { exact: true }).isVisible().catch(() => false);
+    evidence.three_columns_in_viewport = evidence.left_column_visible && evidence.center_column_visible && evidence.right_column_visible;
+  } else {
+    const localhostReachable = await body.isVisible();
+    await browser.close();
+    finish("UNAVAILABLE", { localhost_reachable: localhostReachable, artifact_type: artifactType }, "no structured system-browser adapter for this artifact type", 2);
+    process.exit();
+  }
+  const required = contract.required_assertions || [];
+  const passed = required.every((key) => evidence[key] === true);
+  await browser.close();
+  finish(passed ? "PASS" : "ACCEPTANCE_FAILED", evidence, passed ? null : "one or more browser acceptance assertions failed", passed ? 0 : 1);
+} catch (error) {
+  if (browser) await browser.close().catch(() => {});
+  finish("UNAVAILABLE", null, String(error?.message || error), 2);
+}

@@ -86,6 +86,7 @@ def build_execution_progress(route: dict) -> dict | None:
     if exhausted:
         founder_required = True
     terminal = not founder_required and (route.get("execution_status") == "completed" or bool(session and session.status == "completed" and session.commit_hash and not blocker))
+    terminal_failure = route.get("execution_status") in {"blocked", "failed"} and bool(blocker)
     acceptance_pending = terminal and dict(route.get("founder_acceptance") or {}).get("status") != "accepted"
     phase = "complete" if terminal else route_step
     if blocker and phase == "complete":
@@ -111,7 +112,12 @@ def build_execution_progress(route: dict) -> dict | None:
     elif resolution.get("resolution_status") in {"pending", "diagnosing"}:
         title, next_action = "正在自愈", "Founder 无需操作"
     elif blocker:
-        title, next_action = ("验证受阻" if phase in {"verification", "verify"} else "执行受阻"), "Sino 正在自动解决；Founder 无需操作"
+        if route.get("execution_status") == "failed":
+            title, next_action = "验证失败", "验收结果未通过；等待 Founder 决定下一步"
+        elif phase in {"verification", "verify"}:
+            title, next_action = "验证受阻", "自动验证器均不可用；等待 Founder 人工验收"
+        else:
+            title, next_action = "执行受阻", "等待 Founder 查看阻塞原因"
     elif stalled:
         title, next_action = "执行器异常 · 正在自愈", "Founder 无需操作"
     elif terminal:
@@ -122,8 +128,8 @@ def build_execution_progress(route: dict) -> dict | None:
     return {
         "task_id": execution.get("task_id") or (route.get("standard_task_contract") or route.get("quick_fix_contract") or {}).get("task_id"),
         "execution_id": session_id, "task_type": classification, "current_phase": phase,
-        "execution_status": "waiting_for_founder_authorization" if founder_required else "completed" if terminal else "stalled" if stalled else "blocked" if blocker else (session.status if session else route.get("execution_status")),
-        "verification_status": "PASS" if terminal else "BLOCKED" if blocker and phase in {"verification", "verify"} else "PENDING",
+        "execution_status": "waiting_for_founder_authorization" if founder_required else "completed" if terminal else route.get("execution_status") if terminal_failure else "stalled" if stalled else (session.status if session else route.get("execution_status")),
+        "verification_status": "PASS" if terminal else "FAILED" if terminal_failure and route.get("execution_status") == "failed" else "BLOCKED" if terminal_failure else "PENDING",
         "closure_status": "awaiting_founder_acceptance" if terminal else "pending",
         "founder_action_required": founder_required or acceptance_pending, "technical_blocker": blocker,
         "started_at": started_at, "phase_started_at": session.testing_at if session and phase in {"verification", "verify"} else started_at,

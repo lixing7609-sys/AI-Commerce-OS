@@ -14,6 +14,7 @@ EXECUTION_EVENT_NAMES = {
     "codex_finished",
     "testing_started",
     "testing_finished",
+    "verification_fallback_finished",
     "artifact_saved",
     "memory_saved",
     "completed",

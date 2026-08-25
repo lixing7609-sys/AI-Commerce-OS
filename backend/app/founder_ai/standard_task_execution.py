@@ -232,7 +232,8 @@ def _project(conversation_id: str, *, step: str, execution: dict | None = None, 
         if STEPS.index(step) >= STEPS.index(current):
             route["current_step"] = step
             route["progress_log"] = list(dict.fromkeys([*(route.get("progress_log") or []), *STEPS[STEPS.index(current):STEPS.index(step)+1]]))
-        route["execution_status"] = "completed" if step == "complete" else "blocked" if blocker else step
+        terminal_status = str((blocker or {}).get("terminal_status") or "").lower()
+        route["execution_status"] = "completed" if step == "complete" else terminal_status if terminal_status in {"blocked", "failed"} else "blocked" if blocker else step
         route["manual_continue_required"] = False; route["manual_continue_count"] = 0; route["manual_codex_instruction_count"] = 0
         if execution: route["autonomous_execution"] = {**dict(route.get("autonomous_execution") or {}), **execution}
         if blocker: route["technical_blocker"] = blocker
@@ -558,29 +559,68 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
     unrelated_dirty = sorted(dirty_paths - task_owned_paths)
     clean = not task_owned_dirty
     contract = dict(route.get("standard_task_contract") or {})
+    source_goal = str(contract.get("source_goal") or "")
+    verification_only = source_goal.strip().startswith("验证") or any(marker in source_goal for marker in ("不修改任何代码", "只读", "仅验证", "回归验证"))
+    required_verification = list((session.result or {}).get("tests") or [])
+    executor_passed = session.subprocess_exit_status == 0
+    command_evidence = {item.get("verifier"): item for item in (session.result or {}).get("command_verification_evidence") or []}
+    tests_required = any("test" in item.lower() for item in required_verification)
+    build_required = any("build" in item.lower() for item in required_verification)
     browser_evidence = dict((session.result or {}).get("browser_verification") or {})
     visible_gate = None
     if contract.get("visible_artifact_contract", {}).get("required"):
-        from app.founder_ai.visible_artifact import browser_gate
-        visible_gate = browser_gate(browser_evidence, contract=contract.get("visible_artifact_contract"))
-    required_verification = list((session.result or {}).get("tests") or [])
-    executor_passed = session.subprocess_exit_status == 0
-    tests_required = any("test" in item.lower() for item in required_verification)
-    build_required = any("build" in item.lower() for item in required_verification)
+        from app.founder_ai.verification_fallback import (
+            PASS, UNAVAILABLE, evidence, execute_ui_verification_chain, system_chrome_playwright_verifier,
+        )
+        visible_contract = dict(contract.get("visible_artifact_contract") or {})
+
+        def system_browser():
+            return system_chrome_playwright_verifier(repo_root=repo_root, contract=visible_contract)
+
+        def static_acceptance():
+            owned_tests = [path for path in contract.get("implementation_scope") or [] if ".test." in path or path.endswith("_test.py")]
+            if command_evidence.get("targeted_tests", {}).get("status") == "PASS" and owned_tests:
+                return evidence("component_static_acceptance", PASS, detail={"task_owned_component_tests": owned_tests})
+            return evidence("component_static_acceptance", UNAVAILABLE, failure_reason="no passing task-owned component acceptance test")
+
+        chain = execute_ui_verification_chain(
+            preferred=browser_evidence, system_browser=system_browser, static_acceptance=static_acceptance,
+            timeout_seconds=45,
+        )
+        from app.founder_ai.verification_fallback import founder_verification_narration
+        narration = founder_verification_narration(chain)
+        visible_gate = {
+            "status": "PASS" if chain["status"] == "VERIFIED" else chain["status"],
+            "completion_allowed": chain["status"] == "VERIFIED",
+            "evidence": chain["evidence"],
+            "failure_reason": chain.get("failure_reason"),
+        }
+        session.result = {**dict(session.result or {}), "verification_evidence": chain["evidence"], "verification_outcome": chain["status"]}
+        append_event(session, "verification_fallback_finished", status=chain["status"].lower(),
+                     message=f"Verification fallback finished: {chain['status']}",
+                     metadata={"verification": chain, "founder_summary": narration})
+        save_execution_session(session, package)
     closure_evidence = evaluate_standard_verification_evidence(
         implementation_complete=session.status == "completed" and executor_passed,
-        task_owned_tests_pass=executor_passed and (not tests_required or bool(required_verification)),
-        build_pass=executor_passed and (not build_required or bool(required_verification)),
+        task_owned_tests_pass=executor_passed and (not tests_required or command_evidence.get("targeted_tests", {}).get("status") == "PASS"),
+        build_pass=executor_passed and (not build_required or command_evidence.get("build", {}).get("status") == "PASS"),
         visible_artifact_pass=visible_gate is None or visible_gate["completion_allowed"],
-        checkpoint_exists=bool(session.commit_hash),
+        checkpoint_exists=bool(session.commit_hash) or not task_owned_paths or (verification_only and not task_owned_dirty),
         task_owned_files_clean=clean and diff_ok,
     )
     passed = closure_evidence["verification_complete"]
-    verification = {"status": "PASS" if passed else "FAIL", "targeted_tests": list((session.result or {}).get("tests") or []), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": "PASS" if session.commit_hash else "FAIL",
+    verification = {"status": "PASS" if passed else "FAIL", "targeted_tests": command_evidence.get("targeted_tests"), "build": command_evidence.get("build"), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": "NOT_REQUIRED" if verification_only and not task_owned_dirty else "PASS" if session.commit_hash or not task_owned_paths else "FAIL",
                     "working_tree": "task_owned_clean" if clean else "task_owned_dirty", "task_owned_dirty": task_owned_dirty,
                     "unrelated_dirty_preserved": unrelated_dirty, "browser_verification": visible_gate,
                     "closure_evidence": closure_evidence}
-    if verification["status"] != "PASS": return _project(conversation_id, step="verification", blocker={"type": "standard_task_verification_failed", "evidence": verification, "founder_gate_required": False})
+    if verification["status"] != "PASS":
+        outcome = str((visible_gate or {}).get("status") or "BLOCKED")
+        failed = outcome == "FAILED"
+        return _project(conversation_id, step="verification", blocker={
+            "type": "standard_task_acceptance_failed" if failed else "standard_task_verification_blocked",
+            "terminal_status": "FAILED" if failed else "BLOCKED", "evidence": verification,
+            "reason": (visible_gate or {}).get("failure_reason"), "founder_gate_required": False,
+        }, execution={"dispatch_status": "failed" if failed else "blocked", "verification": verification})
     learning = {"status": "recorded", "type": "STANDARD_TASK_IMPLEMENTATION",
                 "rule": f"Keep implementation and verification bounded to {contract.get('target_surface') or 'the confirmed target surface'}."}
     closure = {"closure_status": "awaiting_founder_acceptance", "task_closed": False, "completed_at": _now()}

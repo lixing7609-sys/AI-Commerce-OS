@@ -405,6 +405,7 @@ EVENT_SEMANTICS = {
     "technical_resolution_started": "technical_incident", "technical_resolution_completed": "technical_incident_resolved",
     "technical_resolution_exhausted": "technical_incident_exhausted", "founder_stop_requested": "cancellation_started",
     "cancelled_by_founder": "cancelled", "completed": "execution_completed",
+    "verification_fallback_finished": "verification_terminal",
 }
 
 
@@ -459,7 +460,8 @@ def project_execution_events(conversation_id: str) -> int:
                     grouped.setdefault(semantic, []).append(event)
             from app.founder_ai.conversation_core import summarize_execution_events
             for semantic, events in grouped.items():
-                summary = summarize_execution_events(conversation_id, events)
+                summary = ((events[-1].get("metadata") or {}).get("founder_summary")
+                           if semantic == "verification_terminal" else summarize_execution_events(conversation_id, events))
                 source = "semantic-events:" + ":".join(item["event_id"] for item in events)
                 if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id,
                         source_event_id=source, event_type=semantic, summary=summary, created_at=events[-1].get("timestamp")):

@@ -119,6 +119,8 @@ class FounderExecutionLoop:
         self.on_status("executing")
         try:
             result = self.adapter.execute(package, cwd=cwd)
+            from .verification_fallback import codex_command_evidence
+            command_evidence = codex_command_evidence(result.stdout, exit_code=result.exit_code, required=list(package.verification or []))
             session.result = {
                 "stdout": result.stdout,
                 "stderr": result.stderr,
@@ -126,6 +128,7 @@ class FounderExecutionLoop:
                 "changed_files": result.changed_files,
                 "tests": result.tests,
                 "browser_verification": result.browser_verification,
+                "command_verification_evidence": command_evidence,
             }
             session.subprocess_exit_status = result.exit_code
             session.subprocess_activity_at = datetime.now(timezone.utc).isoformat()

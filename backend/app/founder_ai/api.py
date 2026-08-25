@@ -446,7 +446,8 @@ def get_conversation_workspace(conversation_id: str):
             execution_id = execution.get("execution_session_id")
             task_id = execution.get("task_id")
             record = get_execution_session(execution_id) if execution_id else None
-            if route.get("classification") == "STANDARD_TASK" and record and record[0].status == "completed" and route.get("current_step") != "complete":
+            if (route.get("classification") == "STANDARD_TASK" and record and record[0].status == "completed"
+                    and route.get("current_step") != "complete" and route.get("execution_status") != "failed"):
                 refresh_completed_execution_artifacts(execution_id=execution_id)
                 reconcile_standard_task_execution(conversation_id=conversation_id, task_id=task_id, execution_id=execution_id)
         except (LookupError, ValueError):
