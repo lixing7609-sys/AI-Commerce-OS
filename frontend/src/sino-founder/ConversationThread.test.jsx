@@ -156,6 +156,56 @@ describe("ConversationThread layout", () => {
     expect(container.querySelector('[data-role="assistant"] .sino-message-body ul')).toBeTruthy();
   });
 
+  it("renders Founder and user roles as label-free user messages while preserving the Sino label", () => {
+    const value = snapshot("message-presentation", [
+      { message_id: "f1", role: "founder", content: "Founder 正文" },
+      { message_id: "u1", role: "user", content: "User 正文" },
+      { message_id: "a1", role: "assistant", content: "Sino 正文" },
+    ]);
+    const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const userMessages = container.querySelectorAll('[data-role="founder"]');
+    expect(userMessages).toHaveLength(2);
+    expect([...userMessages].every((item) => item.querySelector(":scope > strong") === null)).toBe(true);
+    expect(screen.queryByText("Founder", { exact: true })).toBeNull();
+    expect(screen.queryByText("User", { exact: true })).toBeNull();
+    expect(container.querySelector('[data-role="assistant"] > strong')?.textContent).toBe("* Sino");
+  });
+
+  it("renders Founder attachments before the text bubble and the timestamp after it", () => {
+    const value = snapshot("founder-attachment", [{ message_id: "f1", role: "founder", content: "请检查截图", created_at: "2026-08-25T08:37:00Z", attachment_refs: [{ attachment_id: "image-1", original_filename: "founder.png" }] }]);
+    const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const article = container.querySelector('[data-role="founder"]');
+    const attachments = article.querySelector('[data-attachment-align="right"]');
+    const bubble = article.querySelector(".sino-message-bubble--founder");
+    const timestamp = article.querySelector(".sino-message-time");
+    expect(attachments.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(bubble.compareDocumentPosition(timestamp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(bubble.contains(attachments)).toBe(false);
+    expect(screen.getByAltText("founder.png")).toBeTruthy();
+  });
+
+  it("renders Sino attachments before the body and the timestamp after it", () => {
+    const value = snapshot("sino-attachment", [{ message_id: "a1", role: "assistant", content: "这是生成结果", created_at: "2026-08-25T08:38:00Z", attachment_refs: [{ attachment_id: "image-2", original_filename: "sino.png" }] }]);
+    const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const article = container.querySelector('[data-role="assistant"]');
+    const attachments = article.querySelector('[data-attachment-align="left"]');
+    const body = article.querySelector(".sino-message-body");
+    const timestamp = article.querySelector(".sino-message-time");
+    expect(attachments.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(body.compareDocumentPosition(timestamp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(body.contains(attachments)).toBe(false);
+    expect(article.querySelector(":scope > strong")?.textContent).toBe("* Sino");
+  });
+
+  it("does not render an empty Founder bubble for an image-only message", () => {
+    const value = snapshot("image-only", [{ message_id: "f1", role: "founder", content: "", created_at: "2026-08-25T08:39:00Z", attachment_refs: [{ attachment_id: "image-3", original_filename: "only.png" }] }]);
+    const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const article = container.querySelector('[data-role="founder"]');
+    expect(article.querySelector('[data-attachment-align="right"]')).toBeTruthy();
+    expect(article.querySelector(".sino-message-bubble--founder")).toBeNull();
+    expect(article.querySelector(".sino-message-time")).toBeTruthy();
+  });
+
   it("renders a source message before its derived Constitution review exactly once", () => {
     const source = { message_id: "constitution-source", role: "founder", content: "# AI Commerce OS Constitution V1\n\n最高层 Constitution 原文" };
     const object = { name: "Intelligence Evolution Layer", layer: "foundation", role: "Foundation" };

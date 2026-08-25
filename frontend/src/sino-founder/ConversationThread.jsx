@@ -28,6 +28,23 @@ function longformTitle(content) {
   return String(content || "").split("\n").map((item) => item.replace(/^#{1,6}\s*/, "").trim()).find(Boolean) || "Founder 长文本";
 }
 
+function formatMessageTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+}
+
+function MessageAttachments({ attachments, conversationId, align }) {
+  if (!attachments?.length) return null;
+  return <div className={`sino-message-images sino-message-images--${align}`} data-attachment-align={align}>{attachments.map((attachment) => <a key={attachment.attachment_id} href={founderImageUrl(conversationId, attachment.attachment_id)} target="_blank" rel="noreferrer"><img src={founderImageUrl(conversationId, attachment.attachment_id)} alt={attachment.original_filename || "对话图片"} /></a>)}</div>;
+}
+
+function MessageTimestamp({ value }) {
+  const label = formatMessageTime(value);
+  return label ? <time className="sino-message-time" dateTime={value}>{label}</time> : null;
+}
+
 export function normalizeDisplayText(value) {
   if (value == null) return "";
   if (typeof value === "string") return value.trim();
@@ -314,7 +331,10 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
       const expanded = longMessageExpansion[item.message_id] ?? !processedSource;
       const cognitiveOutcomeId = item.grounding?.cognitive_work?.cognitive_outcome_id;
       const draft = drafts.find((entry) => entry.source_message_refs?.at?.(-1) === item.message_id || (!entry.source_message_refs?.length && entry.source_cognitive_outcome_ref === cognitiveOutcomeId));
-      return <div key={item.message_id} className="sino-message-group"><article data-role={item.role} className={longform ? "is-longform" : ""}><strong>{item.role === "founder" ? "Founder" : "* Sino"}</strong>{collapsible && !expanded ? <div className="sino-long-source-summary"><b>{longformTitle(item.content)}</b><span>长文本 · {processedSource ? "已进入后续处理" : "已收起"}</span><button type="button" onClick={() => setLongMessageExpansion((current) => ({ ...current, [item.message_id]: true }))}>展开原文</button></div> : <><MessageBody>{item.content}</MessageBody>{collapsible ? <button type="button" className="sino-long-source-toggle" onClick={() => setLongMessageExpansion((current) => ({ ...current, [item.message_id]: false }))}>收起原文</button> : null}</>}{item.attachment_refs?.length ? <div className="sino-message-images">{item.attachment_refs.map((attachment) => <a key={attachment.attachment_id} href={founderImageUrl(conversationId, attachment.attachment_id)} target="_blank" rel="noreferrer"><img src={founderImageUrl(conversationId, attachment.attachment_id)} alt={attachment.original_filename || "Founder 截图"} /></a>)}</div> : null}</article>{draft ? <aside className="sino-cognitive-draft-ref" aria-label="本轮成果"><span>本轮成果</span><strong>{draft.title}</strong><small>{draft.draft_type === "system_definition" ? "System Definition Draft" : draft.draft_type} · {draft.status === "refining" ? "完善中" : draft.status}</small><button type="button" onClick={() => onOpenDraft?.(draft)}>查看草案</button></aside> : null}{run ? (item.message_type === "auto_deliberation" ? <AutoDeliberationConversation run={run} /> : <CouncilConversation run={run} />) : null}{item.message_id === constitutionSourceMessage?.message_id ? constitutionDerivedContent : null}</div>;
+      const isFounderMessage = ["founder", "user"].includes(item.role);
+      const hasText = Boolean(normalizeDisplayText(item.content));
+      const content = collapsible && !expanded ? <div className="sino-long-source-summary"><b>{longformTitle(item.content)}</b><span>长文本 · {processedSource ? "已进入后续处理" : "已收起"}</span><button type="button" onClick={() => setLongMessageExpansion((current) => ({ ...current, [item.message_id]: true }))}>展开原文</button></div> : hasText ? <><MessageBody>{item.content}</MessageBody>{collapsible ? <button type="button" className="sino-long-source-toggle" onClick={() => setLongMessageExpansion((current) => ({ ...current, [item.message_id]: false }))}>收起原文</button> : null}</> : null;
+      return <div key={item.message_id} className="sino-message-group"><article data-role={isFounderMessage ? "founder" : item.role} className={`sino-message-stack sino-message-stack--${isFounderMessage ? "founder" : "assistant"}${longform ? " is-longform" : ""}`}>{isFounderMessage ? <><MessageAttachments attachments={item.attachment_refs} conversationId={conversationId} align="right" />{content ? <div className="sino-message-bubble sino-message-bubble--founder">{content}</div> : null}<MessageTimestamp value={item.created_at} /></> : <><strong>* Sino</strong><MessageAttachments attachments={item.attachment_refs} conversationId={conversationId} align="left" />{content}<MessageTimestamp value={item.created_at} /></>}</article>{draft ? <aside className="sino-cognitive-draft-ref" aria-label="本轮成果"><span>本轮成果</span><strong>{draft.title}</strong><small>{draft.draft_type === "system_definition" ? "System Definition Draft" : draft.draft_type} · {draft.status === "refining" ? "完善中" : draft.status}</small><button type="button" onClick={() => onOpenDraft?.(draft)}>查看草案</button></aside> : null}{run ? (item.message_type === "auto_deliberation" ? <AutoDeliberationConversation run={run} /> : <CouncilConversation run={run} />) : null}{item.message_id === constitutionSourceMessage?.message_id ? constitutionDerivedContent : null}</div>;
     }) : null}{constitutionDerivedContent && !constitutionSourceMessage ? constitutionDerivedContent : null}{!visibleMessages.some((item) => ["council", "auto_deliberation"].includes(item.message_type)) ? (snapshot?.council_runs || []).map((run) => run.discussion_mode === "auto_deliberation" ? <AutoDeliberationConversation key={run.council_run_id} run={run} /> : <CouncilConversation key={run.council_run_id} run={run} />) : null}{streamingReply?.content ? <div className="sino-message-group" data-streaming="true"><article data-role="assistant"><strong>* Sino</strong><MessageBody>{streamingReply.content}</MessageBody></article></div> : replyPending ? <div className="sino-thinking-indicator" role="status" aria-label="Sino 正在思考"><span aria-hidden="true">●</span><span>Sino 正在思考</span></div> : null}</div></div>
     {showReturnToLatest ? <div className="sino-return-latest"><button type="button" onClick={scrollToLatest}>↓ 最新</button></div> : null}
     <div className="sino-conversation-composer-dock"><GlobalSecretaryComposer value={message} onChange={onMessage} onSubmit={submit} busy={busy} healthy={healthy} mode={mode} onModeChange={onModeChange} disabledModes={[]} toolbar={contextControls} toolbarIncludesStatus attachments={pendingAttachments} onAddImages={onAddImages} onRemoveImage={onRemoveImage} /></div>
