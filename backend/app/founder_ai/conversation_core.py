@@ -188,6 +188,8 @@ def _normalize_task_candidate(value) -> dict:
     for field in ("title", "goal", "task_type"):
         if field in normalized and not isinstance(normalized[field], str):
             normalized[field] = str(normalized[field]) if isinstance(normalized[field], (int, float)) else ""
+    if str(normalized.get("goal") or "").strip() and not str(normalized.get("title") or "").strip():
+        normalized["title"] = str(normalized["goal"]).strip()[:120]
     return normalized
 
 
@@ -204,7 +206,7 @@ def task_candidate_is_complete(candidate: dict | None) -> bool:
         return False
     if any(field not in candidate or not isinstance(candidate.get(field), list) for field in required_lists):
         return False
-    return bool(candidate["acceptance_criteria"] and candidate["confirmed_decisions"])
+    return bool(candidate["acceptance_criteria"])
 
 
 def derive_task_candidate_from_conversation(conversation_id: str, *, generator: Callable | None = None) -> dict:

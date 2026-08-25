@@ -575,7 +575,9 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         if request.client_message_id:
             interaction_context["client_message_id"] = request.client_message_id
         from app.founder_ai.conversation_task_interaction import (
-            derive_and_persist_task_candidate, persist_task_understanding, record_runtime_intervention,
+            bind_task_candidate_execution, execution_state_reply, has_explicit_execution_intent,
+            persist_task_candidate, persist_task_understanding, record_runtime_intervention,
+            route_conversation_message,
         )
         current_brain = brain_runtime.snapshot(conversation_id)
         current_route = dict((current_brain.get("discovery") or {}).get("task_complexity_route") or {})
@@ -592,8 +594,40 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
                 image_context_status = "available"
             except (ValueError, LLMGatewayError):
                 image_context_status = "unavailable"
-        from app.founder_ai.conversation_core import persist_conversation_decision, reason_about_message
-        decision = reason_about_message(conversation_id, request.content, interaction_context=interaction_context)
+        from app.founder_ai.conversation_core import build_conversation_context, persist_conversation_decision, reason_about_message, task_candidate_is_complete
+        control = route_conversation_message(conversation_id, request.content, discovery=current_brain.get("discovery") or {})
+        reuse_current_execution = bool(control.get("active_execution") and control["intent"] in {"EXECUTE_CURRENT_TASK", "CONTINUE_CURRENT_TASK"})
+        if control["intent"] in {"EXECUTE_CURRENT_TASK", "CONTINUE_CURRENT_TASK"}:
+            decision = {
+                "response": "", "semantic_intent": "execute_current_task", "conversation_state": "execution_control",
+                "task_candidate": control.get("candidate"), "tool_intent": None, "founder_action_intent": None,
+                "context_updates": {}, "model_decision": False,
+                "context": build_conversation_context(conversation_id, request.content, interaction_context=interaction_context),
+            }
+        elif control["intent"] == "STOP_CURRENT_TASK":
+            decision = {
+                "response": "已请求停止当前任务。", "semantic_intent": "stop_current_task", "conversation_state": "execution_control",
+                "task_candidate": control.get("candidate"), "tool_intent": None, "founder_action_intent": None,
+                "context_updates": {}, "model_decision": False,
+                "context": build_conversation_context(conversation_id, request.content, interaction_context=interaction_context),
+            }
+        elif control.get("control_command"):
+            decision = {
+                "response": "当前没有待执行任务。你希望我执行哪一项？", "semantic_intent": "conversation",
+                "conversation_state": "discussion", "task_candidate": None, "tool_intent": None,
+                "founder_action_intent": None, "context_updates": {}, "model_decision": False,
+                "context": build_conversation_context(conversation_id, request.content, interaction_context=interaction_context),
+            }
+        else:
+            decision = reason_about_message(conversation_id, request.content, interaction_context=interaction_context)
+            if decision["semantic_intent"] == "execute_current_task" and not has_explicit_execution_intent(request.content):
+                decision["semantic_intent"] = "conversation"
+                decision["conversation_state"] = "task_proposal"
+                if any(marker in decision["response"] for marker in ("开始执行", "立即执行", "正在执行", "进入执行")):
+                    decision["response"] = "我理解了这个调整。当前仍在讨论阶段；确认后告诉我“执行”。"
+            elif has_explicit_execution_intent(request.content) and task_candidate_is_complete(decision.get("task_candidate")):
+                decision["semantic_intent"] = "execute_current_task"
+                decision["conversation_state"] = "execution_requested"
         persist_conversation_decision(conversation_id, decision)
         semantic_intent = decision["semantic_intent"]
         explicit_execution = semantic_intent == "execute_current_task"
@@ -610,21 +644,21 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
             route["confirmed_decisions"] = list(task_candidate.get("confirmed_decisions") or [])
         else:
             route = dict(current_route)
-        candidate_ready = bool(task_candidate and not explicit_execution and (
-            (decision.get("context_updates") or {}).get("task_created") is True
-            or decision.get("conversation_state") in {"task_candidate_ready", "task_established"}
-            or semantic_intent == "founder_acceptance"
-        ))
+        candidate_ready = bool(task_candidate and not explicit_execution and task_candidate_is_complete(task_candidate))
         if candidate_ready:
             try:
-                derive_and_persist_task_candidate(conversation_id, source_message_id=founder_message_id)
+                persist_task_candidate(conversation_id, task_candidate, source_message_id=founder_message_id)
             except ValueError:
                 decision["response"] = "当前讨论成果还没有可靠固化为待确认任务；讨论内容已经保留，我不会在任务结构完整前开始执行。"
         awaiting_clarification = bool(explicit_execution and decision.get("founder_action_intent") and
                                       (decision.get("founder_action_intent") or {}).get("type") == "CLARIFICATION")
         is_strategic_architecture = route.get("classification") == "STRATEGIC_TASK" and not route.get("clarification_required")
         is_standard_development = route.get("classification") == "STANDARD_TASK" and route.get("task_type") != "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required")
-        if awaiting_clarification:
+        if reuse_current_execution:
+            route = dict(control.get("route") or current_route)
+            brain_turn = {"handled": True, "intent": "execution_control", "message_type": "execution_update",
+                          "reply": execution_state_reply(route), "brain": brain_runtime.snapshot(conversation_id)}
+        elif awaiting_clarification:
             brain_turn = {"handled": True, "intent": "awaiting_founder_clarification", "message_type": "clarification",
                           "reply": decision["response"],
                           "brain": brain_runtime.snapshot(conversation_id)}
@@ -653,7 +687,10 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
             else:
                 route = dispatch_standard_task(conversation_id=conversation_id, goal=execution_goal,
                                                source_message_id=founder_message_id)
-            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": decision["response"], "brain": brain_runtime.snapshot(conversation_id)}
+            execution_exists = bool((route.get("autonomous_execution") or {}).get("execution_session_id"))
+            brain_turn = {"handled": True, "intent": "founder_explicit_execution" if execution_exists else "task_prepared",
+                          "message_type": "task_started" if execution_exists else "discussion",
+                          "reply": execution_state_reply(route), "brain": brain_runtime.snapshot(conversation_id)}
         elif explicit_execution and route.get("classification") == "QUICK_FIX" and not route.get("clarification_required") and not route.get("founder_gate_required"):
             brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": decision["response"], "brain": current_brain}
         elif not explicit_execution:
@@ -662,12 +699,15 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
             brain_turn = {"handled": True, "intent": "conversation", "message_type": "discussion", "reply": decision["response"], "brain": brain_runtime.snapshot(conversation_id)}
         else:
             brain_turn = {"handled": True, "intent": "conversation", "message_type": "discussion", "reply": decision["response"], "brain": brain_runtime.snapshot(conversation_id)}
-        if explicit_execution and route.get("classification") == "QUICK_FIX" and not route.get("clarification_required") and not route.get("founder_gate_required"):
+        if explicit_execution and not reuse_current_execution and route.get("classification") == "QUICK_FIX" and not route.get("clarification_required") and not route.get("founder_gate_required"):
             from app.founder_ai.quick_fix_execution import dispatch_quick_fix
-            dispatch_quick_fix(conversation_id=conversation_id, goal=execution_goal,
-                               source_message_id=founder_message_id)
-            brain_turn = {"handled": True, "intent": "founder_explicit_execution", "message_type": "task_started", "reply": decision["response"], "brain": brain_runtime.snapshot(conversation_id)}
-        if explicit_execution and route.get("task_type") == "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required"):
+            route = dispatch_quick_fix(conversation_id=conversation_id, goal=execution_goal,
+                                       source_message_id=founder_message_id)
+            execution_exists = bool((route.get("autonomous_execution") or {}).get("execution_session_id"))
+            brain_turn = {"handled": True, "intent": "founder_explicit_execution" if execution_exists else "task_prepared",
+                          "message_type": "task_started" if execution_exists else "discussion",
+                          "reply": execution_state_reply(route), "brain": brain_runtime.snapshot(conversation_id)}
+        if explicit_execution and not reuse_current_execution and route.get("task_type") == "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required"):
             from app.founder_ai.capability_build_loop import run_capability_build_loop
             loop = run_capability_build_loop(conversation_id=conversation_id, goal=execution_goal)
             projected = brain_runtime.attach_autonomous_main_loop(conversation_id, route, loop)
@@ -676,6 +716,15 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
                 "reply": decision["response"],
                 "brain": projected,
             }
+        projected_execution = dict((route.get("autonomous_execution") or {}))
+        if projected_execution.get("execution_session_id") and explicit_execution and not reuse_current_execution:
+            bind_task_candidate_execution(conversation_id, route)
+        if not projected_execution.get("execution_session_id"):
+            if brain_turn.get("message_type") == "task_started":
+                brain_turn["message_type"] = "discussion"
+                brain_turn["intent"] = "task_prepared"
+            if any(marker in str(brain_turn.get("reply") or "") for marker in ("开始执行", "正在执行", "已经执行", "进入执行阶段")):
+                brain_turn["reply"] = "任务已经准备好，等待进入执行。"
         snapshot = secretary.append_message(conversation_id, request.content, intent=brain_turn.get("intent") or request.intent, message_type=brain_turn.get("message_type", "discussion"), reply_override=brain_turn.get("reply") if brain_turn.get("handled") else None, skip_object_recognition=bool(brain_turn.get("handled")), brain_stage=brain_turn.get("brain", {}).get("active_workspace_stage"), attachment_ids=request.attachment_ids, client_message_id=request.client_message_id)
         brain_runtime.sync_message_refs(conversation_id)
         return _candidate_snapshot(snapshot, conversation_id)

@@ -119,6 +119,16 @@ def test_malformed_nested_task_candidate_lists_are_safely_normalized(monkeypatch
     assert decision["task_candidate"]["acceptance_criteria"] == ["视觉一致"]
 
 
+def test_clear_low_risk_candidate_can_be_persisted_without_a_separate_confirmed_decision_list():
+    candidate = core._normalize_task_candidate({
+        "goal": "删除产品矩阵标题栏", "scope": ["Founder Sidebar"],
+        "constraints": ["保留产品列表"], "acceptance_criteria": ["标题栏消失"],
+        "confirmed_decisions": [],
+    })
+    assert candidate["title"] == "删除产品矩阵标题栏"
+    assert core.task_candidate_is_complete(candidate) is True
+
+
 def test_model_roles_resolve_from_configuration_without_provider_binding(monkeypatch):
     calls = []
     configured = {

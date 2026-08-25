@@ -1,4 +1,4 @@
-from app.founder_ai.conversation_task_interaction import _append_projection, _lifecycle_allows_semantic, conversation_understanding_snapshot, has_explicit_execution_intent, has_stop_intent, task_understanding_reply
+from app.founder_ai.conversation_task_interaction import _append_projection, _lifecycle_allows_semantic, conversation_understanding_snapshot, execution_state_reply, has_explicit_execution_intent, has_stop_intent, route_conversation_message, task_understanding_reply
 
 
 def _candidate_factory(monkeypatch, conversation_id="conv-candidate"):
@@ -187,10 +187,52 @@ def test_confirming_a_persisted_understanding_reuses_existing_execution_intent(m
 
 
 def test_only_explicit_execution_language_starts_a_task():
-    for value in ("可以了，执行吧。", "就这样做", "开始执行", "按这个方案做", "执行"):
+    for value in ("可以了，执行吧。", "就这样做", "开始执行", "直接执行", "立即执行", "立刻执行", "按这个方案做", "执行"):
         assert has_explicit_execution_intent(value) is True
     for value in ("这个思路不错", "我理解了", "这个方向可以", "我再想想", "先这样", "继续聊", "为什么"):
         assert has_explicit_execution_intent(value) is False
+
+
+def test_discussion_and_execution_controls_are_routed_before_the_llm():
+    candidate = _mature_candidate()
+    discovery = {"task_candidate": candidate}
+    assert route_conversation_message("conv", "这个 Popover 是不是太宽？", discovery=discovery)["intent"] == "DISCUSSION"
+    assert route_conversation_message("conv", "执行", discovery=discovery)["intent"] == "EXECUTE_CURRENT_TASK"
+    assert route_conversation_message("conv", "立即执行。", discovery=discovery)["intent"] == "EXECUTE_CURRENT_TASK"
+
+
+def test_five_discussion_turns_never_become_execution_controls():
+    discovery = {"task_candidate": _mature_candidate()}
+    for text in ("这个 Popover 是不是太宽？", "缩窄一点会怎样？", "还有别的方案吗？", "为什么？", "继续聊"):
+        assert route_conversation_message("conv", text, discovery=discovery)["intent"] == "DISCUSSION"
+
+
+def test_execute_without_current_task_stays_discussion_and_requests_clarification():
+    result = route_conversation_message("conv", "执行", discovery={})
+    assert result["intent"] == "DISCUSSION"
+    assert result["control_command"] is True
+    assert result["task_id"] is None
+    assert result["execution_id"] is None
+
+
+def test_repeated_execute_controls_reuse_one_active_execution():
+    discovery = {"task_complexity_route": {
+        "execution_status": "executing",
+        "autonomous_execution": {"task_id": "task-1", "execution_session_id": "execution-1", "dispatch_status": "executing"},
+    }}
+    for text in ("执行", "执行", "立即执行"):
+        result = route_conversation_message("conv", text, discovery=discovery)
+        assert result["intent"] == "EXECUTE_CURRENT_TASK"
+        assert result["task_id"] == "task-1"
+        assert result["execution_id"] == "execution-1"
+        assert result["active_execution"] is True
+    assert execution_state_reply(discovery["task_complexity_route"]) == "已开始执行。"
+
+
+def test_execution_narration_requires_real_execution_identity():
+    assert execution_state_reply({"execution_status": "executing", "autonomous_execution": {}}) == "任务已经准备好，等待进入执行。"
+    assert execution_state_reply({"execution_status": "queued", "autonomous_execution": {"execution_session_id": "execution-1"}}) == "任务已进入队列。"
+    assert execution_state_reply({"execution_status": "completed", "autonomous_execution": {"execution_session_id": "execution-1"}}) == "任务已完成并通过验证。"
 
 
 def test_stop_language_uses_the_existing_emergency_stop_intent():

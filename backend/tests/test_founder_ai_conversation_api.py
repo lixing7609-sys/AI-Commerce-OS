@@ -237,3 +237,64 @@ def test_plain_positive_acknowledgement_never_dispatches(monkeypatch):
 
     for value in ["这个思路不错", "我理解了", "这个方向可以", "我再想想", "先这样", "继续聊", "为什么"]:
         assert has_explicit_execution_intent(value) is False
+
+
+def _execution_control_api_mocks(monkeypatch, discovery):
+    from app.founder_ai import conversation_core
+    monkeypatch.setattr(api, "ensure_conversation_runtime_state", lambda cid: {"conversation_id": cid})
+    monkeypatch.setattr(api, "resolve_conversation_id", lambda value: value)
+    monkeypatch.setattr(api.brain_runtime, "snapshot", lambda cid: {"active_workspace_stage": "discussion", "discovery": discovery})
+    monkeypatch.setattr(conversation_core, "build_conversation_context", lambda *args, **kwargs: {"conversation_history": []})
+    monkeypatch.setattr(conversation_core, "persist_conversation_decision", lambda *args: None)
+    monkeypatch.setattr(api.secretary, "persist_founder_message", lambda *args, **kwargs: "message-control")
+    monkeypatch.setattr(api.secretary, "completed_client_exchange", lambda *args, **kwargs: None)
+    monkeypatch.setattr(api.brain_runtime, "sync_message_refs", lambda _cid: None)
+    monkeypatch.setattr(api, "_candidate_snapshot", lambda snapshot, _cid: snapshot)
+    captured = {}
+    monkeypatch.setattr(api.secretary, "append_message", lambda *args, **kwargs: captured.update(kwargs) or {
+        "conversation": {"id": args[0]}, "reply": kwargs.get("reply_override")})
+    return conversation_core, captured
+
+
+def test_exact_execute_dispatches_persisted_candidate_without_llm_reinterpretation(monkeypatch):
+    from app.founder_ai import standard_task_execution, task_complexity_router
+    candidate = {"title": "删除标题栏", "goal": "删除产品矩阵标题栏", "scope": ["Sidebar"],
+                 "constraints": ["保留产品列表"], "acceptance_criteria": ["标题栏消失"],
+                 "confirmed_decisions": [], "task_type": "STANDARD_TASK"}
+    conversation_core, captured = _execution_control_api_mocks(monkeypatch, {"task_candidate": candidate})
+    monkeypatch.setattr(conversation_core, "reason_about_message", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("execution control must bypass the LLM")))
+    route = {"classification": "STANDARD_TASK", "clarification_required": False, "founder_gate_required": False}
+    monkeypatch.setattr(task_complexity_router, "route_task_complexity", lambda *_args, **_kwargs: dict(route))
+    monkeypatch.setattr(standard_task_execution, "begin_standard_task", lambda **kwargs: dict(route))
+    calls = []
+    monkeypatch.setattr(standard_task_execution, "dispatch_standard_task", lambda **kwargs: calls.append(kwargs) or {
+        **route, "execution_status": "queued",
+        "autonomous_execution": {"task_id": "task-1", "execution_session_id": "execution-1", "dispatch_status": "queued"},
+    })
+    result = api.discuss_with_sino("conv-control", api.DiscussionMessageIn(content="立即执行。"))
+    assert calls == [{"conversation_id": "conv-control", "goal": "删除产品矩阵标题栏", "source_message_id": "message-control"}]
+    assert result["reply"] == "任务已进入队列。"
+    assert captured["message_type"] == "task_started"
+
+
+def test_execute_without_current_task_never_claims_execution(monkeypatch):
+    conversation_core, captured = _execution_control_api_mocks(monkeypatch, {})
+    monkeypatch.setattr(conversation_core, "reason_about_message", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("empty execution control must bypass the LLM")))
+    result = api.discuss_with_sino("conv-empty-control", api.DiscussionMessageIn(content="执行"))
+    assert result["reply"] == "当前没有待执行任务。你希望我执行哪一项？"
+    assert captured["message_type"] == "discussion"
+
+
+def test_repeated_execute_reuses_active_execution_and_runtime_narration(monkeypatch):
+    discovery = {"task_candidate": {"goal": "删除产品矩阵标题栏"}, "task_complexity_route": {
+        "classification": "STANDARD_TASK", "execution_status": "executing",
+        "autonomous_execution": {"task_id": "task-1", "execution_session_id": "execution-1", "dispatch_status": "executing"},
+    }}
+    conversation_core, captured = _execution_control_api_mocks(monkeypatch, discovery)
+    monkeypatch.setattr(conversation_core, "reason_about_message", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("active execution control must bypass the LLM")))
+    result = api.discuss_with_sino("conv-active-control", api.DiscussionMessageIn(content="执行"))
+    assert result["reply"] == "已开始执行。"
+    assert captured["message_type"] == "execution_update"

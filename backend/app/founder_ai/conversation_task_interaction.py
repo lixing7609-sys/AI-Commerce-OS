@@ -15,9 +15,102 @@ from app.database.db import SessionLocal
 from app.founder_ai.execution_registry import get_execution_session, save_execution_session
 
 
-EXECUTION_INTENT = re.compile(r"(?:^|[，。,.!！\s])(?:可以了[，,\s]*)?(?:执行吧|开始执行|按(?:这个|此|上述)方案做|就这样做|可以[，,\s]*开始|下一步[，,\s]*做吧|执行)(?:[。.!！\s]|$)", re.I)
+EXECUTION_INTENT = re.compile(r"(?:^|[，。,.!！\s])(?:可以了[，,\s]*)?(?:直接执行|立即执行|立刻执行|确认执行|执行吧|开始执行|按(?:这个|此|上述)方案做|就这样做|可以[，,\s]*开始|下一步[，,\s]*做吧|执行)(?:[。.!！\s]|$)", re.I)
 STOP_INTENT = re.compile(r"(?:停止任务|先停下来|不要继续了|停止执行|先停止)")
 NON_EXECUTION = ("这个思路不错", "我理解了", "有道理", "可以讨论", "这个方向可以", "我再想想", "先这样", "继续聊", "为什么")
+EXECUTE_CONTROLS = {"执行", "立即执行", "立刻执行", "确认执行", "开始执行", "执行吧"}
+CONTINUE_CONTROLS = {"继续", "继续执行"}
+STOP_CONTROLS = {"停止", "暂停", "停止执行", "暂停执行", "停止任务"}
+
+
+def _normalized_control(text: str) -> str:
+    return re.sub(r"[，。,.!！?？\s]+", "", str(text or "")).casefold()
+
+
+def current_conversation_task_context(conversation_id: str, *, discovery: dict | None = None) -> dict:
+    """Return the one persisted candidate/task/execution currently owned by this conversation."""
+    if discovery is None:
+        with SessionLocal() as db:
+            state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+            discovery = dict(state.discovery or {}) if state else {}
+    else:
+        discovery = dict(discovery)
+    route = dict(discovery.get("task_complexity_route") or {})
+    execution = dict(route.get("autonomous_execution") or {})
+    candidate = dict(discovery.get("task_candidate") or {})
+    if not candidate:
+        candidate = dict((discovery.get("conversation_core") or {}).get("task_candidate") or {})
+    status = str(route.get("execution_status") or execution.get("dispatch_status") or "")
+    active = bool(execution.get("execution_session_id") and status not in {"completed", "cancelled", "rejected", "failed"})
+    if candidate.get("status") == "confirmed" and not active:
+        candidate = {}
+    return {
+        "candidate": candidate or None,
+        "route": route,
+        "task_id": execution.get("task_id") or candidate.get("task_id"),
+        "execution_id": execution.get("execution_session_id") or candidate.get("execution_id"),
+        "execution_status": status or None,
+        "active_execution": active,
+    }
+
+
+def bind_task_candidate_execution(conversation_id: str, route: dict) -> None:
+    """Bind a directly-dispatched candidate to its canonical runtime lineage."""
+    execution = dict(route.get("autonomous_execution") or {})
+    if not execution.get("execution_session_id"):
+        return
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            return
+        discovery = dict(state.discovery or {})
+        candidate = dict(discovery.get("task_candidate") or {})
+        if not candidate:
+            return
+        candidate.update({
+            "status": "confirmed", "task_id": execution.get("task_id"),
+            "execution_id": execution.get("execution_session_id"),
+            "execution_package_id": execution.get("execution_package_id"),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        discovery["task_candidate"] = candidate
+        discovery["task_candidates"] = [candidate if item.get("candidate_id") == candidate.get("candidate_id") else item
+                                          for item in discovery.get("task_candidates") or []]
+        discovery["focused_task_id"] = candidate.get("task_id")
+        state.discovery = discovery
+        state.updated_at = datetime.now(timezone.utc)
+        db.commit()
+
+
+def route_conversation_message(conversation_id: str, text: str, *, discovery: dict | None = None) -> dict:
+    """Resolve deterministic execution controls before ordinary LLM conversation reasoning."""
+    control = _normalized_control(text)
+    context = current_conversation_task_context(conversation_id, discovery=discovery)
+    if control in EXECUTE_CONTROLS:
+        return {"intent": "EXECUTE_CURRENT_TASK" if context.get("candidate") or context.get("execution_id") else "DISCUSSION", "control_command": True, **context}
+    if control in CONTINUE_CONTROLS and (context.get("candidate") or context.get("execution_id")):
+        return {"intent": "CONTINUE_CURRENT_TASK", "control_command": True, **context}
+    if control in STOP_CONTROLS and context.get("execution_id"):
+        return {"intent": "STOP_CURRENT_TASK", "control_command": True, **context}
+    return {"intent": "DISCUSSION", "control_command": control in EXECUTE_CONTROLS | CONTINUE_CONTROLS | STOP_CONTROLS, **context}
+
+
+def execution_state_reply(route: dict) -> str:
+    """Project Founder-visible execution narration exclusively from durable runtime identity/state."""
+    execution = dict(route.get("autonomous_execution") or {})
+    if not execution.get("execution_session_id"):
+        return "任务已经准备好，等待进入执行。"
+    status = str(route.get("execution_status") or execution.get("dispatch_status") or "queued")
+    if status in {"queued", "pending", "inspecting"}:
+        return "任务已进入队列。"
+    if status in {"testing", "verifying", "verification"}:
+        return "代码修改完成，正在验证。"
+    if status == "completed":
+        return "任务已完成并通过验证。"
+    if status in {"blocked", "failed", "verification_failed"}:
+        return "任务已停止，执行中心已记录当前阻塞原因。"
+    return "已开始执行。"
 
 
 def has_explicit_execution_intent(text: str) -> bool:
