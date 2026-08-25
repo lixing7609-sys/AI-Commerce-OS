@@ -1706,8 +1706,9 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-resize-handle:hover::after { background: rgba(153, 178, 135, .34); }
 
 .founder-navigation-panel .sino-product-matrix { position: relative; }
-.founder-navigation-panel .sino-product-matrix__panel { position: absolute; z-index: 90; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); box-sizing: border-box; min-width: 0; padding: 10px 8px 8px; overflow: hidden; border: 0; border-radius: inherit; background: var(--workspace-surface-panel); box-shadow: none; font-family: var(--workspace-font); animation: sino-product-matrix-drawer-in .16s ease-out; }
-@keyframes sino-product-matrix-drawer-in { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+.founder-navigation-panel .sino-product-matrix__panel { position: absolute; z-index: 90; right: 0; bottom: calc(100% + 9px); left: 0; display: grid; box-sizing: border-box; min-width: 0; max-height: min(390px, calc(100vh - 150px)); padding: 8px; border: 1px solid rgba(120,137,110,.22); border-radius: 14px; background: rgba(20,24,20,.985); box-shadow: 0 18px 48px rgba(0,0,0,.38); font-family: var(--workspace-font); animation: sino-product-matrix-popover-in .14s ease-out; }
+@keyframes sino-product-matrix-popover-in { from { opacity: 0; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.sino-product-matrix__arrow { position: absolute; right: 20px; bottom: -6px; width: 11px; height: 11px; border-right: 1px solid rgba(120,137,110,.22); border-bottom: 1px solid rgba(120,137,110,.22); background: rgba(20,24,20,.985); transform: rotate(45deg); }
 .sino-product-matrix__panel > header { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 8px 9px; color: var(--workspace-text); }
 .sino-product-matrix__panel > header span { font-size: 13px; font-weight: 600; }
 .sino-product-matrix__panel > header small { color: var(--workspace-text-secondary); font-size: 11px; }

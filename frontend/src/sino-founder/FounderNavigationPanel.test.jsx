@@ -29,7 +29,7 @@ describe("Founder sidebar information architecture", () => {
     expect(document.querySelector(".sino-sidebar__navigation-scroll").contains(trigger)).toBe(false);
     fireEvent.click(trigger);
     const panel = screen.getByRole("dialog", { name: "Sino AI 产品矩阵" });
-    expect(panel.parentElement).toBe(screen.getByLabelText("Founder Navigation"));
+    expect(panel.parentElement).toBe(trigger.parentElement);
     expect(trigger.contains(panel)).toBe(false);
     expect(panel.textContent).toContain("Sino Founder AI");
     expect(panel.textContent).toContain("Sino Operator AI");
@@ -44,20 +44,22 @@ describe("Founder sidebar information architecture", () => {
     expect(screen.queryByRole("dialog", { name: "Sino AI 产品矩阵" })).toBeNull();
   });
 
-  it("renders the Sino AI product matrix as a drawer inside the navigation panel", () => {
+  it("renders the Sino AI product matrix as an anchored popover above its launcher", () => {
     render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} />);
     const sidebar = screen.getByLabelText("Founder Navigation");
     const trigger = screen.getByRole("button", { name: "Sino AI 产品矩阵" });
     fireEvent.click(trigger);
     const panel = screen.getByRole("dialog", { name: "Sino AI 产品矩阵" });
     expect(sidebar.contains(panel)).toBe(true);
-    expect(panel.getAttribute("aria-modal")).toBe("true");
+    expect(panel.getAttribute("aria-modal")).toBeNull();
     expect(panel.classList.contains("sino-product-matrix__panel")).toBe(true);
+    expect(panel.parentElement).toBe(trigger.parentElement);
+    expect(panel.querySelector(".sino-product-matrix__arrow")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "关闭产品矩阵" }));
     expect(screen.queryByRole("dialog", { name: "Sino AI 产品矩阵" })).toBeNull();
   });
 
-  it("closes the product matrix when clicking outside its drawer", () => {
+  it("closes the product matrix when clicking outside its popover", () => {
     render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Sino AI 产品矩阵" }));
     expect(screen.getByRole("dialog", { name: "Sino AI 产品矩阵" })).toBeTruthy();

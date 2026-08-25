@@ -179,19 +179,20 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
     </div>
     <footer>
       <div className="sino-product-matrix">
+        {productMatrixOpen ? <section ref={productMatrixPanelRef} className="sino-product-matrix__panel" role="dialog" aria-label="Sino AI 产品矩阵">
+          <span className="sino-product-matrix__arrow" aria-hidden="true" />
+          <header><span>产品矩阵</span><small>Sino AI</small><button type="button" aria-label="关闭产品矩阵" onClick={() => setProductMatrixOpen(false)}>×</button></header>
+          <div className="sino-product-matrix__list">
+            {SINO_AI_PRODUCTS.map((product) => product.available ? (
+              product.href ? <a key={product.key} href={product.href} className="sino-product-matrix__item"><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span></a>
+                : <button key={product.key} type="button" className="sino-product-matrix__item is-current" onClick={() => { onNavigate("conversation"); setProductMatrixOpen(false); }}><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span><em>当前</em></button>
+            ) : <div key={product.key} className="sino-product-matrix__item is-disabled" aria-disabled="true"><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span><em>筹备中</em></div>)}
+          </div>
+        </section> : null}
         <button ref={productMatrixTriggerRef} type="button" className="sino-product-matrix__launcher sino-sidebar-products sino-sidebar-row" aria-label="Sino AI 产品矩阵" aria-expanded={productMatrixOpen} onClick={() => setProductMatrixOpen((open) => !open)}><ProductMatrixIcon /><span>Sino AI 产品</span></button>
       </div>
       <button type="button" className="sino-sidebar-settings sino-sidebar-row" title="设置" aria-label="设置" onClick={() => onNavigate("settings")} aria-current={active === "settings" ? "page" : undefined}><SettingsIcon /><span>设置</span></button>
     </footer>
-    {productMatrixOpen ? <section ref={productMatrixPanelRef} className="sino-product-matrix__panel" role="dialog" aria-modal="true" aria-label="Sino AI 产品矩阵">
-      <header><span>产品矩阵</span><small>Sino AI</small><button type="button" aria-label="关闭产品矩阵" onClick={() => setProductMatrixOpen(false)}>×</button></header>
-      <div className="sino-product-matrix__list">
-        {SINO_AI_PRODUCTS.map((product) => product.available ? (
-          product.href ? <a key={product.key} href={product.href} className="sino-product-matrix__item"><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span></a>
-            : <button key={product.key} type="button" className="sino-product-matrix__item is-current" onClick={() => { onNavigate("conversation"); setProductMatrixOpen(false); }}><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span><em>当前</em></button>
-        ) : <div key={product.key} className="sino-product-matrix__item is-disabled" aria-disabled="true"><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span><em>筹备中</em></div>)}
-      </div>
-    </section> : null}
     {creatingProject && typeof document !== "undefined" ? createPortal(<form ref={createProjectPopoverRef} className="sino-project-create-popover" role="dialog" aria-label="创建项目" onSubmit={createProject} style={{ top: `${createProjectPopoverPosition.top}px`, left: `${createProjectPopoverPosition.left}px`, "--popover-arrow-top": `${createProjectPopoverPosition.arrowTop}px` }}><span className="sino-project-create-popover__arrow" data-popover-arrow aria-hidden="true" /><p>创建一个项目，把相关聊天、文件和工作集中在一起。</p><input autoFocus aria-label="Project 名称" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="项目名称" /><button type="submit" disabled={!projectName.trim()}>创建项目</button></form>, document.body) : null}
     {resizeHandle}
   </aside>;
