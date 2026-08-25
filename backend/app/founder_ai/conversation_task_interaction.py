@@ -42,8 +42,20 @@ def current_conversation_task_context(conversation_id: str, *, discovery: dict |
         candidate = dict((discovery.get("conversation_core") or {}).get("task_candidate") or {})
     status = str(route.get("execution_status") or execution.get("dispatch_status") or "")
     active = bool(execution.get("execution_session_id") and status not in {"completed", "cancelled", "rejected", "failed"})
-    if candidate.get("status") == "confirmed" and not active:
+    terminal = status in {"completed", "cancelled", "rejected", "failed"}
+    if candidate.get("status") == "confirmed" and candidate.get("task_id") and terminal:
         candidate = {}
+    if not candidate and not active:
+        with SessionLocal() as db:
+            task = db.scalar(select(TaskAssetDB).where(
+                TaskAssetDB.conversation_id == conversation_id,
+                TaskAssetDB.status.notin_(["completed", "failed", "cancelled", "superseded"]),
+            ).order_by(TaskAssetDB.updated_at.desc()).limit(1))
+        if task is not None:
+            candidate = {
+                "title": task.title, "goal": task.description or task.title, "task_id": task.id,
+                "status": task.status, "scope": dict(task.scope or {}), "source": "canonical_task_asset",
+            }
     return {
         "candidate": candidate or None,
         "route": route,
@@ -290,11 +302,29 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
                               if item.get("candidate_id") == candidate_id), {})
         if candidate.get("candidate_id") != candidate_id:
             raise ValueError("task_candidate_not_found")
-        if candidate.get("status") == "confirmed":
-            return {"status": "confirmed", "task_candidate": candidate, "route": discovery.get("task_complexity_route") or {}}
+        existing_route = dict(discovery.get("task_complexity_route") or {})
+        existing_execution = dict(existing_route.get("autonomous_execution") or {})
+        if candidate.get("status") == "confirmed" and existing_execution.get("execution_session_id"):
+            execution_id = existing_execution["execution_session_id"]
+            record = get_execution_session(execution_id)
+            if record is not None and record[0].status == "paused":
+                from app.founder_ai.execution_worker import resume_execution
+                resume_execution(execution_id)
+                existing_execution["dispatch_status"] = "queued"
+                existing_route["execution_status"] = "queued"
+                existing_route["autonomous_execution"] = existing_execution
+                discovery["task_complexity_route"] = existing_route
+                state.discovery = discovery
+                state.updated_at = now
+                db.commit()
+            return {"status": "confirmed", "task_candidate": candidate, "route": existing_route}
         queue = [dict(item) for item in discovery.get("founder_action_queue") or []]
         item = next((entry for entry in queue if entry.get("type") == "TASK_CONFIRMATION" and entry.get("candidate_id") == candidate_id), None)
-        if item is None or item.get("status") != "pending":
+        reconciling_confirmed = action == "confirm" and (
+            candidate.get("status") in {"confirmed", "ready_to_execute"}
+            or (item or {}).get("status") in {"confirmed", "ready_to_execute"}
+        )
+        if not reconciling_confirmed and (item is None or item.get("status") != "pending"):
             raise ValueError("task_confirmation_not_pending")
         if action != "confirm":
             candidate["status"] = "needs_revision" if action == "modify" else "discussion_continues"
@@ -309,12 +339,32 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
         discovery["task_candidate"] = candidate; state.discovery = discovery; state.updated_at = now; db.commit()
     try:
         if dispatch is None:
-            from app.founder_ai.standard_task_execution import begin_standard_task, dispatch_standard_task
             from app.founder_ai.task_complexity_router import route_task_complexity
             route = route_task_complexity(candidate["goal"])
             route["discussion_context"] = [candidate["goal"], str(candidate.get("scope") or "")]
-            begin_standard_task(conversation_id=conversation_id, goal=candidate["goal"], route=route)
-            route = dispatch_standard_task(conversation_id=conversation_id, goal=candidate["goal"])
+            route["confirmed_decisions"] = list(candidate.get("confirmed_decisions") or [])
+            source_message_id = candidate.get("source_message_id")
+            if route.get("classification") == "QUICK_FIX":
+                from app.founder_ai.quick_fix_progression import begin_quick_fix
+                route = begin_quick_fix(route)
+                persist_task_understanding(conversation_id, candidate["goal"], route)
+                with SessionLocal() as db:
+                    state = db.scalar(select(SinoBrainSessionDB).where(
+                        SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+                    discovery = dict(state.discovery or {}); discovery["task_complexity_route"] = route
+                    state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+                from app.founder_ai.quick_fix_execution import dispatch_quick_fix
+                route = dispatch_quick_fix(conversation_id=conversation_id, goal=candidate["goal"],
+                                           source_message_id=source_message_id)
+            elif route.get("classification") == "STANDARD_TASK":
+                from app.founder_ai.standard_task_execution import begin_standard_task, dispatch_standard_task
+                begin_standard_task(conversation_id=conversation_id, goal=candidate["goal"], route=route,
+                                    source_message_id=source_message_id)
+                route = dispatch_standard_task(conversation_id=conversation_id, goal=candidate["goal"],
+                                               source_message_id=source_message_id)
+            elif route.get("classification") == "STRATEGIC_TASK":
+                from app.founder_ai.strategic_task import reconcile_architecture_task
+                route = reconcile_architecture_task(conversation_id=conversation_id, goal=candidate["goal"])
         else:
             route = dispatch(conversation_id, candidate)
     except Exception:
@@ -330,21 +380,23 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
     with SessionLocal() as db:
         state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
         discovery = dict(state.discovery or {}); confirmed = dict(discovery.get("task_candidate") or {})
-        confirmed.update({"status": "confirmed", "task_id": execution.get("task_id"),
+        lifecycle_status = "confirmed" if execution.get("execution_session_id") else "ready_to_execute"
+        confirmed.update({"status": lifecycle_status, "task_id": execution.get("task_id") or confirmed.get("task_id"),
                           "execution_id": execution.get("execution_session_id"),
                           "execution_package_id": execution.get("execution_package_id"), "updated_at": datetime.now(timezone.utc).isoformat()})
         queue = [dict(entry) for entry in discovery.get("founder_action_queue") or []]
         for entry in queue:
             if entry.get("type") == "TASK_CONFIRMATION" and entry.get("candidate_id") == candidate_id:
-                entry.update({"status": "confirmed", "task_id": confirmed.get("task_id"), "resolution": "confirm", "resolved_at": datetime.now(timezone.utc).isoformat()})
+                entry.update({"status": lifecycle_status, "task_id": confirmed.get("task_id"), "resolution": "confirm", "resolved_at": datetime.now(timezone.utc).isoformat()})
         discovery["task_candidate"] = confirmed; discovery["founder_action_queue"] = queue
+        discovery["task_complexity_route"] = route
         discovery["task_candidates"] = [confirmed if item.get("candidate_id") == candidate_id else item
                                           for item in discovery.get("task_candidates") or []]
         discovery["focused_task_id"] = confirmed.get("task_id") or f"candidate:{candidate_id}"
-        discovery["task_projection"] = {"status": "confirmed", "candidate_id": candidate_id, "task_id": confirmed.get("task_id"),
+        discovery["task_projection"] = {"status": lifecycle_status, "candidate_id": candidate_id, "task_id": confirmed.get("task_id"),
                                          "title": confirmed["title"], "founder_action_required": False}
         discovery["founder_action_required"] = False; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
-        return {"status": "confirmed", "task_candidate": confirmed, "route": route}
+        return {"status": lifecycle_status, "task_candidate": confirmed, "route": route}
 
 
 def _message_value(message) -> dict:

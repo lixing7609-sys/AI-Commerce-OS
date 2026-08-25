@@ -105,6 +105,103 @@ def test_task_confirmation_creates_one_task_package_and_is_idempotent(monkeypatc
     assert first["task_candidate"]["execution_package_id"] == "package-1"
 
 
+def test_low_risk_confirmation_dispatches_through_the_resolved_quick_fix_lane(monkeypatch):
+    interaction, _factory = _candidate_factory(monkeypatch)
+    candidate = interaction.persist_task_candidate("conv-candidate", _mature_candidate(), source_message_id="message-1")
+    import app.founder_ai.quick_fix_execution as quick_fix
+    import app.founder_ai.task_complexity_router as router
+    monkeypatch.setattr(router, "route_task_complexity", lambda _goal: {
+        "classification": "QUICK_FIX", "clarification_required": False, "founder_gate_required": False})
+    calls = []
+    monkeypatch.setattr(quick_fix, "dispatch_quick_fix", lambda **kwargs: calls.append(kwargs) or {
+        "classification": "QUICK_FIX", "execution_status": "queued",
+        "autonomous_execution": {"task_id": "task-quick", "execution_session_id": "execution-quick",
+                                 "execution_package_id": "package-quick", "dispatch_status": "queued"},
+    })
+    result = interaction.decide_task_candidate("conv-candidate", candidate["candidate_id"], "confirm")
+    assert calls == [{"conversation_id": "conv-candidate", "goal": candidate["goal"], "source_message_id": "message-1"}]
+    assert result["status"] == "confirmed"
+    assert result["task_candidate"]["task_id"] == "task-quick"
+    assert result["task_candidate"]["execution_id"] == "execution-quick"
+
+
+def test_confirmed_candidate_without_execution_can_be_reconciled_once(monkeypatch):
+    interaction, factory = _candidate_factory(monkeypatch)
+    candidate = interaction.persist_task_candidate("conv-candidate", _mature_candidate())
+    with factory() as db:
+        from app.core.conversation_first.model import SinoBrainSessionDB
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-candidate").one()
+        discovery = dict(state.discovery); current = dict(discovery["task_candidate"]); current["status"] = "confirmed"
+        discovery["task_candidate"] = current; state.discovery = discovery; db.commit()
+    calls = []
+    result = interaction.decide_task_candidate("conv-candidate", candidate["candidate_id"], "confirm", dispatch=lambda *_: calls.append(1) or {
+        "autonomous_execution": {"task_id": "task-1", "execution_session_id": "execution-1", "execution_package_id": "package-1"}})
+    second = interaction.decide_task_candidate("conv-candidate", candidate["candidate_id"], "confirm", dispatch=lambda *_: calls.append(2) or {})
+    assert calls == [1]
+    assert result["task_candidate"]["execution_id"] == second["task_candidate"]["execution_id"] == "execution-1"
+
+
+def test_confirm_resumes_the_same_paused_execution(monkeypatch):
+    interaction, factory = _candidate_factory(monkeypatch)
+    candidate = interaction.persist_task_candidate("conv-candidate", _mature_candidate())
+    with factory() as db:
+        from app.core.conversation_first.model import SinoBrainSessionDB
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-candidate").one()
+        discovery = dict(state.discovery); current = dict(discovery["task_candidate"])
+        current.update({"status": "confirmed", "task_id": "task-1", "execution_id": "execution-1"})
+        discovery["task_candidate"] = current
+        discovery["task_complexity_route"] = {
+            "execution_status": "paused",
+            "autonomous_execution": {"task_id": "task-1", "execution_session_id": "execution-1",
+                                     "execution_package_id": "package-1", "dispatch_status": "paused"},
+        }
+        state.discovery = discovery; db.commit()
+    session = type("Session", (), {"status": "paused"})()
+    monkeypatch.setattr(interaction, "get_execution_session", lambda _execution_id: (session, object()))
+    import app.founder_ai.execution_worker as worker
+    resumed = []
+    monkeypatch.setattr(worker, "resume_execution", lambda execution_id: resumed.append(execution_id))
+    result = interaction.decide_task_candidate("conv-candidate", candidate["candidate_id"], "confirm")
+    assert resumed == ["execution-1"]
+    assert result["route"]["execution_status"] == "queued"
+    assert result["route"]["autonomous_execution"]["dispatch_status"] == "queued"
+
+
+def test_confirm_without_execution_remains_ready_and_resolvable(monkeypatch):
+    interaction, _factory = _candidate_factory(monkeypatch)
+    candidate = interaction.persist_task_candidate("conv-candidate", _mature_candidate())
+    result = interaction.decide_task_candidate("conv-candidate", candidate["candidate_id"], "confirm", dispatch=lambda *_: {
+        "classification": "STANDARD_TASK"})
+    assert result["status"] == "ready_to_execute"
+    current = interaction.current_conversation_task_context("conv-candidate")
+    assert current["candidate"]["candidate_id"] == candidate["candidate_id"]
+    assert current["execution_id"] is None
+
+
+def test_current_task_resolver_recovers_active_canonical_task_asset(monkeypatch):
+    interaction, factory = _candidate_factory(monkeypatch)
+    from app.core.task_asset.model import TaskAssetDB
+    with factory() as db:
+        db.add(TaskAssetDB(id="task-canonical", system_id="founder_ai", conversation_id="conv-candidate",
+                           title="Canonical task", description="Do the current task", scope={}, status="in_progress",
+                           approval_status="approved", execution_status="queued"))
+        db.commit()
+    current = interaction.current_conversation_task_context("conv-candidate", discovery={})
+    assert current["task_id"] == "task-canonical"
+    assert current["candidate"]["source"] == "canonical_task_asset"
+
+
+def test_completed_canonical_task_is_not_recovered_as_current(monkeypatch):
+    interaction, factory = _candidate_factory(monkeypatch)
+    from app.core.task_asset.model import TaskAssetDB
+    with factory() as db:
+        db.add(TaskAssetDB(id="task-complete", system_id="founder_ai", conversation_id="conv-candidate",
+                           title="Done", description="Done", scope={}, status="completed",
+                           approval_status="approved", execution_status="completed"))
+        db.commit()
+    assert interaction.current_conversation_task_context("conv-candidate", discovery={})["candidate"] is None
+
+
 def test_modify_and_continue_discussion_never_dispatch(monkeypatch):
     for action, expected in (("modify", "needs_revision"), ("continue_discussion", "discussion_continues")):
         interaction, _factory = _candidate_factory(monkeypatch, conversation_id=f"conv-{action}")

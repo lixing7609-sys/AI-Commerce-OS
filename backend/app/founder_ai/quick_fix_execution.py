@@ -15,7 +15,7 @@ from app.core.task_asset.model import TaskAssetDB
 from app.core.task_asset.service import create_task_asset
 from app.database.db import SessionLocal
 from app.founder_ai.execution_registry import create_execution_session, get_execution_session, save_execution_session
-from app.founder_ai.execution_worker import enqueue_execution
+from app.founder_ai.execution_worker import enqueue_execution, resume_execution
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 from app.founder_ai.quick_fix_progression import build_quick_fix_contract, project_quick_fix_execution
 from core.conversation_first.model import SinoBrainSessionDB
@@ -111,8 +111,20 @@ def dispatch_quick_fix(*, conversation_id: str, goal: str, source_message_id: st
         target_object=(route.get("quick_fix_contract") or {}).get("visual_target"),
     )
     if getattr(task, "duplicate_reason", None):
-        return _update_projection(conversation_id, execution={"task_id": task.id, "duplicate_of_task_id": task.id,
-            "duplicate_reason": task.duplicate_reason, "dispatch_status": task.execution_status})
+        from app.founder_ai.execution_registry import list_execution_sessions
+        existing_session = next((item for item in sorted(list_execution_sessions(), key=lambda value: str(getattr(value, "updated_at", None) or value.created_at or ""), reverse=True)
+                                 if item.task_asset_id == task.id and item.status not in {"failed", "cancelled"}), None)
+        if existing_session and existing_session.status == "queued":
+            enqueue(existing_session.id)
+        elif existing_session and existing_session.status == "paused":
+            resume_execution(existing_session.id)
+        return _update_projection(conversation_id, execution={
+            "task_id": task.id, "duplicate_of_task_id": task.id, "duplicate_reason": task.duplicate_reason,
+            "dispatch_status": existing_session.status if existing_session else task.execution_status,
+            **({"execution_session_id": existing_session.id,
+                "execution_package_id": existing_session.execution_package_id}
+               if existing_session else {}),
+        })
     contract = build_quick_fix_contract(route, conversation_id=conversation_id, task_id=task.id)
     if contract["inspect_status"] != "ready_for_fix":
         _update_task(task.id, status="blocked", execution_status="clarification_required")
@@ -179,13 +191,15 @@ def reconcile_quick_fix_execution(*, conversation_id: str, task_id: str, executi
 
     diff_check = subprocess.run(["git", "diff", "--check"], cwd=repo_root, capture_output=True, text=True, check=False)
     dirty = subprocess.run(["git", "status", "--porcelain=v1"], cwd=repo_root, capture_output=True, text=True, check=False).stdout.strip()
-    checkpoint_ok = not dirty and bool(session.commit_hash)
+    command_evidence = list((session.result or {}).get("command_verification_evidence") or [])
+    required_checks_pass = all(item.get("status") == "PASS" for item in command_evidence)
     verification = {
-        "status": "PASS" if diff_check.returncode == 0 and checkpoint_ok else "FAIL",
+        "status": "PASS" if diff_check.returncode == 0 and required_checks_pass else "FAIL",
         "targeted_tests": list((session.result or {}).get("tests") or []),
         "git_diff_check": "PASS" if diff_check.returncode == 0 else "FAIL",
-        "checkpoint": "PASS" if checkpoint_ok else "FAIL",
+        "command_evidence": command_evidence,
         "working_tree": "clean" if not dirty else "dirty",
+        "checkpoint_status": "CREATED" if session.commit_hash else "NOT_REQUESTED",
     }
     if verification["status"] != "PASS":
         blocker = {"type": "quick_fix_verification_failed", "evidence": verification, "founder_gate_required": False}
