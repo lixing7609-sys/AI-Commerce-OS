@@ -181,7 +181,6 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
       <div className="sino-product-matrix">
         {productMatrixOpen ? <section ref={productMatrixPanelRef} className="sino-product-matrix__panel" role="dialog" aria-label="Sino AI 产品矩阵">
           <span className="sino-product-matrix__arrow" aria-hidden="true" />
-          <header><span>产品矩阵</span><small>Sino AI</small><button type="button" aria-label="关闭产品矩阵" onClick={() => setProductMatrixOpen(false)}>×</button></header>
           <div className="sino-product-matrix__list">
             {SINO_AI_PRODUCTS.map((product) => product.available ? (
               product.href ? <a key={product.key} href={product.href} className="sino-product-matrix__item"><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span></a>

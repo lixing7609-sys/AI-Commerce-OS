@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FounderNavigationPanel, stableConversationOrder } from "./FounderNavigationPanel.jsx";
 import { bindFounderConversationProject, createFounderProject, deleteFounderProject, updateFounderProject } from "../services/founderAiApi.js";
@@ -55,8 +55,10 @@ describe("Founder sidebar information architecture", () => {
     expect(panel.classList.contains("sino-product-matrix__panel")).toBe(true);
     expect(panel.parentElement).toBe(trigger.parentElement);
     expect(panel.querySelector(".sino-product-matrix__arrow")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "关闭产品矩阵" }));
-    expect(screen.queryByRole("dialog", { name: "Sino AI 产品矩阵" })).toBeNull();
+    expect(panel.querySelector("header")).toBeNull();
+    expect(within(panel).queryByText("产品矩阵")).toBeNull();
+    expect(within(panel).queryByText("Sino AI", { exact: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: "关闭产品矩阵" })).toBeNull();
   });
 
   it("closes the product matrix when clicking outside its popover", () => {
