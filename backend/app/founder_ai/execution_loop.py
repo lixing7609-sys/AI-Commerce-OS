@@ -1,6 +1,6 @@
 """Approved Founder AI execution loop with an injectable Codex adapter."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
@@ -90,6 +90,10 @@ class ExecutionPausedForDelta(RuntimeError):
     """Raised at a safe stage boundary when a Founder delta requested replanning."""
 
 
+class ExecutionScopeBlocked(RuntimeError):
+    """Raised after bounded scope correction cannot produce an in-scope patch."""
+
+
 class FounderExecutionLoop:
     def __init__(self, adapter: CodexAdapter, on_status=None):
         self.adapter = adapter
@@ -119,6 +123,63 @@ class FounderExecutionLoop:
         self.on_status("executing")
         try:
             result = self.adapter.execute(package, cwd=cwd)
+            append_event(session, "codex_finished", status="executing",
+                         message=f"Codex subprocess finished with exit code {result.exit_code}",
+                         metadata={"exit_code": result.exit_code, "codex_run_id": result.codex_run_id,
+                                   "stderr_summary": (result.stderr or "")[-2000:]})
+            if result.exit_code != 0:
+                session.result = {"stdout": result.stdout, "stderr": result.stderr, "exit_code": result.exit_code,
+                                  "changed_files": result.changed_files, "execution_baseline": result.execution_baseline,
+                                  "execution_attribution": result.execution_attribution, "codex_run_id": result.codex_run_id}
+                session.subprocess_exit_status = result.exit_code
+                raise RuntimeError(result.stderr or "Codex execution failed")
+            from .execution_scope import SCOPE_PASS, rollback_execution_owned_patch, verify_execution_scope
+            contract = dict(package.context.get("standard_task_contract") or {})
+            scope_result = verify_execution_scope(contract=contract, attribution=dict(result.execution_attribution or {}))
+            append_event(session, "scope_verification_started", status="scope_verifying", message="Task-owned patch scope verification started")
+            append_event(session, "scope_verification_finished", status="scope_passed" if scope_result["status"] == SCOPE_PASS else "scope_mismatch",
+                         message=f"Task scope verification: {scope_result['status']}", metadata={"scope_verification": scope_result})
+            correction_attempts = []
+            if scope_result["status"] != SCOPE_PASS:
+                patch = str((result.execution_attribution or {}).get("execution_owned_patch") or "")
+                append_event(session, "scope_correction_started", status="correcting_scope",
+                             message="检测到本次代码改动超出了任务范围，正在撤销本次错误改动并重新执行；不会影响任务开始前已有的工作区修改。",
+                             metadata={"scope_verification": scope_result, "attempt": 1})
+                head_changed = bool((result.execution_attribution or {}).get("head_changed"))
+                rolled_back = False if head_changed else rollback_execution_owned_patch(cwd, patch)
+                correction_attempts.append({"attempt": 1, "rollback_succeeded": rolled_back, "scope_verification": scope_result})
+                if not rolled_back:
+                    session.result = {"scope_verification": scope_result, "scope_correction_attempts": correction_attempts}
+                    session.status = "blocked"
+                    reason = "scope mismatch after execution-owned commit; automatic history rewrite is forbidden" if head_changed else "scope mismatch; execution-owned patch could not be safely reversed"
+                    raise ExecutionScopeBlocked(reason)
+                corrected_context = {**dict(package.context), "scope_correction": {
+                    "attempt": 1, "previous_out_of_scope_files": scope_result["out_of_scope_files"],
+                    "instruction": "Start from the original task goal. Modify only the semantic target and bounded implementation scope; do not resume any previous task goal.",
+                    "task_id": session.task_asset_id, "execution_id": session.id,
+                }}
+                append_event(session, "codex_started", status="correcting_scope", message="Isolated Codex scope-correction run started",
+                             metadata={"scope_correction_attempt": 1})
+                result = self.adapter.execute(replace(package, context=corrected_context), cwd=cwd)
+                append_event(session, "codex_finished", status="correcting_scope",
+                             message=f"Scope-correction Codex run finished with exit code {result.exit_code}",
+                             metadata={"exit_code": result.exit_code, "codex_run_id": result.codex_run_id,
+                                       "scope_correction_attempt": 1, "stderr_summary": (result.stderr or "")[-2000:]})
+                if result.exit_code != 0:
+                    session.result = {"stdout": result.stdout, "stderr": result.stderr, "exit_code": result.exit_code,
+                                      "scope_correction_attempts": correction_attempts, "codex_run_id": result.codex_run_id}
+                    session.subprocess_exit_status = result.exit_code
+                    raise RuntimeError(result.stderr or "Codex scope correction failed")
+                scope_result = verify_execution_scope(contract=contract, attribution=dict(result.execution_attribution or {}))
+                correction_attempts[-1]["corrected_scope_verification"] = scope_result
+                append_event(session, "scope_correction_finished", status="scope_passed" if scope_result["status"] == SCOPE_PASS else "scope_mismatch",
+                             message="已重新按正确范围完成修改，正在验证。" if scope_result["status"] == SCOPE_PASS else "范围纠偏后仍发生错位，执行已停止。",
+                             metadata={"scope_verification": scope_result, "attempt": 1})
+                if scope_result["status"] != SCOPE_PASS:
+                    rollback_execution_owned_patch(cwd, str((result.execution_attribution or {}).get("execution_owned_patch") or ""))
+                    session.result = {"scope_verification": scope_result, "scope_correction_attempts": correction_attempts}
+                    session.status = "blocked"
+                    raise ExecutionScopeBlocked("scope mismatch after one automatic correction")
             from .verification_fallback import codex_command_evidence
             command_evidence = codex_command_evidence(result.stdout, exit_code=result.exit_code, required=list(package.verification or []))
             session.result = {
@@ -129,22 +190,21 @@ class FounderExecutionLoop:
                 "tests": result.tests,
                 "browser_verification": result.browser_verification,
                 "command_verification_evidence": command_evidence,
+                "execution_baseline": result.execution_baseline,
+                "execution_attribution": result.execution_attribution,
+                "scope_verification": scope_result,
+                "scope_correction_attempts": correction_attempts,
+                "task_id": session.task_asset_id,
+                "execution_id": session.id,
+                "execution_package_id": session.execution_package_id,
+                "codex_run_id": result.codex_run_id,
             }
             session.subprocess_exit_status = result.exit_code
             session.subprocess_activity_at = datetime.now(timezone.utc).isoformat()
             session.expected_long_running_operation = None
-            append_event(
-                session,
-                "codex_finished",
-                status="executing",
-                message=f"Codex subprocess finished with exit code {result.exit_code}",
-                metadata={"exit_code": result.exit_code, "stderr_summary": (result.stderr or "")[-2000:]},
-            )
             self.on_status("executing")
             if session.status == "paused":
                 raise ExecutionPausedForDelta(session.pause_reason or "Execution paused for Founder delta")
-            if result.exit_code != 0:
-                raise RuntimeError(result.stderr or "Codex execution failed")
             session.status = "testing"
             session.testing_at = datetime.now(timezone.utc).isoformat()
             append_event(session, "testing_started", status="testing", message="Execution verification started", timestamp=session.testing_at)
@@ -176,7 +236,7 @@ class FounderExecutionLoop:
                 append_event(session, "completed", status="completed", message="Execution completed", timestamp=session.completed_at)
                 self.on_status("completed")
             return session, artifact, memory
-        except ExecutionPausedForDelta:
+        except (ExecutionPausedForDelta, ExecutionScopeBlocked):
             raise
         except Exception as error:
             session.status = "failed"

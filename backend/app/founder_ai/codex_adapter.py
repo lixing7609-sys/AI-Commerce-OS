@@ -38,6 +38,9 @@ class CodexExecutionResult:
     tests: list[str] | None = None
     commit_hash: str | None = None
     browser_verification: dict | None = None
+    execution_baseline: dict | None = None
+    execution_attribution: dict | None = None
+    codex_run_id: str | None = None
 
 
 class SubprocessCodexAdapter:
@@ -72,7 +75,15 @@ class SubprocessCodexAdapter:
         evidence_path = cwd / ".founder-execution" / f"visible-artifact-{contract.get('task_id')}.json"
         if contract.get("visible_artifact_contract", {}).get("required") and evidence_path.is_file():
             evidence_path.unlink()
-        before = self._working_tree_snapshot(cwd)
+        from .execution_scope import attribute_execution_changes, capture_execution_baseline, codex_run_id
+        legacy_before = None
+        try:
+            baseline, dirty_contents_before = capture_execution_baseline(cwd)
+        except (OSError, TypeError, subprocess.SubprocessError):
+            # Test adapters and non-Git temporary workspaces still receive a bounded
+            # path-level fallback; production Git workspaces always use the full baseline.
+            legacy_before = self._working_tree_snapshot(cwd)
+            baseline, dirty_contents_before = {"head_sha": self._git_head(cwd), "dirty_files_before": sorted(legacy_before), "capture_mode": "path_fingerprint_fallback"}, {}
         before_head = self._git_head(cwd)
         started = time.monotonic()
         logger.info("Codex started instruction=%s timeout_seconds=%s", instruction_path.name, self.timeout_seconds)
@@ -98,9 +109,15 @@ class SubprocessCodexAdapter:
             process.returncode,
             time.monotonic() - started,
         )
-        after = self._working_tree_snapshot(cwd)
         after_head = self._git_head(cwd)
-        working_tree_changes = {path for path, fingerprint in after.items() if before.get(path) != fingerprint}
+        try:
+            attribution = attribute_execution_changes(cwd, baseline=baseline, dirty_contents_before=dirty_contents_before)
+        except (OSError, TypeError, subprocess.SubprocessError):
+            legacy_after = self._working_tree_snapshot(cwd)
+            legacy_changed = sorted(path for path, fingerprint in legacy_after.items() if (legacy_before or {}).get(path) != fingerprint)
+            attribution = {"task_changed_files": legacy_changed, "execution_owned_patch": "", "execution_owned_patch_fingerprint": None,
+                           "dirty_files_after": sorted(legacy_after), "head_sha_after": after_head, "head_changed": after_head != baseline.get("head_sha")}
+        working_tree_changes = set(attribution["task_changed_files"])
         committed_changes = self._git_diff_names(cwd, before_head, after_head)
         changed = sorted(working_tree_changes | committed_changes)
         commit_hash = after_head if after_head != before_head else None
@@ -112,6 +129,9 @@ class SubprocessCodexAdapter:
             tests=list(package.verification),
             commit_hash=commit_hash,
             browser_verification=self._browser_verification(cwd, package),
+            execution_baseline=baseline,
+            execution_attribution=attribution,
+            codex_run_id=codex_run_id(stderr),
         )
 
     @staticmethod

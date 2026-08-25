@@ -187,8 +187,8 @@ def test_codex_adapter_transports_small_and_large_context_via_stdin(monkeypatch,
     result = SubprocessCodexAdapter(timeout_seconds=10).execute(package, cwd=tmp_path)
 
     assert result.exit_code == 0
-    assert Path(calls[0]["args"][0]).name == "codex"
-    assert calls[0]["args"][1:] == ["exec", "-s", "workspace-write", "-c", 'approval_policy="never"', "-"]
-    assert len(" ".join(calls[0]["args"])) < 128
-    assert len(calls[0]["input"]) > context_size
-    assert "y" * min(context_size, 1000) not in calls[0]["input"]
+    codex_call = next(item for item in calls if Path(item["args"][0]).name == "codex")
+    assert codex_call["args"][1:] == ["exec", "-s", "workspace-write", "-c", 'approval_policy="never"', "-"]
+    assert len(" ".join(codex_call["args"])) < 128
+    assert len(codex_call["input"]) > context_size
+    assert "y" * min(context_size, 1000) not in codex_call["input"]

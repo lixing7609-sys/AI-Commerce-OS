@@ -47,6 +47,9 @@ class TaskPackage:
             f"## Relevant Files\n{json.dumps(self.relevant_files, ensure_ascii=False, indent=2, default=str)}\n\n"
             f"## Constraints\n{json.dumps(self.constraints, ensure_ascii=False, indent=2)}\n\n"
             f"## Acceptance Criteria\n{json.dumps(self.acceptance_criteria, ensure_ascii=False, indent=2)}\n\n"
+            "## Scope Verification\n"
+            "Before running tests or build, compare the task-owned changed files and hunks with the Goal, semantic module boundary, Relevant Files and Constraints. "
+            "If a change belongs to another capability or previous task, stop and return SCOPE_MISMATCH; do not treat passing tests as task completion.\n\n"
             "## Authorization\n"
             + ("Founder approval is granted. " if self.approval_required else "This bounded technical lane does not require a Founder decision. ")
             + "Execute only the frozen scope and run the acceptance criteria. Local reads, scoped patches, tests, builds, localhost verification and a verified local checkpoint are authorized by Sino. External APIs, credentials, cost, production writes, destructive Git, system security changes and unrelated paths are forbidden unless an exact Founder authorization is attached.\n\n"

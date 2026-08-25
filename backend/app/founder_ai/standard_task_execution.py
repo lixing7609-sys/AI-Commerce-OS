@@ -144,6 +144,71 @@ def _founder_sidebar_typography_contract(*, conversation_id: str, goal: str, tas
     }
 
 
+def _runtime_url_typography_contract(*, conversation_id: str, goal: str, task_id: str | None) -> dict:
+    return {
+        "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
+        "task_type": "STANDARD_TASK", "target_surface": "Settings / System / Runtime",
+        "target_route": "Settings → 系统", "target_component": "ModelCenter / RuntimeEnvironmentSettings",
+        "objective": "Reduce only the frontend and backend Runtime URL typography by one existing type level.",
+        "acceptance_criteria": [
+            "The frontend and backend Runtime URL text uses the next smaller existing typography level.",
+            "Other Runtime labels, values, layout and behavior remain unchanged.",
+            "The real Settings → 系统 Runtime modal confirms both URL computed font sizes.",
+        ],
+        "visible_artifact_contract": {
+            "required": True, "artifact_type": "runtime_url_typography",
+            "target_route": "Settings → 系统",
+            "required_assertions": ["runtime_modal_visible", "frontend_url_smaller", "backend_url_smaller", "other_runtime_content_unchanged"],
+        },
+        "constraints": ["typography_only", "preserve_runtime_data", "preserve_runtime_layout", "preserve_health_logic"],
+        "implementation_scope": [
+            "frontend/src/sino-founder/ModelCenter.jsx", "frontend/src/sino-founder/ModelCenter.test.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ],
+        "module_boundary": [],
+        "prohibited_scope": [
+            "capability_repository", "conversation", "model_runtime_backend", "provider", "database", "sidebar", "composer", "other_settings_pages",
+        ],
+        "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
+        "inspect_status": "ready_for_plan",
+        "implementation_plan": [
+            "Inspect RuntimeEnvironmentSettings and the existing Runtime URL selector.",
+            "Adjust only the frontend/backend URL typography using the existing type scale.",
+            "Update only the bounded ModelCenter test if required.",
+            "Run targeted tests, build, git diff --check and real localhost verification.",
+        ],
+        "source_goal": goal,
+    }
+
+
+def _capability_repository_search_contract(*, conversation_id: str, goal: str, task_id: str | None) -> dict:
+    return {
+        "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
+        "task_type": "STANDARD_TASK", "target_surface": "Capability Repository",
+        "objective": "Add local search/filter capability for capability name and Domain.",
+        "search_fields": ["capability_name", "domain"],
+        "acceptance_criteria": [
+            "Search by capability name filters matching capabilities.", "Search by Domain filters matching domains and capabilities.",
+            "Clearing search restores all results.", "No-result query shows a bounded empty state.",
+            "Existing counts, detail navigation, structure and visual style remain intact.",
+        ],
+        "constraints": ["preserve_existing_page_structure", "preserve_existing_visual_style", "preserve_existing_functionality"],
+        "implementation_scope": ["frontend/src/sino-founder/CapabilityWorkspace.jsx", "frontend/src/sino-founder/CapabilityWorkspace.test.jsx", "frontend/src/sino-founder/sino-founder-ai.css"],
+        "module_boundary": [],
+        "prohibited_scope": ["backend_search_service", "architecture_change", "credential_write", "external_write", "production_write"],
+        "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
+        "inspect_status": "ready_for_plan",
+        "implementation_plan": [
+            "Inspect the existing Domain and capability list data already loaded by CapabilityWorkspace.",
+            "Add one local search input in the repository list surface.",
+            "Normalize case and whitespace, then match capability name and Domain metadata.",
+            "Preserve status counts and detail selection; add a no-results state and clear recovery.",
+            "Run targeted frontend tests, build, browser verification and git diff --check.",
+        ],
+        "source_goal": goal,
+    }
+
+
 def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: str | None = None, discussion_context: list[str] | None = None) -> dict:
     from app.founder_ai.technical_resolution import is_local_health_check_goal
     if is_local_health_check_goal(goal):
@@ -157,6 +222,7 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
             "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact"],
             "inspect_status": "ready_for_reuse_lookup", "implementation_plan": [], "source_goal": goal,
         }
+    goal_context = goal.lower()
     combined_context = "\n".join([goal, *(discussion_context or [])]).lower()
     has_new_discussion = ("新建讨论" in combined_context or "draft_discussion" in combined_context)
     has_three_columns = ("3列" in combined_context or "三列" in combined_context) and all(
@@ -164,39 +230,33 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
     )
     if has_new_discussion and has_three_columns:
         return _new_discussion_three_column_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
-    sidebar_spacing = (("左边栏" in combined_context or "左侧栏" in combined_context or "侧边栏" in combined_context)
-                       and "新建讨论" in combined_context and "项目" in combined_context
-                       and any(marker in combined_context for marker in ("距离", "间距", "靠近", "调小")))
+    sidebar_spacing = (("左边栏" in goal_context or "左侧栏" in goal_context or "侧边栏" in goal_context)
+                       and "新建讨论" in goal_context and "项目" in goal_context
+                       and any(marker in goal_context for marker in ("距离", "间距", "靠近", "调小")))
     if sidebar_spacing:
         return _founder_sidebar_spacing_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
-    sidebar_typography = (("左边栏" in combined_context or "左侧栏" in combined_context or "侧边栏" in combined_context)
-                          and "项目" in combined_context and "会话" in combined_context
-                          and any(marker in combined_context for marker in ("字体", "字号", "一样大")))
+    sidebar_typography = (("左边栏" in goal_context or "左侧栏" in goal_context or "侧边栏" in goal_context)
+                          and "项目" in goal_context and "会话" in goal_context
+                          and any(marker in goal_context for marker in ("字体", "字号", "一样大")))
     if sidebar_typography:
         return _founder_sidebar_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+    runtime_url_typography = ("runtime" in goal_context and "url" in goal_context
+                              and ("前端" in goal_context or "后端" in goal_context)
+                              and any(marker in goal_context for marker in ("字体", "字号", "缩小")))
+    if runtime_url_typography:
+        return _runtime_url_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+    capability_search = (("能力仓库" in goal_context or "capability repository" in goal_context)
+                         and any(marker in goal_context for marker in ("搜索", "筛选", "search", "filter")))
+    if capability_search:
+        return _capability_repository_search_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
     return {
         "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
-        "task_type": "STANDARD_TASK", "target_surface": "Capability Repository",
-        "objective": "Add local search/filter capability for capability name and Domain.",
-        "search_fields": ["capability_name", "domain"],
-        "acceptance_criteria": [
-            "Search by capability name filters matching capabilities.", "Search by Domain filters matching domains and capabilities.",
-            "Clearing search restores all results.", "No-result query shows a bounded empty state.",
-            "Existing counts, detail navigation, structure and visual style remain intact.",
-        ],
-        "constraints": ["preserve_existing_page_structure", "preserve_existing_visual_style", "preserve_existing_functionality"],
-        "implementation_scope": ["frontend/src/sino-founder/CapabilityWorkspace.jsx", "frontend/src/sino-founder/CapabilityWorkspace.test.jsx", "frontend/src/sino-founder/sino-founder-ai.css"],
-        "prohibited_scope": ["backend_search_service", "architecture_change", "credential_write", "external_write", "production_write"],
+        "task_type": "STANDARD_TASK", "target_surface": "Unresolved bounded task",
+        "objective": goal, "acceptance_criteria": ["Resolve the exact semantic target before modifying files."],
+        "constraints": ["read_only_inspection_until_scope_resolved"], "implementation_scope": [], "module_boundary": [],
+        "prohibited_scope": ["all_repository_writes_until_scope_resolved"],
         "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
-        "inspect_status": "ready_for_plan",
-        "implementation_plan": [
-            "Inspect the existing Domain and capability list data already loaded by CapabilityWorkspace.",
-            "Add one local search input in the repository list surface.",
-            "Normalize case and whitespace, then match capability name and Domain metadata.",
-            "Preserve status counts and detail selection; add a no-results state and clear recovery.",
-            "Run targeted frontend tests, build, browser verification and git diff --check.",
-        ],
-        "source_goal": goal,
+        "inspect_status": "scope_resolution_required", "implementation_plan": ["Resolve target surface, module boundary and expected artifact before dispatch."], "source_goal": goal,
     }
 
 
@@ -241,6 +301,15 @@ def _project(conversation_id: str, *, step: str, execution: dict | None = None, 
         discovery["task_complexity_route"] = route; discovery["standard_task_contract"] = route.get("standard_task_contract")
         state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
         return route
+
+
+def project_scope_mismatch(*, conversation_id: str, execution_id: str, evidence: dict) -> dict:
+    scope = dict(evidence.get("scope_verification") or {})
+    return _project(conversation_id, step="verification", blocker={
+        "type": "standard_task_scope_mismatch", "terminal_status": "BLOCKED",
+        "reason": "Current execution changed files outside the frozen task scope.",
+        "scope_verification": scope, "founder_gate_required": False,
+    }, execution={"execution_session_id": execution_id, "dispatch_status": "blocked", "scope_verification": scope})
 
 
 def dispatch_standard_task(*, conversation_id: str, goal: str, enqueue=enqueue_execution) -> dict:
@@ -484,6 +553,7 @@ def evaluate_standard_verification_evidence(
     visible_artifact_pass: bool,
     checkpoint_exists: bool,
     task_owned_files_clean: bool,
+    scope_verification_pass: bool = True,
 ) -> dict:
     """Return the canonical closure decision from task-scoped durable evidence."""
     evidence = {
@@ -493,6 +563,7 @@ def evaluate_standard_verification_evidence(
         "visible_artifact_pass": visible_artifact_pass,
         "checkpoint_exists": checkpoint_exists,
         "task_owned_files_clean": task_owned_files_clean,
+        "scope_verification_pass": scope_verification_pass,
     }
     missing = [name for name, passed in evidence.items() if not passed]
     return {**evidence, "verification_complete": not missing, "missing_evidence": missing}
@@ -542,7 +613,10 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
         route = dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
     if route.get("classification") != "STANDARD_TASK" or (route.get("autonomous_execution") or {}).get("execution_session_id") != execution_id:
         return route
-    if session.status != "completed": return _project(conversation_id, step="execution", blocker={"type": "standard_task_execution_failed", "reason": session.failure_reason, "founder_gate_required": False}, execution={"dispatch_status": session.status})
+    if session.status != "completed":
+        if session.status == "blocked" and (session.result or {}).get("scope_verification"):
+            return project_scope_mismatch(conversation_id=conversation_id, execution_id=execution_id, evidence=session.result or {})
+        return _project(conversation_id, step="execution", blocker={"type": "standard_task_execution_failed", "reason": session.failure_reason, "founder_gate_required": False}, execution={"dispatch_status": session.status})
     from app.founder_ai.technical_resolution import is_local_health_check_goal, resolve_local_health_check
     if package and is_local_health_check_goal(package.goal):
         resolution = dict(session.technical_resolution or {})
@@ -607,6 +681,7 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
         visible_artifact_pass=visible_gate is None or visible_gate["completion_allowed"],
         checkpoint_exists=bool(session.commit_hash) or not task_owned_paths or (verification_only and not task_owned_dirty),
         task_owned_files_clean=clean and diff_ok,
+        scope_verification_pass=dict((session.result or {}).get("scope_verification") or {}).get("status") == "PASS",
     )
     passed = closure_evidence["verification_complete"]
     verification = {"status": "PASS" if passed else "FAIL", "targeted_tests": command_evidence.get("targeted_tests"), "build": command_evidence.get("build"), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": "NOT_REQUIRED" if verification_only and not task_owned_dirty else "PASS" if session.commit_hash or not task_owned_paths else "FAIL",

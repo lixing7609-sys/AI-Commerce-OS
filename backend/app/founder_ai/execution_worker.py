@@ -12,7 +12,7 @@ from typing import Callable
 
 from app.core.artifact.service import create_artifact
 from app.founder_ai.codex_adapter import SubprocessCodexAdapter
-from app.founder_ai.execution_loop import ExecutionPausedForDelta, FounderExecutionLoop
+from app.founder_ai.execution_loop import ExecutionPausedForDelta, ExecutionScopeBlocked, FounderExecutionLoop
 from app.founder_ai.execution_events import append_event
 from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions, save_execution_session
 from app.founder_ai.sino_memory import SinoMemoryRepository
@@ -228,6 +228,21 @@ class ExecutionWorker:
         except ExecutionPausedForDelta:
             save_execution_session(session, package)
             logger.info("Execution paused for delta execution_id=%s", execution_id)
+        except ExecutionScopeBlocked as error:
+            session.status = "blocked"
+            session.error_message = str(error)
+            session.failure_reason = str(error)
+            session.recoverable = False
+            session.completed_at = _now().isoformat()
+            append_event(session, "failed", status="blocked", message=f"Execution blocked by task scope mismatch: {error}",
+                         timestamp=session.completed_at, metadata={"failure_reason": str(error), "scope_verification": (session.result or {}).get("scope_verification")})
+            save_execution_session(session, package)
+            self.queue.transition(execution_id, "failed")
+            conversation_id = package.task_asset.conversation_id
+            if conversation_id:
+                from app.founder_ai.standard_task_execution import project_scope_mismatch
+                project_scope_mismatch(conversation_id=conversation_id, execution_id=execution_id, evidence=session.result or {})
+            logger.warning("Founder execution blocked by scope mismatch execution_id=%s", execution_id)
         except Exception as error:
             previous_event = session.events[-1] if session.events else None
             result = session.result or {}
