@@ -1636,6 +1636,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel > footer { margin: 0; padding: 6px 0 0; border-top: 1px solid var(--workspace-divider); background: transparent; }
 .founder-navigation-panel .sino-new-conversation,
 .founder-navigation-panel .sino-sidebar-library,
+.founder-navigation-panel .sino-sidebar-products,
 .founder-navigation-panel .sino-sidebar-settings {
   display: flex;
   align-items: center;
@@ -1655,10 +1656,13 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-new-conversation:hover,
 .founder-navigation-panel .sino-sidebar-library:hover,
 .founder-navigation-panel .sino-sidebar-library.is-active,
+.founder-navigation-panel .sino-sidebar-products:hover,
+.founder-navigation-panel .sino-sidebar-products[aria-expanded="true"],
 .founder-navigation-panel .sino-sidebar-settings:hover,
 .founder-navigation-panel .sino-sidebar-settings[aria-current="page"] { background: var(--workspace-active); color: var(--workspace-text); }
 .founder-navigation-panel .sino-new-conversation svg,
 .founder-navigation-panel .sino-sidebar-library svg,
+.founder-navigation-panel .sino-sidebar-products svg,
 .founder-navigation-panel .sino-sidebar-settings svg,
 .founder-navigation-panel .sino-sidebar-primary-title svg,
 .founder-navigation-panel .sino-sidebar-toggle svg { flex: none; width: var(--workspace-icon-size); height: var(--workspace-icon-size); fill: none; stroke: currentColor; stroke-width: var(--workspace-icon-stroke); }
@@ -1699,6 +1703,22 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-resize-handle { position: absolute; z-index: 18; top: 18px; right: 0; bottom: 18px; width: 10px; cursor: col-resize; touch-action: none; }
 .founder-navigation-resize-handle::after { content: ""; position: absolute; top: 0; right: 2px; bottom: 0; width: 1px; border-radius: 999px; background: transparent; transition: background .14s ease; }
 .founder-navigation-resize-handle:hover::after { background: rgba(153, 178, 135, .34); }
+
+.founder-navigation-panel .sino-product-matrix { position: relative; }
+.sino-product-matrix__panel { position: fixed; z-index: 1000; width: 288px; padding: 8px; border: 1px solid var(--workspace-divider); border-radius: 12px; background: var(--workspace-surface-panel); box-shadow: 0 18px 48px rgba(0,0,0,.38); font-family: var(--workspace-font); }
+.sino-product-matrix__panel > header { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 8px 9px; color: var(--workspace-text); }
+.sino-product-matrix__panel > header span { font-size: 13px; font-weight: 600; }
+.sino-product-matrix__panel > header small { color: var(--workspace-text-secondary); font-size: 11px; }
+.sino-product-matrix__list { display: grid; gap: 2px; }
+.sino-product-matrix__item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 52px; padding: 7px 8px; border: 0; border-radius: var(--workspace-radius-row); background: transparent; color: var(--workspace-text); font-family: var(--workspace-font); text-align: left; text-decoration: none; }
+button.sino-product-matrix__item, a.sino-product-matrix__item { cursor: pointer; }
+button.sino-product-matrix__item:hover, a.sino-product-matrix__item:hover { background: var(--workspace-hover); }
+.sino-product-matrix__mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: rgba(153,178,135,.14); color: #a9be9a; font-size: 12px; font-weight: 700; }
+.sino-product-matrix__item > span:nth-child(2) { display: grid; min-width: 0; gap: 2px; }
+.sino-product-matrix__item b { overflow: hidden; font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
+.sino-product-matrix__item small { color: var(--workspace-text-secondary); font-size: 10px; }
+.sino-product-matrix__item em { color: var(--workspace-text-secondary); font-size: 9px; font-style: normal; }
+.sino-product-matrix__item.is-disabled { opacity: .48; }
 
 .founder-conversation-surface {
   position: relative;

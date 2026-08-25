@@ -20,6 +20,33 @@ describe("Founder sidebar information architecture", () => {
     expect(onNavigate).toHaveBeenCalledWith("settings");
   });
 
+  it("keeps a fixed Sino AI product matrix entry and expands all product destinations", () => {
+    const onNavigate = vi.fn();
+    render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={onNavigate} />);
+    const trigger = screen.getByRole("button", { name: "Sino AI 产品矩阵" });
+    expect(document.querySelector(".sino-sidebar__navigation-scroll").contains(trigger)).toBe(false);
+    fireEvent.click(trigger);
+    const panel = screen.getByRole("dialog", { name: "Sino AI 产品矩阵" });
+    expect(panel.textContent).toContain("Sino Founder AI");
+    expect(panel.textContent).toContain("Sino Operator AI");
+    expect(panel.textContent).toContain("Sino Studio AI");
+    expect(panel.textContent).toContain("Sino Industrial AI");
+    expect(panel.textContent).toContain("Sino Quant AI");
+    expect(panel.querySelector('a[href="/operator"]')).toBeTruthy();
+    expect(panel.querySelector('a[href="/studio"]')).toBeTruthy();
+    expect(panel.querySelectorAll('[aria-disabled="true"]')).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: /Sino Founder AI/ }));
+    expect(onNavigate).toHaveBeenCalledWith("conversation");
+    expect(screen.queryByRole("dialog", { name: "Sino AI 产品矩阵" })).toBeNull();
+  });
+
+  it("closes the Sino AI product matrix with Escape", () => {
+    render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sino AI 产品矩阵" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Sino AI 产品矩阵" })).toBeNull();
+  });
+
   it("renders only the complete navigation and delegates collapse ownership to the workspace shell", () => {
     const onCollapse = vi.fn();
     render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} onNewConversation={vi.fn()} onCollapse={onCollapse} />);

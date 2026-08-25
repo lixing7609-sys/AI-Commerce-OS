@@ -2,7 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { businessAssetName, isDeveloperRecord } from "./assetPresentation.js";
 import { bindFounderConversationProject, createFounderProject, deleteFounderProject, updateFounderProject } from "../services/founderAiApi.js";
-import { ComposeIcon, FolderIcon, FolderPlusIcon, LibraryIcon, SearchIcon, SettingsIcon, SidebarIcon } from "./FounderWorkspaceIcons.jsx";
+import { ComposeIcon, FolderIcon, FolderPlusIcon, LibraryIcon, ProductMatrixIcon, SearchIcon, SettingsIcon, SidebarIcon } from "./FounderWorkspaceIcons.jsx";
+
+const SINO_AI_PRODUCTS = [
+  { key: "founder", name: "Sino Founder AI", description: "战略、决策与系统构建", available: true },
+  { key: "operator", name: "Sino Operator AI", description: "经营执行与业务运营", href: "/operator", available: true },
+  { key: "studio", name: "Sino Studio AI", description: "内容生产与流量运营", href: "/studio", available: true },
+  { key: "industrial", name: "Sino Industrial AI", description: "产业智能", available: false },
+  { key: "quant", name: "Sino Quant AI", description: "量化研究与交易", available: false },
+];
 
 function conversationTimestamp(item) {
   const value = item.updatedAt ?? item.updated_at ?? item.created_at;
@@ -49,6 +57,10 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   const [projectError, setProjectError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const [productMatrixOpen, setProductMatrixOpen] = useState(false);
+  const productMatrixTriggerRef = useRef(null);
+  const productMatrixPanelRef = useRef(null);
+  const [productMatrixPosition, setProductMatrixPosition] = useState({ left: 0, bottom: 0 });
   const createProjectTriggerRef = useRef(null);
   const createProjectPopoverRef = useRef(null);
   const [createProjectPopoverPosition, setCreateProjectPopoverPosition] = useState({ top: 0, left: 0, arrowTop: 0 });
@@ -100,6 +112,26 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
       window.removeEventListener("scroll", position, true);
     };
   }, [creatingProject]);
+  useEffect(() => {
+    if (!productMatrixOpen) return undefined;
+    const position = () => {
+      const bounds = productMatrixTriggerRef.current?.getBoundingClientRect();
+      if (bounds) setProductMatrixPosition({ left: bounds.right + 12, bottom: Math.max(12, window.innerHeight - bounds.bottom) });
+    };
+    const close = (event) => {
+      if (!productMatrixTriggerRef.current?.contains(event.target) && !productMatrixPanelRef.current?.contains(event.target)) setProductMatrixOpen(false);
+    };
+    const escape = (event) => { if (event.key === "Escape") setProductMatrixOpen(false); };
+    position();
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", escape);
+    window.addEventListener("resize", position);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", escape);
+      window.removeEventListener("resize", position);
+    };
+  }, [productMatrixOpen]);
   async function createProject(event) {
     event.preventDefault(); const name = projectName.trim(); if (!name) return;
     try { const project = await createFounderProject({ name, description: null }); await onProjectsChanged?.(); setCreatingProject(false); setProjectName(""); onSelectProject(project.id); }
@@ -152,7 +184,21 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
       </div>
     </section> : null}
     </div>
-    <footer><button type="button" className="sino-sidebar-settings sino-sidebar-row" title="设置" aria-label="设置" onClick={() => onNavigate("settings")} aria-current={active === "settings" ? "page" : undefined}><SettingsIcon /><span>设置</span></button></footer>
+    <footer>
+      <div className="sino-product-matrix">
+        <button ref={productMatrixTriggerRef} type="button" className="sino-sidebar-products sino-sidebar-row" aria-label="Sino AI 产品矩阵" aria-expanded={productMatrixOpen} onClick={() => setProductMatrixOpen((open) => !open)}><ProductMatrixIcon /><span>Sino AI 产品</span></button>
+      </div>
+      <button type="button" className="sino-sidebar-settings sino-sidebar-row" title="设置" aria-label="设置" onClick={() => onNavigate("settings")} aria-current={active === "settings" ? "page" : undefined}><SettingsIcon /><span>设置</span></button>
+    </footer>
+    {productMatrixOpen && typeof document !== "undefined" ? createPortal(<section ref={productMatrixPanelRef} className="sino-product-matrix__panel" role="dialog" aria-label="Sino AI 产品矩阵" style={{ left: productMatrixPosition.left, bottom: productMatrixPosition.bottom }}>
+      <header><span>产品矩阵</span><small>Sino AI</small></header>
+      <div className="sino-product-matrix__list">
+        {SINO_AI_PRODUCTS.map((product) => product.available ? (
+          product.href ? <a key={product.key} href={product.href} className="sino-product-matrix__item"><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span></a>
+            : <button key={product.key} type="button" className="sino-product-matrix__item is-current" onClick={() => { onNavigate("conversation"); setProductMatrixOpen(false); }}><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span><em>当前</em></button>
+        ) : <div key={product.key} className="sino-product-matrix__item is-disabled" aria-disabled="true"><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span><em>筹备中</em></div>)}
+      </div>
+    </section>, document.body) : null}
     {creatingProject && typeof document !== "undefined" ? createPortal(<form ref={createProjectPopoverRef} className="sino-project-create-popover" role="dialog" aria-label="创建项目" onSubmit={createProject} style={{ top: `${createProjectPopoverPosition.top}px`, left: `${createProjectPopoverPosition.left}px`, "--popover-arrow-top": `${createProjectPopoverPosition.arrowTop}px` }}><span className="sino-project-create-popover__arrow" data-popover-arrow aria-hidden="true" /><p>创建一个项目，把相关聊天、文件和工作集中在一起。</p><input autoFocus aria-label="Project 名称" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="项目名称" /><button type="submit" disabled={!projectName.trim()}>创建项目</button></form>, document.body) : null}
     {resizeHandle}
   </aside>;
