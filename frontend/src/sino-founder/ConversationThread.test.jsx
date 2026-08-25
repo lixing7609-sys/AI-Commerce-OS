@@ -248,6 +248,7 @@ describe("ConversationThread layout", () => {
     const log = screen.getByLabelText("讨论记录");
     const readingColumn = container.querySelector(".sino-conversation-reading-column");
     const composer = container.querySelector(".sino-conversation-composer-dock");
+    expect(composer.classList.contains("sino-conversation-composer-layout")).toBe(true);
     expect(thread.contains(log)).toBe(true);
     expect(log.contains(readingColumn)).toBe(true);
     expect(readingColumn.contains(screen.getByText("第一条消息"))).toBe(true);

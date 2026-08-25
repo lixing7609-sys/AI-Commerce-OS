@@ -65,7 +65,9 @@ describe("System Project workspace context", () => {
   it("keeps the Project Composer bound to the selected Project", () => {
     render(<ProjectWorkspace intelligence={{ project_name: "Evolution System", conversation_refs: [] }} onOpenConversation={vi.fn()} message="" onMessage={vi.fn()} onSend={vi.fn()} healthy mode="sino" onModeChange={vi.fn()} />);
     expect(screen.getByLabelText("当前项目").textContent).toContain("Evolution System");
-    expect(screen.getByPlaceholderText("继续和 Sino 讨论 Evolution System……")).toBeTruthy();
+    const composer = screen.getByPlaceholderText("继续和 Sino 讨论 Evolution System……").closest(".sino-conversation-composer-dock");
+    expect(composer).toBeTruthy();
+    expect(composer.classList.contains("sino-conversation-composer-layout")).toBe(true);
   });
 
   it("switches to the lightweight Data Sources shell without inventing backend data", () => {

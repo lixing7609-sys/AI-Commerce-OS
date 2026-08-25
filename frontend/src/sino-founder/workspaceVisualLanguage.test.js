@@ -53,12 +53,21 @@ describe("Founder workspace visual language", () => {
     expect(workspaceCss).not.toContain("padding-left: calc(9px + var(--workspace-nav-icon-box) + var(--workspace-nav-gap))");
   });
 
-  it("gives the Project workspace a wide list and a shorter bottom-bound Composer", () => {
+  it("uses the same Composer sizing contract in Conversation and Project workspaces", () => {
     expect(workspaceCss).toContain("width: min(calc(100% - 48px), 1120px)");
     expect(workspaceCss).toContain(".founder-conversation-surface > .sino-project-workspace > .sino-conversation-composer-dock { position: sticky; bottom: 0;");
-    expect(workspaceCss).toContain(".founder-conversation-surface > .sino-project-workspace .sino-global-composer { min-height: 88px;");
+    expect(workspaceCss).toContain(".founder-conversation-surface .sino-conversation-composer-layout .sino-global-composer {");
+    expect(workspaceCss).toContain(".founder-conversation-surface .sino-conversation-composer-layout { width: 100%; max-width: 1120px; margin-inline: auto;");
+    expect(workspaceCss).not.toContain(".sino-conversation-thread.is-empty .sino-conversation-composer-dock");
     expect(workspaceCss).toContain(".sino-project-conversation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto;");
     expect(workspaceCss).toContain(".sino-project-workspace > header { flex: 0 0 auto; padding-bottom: 6px; border-bottom: 0; }");
     expect(workspaceCss).toContain(".sino-model-selector__trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }");
+  });
+
+  it("aligns Conversation content with the Composer left edge and reserves 50px on the right", () => {
+    expect(workspaceCss).toContain("--conversation-content-max-width: 1120px");
+    expect(workspaceCss).toContain("--conversation-content-right-inset: 50px");
+    expect(workspaceCss).toContain("width: min(calc(100% - var(--conversation-content-right-inset)), calc(var(--conversation-content-max-width) - var(--conversation-content-right-inset)))");
+    expect(workspaceCss).toContain("margin-left: max(0px, calc((100% - var(--conversation-content-max-width)) / 2))");
   });
 });

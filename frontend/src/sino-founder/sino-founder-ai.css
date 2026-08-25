@@ -606,7 +606,6 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-project-sources { flex: 1 1 auto; min-height: 0; padding: 28px 4px; color: var(--workspace-text-secondary); }
 .sino-project-sources p { margin: 0; }
 .sino-project-workspace > .sino-conversation-composer-dock { margin-top: 18px; }
-.sino-project-workspace .sino-global-composer { width: 100%; margin: 0; }
 .sino-home__intro { margin: -18px 0 26px; color: #7f887d; font-size: 14px; }
 .sino-quick-create { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 18px auto 0; }
 .sino-quick-create button { padding: 7px 11px; border: 1px solid #30362e; border-radius: 8px; background: transparent; color: #929b90; font-size: 13px; cursor: pointer; }
@@ -1734,18 +1733,21 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-conversation-surface > .sino-conversation-page { flex: 1 1 0; }
 .founder-conversation-surface > .sino-project-workspace { flex: 1 1 0; width: min(calc(100% - 48px), 1120px); margin-inline: auto; padding: 18px 0 12px; }
 .founder-conversation-surface > .sino-project-workspace > .sino-conversation-composer-dock { position: sticky; bottom: 0; margin-top: 12px; padding: 6px 0 0; background: linear-gradient(to bottom, transparent, var(--workspace-surface-main) 18%); }
-.founder-conversation-surface > .sino-project-workspace .sino-global-composer { min-height: 88px; padding: 8px 14px 7px; border-radius: 22px; }
-.founder-conversation-surface > .sino-project-workspace .sino-composer__input-area > .sino-council-mode { min-height: 24px; margin-bottom: 2px; }
-.founder-conversation-surface > .sino-project-workspace .sino-global-composer > div { min-height: 40px; }
-.founder-conversation-surface > .sino-project-workspace .sino-global-composer textarea { height: 40px !important; min-height: 40px; max-height: 120px; }
-.founder-conversation-surface > .sino-project-workspace .sino-global-composer .sino-composer__toolbar { min-height: 34px; margin-top: 6px; }
-.founder-conversation-surface > .sino-project-workspace .sino-global-composer .sino-composer__toolbar .sino-button { min-height: 34px; height: 34px; }
-.founder-conversation-surface .sino-conversation-thread { --conversation-content-max-width: 768px; --conversation-content-gutter: 20px; font-family: var(--workspace-font); }
+.founder-conversation-surface .sino-conversation-thread { --conversation-content-max-width: 1120px; --conversation-content-gutter: 0px; --conversation-content-right-inset: 50px; font-family: var(--workspace-font); }
 .founder-conversation-surface .sino-conversation-log { padding-top: 18px; }
-.founder-conversation-surface .sino-conversation-reading-column { padding-bottom: 22px; }
+.founder-conversation-surface .sino-conversation-reading-column {
+  width: min(calc(100% - var(--conversation-content-right-inset)), calc(var(--conversation-content-max-width) - var(--conversation-content-right-inset)));
+  max-width: none;
+  margin-left: max(0px, calc((100% - var(--conversation-content-max-width)) / 2));
+  margin-right: auto;
+  padding: 0 0 22px;
+}
 .founder-conversation-surface .sino-conversation-composer-dock { padding-bottom: 6px; background: transparent; }
-.founder-conversation-surface .sino-conversation-thread.is-empty .sino-conversation-composer-dock { padding-bottom: clamp(72px, 14vh, 150px); }
-.founder-conversation-surface .sino-conversation-composer-dock .sino-global-composer {
+.founder-conversation-surface .sino-conversation-composer-layout { width: 100%; max-width: 1120px; margin-inline: auto; }
+.founder-conversation-surface .sino-conversation-composer-layout .sino-global-composer {
+  width: 100%;
+  max-width: none;
+  margin-inline: auto;
   min-height: 96px;
   padding: 11px 14px 9px;
   border-color: var(--workspace-divider);
@@ -1753,7 +1755,12 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   background: #1b1f1b;
   box-shadow: 0 8px 26px rgba(0, 0, 0, .22);
 }
-.founder-conversation-surface .sino-conversation-composer-dock .sino-global-composer:focus-within { border-color: rgba(255, 255, 255, .16); }
+.founder-conversation-surface .sino-conversation-composer-layout .sino-composer__input-area > .sino-council-mode { min-height: 24px; margin-bottom: 2px; }
+.founder-conversation-surface .sino-conversation-composer-layout .sino-global-composer > div { min-height: 40px; }
+.founder-conversation-surface .sino-conversation-composer-layout .sino-global-composer textarea { height: 40px !important; min-height: 40px; max-height: 120px; }
+.founder-conversation-surface .sino-conversation-composer-layout .sino-global-composer .sino-composer__toolbar { min-height: 34px; margin-top: 6px; }
+.founder-conversation-surface .sino-conversation-composer-layout .sino-global-composer .sino-composer__toolbar .sino-button { min-height: 34px; height: 34px; }
+.founder-conversation-surface .sino-conversation-composer-layout .sino-global-composer:focus-within { border-color: rgba(255, 255, 255, .16); }
 .founder-conversation-surface .sino-global-composer textarea { color: var(--workspace-text); font-family: var(--workspace-font); font-size: var(--workspace-body-size); font-weight: 400; line-height: 1.5; }
 .founder-conversation-surface .sino-global-composer textarea::placeholder { color: var(--workspace-text-muted); }
 .founder-conversation-surface .sino-global-composer label,

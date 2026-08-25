@@ -194,7 +194,7 @@ export function ProjectWorkspace({ intelligence, loading, error, onOpenConversat
         <time>{formatTime(item.updated_at)}</time>
       </button>) : <p className="sino-project-conversations__empty">还没有项目讨论</p>}
     </div> : <div className="sino-project-sources" role="region" aria-label={`${intelligence.project_name} 数据源`}><p>暂无项目数据源</p></div>}
-    <div className="sino-conversation-composer-dock"><GlobalSecretaryComposer value={message} onChange={onMessage} onSubmit={onSend} busy={busy} healthy={healthy} mode={mode} onModeChange={onModeChange} placeholder={`继续和 Sino 讨论 ${intelligence.project_name}……`} toolbar={<span className="sino-project-context-lock" aria-label="当前项目"><span aria-hidden="true">📁</span>{intelligence.project_name}</span>} /></div>
+    <div className="sino-conversation-composer-dock sino-conversation-composer-layout"><GlobalSecretaryComposer value={message} onChange={onMessage} onSubmit={onSend} busy={busy} healthy={healthy} mode={mode} onModeChange={onModeChange} placeholder={`继续和 Sino 讨论 ${intelligence.project_name}……`} toolbar={<span className="sino-project-context-lock" aria-label="当前项目"><span aria-hidden="true">📁</span>{intelligence.project_name}</span>} /></div>
   </section>;
 }
 
