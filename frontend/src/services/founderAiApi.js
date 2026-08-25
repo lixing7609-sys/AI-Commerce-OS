@@ -309,6 +309,10 @@ export function getEligibleModels(role, capability) {
   return request(`/founder-ai/model-center/eligible-models?${query}`, undefined, "获取可用模型失败");
 }
 
+export function getSinoAssignedModels() {
+  return request("/founder-ai/model-center/sino-assigned-models", undefined, "获取 Sino AI 已分配模型失败");
+}
+
 export function getRuntimeEnvironmentRegistry() {
   return request("/founder-ai/runtime-environments", undefined, "获取运行环境注册表失败");
 }

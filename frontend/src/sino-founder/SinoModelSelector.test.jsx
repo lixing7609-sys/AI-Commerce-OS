@@ -2,37 +2,46 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SinoModelSelector, configuredConversationModels } from "./SinoModelSelector.jsx";
-import { getEligibleModels, getModelCenter, setFounderConversationModel } from "../services/founderAiApi.js";
+import { getModelCenter, getSinoAssignedModels, setFounderConversationModel } from "../services/founderAiApi.js";
 
-vi.mock("../services/founderAiApi.js", () => ({ getEligibleModels: vi.fn(), getModelCenter: vi.fn(), setFounderConversationModel: vi.fn() }));
+vi.mock("../services/founderAiApi.js", () => ({ getModelCenter: vi.fn(), getSinoAssignedModels: vi.fn(), setFounderConversationModel: vi.fn() }));
 
 const center = {
-  roles: [{ role_key: "sino_conversation", provider_key: "deepseek", model: "deepseek-chat" }],
+  roles: [{ role_key: "sino_conversation", provider_key: "gpt", model: "gpt-5-pro" }],
   providers: [
     { provider_key: "deepseek", display_name: "DeepSeek", configured: true, enabled: true, health_status: "healthy", selected_models: ["deepseek-chat"], available_models: [{ model_id: "deepseek-chat", display_name: "DeepSeek Chat", capability_tags: ["对话"] }] },
     { provider_key: "gpt", display_name: "GPT", configured: true, enabled: true, health_status: "healthy", selected_models: ["gpt-5-pro"], available_models: [{ model_id: "gpt-5-pro", display_name: "GPT 5 Pro", recommended_for: ["Sino 对话"] }] },
     { provider_key: "claude", display_name: "Claude", configured: true, enabled: true, health_status: "unhealthy", selected_models: ["claude-sonnet"], available_models: [{ model_id: "claude-sonnet", display_name: "Claude Sonnet", capability_tags: ["对话"] }] },
   ],
 };
-const eligible = { models: [
-  { identity: "deepseek::deepseek-chat", provider_id: "deepseek", provider_name: "DeepSeek", model_id: "deepseek-chat", display_name: "DeepSeek Chat", health_status: "healthy", availability: "available" },
-  { identity: "gpt::gpt-5-pro", provider_id: "gpt", provider_name: "GPT", model_id: "gpt-5-pro", display_name: "GPT 5 Pro", health_status: "healthy", availability: "available" },
-  { identity: "claude::claude-sonnet", provider_id: "claude", provider_name: "Claude", model_id: "claude-sonnet", display_name: "Claude Sonnet", health_status: "unhealthy", availability: "unavailable" },
+const assigned = { models: [
+  { identity: "gpt::gpt-5-pro", provider_id: "gpt", provider_name: "GPT", model_id: "gpt-5-pro", display_name: "GPT 5 Pro", health_status: "healthy", availability: "available", roles: ["Sino 主对话"] },
+  { identity: "claude::claude-sonnet", provider_id: "claude", provider_name: "Claude", model_id: "claude-sonnet", display_name: "Claude Sonnet", health_status: "healthy", availability: "available", roles: ["Coding"] },
 ] };
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Sino AI Conversation Model selector", () => {
   it("reads configured conversation models without exposing credentials", () => {
-    const models = configuredConversationModels(eligible);
-    expect(models.map((item) => item.model)).toEqual(["deepseek-chat", "gpt-5-pro", "claude-sonnet"]);
+    const models = configuredConversationModels({ models: [...assigned.models, assigned.models[0]] });
+    expect(models.map((item) => item.model)).toEqual(["gpt-5-pro", "claude-sonnet"]);
     expect(JSON.stringify(models)).not.toContain("secret");
-    expect(models.at(-1).available).toBe(false);
+    expect(models.every((item) => item.available)).toBe(true);
+  });
+
+  it("loads the assigned-model query instead of the general eligible pool", async () => {
+    getModelCenter.mockResolvedValue(center);
+    getSinoAssignedModels.mockResolvedValue(assigned);
+    render(<SinoModelSelector conversation={null} />);
+    fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
+    await screen.findByRole("menuitemradio", { name: /GPT 5 Pro/ });
+    expect(getSinoAssignedModels).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("DeepSeek Chat")).toBeNull();
   });
 
   it("shows Sino identity, opens the menu, marks the configured default, and preselects before creation", async () => {
     getModelCenter.mockResolvedValue(center);
-    getEligibleModels.mockResolvedValue(eligible);
+    getSinoAssignedModels.mockResolvedValue(assigned);
     const onPreselect = vi.fn();
     render(<SinoModelSelector conversation={null} onPreselect={onPreselect} />);
     const trigger = screen.getByRole("button", { name: /Sino AI/ });
@@ -44,15 +53,18 @@ describe("Sino AI Conversation Model selector", () => {
     expect(menu.classList.contains("sino-model-selector__menu--floating")).toBe(true);
     expect(menu.parentElement).toBe(document.body);
     expect(menu.querySelector("[data-popover-arrow]")).toBeTruthy();
-    expect(screen.getByRole("menuitemradio", { name: /DeepSeek Chat/ }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("menuitemradio", { name: /Claude Sonnet/ }).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /GPT 5 Pro/ }));
-    expect(onPreselect).toHaveBeenCalledWith(expect.objectContaining({ providerKey: "gpt", model: "gpt-5-pro" }));
+    expect(menu.querySelector("header")).toBeNull();
+    expect(screen.queryByText("Conversation Model", { exact: true })).toBeNull();
+    expect(screen.queryByText("只影响后续对话", { exact: true })).toBeNull();
+    expect(screen.getByRole("menuitemradio", { name: /GPT 5 Pro/ }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByRole("menuitemradio", { name: /DeepSeek Chat/ })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Claude Sonnet/ }));
+    expect(onPreselect).toHaveBeenCalledWith(expect.objectContaining({ providerKey: "claude", model: "claude-sonnet" }));
   });
 
   it("closes the floating popover on outside click and Escape", async () => {
     getModelCenter.mockResolvedValue(center);
-    getEligibleModels.mockResolvedValue(eligible);
+    getSinoAssignedModels.mockResolvedValue(assigned);
     render(<div><SinoModelSelector conversation={null} /><button type="button">Outside</button></div>);
     const trigger = screen.getByRole("button", { name: /Sino AI/ });
     fireEvent.click(trigger);
@@ -67,7 +79,7 @@ describe("Sino AI Conversation Model selector", () => {
 
   it("projects the current Conversation title into the same ellipsized model trigger", async () => {
     getModelCenter.mockResolvedValue(center);
-    getEligibleModels.mockResolvedValue(eligible);
+    getSinoAssignedModels.mockResolvedValue(assigned);
     const title = "供应链金融模式分析与跨区域长期运营策略讨论";
     render(<SinoModelSelector conversation={{ id: "conv-project", title }} />);
     const trigger = screen.getByRole("button", { name: `${title} · 选择模型` });
@@ -79,18 +91,18 @@ describe("Sino AI Conversation Model selector", () => {
 
   it("persists an existing conversation override and safely retains the previous model on failure", async () => {
     getModelCenter.mockResolvedValue(center);
-    getEligibleModels.mockResolvedValue(eligible);
-    setFounderConversationModel.mockResolvedValue({ id: "conv-1", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro" });
+    getSinoAssignedModels.mockResolvedValue(assigned);
+    setFounderConversationModel.mockResolvedValue({ id: "conv-1", conversation_model_provider: "claude", conversation_model: "claude-sonnet" });
     const changed = vi.fn();
     const { rerender } = render(<SinoModelSelector conversation={{ id: "conv-1" }} onConversationChanged={changed} />);
     fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
-    fireEvent.click(await screen.findByRole("menuitemradio", { name: /GPT 5 Pro/ }));
-    await waitFor(() => expect(changed).toHaveBeenCalledWith(expect.objectContaining({ conversation_model: "gpt-5-pro" })));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /Claude Sonnet/ }));
+    await waitFor(() => expect(changed).toHaveBeenCalledWith(expect.objectContaining({ conversation_model: "claude-sonnet" })));
 
     setFounderConversationModel.mockRejectedValue(new Error("raw secret exception"));
-    rerender(<SinoModelSelector conversation={{ id: "conv-1", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro" }} onConversationChanged={changed} />);
+    rerender(<SinoModelSelector conversation={{ id: "conv-1", conversation_model_provider: "claude", conversation_model: "claude-sonnet" }} onConversationChanged={changed} />);
     fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
-    fireEvent.click(await screen.findByRole("menuitemradio", { name: /DeepSeek Chat/ }));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /GPT 5 Pro/ }));
     await screen.findByText("模型切换失败，已保持原模型。");
     expect(screen.queryByText(/raw secret/)).toBeNull();
   });

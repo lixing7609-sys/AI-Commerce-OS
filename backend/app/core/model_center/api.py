@@ -8,7 +8,7 @@ from app.llm.exceptions import AuthenticationError, ConfigurationError, LLMGatew
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMRequest
 from app.core.model_center.capability_registry import save_routing_preferred
-from app.core.model_center.runtime_chain import eligible_models, invocation_economics, reconcile_model_registry, save_pricing_rule
+from app.core.model_center.runtime_chain import eligible_models, invocation_economics, reconcile_model_registry, save_pricing_rule, sino_assigned_models
 
 
 router = APIRouter(prefix="/founder-ai/model-center", tags=["Founder Model Center"])
@@ -103,6 +103,11 @@ def read_model_center():
 @router.get("/eligible-models")
 def read_eligible_models(role: str | None = None, capability: str | None = None):
     return {"role": role, "capability": capability, "models": eligible_models(role=role, capability=capability)}
+
+
+@router.get("/sino-assigned-models")
+def read_sino_assigned_models():
+    return {"models": sino_assigned_models()}
 
 
 @router.get("/economics")

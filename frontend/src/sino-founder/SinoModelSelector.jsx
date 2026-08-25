@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { getEligibleModels, getModelCenter, setFounderConversationModel } from "../services/founderAiApi.js";
+import { getModelCenter, getSinoAssignedModels, setFounderConversationModel } from "../services/founderAiApi.js";
 
-function configuredConversationModels(eligible) {
-  return (eligible?.models || []).map((model) => ({
+function configuredConversationModels(assigned) {
+  return [...new Map((assigned?.models || []).map((model) => [model.identity, {
     key: model.identity,
     providerKey: model.provider_id,
     providerName: model.provider_name,
     model: model.model_id,
     displayName: model.display_name,
     available: model.health_status !== "unhealthy" && model.availability !== "unavailable",
-  }));
+  }])).values()];
 }
 
 export function SinoModelSelector({ conversation, preselected, onPreselect, onConversationChanged }) {
@@ -18,13 +18,13 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
   const [center, setCenter] = useState(null);
-  const [eligible, setEligible] = useState(null);
+  const [assigned, setAssigned] = useState(null);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ top: 0, left: 0, arrowLeft: 0 });
 
-  useEffect(() => { let live = true; Promise.all([getModelCenter(), getEligibleModels("sino_conversation")]).then(([value, candidates]) => { if (live) { setCenter(value); setEligible(candidates); } }).catch(() => { if (live) { setCenter({ roles: [] }); setEligible({ models: [] }); } }); return () => { live = false; }; }, []);
+  useEffect(() => { let live = true; Promise.all([getModelCenter(), getSinoAssignedModels()]).then(([value, candidates]) => { if (live) { setCenter(value); setAssigned(candidates); } }).catch(() => { if (live) { setCenter({ roles: [] }); setAssigned({ models: [] }); } }); return () => { live = false; }; }, []);
   useEffect(() => {
     if (!open) return undefined;
     const position = () => {
@@ -52,7 +52,7 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
     };
   }, [open]);
 
-  const models = useMemo(() => configuredConversationModels(eligible), [eligible]);
+  const models = useMemo(() => configuredConversationModels(assigned), [assigned]);
   const defaultRole = center?.roles?.find((item) => item.role_key === "sino_conversation");
   const defaultKey = defaultRole?.provider_key && defaultRole?.model ? `${defaultRole.provider_key}::${defaultRole.model}` : "";
   const selectedKey = conversation?.conversation_model_provider && conversation?.conversation_model
@@ -97,7 +97,6 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
     </button>
     {open && typeof document !== "undefined" ? createPortal(<div ref={menuRef} className="sino-model-selector__menu sino-model-selector__menu--floating" role="menu" aria-label="Conversation Models" style={{ top: `${popoverPosition.top}px`, left: `${popoverPosition.left}px`, "--popover-arrow-left": `${popoverPosition.arrowLeft}px` }}>
       <span className="sino-model-selector__arrow" data-popover-arrow aria-hidden="true" />
-      <header><strong>Conversation Model</strong><small>只影响后续对话</small></header>
       {models.map((option) => <button type="button" role="menuitemradio" aria-checked={option.key === selectedKey} key={option.key} disabled={!option.available || saving} onClick={() => selectModel(option)}>
         <span><strong>{option.displayName}</strong><small>{option.providerName} · {option.model}</small></span>
         <i>{option.key === selectedKey ? "✓" : option.available ? "" : "不可用"}</i>

@@ -84,6 +84,77 @@ def eligible_models(role: str | None = None, capability: str | None = None, *, i
     return result
 
 
+def sino_assigned_models(session=None) -> list[dict]:
+    """Return the healthy, eligible models referenced by active Sino AI assignments."""
+    owns = session is None
+    session = session or _session_factory()()
+    try:
+        connected = {item["identity"]: item for item in connected_model_registry(session=session)}
+        eligible_by_role = {
+            role: {item["identity"] for item in eligible_models(role=role, include_unhealthy=False, session=session)}
+            for role in ("sino_conversation", "deep_thinking", "vision", "code_execution", "multi_model_discussion")
+        }
+        configs = {item.capability_key: dict(item.configuration or {}) for item in session.scalars(select(AICapabilityConfigDB))}
+        references: list[tuple[dict, str, str]] = []
+
+        def ref_identity(ref: dict | None) -> str | None:
+            if not ref:
+                return None
+            provider = ref.get("provider_key", ref.get("provider_id"))
+            model = ref.get("model", ref.get("model_id"))
+            return identity(provider, model) if provider and model else None
+
+        def add_pair(primary: dict | None, fallback: dict | None, label: str, role: str) -> None:
+            primary_key, fallback_key = ref_identity(primary), ref_identity(fallback)
+            if primary_key and primary_key == fallback_key:
+                return
+            if primary_key:
+                references.append((primary, label, role))
+            if fallback_key:
+                references.append((fallback, f"{label} Fallback", role))
+
+        for capability, label, role in (
+            ("sino_conversation", "Sino 主对话", "sino_conversation"),
+            ("deep_thinking", "深度推理", "deep_thinking"),
+            ("code_execution", "Coding", "code_execution"),
+        ):
+            data = configs.get(capability) or {}
+            add_pair(data, next(iter(data.get("fallbacks") or []), None), label, role)
+
+        routing = (configs.get("model_routing_policy_v1") or {}).get("VISION_UNDERSTANDING") or {}
+        add_pair(routing.get("preferred_primary") or routing.get("active_primary"), routing.get("preferred_fallback"), "Vision", "vision")
+
+        from app.core.model_center.service import _discussion_slots
+        seen_discussion_primaries: set[str] = set()
+        for index, slot in enumerate(_discussion_slots(configs.get("multi_model_discussion")), 1):
+            primary_key = ref_identity(slot.get("primary"))
+            if primary_key and primary_key in seen_discussion_primaries:
+                continue
+            if primary_key:
+                seen_discussion_primaries.add(primary_key)
+            add_pair(slot.get("primary"), slot.get("fallback"), f"讨论模型 {index}", "multi_model_discussion")
+
+        roles_by_identity: dict[str, list[str]] = {}
+        for ref, label, role in references:
+            key = ref_identity(ref)
+            if key in connected and key in eligible_by_role[role]:
+                roles_by_identity.setdefault(key, []).append(label)
+
+        role_order = {label: index for index, label in enumerate([
+            "Sino 主对话", "Sino 主对话 Fallback", "深度推理", "深度推理 Fallback",
+            "Vision", "Vision Fallback", "Coding", "Coding Fallback",
+            *[label for index in range(1, 6) for label in (f"讨论模型 {index}", f"讨论模型 {index} Fallback")],
+        ])}
+        rows = []
+        for key, roles in roles_by_identity.items():
+            model = connected[key]
+            rows.append({**model, "roles": sorted(set(roles), key=lambda item: role_order.get(item, 999)), "assignment_valid": True})
+        return sorted(rows, key=lambda item: (min(role_order.get(role, 999) for role in item["roles"]), item["display_name"]))
+    finally:
+        if owns:
+            session.close()
+
+
 def reconcile_model_registry() -> int:
     """Explicit reconciliation; read APIs must never call this function."""
     from app.core.model_center.service import _sync_model_registry

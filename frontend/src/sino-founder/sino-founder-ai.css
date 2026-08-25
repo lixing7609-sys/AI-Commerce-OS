@@ -1785,9 +1785,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-project-create-popover input:focus { border-color: rgba(168,215,146,.45); }
 .sino-project-create-popover button { justify-self: end; padding: 8px 13px; border: 0; border-radius: 9px; background: var(--accent, #a8d792); color: #10140f; font: 500 13px/18px var(--workspace-font); cursor: pointer; }
 .sino-project-create-popover button:disabled { opacity: .42; cursor: default; }
-.sino-model-selector__menu header { display: flex; justify-content: space-between; gap: 12px; padding: 8px 9px 10px; border-bottom: 1px solid rgba(120,137,110,.13); }
-.sino-model-selector__menu header strong { font-size: 12px; }
-.sino-model-selector__menu header small, .sino-model-selector__menu p { color: var(--text-muted); font-size: 11px; }
+.sino-model-selector__menu p { color: var(--text-muted); font-size: 11px; }
 .sino-model-selector__menu > button { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; padding: 9px; border: 0; border-radius: 10px; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
 .sino-model-selector__menu > button:hover:not(:disabled), .sino-model-selector__menu > button[aria-checked="true"] { background: rgba(255,255,255,.055); }
 .sino-model-selector__menu > button:disabled { opacity: .45; cursor: default; }
