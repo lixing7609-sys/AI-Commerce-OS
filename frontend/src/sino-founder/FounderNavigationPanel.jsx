@@ -48,6 +48,7 @@ function ConversationList({ items, now, projects, activeConversationId, onSelect
 }
 
 export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeHandle, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject, onProjectsChanged }) {
+  const navigationPanelRef = useRef(null);
   const [now] = useState(() => Date.now());
   const [creatingProject, setCreatingProject] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -60,7 +61,7 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   const [productMatrixOpen, setProductMatrixOpen] = useState(false);
   const productMatrixTriggerRef = useRef(null);
   const productMatrixPanelRef = useRef(null);
-  const [productMatrixLeft, setProductMatrixLeft] = useState(0);
+  const [productMatrixPosition, setProductMatrixPosition] = useState({ left: 0, top: 0 });
   const createProjectTriggerRef = useRef(null);
   const createProjectPopoverRef = useRef(null);
   const [createProjectPopoverPosition, setCreateProjectPopoverPosition] = useState({ top: 0, left: 0, arrowTop: 0 });
@@ -115,8 +116,11 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   useEffect(() => {
     if (!productMatrixOpen) return undefined;
     const position = () => {
-      const bounds = productMatrixTriggerRef.current?.getBoundingClientRect();
-      if (bounds) setProductMatrixLeft(bounds.right + 12);
+      const sidebarBounds = navigationPanelRef.current?.getBoundingClientRect();
+      if (sidebarBounds) setProductMatrixPosition({
+        left: sidebarBounds.right + 12,
+        top: sidebarBounds.top + sidebarBounds.height / 2,
+      });
     };
     const close = (event) => {
       if (!productMatrixTriggerRef.current?.contains(event.target) && !productMatrixPanelRef.current?.contains(event.target)) setProductMatrixOpen(false);
@@ -126,10 +130,12 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
     window.addEventListener("pointerdown", close);
     window.addEventListener("keydown", escape);
     window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
     return () => {
       window.removeEventListener("pointerdown", close);
       window.removeEventListener("keydown", escape);
       window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
     };
   }, [productMatrixOpen]);
   async function createProject(event) {
@@ -160,7 +166,7 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
     catch (error) { setProjectError(error.message); }
   }
 
-  return <aside className="founder-navigation-panel" aria-label="Founder Navigation">
+  return <aside ref={navigationPanelRef} className="founder-navigation-panel" aria-label="Founder Navigation">
     <div className="sino-sidebar__header">
     <div className="sino-sidebar-top-actions" aria-label="Workspace navigation controls">
       {onCollapse ? <button type="button" className="sino-sidebar-toggle" onClick={onCollapse} title="收起侧边栏" aria-label="收起侧边栏"><SidebarIcon /></button> : null}
@@ -186,11 +192,11 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
     </div>
     <footer>
       <div className="sino-product-matrix">
-        <button ref={productMatrixTriggerRef} type="button" className="sino-sidebar-products sino-sidebar-row" aria-label="Sino AI 产品矩阵" aria-expanded={productMatrixOpen} onClick={() => setProductMatrixOpen((open) => !open)}><ProductMatrixIcon /><span>Sino AI 产品</span></button>
+        <button ref={productMatrixTriggerRef} type="button" className="sino-product-matrix__launcher sino-sidebar-products sino-sidebar-row" aria-label="Sino AI 产品矩阵" aria-expanded={productMatrixOpen} onClick={() => setProductMatrixOpen((open) => !open)}><ProductMatrixIcon /><span>Sino AI 产品</span></button>
       </div>
       <button type="button" className="sino-sidebar-settings sino-sidebar-row" title="设置" aria-label="设置" onClick={() => onNavigate("settings")} aria-current={active === "settings" ? "page" : undefined}><SettingsIcon /><span>设置</span></button>
     </footer>
-    {productMatrixOpen && typeof document !== "undefined" ? createPortal(<section ref={productMatrixPanelRef} className="sino-product-matrix__panel" role="dialog" aria-label="Sino AI 产品矩阵" style={{ left: productMatrixLeft }}>
+    {productMatrixOpen && typeof document !== "undefined" ? createPortal(<section ref={productMatrixPanelRef} className="sino-product-matrix__panel" role="dialog" aria-label="Sino AI 产品矩阵" style={{ left: productMatrixPosition.left, top: productMatrixPosition.top }}>
       <header><span>产品矩阵</span><small>Sino AI</small></header>
       <div className="sino-product-matrix__list">
         {SINO_AI_PRODUCTS.map((product) => product.available ? (

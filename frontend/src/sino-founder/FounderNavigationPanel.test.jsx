@@ -24,9 +24,13 @@ describe("Founder sidebar information architecture", () => {
     const onNavigate = vi.fn();
     render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={onNavigate} />);
     const trigger = screen.getByRole("button", { name: "Sino AI 产品矩阵" });
+    expect(trigger.classList.contains("sino-product-matrix__launcher")).toBe(true);
+    expect(trigger.closest("footer")).toBeTruthy();
     expect(document.querySelector(".sino-sidebar__navigation-scroll").contains(trigger)).toBe(false);
     fireEvent.click(trigger);
     const panel = screen.getByRole("dialog", { name: "Sino AI 产品矩阵" });
+    expect(panel.parentElement).toBe(document.body);
+    expect(trigger.contains(panel)).toBe(false);
     expect(panel.textContent).toContain("Sino Founder AI");
     expect(panel.textContent).toContain("Sino Operator AI");
     expect(panel.textContent).toContain("Sino Studio AI");
@@ -42,13 +46,23 @@ describe("Founder sidebar information architecture", () => {
 
   it("floats the Sino AI product matrix beside the sidebar at the viewport midpoint", () => {
     render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} />);
+    const sidebar = screen.getByLabelText("Founder Navigation");
     const trigger = screen.getByRole("button", { name: "Sino AI 产品矩阵" });
-    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({ right: 264 });
+    vi.spyOn(sidebar, "getBoundingClientRect").mockReturnValue({ top: 8, right: 244, height: 966 });
     fireEvent.click(trigger);
     const panel = screen.getByRole("dialog", { name: "Sino AI 产品矩阵" });
-    expect(panel.style.left).toBe("276px");
+    expect(panel.style.left).toBe("256px");
+    expect(panel.style.top).toBe("491px");
     expect(panel.style.bottom).toBe("");
     expect(panel.classList.contains("sino-product-matrix__panel")).toBe(true);
+  });
+
+  it("closes the product matrix when clicking outside its portal", () => {
+    render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sino AI 产品矩阵" }));
+    expect(screen.getByRole("dialog", { name: "Sino AI 产品矩阵" })).toBeTruthy();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("dialog", { name: "Sino AI 产品矩阵" })).toBeNull();
   });
 
   it("closes the Sino AI product matrix with Escape", () => {
