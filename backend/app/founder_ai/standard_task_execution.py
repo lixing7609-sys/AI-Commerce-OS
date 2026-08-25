@@ -225,6 +225,45 @@ def _sino_product_matrix_contract(*, conversation_id: str, goal: str, task_id: s
     }
 
 
+def _sino_product_matrix_typography_contract(*, conversation_id: str, goal: str, task_id: str | None) -> dict:
+    return {
+        "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
+        "task_type": "STANDARD_TASK", "target_surface": "Founder Sidebar / Sino AI Product Matrix Typography",
+        "target_route": "Sino Founder shell / all Founder views",
+        "target_component": "FounderNavigationPanel / sino-founder-ai.css / .sino-sidebar-products",
+        "objective": "Reduce only the Sino AI product matrix sidebar label typography to 13px.",
+        "acceptance_criteria": [
+            "The visible Sino AI 产品矩阵 trigger label has computed font-size 13px.",
+            "No other product matrix, sidebar layout, navigation or typography changes.",
+        ],
+        "visible_artifact_contract": {
+            "required": True, "artifact_type": "founder_product_matrix_typography",
+            "target_route": "Sino Founder shell / all Founder views",
+            "target_label": "Sino AI 产品矩阵", "expected_font_size": "13px",
+            "required_assertions": ["product_matrix_entry_visible", "computed_font_size_matches"],
+        },
+        "constraints": ["typography_only", "preserve_product_matrix_behavior", "preserve_sidebar_layout"],
+        "implementation_scope": [
+            "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+            "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ],
+        "module_boundary": [],
+        "allowed_css_selectors": [".founder-navigation-panel .sino-sidebar-products"],
+        "prohibited_scope": [
+            "conversation", "capability_repository", "model_center", "runtime", "provider", "database", "sidebar_layout",
+        ],
+        "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
+        "inspect_status": "ready_for_plan",
+        "implementation_plan": [
+            "Inspect the existing product matrix trigger typography and shared stylesheet selector.",
+            "Change only the product matrix trigger label font-size using the existing type scale.",
+            "Run the bounded component test, frontend build, git diff --check and computed-style browser verification.",
+        ],
+        "source_goal": goal,
+    }
+
+
 def _capability_repository_search_contract(*, conversation_id: str, goal: str, task_id: str | None) -> dict:
     return {
         "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
@@ -289,6 +328,13 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
                               and any(marker in goal_context for marker in ("字体", "字号", "缩小")))
     if runtime_url_typography:
         return _runtime_url_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
+    product_matrix_typography = (
+        "产品矩阵" in goal_context
+        and any(marker in goal_context for marker in ("左侧栏", "左边栏", "侧边栏"))
+        and any(marker in goal_context for marker in ("字体", "字号", "字重", "行高", "文字颜色"))
+    )
+    if product_matrix_typography:
+        return _sino_product_matrix_typography_contract(conversation_id=conversation_id, goal=goal, task_id=task_id)
     product_matrix = (
         any(marker in goal_context for marker in ("产品矩阵", "sino studio ai", "sino operator ai"))
         and any(marker in goal_context for marker in ("左侧栏", "左边栏", "侧边栏", "设置"))
@@ -681,6 +727,85 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
         route = dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
     if route.get("classification") != "STANDARD_TASK" or (route.get("autonomous_execution") or {}).get("execution_session_id") != execution_id:
         return route
+    durable_scope = dict((session.result or {}).get("scope_verification") or {})
+    projected_scope = dict((route.get("autonomous_execution") or {}).get("scope_verification") or {})
+    if durable_scope.get("status") == "PASS" and projected_scope.get("status") != "PASS":
+        with SessionLocal() as db:
+            state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            discovery = dict(state.discovery or {}); current_route = dict(discovery.get("task_complexity_route") or {})
+            autonomous = dict(current_route.get("autonomous_execution") or {}); autonomous["scope_verification"] = durable_scope
+            current_route["autonomous_execution"] = autonomous; discovery["task_complexity_route"] = current_route
+            state.discovery = discovery; db.commit()
+        route["autonomous_execution"] = {**dict(route.get("autonomous_execution") or {}), "scope_verification": durable_scope}
+    if session.status == "blocked" and package is not None:
+        previous_scope = dict((session.result or {}).get("scope_verification") or {})
+        recoverable_scope_block = (
+            previous_scope.get("status") == "SCOPE_MISMATCH"
+            and str(session.failure_reason or "").startswith("scope mismatch after execution-owned commit")
+        )
+        if recoverable_scope_block:
+            from app.founder_ai.execution_scope import SCOPE_PASS, verify_execution_scope
+            contract = build_standard_task_contract(
+                conversation_id=conversation_id, goal=package.goal, task_id=task_id,
+            )
+            changed_files = list(previous_scope.get("actual_changed_files") or [])
+            head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_root, capture_output=True, text=True).stdout.strip()
+            committed_files = set(subprocess.run(
+                ["git", "show", "--pretty=", "--name-only", head], cwd=repo_root, capture_output=True, text=True,
+            ).stdout.splitlines()) if head else set()
+            patch = subprocess.run(
+                ["git", "show", "--format=", "--no-ext-diff", head, "--", *changed_files],
+                cwd=repo_root, capture_output=True, text=True,
+            ).stdout if head and changed_files else ""
+            attribution = {
+                "task_changed_files": changed_files,
+                "execution_owned_patch": patch,
+                "execution_owned_patch_fingerprint": previous_scope.get("patch_fingerprint"),
+                "head_changed": True,
+                "head_sha_after": head,
+            }
+            resolved_scope = verify_execution_scope(contract=contract, attribution=attribution)
+            codex_event = next((event for event in reversed(session.events) if event.get("event_name") == "codex_finished"), None)
+            codex_metadata = dict((codex_event or {}).get("metadata") or {})
+            safe_commit = bool(head and changed_files and set(changed_files).issubset(committed_files))
+            if resolved_scope["status"] == SCOPE_PASS and safe_commit and codex_metadata.get("exit_code") == 0:
+                from app.founder_ai.verification_fallback import codex_command_evidence
+                verification = [*contract["acceptance_criteria"], "targeted frontend tests", "frontend build", "git diff --check"]
+                transcript = str(codex_metadata.get("stderr_summary") or "")
+                package = replace(package, context={**dict(package.context), "standard_task_contract": contract}, verification=verification)
+                session.result = {
+                    **dict(session.result or {}),
+                    "changed_files": changed_files,
+                    "tests": verification,
+                    "execution_attribution": attribution,
+                    "scope_verification_before_reconcile": previous_scope,
+                    "scope_verification": resolved_scope,
+                    "task_owned_patch_persisted": True,
+                    "command_verification_evidence": codex_command_evidence(transcript, exit_code=0, required=verification),
+                    "codex_run_id": codex_metadata.get("codex_run_id"),
+                    "task_id": task_id,
+                    "execution_id": execution_id,
+                    "execution_package_id": session.execution_package_id,
+                }
+                session.status = "completed"; session.subprocess_exit_status = 0; session.commit_hash = head
+                session.error_message = None; session.failure_reason = None; session.recoverable = False
+                session.completed_at = _now()
+                append_event(session, "scope_reconciled", status="scope_passed",
+                             message="Previously unresolved CSS task scope reconciled against its committed task-owned patch.",
+                             metadata={"scope_before": previous_scope, "scope_after": resolved_scope, "commit_hash": head})
+                save_execution_session(session, package)
+                with SessionLocal() as db:
+                    state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+                    discovery = dict(state.discovery or {}); current_route = dict(discovery.get("task_complexity_route") or {})
+                    current_route["standard_task_contract"] = contract; discovery["standard_task_contract"] = contract
+                    autonomous = dict(current_route.get("autonomous_execution") or {})
+                    autonomous["scope_verification"] = resolved_scope
+                    current_route["autonomous_execution"] = autonomous
+                    discovery["task_complexity_route"] = current_route; state.discovery = discovery; db.commit()
+                route["standard_task_contract"] = contract
+                route["autonomous_execution"] = {
+                    **dict(route.get("autonomous_execution") or {}), "scope_verification": resolved_scope,
+                }
     if session.status != "completed":
         if session.status == "blocked" and (session.result or {}).get("scope_verification"):
             return project_scope_mismatch(conversation_id=conversation_id, execution_id=execution_id, evidence=session.result or {})
@@ -731,6 +856,22 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
         )
         from app.founder_ai.verification_fallback import founder_verification_narration
         narration = founder_verification_narration(chain)
+        for attempt in chain["evidence"]:
+            verifier = str(attempt.get("verifier") or "verification")
+            if verifier == "preferred_browser":
+                append_event(session, "preferred_browser_started", status="verifying",
+                             message="Preferred browser verification started", timestamp=attempt.get("started_at"),
+                             metadata={"verifier": verifier})
+                event_name = "preferred_browser_passed" if attempt.get("status") == "PASS" else "preferred_browser_unavailable" if attempt.get("status") in {"UNAVAILABLE", "TIMEOUT"} else "preferred_browser_failed"
+            elif verifier == "system_chrome_playwright":
+                append_event(session, "fallback_browser_started", status="verifying",
+                             message="System Chrome + Playwright fallback started", timestamp=attempt.get("started_at"),
+                             metadata={"verifier": verifier})
+                event_name = "fallback_browser_passed" if attempt.get("status") == "PASS" else "fallback_browser_unavailable" if attempt.get("status") in {"UNAVAILABLE", "TIMEOUT"} else "fallback_browser_failed"
+            else:
+                event_name = f"{verifier}_{str(attempt.get('status') or 'unknown').lower()}"
+            append_event(session, event_name, status=str(attempt.get("status") or "unknown").lower(),
+                         message=f"{verifier} verification: {attempt.get('status')}", metadata={"verification_evidence": attempt})
         visible_gate = {
             "status": "PASS" if chain["status"] == "VERIFIED" else chain["status"],
             "completion_allowed": chain["status"] == "VERIFIED",

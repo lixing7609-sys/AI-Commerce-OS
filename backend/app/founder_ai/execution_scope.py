@@ -98,7 +98,24 @@ def verify_execution_scope(*, contract: dict[str, Any], attribution: dict[str, A
     allowed = set(contract.get("implementation_scope") or [])
     module_boundaries = tuple(str(item).rstrip("/") + "/" for item in contract.get("module_boundary") or [])
     unexpected = sorted(path for path in changed if path not in allowed and not any(path.startswith(prefix) for prefix in module_boundaries))
-    status = SCOPE_PASS if not unexpected else SCOPE_MISMATCH
+    allowed_css_selectors = [str(item) for item in contract.get("allowed_css_selectors") or []]
+    patch = str(attribution.get("execution_owned_patch") or "")
+    out_of_scope_hunks: list[str] = []
+    if allowed_css_selectors:
+        for path in sorted(changed & allowed):
+            if not path.endswith(".css"):
+                continue
+            file_marker = f"+++ b/{path}"
+            file_start = patch.find(file_marker)
+            file_patch = patch[file_start:] if file_start >= 0 else ""
+            next_file = file_patch.find("\n--- a/", len(file_marker))
+            if next_file >= 0:
+                file_patch = file_patch[:next_file]
+            hunks = [f"@@{item}" for item in file_patch.split("\n@@")[1:]]
+            for index, hunk in enumerate(hunks, start=1):
+                if not any(selector in hunk for selector in allowed_css_selectors):
+                    out_of_scope_hunks.append(f"{path}#hunk-{index}")
+    status = SCOPE_PASS if not unexpected and not out_of_scope_hunks else SCOPE_MISMATCH
     return {
         "status": status,
         "goal": contract.get("objective") or contract.get("source_goal"),
@@ -107,6 +124,7 @@ def verify_execution_scope(*, contract: dict[str, Any], attribution: dict[str, A
         "do_not_change": list(contract.get("prohibited_scope") or []),
         "actual_changed_files": sorted(changed),
         "out_of_scope_files": unexpected,
+        "out_of_scope_hunks": out_of_scope_hunks,
         "patch_fingerprint": attribution.get("execution_owned_patch_fingerprint"),
     }
 

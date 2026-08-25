@@ -25,6 +25,12 @@ try {
     const projectBox = await page.getByText("项目", { exact: true }).first().boundingBox();
     evidence.reduced_vertical_gap = Boolean(newBox && projectBox && projectBox.y - (newBox.y + newBox.height) < 48);
     evidence.sidebar_actions_functional = Boolean(newBox && projectBox);
+  } else if (artifactType === "founder_product_matrix_typography") {
+    const trigger = page.getByRole("button", { name: "Sino AI 产品矩阵", exact: true });
+    evidence.product_matrix_entry_visible = await trigger.isVisible();
+    evidence.expected_font_size = contract.expected_font_size;
+    evidence.actual_font_size = await trigger.evaluate((node) => getComputedStyle(node).fontSize);
+    evidence.computed_font_size_matches = evidence.actual_font_size === contract.expected_font_size;
   } else if (artifactType === "founder_sidebar_heading_typography") {
     const projects = page.getByText("项目", { exact: true }).first();
     const conversations = page.getByText("会话", { exact: true }).first();

@@ -107,6 +107,16 @@ def test_sino_product_matrix_gets_a_persistent_sidebar_scope_contract():
     assert contract["visible_artifact_contract"]["required"] is True
 
 
+def test_product_matrix_typography_gets_css_and_computed_style_contract():
+    goal = "把左侧栏底部“Sino AI 产品矩阵”文字的字号缩小一级，只修改这个文字字号。"
+    contract = build_standard_task_contract(conversation_id="conv-products-font", task_id="task-products-font", goal=goal)
+    assert contract["target_surface"] == "Founder Sidebar / Sino AI Product Matrix Typography"
+    assert "frontend/src/sino-founder/sino-founder-ai.css" in contract["implementation_scope"]
+    assert contract["allowed_css_selectors"] == [".founder-navigation-panel .sino-sidebar-products"]
+    assert contract["visible_artifact_contract"]["artifact_type"] == "founder_product_matrix_typography"
+    assert contract["visible_artifact_contract"]["expected_font_size"] == "13px"
+
+
 def test_new_task_does_not_inherit_previous_semantic_goal_from_discussion_context():
     contract = build_standard_task_contract(
         conversation_id="conv-isolated", task_id="task-runtime",

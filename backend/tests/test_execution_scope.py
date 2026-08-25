@@ -95,6 +95,26 @@ def test_scope_mismatch_authorizes_only_execution_owned_patch_rollback(repo):
     assert (repo / "existing.txt").read_text() == "pre-existing\n"
 
 
+def test_shared_css_hunk_is_checked_against_the_task_selector():
+    contract = {
+        "objective": "product matrix typography",
+        "implementation_scope": ["frontend/src/sino-founder/sino-founder-ai.css"],
+        "allowed_css_selectors": [".founder-navigation-panel .sino-sidebar-products"],
+    }
+    matching = {
+        "task_changed_files": ["frontend/src/sino-founder/sino-founder-ai.css"],
+        "execution_owned_patch": "--- a/frontend/src/sino-founder/sino-founder-ai.css\n+++ b/frontend/src/sino-founder/sino-founder-ai.css\n@@ -1 +1 @@\n+.founder-navigation-panel .sino-sidebar-products { font-size: 13px; }\n",
+    }
+    unrelated = {
+        **matching,
+        "execution_owned_patch": "--- a/frontend/src/sino-founder/sino-founder-ai.css\n+++ b/frontend/src/sino-founder/sino-founder-ai.css\n@@ -1 +1 @@\n+.sino-model-center { font-size: 13px; }\n",
+    }
+    assert verify_execution_scope(contract=contract, attribution=matching)["status"] == SCOPE_PASS
+    mismatch = verify_execution_scope(contract=contract, attribution=unrelated)
+    assert mismatch["status"] == SCOPE_MISMATCH
+    assert mismatch["out_of_scope_hunks"] == ["frontend/src/sino-founder/sino-founder-ai.css#hunk-1"]
+
+
 def test_committed_change_is_still_attributed_and_marked_non_reversible(repo):
     baseline, contents = capture_execution_baseline(repo)
     (repo / "unrelated.txt").write_text("committed wrong\n")
