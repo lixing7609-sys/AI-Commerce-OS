@@ -1706,11 +1706,14 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-resize-handle:hover::after { background: rgba(153, 178, 135, .34); }
 
 .founder-navigation-panel .sino-product-matrix { position: relative; }
-.sino-product-matrix__panel { position: fixed; z-index: 90; width: 288px; padding: 8px; border: 1px solid var(--workspace-divider); border-radius: 12px; background: var(--workspace-surface-panel); box-shadow: 0 18px 48px rgba(0,0,0,.38); font-family: var(--workspace-font); transform: translateY(-50%); }
+.founder-navigation-panel .sino-product-matrix__panel { position: absolute; z-index: 90; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); box-sizing: border-box; min-width: 0; padding: 10px 8px 8px; overflow: hidden; border: 0; border-radius: inherit; background: var(--workspace-surface-panel); box-shadow: none; font-family: var(--workspace-font); animation: sino-product-matrix-drawer-in .16s ease-out; }
+@keyframes sino-product-matrix-drawer-in { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
 .sino-product-matrix__panel > header { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 8px 9px; color: var(--workspace-text); }
 .sino-product-matrix__panel > header span { font-size: 13px; font-weight: 600; }
 .sino-product-matrix__panel > header small { color: var(--workspace-text-secondary); font-size: 11px; }
-.sino-product-matrix__list { display: grid; gap: 2px; }
+.sino-product-matrix__panel > header button { display: grid; place-items: center; width: 28px; height: 28px; margin-left: auto; padding: 0; border: 0; border-radius: var(--workspace-radius-control); background: transparent; color: var(--workspace-text-secondary); font: 20px/1 var(--workspace-font); cursor: pointer; }
+.sino-product-matrix__panel > header button:hover { background: var(--workspace-hover); color: var(--workspace-text); }
+.sino-product-matrix__list { display: grid; align-content: start; gap: 2px; min-height: 0; overflow-y: auto; }
 .sino-product-matrix__item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 52px; padding: 7px 8px; border: 0; border-radius: var(--workspace-radius-row); background: transparent; color: var(--workspace-text); font-family: var(--workspace-font); text-align: left; text-decoration: none; }
 button.sino-product-matrix__item, a.sino-product-matrix__item { cursor: pointer; }
 button.sino-product-matrix__item:hover, a.sino-product-matrix__item:hover { background: var(--workspace-hover); }

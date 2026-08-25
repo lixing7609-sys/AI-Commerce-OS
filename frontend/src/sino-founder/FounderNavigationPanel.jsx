@@ -61,7 +61,6 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   const [productMatrixOpen, setProductMatrixOpen] = useState(false);
   const productMatrixTriggerRef = useRef(null);
   const productMatrixPanelRef = useRef(null);
-  const [productMatrixPosition, setProductMatrixPosition] = useState({ left: 0, top: 0 });
   const createProjectTriggerRef = useRef(null);
   const createProjectPopoverRef = useRef(null);
   const [createProjectPopoverPosition, setCreateProjectPopoverPosition] = useState({ top: 0, left: 0, arrowTop: 0 });
@@ -115,27 +114,15 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   }, [creatingProject]);
   useEffect(() => {
     if (!productMatrixOpen) return undefined;
-    const position = () => {
-      const sidebarBounds = navigationPanelRef.current?.getBoundingClientRect();
-      if (sidebarBounds) setProductMatrixPosition({
-        left: sidebarBounds.right + 12,
-        top: sidebarBounds.top + sidebarBounds.height / 2,
-      });
-    };
     const close = (event) => {
       if (!productMatrixTriggerRef.current?.contains(event.target) && !productMatrixPanelRef.current?.contains(event.target)) setProductMatrixOpen(false);
     };
     const escape = (event) => { if (event.key === "Escape") setProductMatrixOpen(false); };
-    position();
     window.addEventListener("pointerdown", close);
     window.addEventListener("keydown", escape);
-    window.addEventListener("resize", position);
-    window.addEventListener("scroll", position, true);
     return () => {
       window.removeEventListener("pointerdown", close);
       window.removeEventListener("keydown", escape);
-      window.removeEventListener("resize", position);
-      window.removeEventListener("scroll", position, true);
     };
   }, [productMatrixOpen]);
   async function createProject(event) {
@@ -196,15 +183,15 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
       </div>
       <button type="button" className="sino-sidebar-settings sino-sidebar-row" title="设置" aria-label="设置" onClick={() => onNavigate("settings")} aria-current={active === "settings" ? "page" : undefined}><SettingsIcon /><span>设置</span></button>
     </footer>
-    {productMatrixOpen && typeof document !== "undefined" ? createPortal(<section ref={productMatrixPanelRef} className="sino-product-matrix__panel" role="dialog" aria-label="Sino AI 产品矩阵" style={{ left: productMatrixPosition.left, top: productMatrixPosition.top }}>
-      <header><span>产品矩阵</span><small>Sino AI</small></header>
+    {productMatrixOpen ? <section ref={productMatrixPanelRef} className="sino-product-matrix__panel" role="dialog" aria-modal="true" aria-label="Sino AI 产品矩阵">
+      <header><span>产品矩阵</span><small>Sino AI</small><button type="button" aria-label="关闭产品矩阵" onClick={() => setProductMatrixOpen(false)}>×</button></header>
       <div className="sino-product-matrix__list">
         {SINO_AI_PRODUCTS.map((product) => product.available ? (
           product.href ? <a key={product.key} href={product.href} className="sino-product-matrix__item"><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span></a>
             : <button key={product.key} type="button" className="sino-product-matrix__item is-current" onClick={() => { onNavigate("conversation"); setProductMatrixOpen(false); }}><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span><em>当前</em></button>
         ) : <div key={product.key} className="sino-product-matrix__item is-disabled" aria-disabled="true"><span className="sino-product-matrix__mark">S</span><span><b>{product.name}</b><small>{product.description}</small></span><em>筹备中</em></div>)}
       </div>
-    </section>, document.body) : null}
+    </section> : null}
     {creatingProject && typeof document !== "undefined" ? createPortal(<form ref={createProjectPopoverRef} className="sino-project-create-popover" role="dialog" aria-label="创建项目" onSubmit={createProject} style={{ top: `${createProjectPopoverPosition.top}px`, left: `${createProjectPopoverPosition.left}px`, "--popover-arrow-top": `${createProjectPopoverPosition.arrowTop}px` }}><span className="sino-project-create-popover__arrow" data-popover-arrow aria-hidden="true" /><p>创建一个项目，把相关聊天、文件和工作集中在一起。</p><input autoFocus aria-label="Project 名称" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="项目名称" /><button type="submit" disabled={!projectName.trim()}>创建项目</button></form>, document.body) : null}
     {resizeHandle}
   </aside>;
