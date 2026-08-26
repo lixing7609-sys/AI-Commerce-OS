@@ -1709,14 +1709,14 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-product-matrix__panel { position: absolute; z-index: 90; right: 0; bottom: calc(100% + 9px); left: 0; display: grid; box-sizing: border-box; min-width: 0; max-height: min(390px, calc(100vh - 150px)); padding: 8px; border: 1px solid rgba(120,137,110,.22); border-radius: 14px; background: rgba(20,24,20,.985); box-shadow: 0 18px 48px rgba(0,0,0,.38); font-family: var(--workspace-font); animation: sino-product-matrix-popover-in .14s ease-out; }
 @keyframes sino-product-matrix-popover-in { from { opacity: 0; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .sino-product-matrix__arrow { position: absolute; right: 20px; bottom: -6px; width: 11px; height: 11px; border-right: 1px solid rgba(120,137,110,.22); border-bottom: 1px solid rgba(120,137,110,.22); background: rgba(20,24,20,.985); transform: rotate(45deg); }
-.sino-product-matrix__list { display: grid; align-content: start; gap: 2px; min-height: 0; overflow-y: auto; }
-.sino-product-matrix__item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 52px; padding: 7px 8px; border: 0; border-radius: var(--workspace-radius-row); background: transparent; color: var(--workspace-text); font-family: var(--workspace-font); text-align: left; text-decoration: none; }
+.sino-product-matrix__list { display: grid; align-content: start; gap: 4px; min-height: 0; overflow-y: auto; }
+.sino-product-matrix__item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 60px; padding: 9px 8px; border: 0; border-radius: var(--workspace-radius-row); background: transparent; color: var(--workspace-text); font-family: var(--workspace-font); text-align: left; text-decoration: none; }
 button.sino-product-matrix__item, a.sino-product-matrix__item { cursor: pointer; }
 button.sino-product-matrix__item:hover, a.sino-product-matrix__item:hover { background: var(--workspace-hover); }
 .sino-product-matrix__mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: rgba(153,178,135,.14); color: #a9be9a; font-size: 12px; font-weight: 700; }
 .sino-product-matrix__item > span:nth-child(2) { display: grid; min-width: 0; gap: 2px; }
-.sino-product-matrix__item b { overflow: hidden; font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-.sino-product-matrix__item small { color: var(--workspace-text-secondary); font-size: 10px; }
+.sino-product-matrix__item b { overflow: hidden; font-size: 14px; font-weight: 550; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.sino-product-matrix__item small { color: var(--workspace-text-secondary); font-size: 12px; line-height: 18px; }
 .sino-product-matrix__item em { color: var(--workspace-text-secondary); font-size: 9px; font-style: normal; }
 .sino-product-matrix__item.is-disabled { opacity: .48; }
 
