@@ -21,7 +21,7 @@ class SemanticModule:
 MODULES = (
     SemanticModule(
         "Founder Sidebar / Navigation",
-        ("左侧栏", "左边栏", "侧边栏", "sidebar", "navigation", "导航", "产品矩阵", "入口", "popover", "drawer", "浮层"),
+        ("左侧栏", "左边栏", "侧边栏", "左下角", "sidebar", "navigation", "导航", "产品矩阵", "sino ai 产品", "产品弹出框", "入口", "popover", "drawer", "浮层"),
         (
             "frontend/src/sino-founder/FounderNavigationPanel.jsx",
             "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
@@ -185,4 +185,14 @@ def _semantic_visible_contract(goal: str, module: SemanticModule) -> dict[str, A
                     "dialog_outside_excluded_container", "close_action_works",
                 ],
             }
+    if module.name == "Founder Sidebar / Navigation" and any(term in goal for term in ("字号", "字体", "间距")) and any(term in goal for term in ("产品矩阵", "sino ai 产品", "产品弹出框")):
+        return {
+            "required": True, "artifact_type": "founder_product_matrix_list_style",
+            "target_route": "Sino Founder shell / all Founder views",
+            "required_assertions": [
+                "product_matrix_entry_visible", "product_matrix_dialog_visible", "product_items_visible",
+                "product_title_font_size_increased", "product_description_font_size_increased",
+                "product_vertical_gap_compact", "outside_close_works",
+            ],
+        }
     return None

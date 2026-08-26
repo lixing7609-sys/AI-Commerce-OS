@@ -146,7 +146,8 @@ def system_chrome_playwright_verifier(*, repo_root: Path, contract: dict, timeou
         payload = json.loads(completed.stdout.strip() or "{}")
     except json.JSONDecodeError:
         payload = {}
-    status = str(payload.get("status") or (UNAVAILABLE if completed.returncode == 2 else ACCEPTANCE_FAILED)).upper()
+    crashed = completed.returncode is not None and completed.returncode < 0
+    status = str(payload.get("status") or (UNAVAILABLE if completed.returncode == 2 or crashed else ACCEPTANCE_FAILED)).upper()
     if status not in {PASS, UNAVAILABLE, ACCEPTANCE_FAILED}:
         status = ACCEPTANCE_FAILED
     return evidence("system_chrome_playwright", status, detail=payload.get("evidence"),

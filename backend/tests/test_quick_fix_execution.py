@@ -28,3 +28,21 @@ def test_quick_fix_task_package_marks_technical_lane_not_founder_approval():
     assert "does not require a Founder decision" in rendered
     assert "Founder approval is granted" not in rendered
     assert "Autonomous Checkpoint" in rendered
+
+
+def test_quick_fix_package_carries_unified_semantic_scope_contract():
+    from app.founder_ai.quick_fix_execution import _build_package
+    contract = {
+        "observed_problem": "调整产品字号与间距", "target_area": "Founder sidebar",
+        "allowed_files_or_paths": ["frontend/src/sino-founder/**"],
+        "prohibited_operations": [],
+        "verification": ["targeted frontend tests", "frontend build", "git diff --check"],
+    }
+    package = _build_package(
+        "把左下角 Sino AI 产品弹出框的产品名称间距缩小，字体调大一点",
+        "conv-1", contract, task_id="task-1",
+    )
+    scope = package.context["standard_task_contract"]
+    assert scope["scope_source"] == "semantic_module"
+    assert scope["scope_confidence"] == "HIGH"
+    assert scope["visible_artifact_contract"]["required"] is True

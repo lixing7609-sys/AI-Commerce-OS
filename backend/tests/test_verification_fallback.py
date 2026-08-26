@@ -1,7 +1,8 @@
 import time
 
 from app.founder_ai.verification_fallback import (
-    ACCEPTANCE_FAILED, PASS, UNAVAILABLE, codex_command_evidence, evidence, execute_ui_verification_chain, founder_verification_narration,
+    ACCEPTANCE_FAILED, PASS, UNAVAILABLE, codex_command_evidence, evidence, execute_ui_verification_chain,
+    founder_verification_narration, system_chrome_playwright_verifier,
 )
 
 
@@ -48,6 +49,17 @@ def test_verifier_timeout_continues_to_next_fallback():
         static_acceptance=passed("static"), timeout_seconds=.001)
     assert result["status"] == "VERIFIED"
     assert [item["status"] for item in result["evidence"]] == [UNAVAILABLE, "TIMEOUT", PASS]
+
+
+def test_system_chrome_process_crash_is_unavailable_not_acceptance_failure(monkeypatch, tmp_path):
+    script = tmp_path / "frontend/scripts/founder-ui-verifier.mjs"
+    script.parent.mkdir(parents=True)
+    script.write_text("// fixture")
+    completed = type("Completed", (), {"returncode": -6, "stdout": "", "stderr": "Chrome SIGABRT"})()
+    monkeypatch.setattr("app.founder_ai.verification_fallback.subprocess.run", lambda *args, **kwargs: completed)
+    result = system_chrome_playwright_verifier(repo_root=tmp_path, contract={"artifact_type": "fixture"})
+    assert result["status"] == UNAVAILABLE
+    assert "SIGABRT" in result["failure_reason"]
 
 
 def test_conversation_narration_matches_terminal_verification_state():

@@ -27,7 +27,8 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _update_projection(conversation_id: str, *, step: str | None = None, execution: dict | None = None, blocker: dict | None = None) -> dict:
+def _update_projection(conversation_id: str, *, step: str | None = None, execution: dict | None = None,
+                       blocker: dict | None = None, clear_blocker: bool = False) -> dict:
     with SessionLocal() as db:
         state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
         if state is None:
@@ -41,6 +42,8 @@ def _update_projection(conversation_id: str, *, step: str | None = None, executi
         if blocker:
             route["execution_status"] = "blocked"
             route["technical_blocker"] = blocker
+        elif clear_blocker:
+            route.pop("technical_blocker", None)
         discovery["task_complexity_route"] = route
         discovery["quick_fix_contract"] = route.get("quick_fix_contract")
         state.discovery = discovery
@@ -61,11 +64,15 @@ def _update_task(task_id: str, *, status: str, execution_status: str, result: di
         db.commit()
 
 
-def _build_package(goal: str, conversation_id: str, contract: dict) -> ExecutionPackage:
+def _build_package(goal: str, conversation_id: str, contract: dict, *, task_id: str) -> ExecutionPackage:
+    from app.founder_ai.standard_task_execution import build_standard_task_contract
+    scope_contract = build_standard_task_contract(
+        conversation_id=conversation_id, goal=goal, task_id=task_id,
+    )
     draft = TaskAssetDraft(
         title=goal[:200], description=goal, conversation_id=conversation_id,
         scope={"goal_type": "development", "context": {
-            "quick_fix_contract": contract,
+            "quick_fix_contract": contract, "standard_task_contract": scope_contract,
             "evidence": [{"source": "quick_fix_inspect", "fact": contract["observed_problem"], "relevance": contract["target_area"]}],
             "relevant_files": [{"path": path, "reason": "Frozen Quick Fix scope"} for path in contract["allowed_files_or_paths"]],
         }},
@@ -78,7 +85,9 @@ def _build_package(goal: str, conversation_id: str, contract: dict) -> Execution
     )
     return ExecutionPackage(
         goal=goal, context=dict(draft.scope["context"]), task_asset=draft,
-        constraints=list(draft.constraints), verification=list(contract["verification"]),
+        constraints=list(draft.constraints), verification=[
+            *list(contract["verification"]), *list(scope_contract.get("acceptance_criteria") or []),
+        ],
         commit_requirement=(
             "After all verification passes, use the existing Autonomous Working Tree Resolution and "
             "Autonomous Checkpoint with exact-file staging; do not use git add . or git add -A, and do not push."
@@ -130,7 +139,7 @@ def dispatch_quick_fix(*, conversation_id: str, goal: str, source_message_id: st
         _update_task(task.id, status="blocked", execution_status="clarification_required")
         return _update_projection(conversation_id, blocker={"type": "quick_fix_inspect_incomplete", "founder_gate_required": False})
 
-    package = _build_package(goal, conversation_id, contract)
+    package = _build_package(goal, conversation_id, contract, task_id=task.id)
     execution_session = create_execution_session(task.id, package)
     package = replace(package, execution_allowed=True)
     execution_session.status = "queued"
@@ -212,4 +221,7 @@ def reconcile_quick_fix_execution(*, conversation_id: str, task_id: str, executi
         _update_projection(conversation_id, step="verify", execution={"dispatch_status": "verifying", "verification": verification})
     except ValueError:
         pass
-    return _update_projection(conversation_id, step="complete", execution={"dispatch_status": "completed", "verification": verification, "result": result})
+    return _update_projection(
+        conversation_id, step="complete", clear_blocker=True,
+        execution={"dispatch_status": "completed", "verification": verification, "result": result},
+    )

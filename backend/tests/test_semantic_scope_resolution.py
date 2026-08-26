@@ -30,6 +30,14 @@ def test_product_matrix_drawer_uses_generic_semantic_scope_not_special_contract(
     assert contract["visible_artifact_contract"]["interaction"] == "drawer"
 
 
+def test_product_matrix_list_typography_and_spacing_resolves_high_confidence_sidebar_scope():
+    scope = resolve_task_scope(goal="把左下角 Sino AI 产品弹出框的产品名称间距缩小，字体调大一点")
+    assert scope["scope_source"] == "semantic_module"
+    assert scope["confidence"] == HIGH
+    assert "frontend/src/sino-founder/sino-founder-ai.css" in scope["allowed_file_patterns"]
+    assert scope["visible_artifact_contract"]["artifact_type"] == "founder_product_matrix_list_style"
+
+
 def test_semantic_scope_allows_discovery_before_bounded_write_scope():
     result = resolve_task_scope(goal=DRAWER_GOAL)
     assert result["discovery_scope"] == {"mode": "read_only", "allowed_patterns": ["**/*"]}

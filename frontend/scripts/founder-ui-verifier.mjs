@@ -31,6 +31,24 @@ try {
     evidence.expected_font_size = contract.expected_font_size;
     evidence.actual_font_size = await trigger.evaluate((node) => getComputedStyle(node).fontSize);
     evidence.computed_font_size_matches = evidence.actual_font_size === contract.expected_font_size;
+  } else if (artifactType === "founder_product_matrix_list_style") {
+    const trigger = page.getByRole("button", { name: "Sino AI 产品矩阵", exact: true });
+    evidence.product_matrix_entry_visible = await trigger.isVisible();
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Sino AI 产品矩阵", exact: true });
+    evidence.product_matrix_dialog_visible = await dialog.isVisible();
+    const items = dialog.locator(".sino-product-matrix__item");
+    evidence.product_items_visible = (await items.count()) >= 5 && await items.first().isVisible();
+    const title = items.first().locator("b");
+    const description = items.first().locator("small");
+    evidence.actual_title_font_size = await title.evaluate((node) => getComputedStyle(node).fontSize);
+    evidence.actual_description_font_size = await description.evaluate((node) => getComputedStyle(node).fontSize);
+    evidence.actual_list_gap = await dialog.locator(".sino-product-matrix__list").evaluate((node) => getComputedStyle(node).rowGap);
+    evidence.product_title_font_size_increased = parseFloat(evidence.actual_title_font_size) > 12;
+    evidence.product_description_font_size_increased = parseFloat(evidence.actual_description_font_size) > 10;
+    evidence.product_vertical_gap_compact = parseFloat(evidence.actual_list_gap) <= 4;
+    await page.locator(".founder-conversation-surface").click({ position: { x: 10, y: 10 } });
+    evidence.outside_close_works = !(await dialog.isVisible().catch(() => false));
   } else if (artifactType === "founder_sidebar_heading_typography") {
     const projects = page.getByText("项目", { exact: true }).first();
     const conversations = page.getByText("会话", { exact: true }).first();

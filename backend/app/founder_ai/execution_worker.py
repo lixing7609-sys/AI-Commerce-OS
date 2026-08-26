@@ -219,11 +219,20 @@ class ExecutionWorker:
             self.queue.transition(execution_id, "completed")
             if conversation_id:
                 try:
-                    from app.founder_ai.standard_task_execution import reconcile_standard_task_execution
-                    reconcile_standard_task_execution(conversation_id=conversation_id, task_id=session.task_asset_id, execution_id=execution_id,
-                                                     repo_root=self.project_root)
+                    if package.context.get("quick_fix_contract"):
+                        from app.founder_ai.quick_fix_execution import reconcile_quick_fix_execution
+                        reconcile_quick_fix_execution(
+                            conversation_id=conversation_id, task_id=session.task_asset_id,
+                            execution_id=execution_id, repo_root=self.project_root,
+                        )
+                    else:
+                        from app.founder_ai.standard_task_execution import reconcile_standard_task_execution
+                        reconcile_standard_task_execution(
+                            conversation_id=conversation_id, task_id=session.task_asset_id,
+                            execution_id=execution_id, repo_root=self.project_root,
+                        )
                 except Exception:
-                    logger.exception("Standard task completion reconciliation failed execution_id=%s", execution_id)
+                    logger.exception("Task completion reconciliation failed execution_id=%s", execution_id)
             logger.info("Execution completed execution_id=%s", execution_id)
         except ExecutionPausedForDelta:
             save_execution_session(session, package)

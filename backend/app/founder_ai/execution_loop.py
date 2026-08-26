@@ -194,8 +194,29 @@ class FounderExecutionLoop:
                     if not corrected_rollback:
                         raise ExecutionScopeBlocked("scope mismatch after correction; execution-owned patch could not be safely reversed")
                     raise ExecutionScopeBlocked("scope mismatch after one automatic correction")
-            from .verification_fallback import codex_command_evidence
-            command_evidence = codex_command_evidence(result.stdout, exit_code=result.exit_code, required=list(package.verification or []))
+            if contract:
+                from .post_implementation import run_post_implementation_pipeline
+
+                def project_post_event(event_name: str, status: str, message: str, metadata: dict) -> None:
+                    append_event(session, event_name, status=status, message=message, metadata=metadata)
+                    self.on_status(status)
+
+                post_verification = run_post_implementation_pipeline(
+                    package=package, attribution=dict(result.execution_attribution or {}), repo_root=cwd,
+                    preferred_browser=result.browser_verification, on_event=project_post_event,
+                )
+            else:
+                from .verification_fallback import codex_command_evidence
+                post_verification = {
+                    "status": "VERIFIED", "stage": "legacy_adapter",
+                    "evidence": codex_command_evidence(
+                        result.stdout, exit_code=result.exit_code, required=list(package.verification or []),
+                    ),
+                }
+            command_evidence = [
+                item for item in post_verification.get("evidence") or []
+                if item.get("verifier") in {"targeted_tests", "build", "git_diff_check"}
+            ]
             session.result = {
                 "stdout": result.stdout,
                 "stderr": result.stderr,
@@ -209,11 +230,17 @@ class FounderExecutionLoop:
                 "scope_verification": scope_result,
                 "task_owned_patch_persisted": scope_result["status"] == SCOPE_PASS,
                 "scope_correction_attempts": correction_attempts,
+                "post_implementation_verification": post_verification,
                 "task_id": session.task_asset_id,
                 "execution_id": session.id,
                 "execution_package_id": session.execution_package_id,
                 "codex_run_id": result.codex_run_id,
             }
+            if post_verification.get("status") != "VERIFIED":
+                raise RuntimeError(
+                    post_verification.get("failure_reason")
+                    or f"post-implementation verification failed at {post_verification.get('stage')}"
+                )
             session.subprocess_exit_status = result.exit_code
             session.subprocess_activity_at = datetime.now(timezone.utc).isoformat()
             session.expected_long_running_operation = None
