@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -u
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+pytest_bin="$repo_root/backend/.venv/bin/pytest"
+failures=0
+
+if [[ ! -x "$pytest_bin" ]]; then
+  echo "Sino Learning & Reuse V1 · Capability 1 Regression"
+  echo "ERROR: backend virtual environment is missing: $pytest_bin"
+  exit 2
+fi
+
+run_contract() {
+  local label="$1"
+  shift
+  if (cd "$repo_root/backend" && "$pytest_bin" -q "$@"); then
+    printf '%s: PASS\n' "$label"
+  else
+    printf '%s: FAIL\n' "$label"
+    failures=$((failures + 1))
+  fi
+}
+
+echo "Sino Learning & Reuse V1 · Capability 1 Regression"
+
+run_contract "Learning Eligibility" \
+  tests/test_reusable_ui_pattern.py::test_completed_verified_task_is_eligible_for_structured_learning \
+  tests/test_reusable_ui_pattern.py::test_incomplete_task_does_not_create_learning_candidate \
+  tests/test_reusable_ui_pattern.py::test_failed_verification_does_not_create_learning_candidate \
+  tests/test_reusable_ui_pattern.py::test_test_only_patch_is_not_eligible_for_ui_learning
+
+run_contract "Asset Persistence & Source Lineage" \
+  tests/test_reusable_ui_pattern.py::test_reusable_asset_persists_source_ids_and_payload_outside_content_ref
+
+run_contract "Fingerprint Dedup" \
+  tests/test_reusable_ui_pattern.py::test_fingerprint_duplicate_reuses_one_canonical_asset \
+  tests/test_reusable_ui_pattern.py::test_reuse_lookup_is_idempotent_for_same_task
+
+run_contract "Semantic Target Before Retrieval" \
+  tests/test_reusable_ui_pattern.py::test_semantic_target_must_be_resolved_before_reuse_lookup
+
+run_contract "Compatibility Gate" \
+  tests/test_reusable_ui_pattern.py::test_semantic_module_match_returns_candidate_and_persists_evidence \
+  tests/test_reusable_ui_pattern.py::test_incompatible_module_is_not_returned \
+  tests/test_reusable_ui_pattern.py::test_invalidation_condition_rejects_full_screen_target \
+  tests/test_reusable_ui_pattern.py::test_unresolved_scope_is_not_used_for_reuse_authority
+
+run_contract "Reuse Advisory Authority & Scope Non-Expansion" \
+  tests/test_reusable_ui_pattern.py::test_reuse_context_does_not_expand_allowed_scope \
+  tests/test_reusable_ui_pattern.py::test_reuse_context_is_advisory_and_requires_current_verification
+
+run_contract "reuse_context Injection" \
+  tests/test_reusable_ui_pattern.py::test_task_package_receives_advisory_reuse_context
+
+run_contract "Reuse Evidence" \
+  tests/test_reusable_ui_pattern.py::test_reuse_evidence_contains_source_lineage_and_injection_time
+
+run_contract "Independent Verification Requirement" \
+  tests/test_post_implementation.py::test_runtime_runs_tests_build_diff_and_browser_without_founder_interaction \
+  tests/test_standard_task_execution.py::test_missing_browser_or_failed_build_prevents_verification_completion
+
+run_contract "Asset Center Projection" \
+  tests/test_reusable_ui_pattern.py::test_asset_memory_center_projects_reusable_asset
+
+echo "Frozen Sino Autonomous Execution V1"
+if "$repo_root/scripts/test-sino-autonomous-v1"; then
+  echo "Frozen Autonomous Execution V1: PASS"
+else
+  echo "Frozen Autonomous Execution V1: FAIL"
+  failures=$((failures + 1))
+fi
+
+if (( failures == 0 )); then
+  echo "Overall: PASS"
+  exit 0
+fi
+
+echo "Overall: FAIL ($failures contract groups failed)"
+exit 1

@@ -13,6 +13,7 @@ from app.founder_ai.reusable_asset_service import candidate_fingerprint, save_re
 from app.founder_ai.reuse_retrieval import PASS, REJECT, assess_reuse_compatibility, inject_reuse_context, lookup_reusable_assets
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 from app.founder_ai.task_package import TaskPackageBuilder
+import app.founder_ai.asset_memory_center as asset_center
 
 
 def _factory():
@@ -110,6 +111,9 @@ def test_reuse_context_is_advisory_and_requires_current_verification():
     result = inject_reuse_context(contract={"semantic_scope": _scope()}, goal="把通知菜单改成 Popover", task_id="task-current", session_factory=factory)
     context = result["reuse_context"]
     assert context["advisory"] is True
+    assert context["scope_authority"] is False
+    assert context["risk_authority"] is False
+    assert context["completion_authority"] is False
     assert "must_run_current_task_verification" in context["reuse_constraints"]
     assert context["verification_guidance"]["requires_own_evidence"] == ["scope", "targeted_tests", "build", "diff_check", "browser_or_artifact"]
 
@@ -142,6 +146,24 @@ def test_unresolved_scope_is_not_used_for_reuse_authority():
     assert state != PASS
 
 
+def test_semantic_target_must_be_resolved_before_reuse_lookup():
+    factory = _factory(); save_reusable_asset(_candidate(), session_factory=factory)
+    contract = {
+        "semantic_scope": {
+            "scope_source": "approval_required", "confidence": "MEDIUM",
+            "allowed_modules": ["Founder Conversation"],
+            "allowed_file_patterns": [],
+        },
+    }
+    result = inject_reuse_context(
+        contract=contract, goal="把通知菜单改成 Popover", task_id="task-unresolved",
+        session_factory=factory,
+    )
+    assert result == contract
+    with factory() as db:
+        assert list(db.scalars(select(ReuseEvidenceDB))) == []
+
+
 def test_reuse_evidence_contains_source_lineage_and_injection_time():
     factory = _factory(); asset = save_reusable_asset(_candidate(), session_factory=factory)
     result = lookup_reusable_assets(goal="把通知菜单改成 Popover", semantic_scope=_scope(), task_id="task-current", execution_id="execution-current", session_factory=factory)
@@ -150,3 +172,15 @@ def test_reuse_evidence_contains_source_lineage_and_injection_time():
         assert evidence.reuse_asset_id == asset.id and evidence.execution_id == "execution-current"
         assert evidence.injected_at is not None and evidence.final_result["status"] == "planning_injected"
         assert evidence.telemetry_events == ["reuse_lookup_started", "reuse_lookup_completed", "reuse_applied"]
+
+
+def test_asset_memory_center_projects_reusable_asset(monkeypatch):
+    factory = _factory(); asset = save_reusable_asset(_candidate(), session_factory=factory)
+    monkeypatch.setattr(asset_center, "list_founder_task_assets", lambda: [])
+    monkeypatch.setattr(asset_center, "list_founder_artifacts", lambda: [])
+    monkeypatch.setattr(asset_center, "list_founder_memories", lambda: [])
+    monkeypatch.setattr(asset_center, "list_execution_sessions", lambda: [])
+    monkeypatch.setattr(asset_center, "list_reusable_assets", lambda: [asset])
+    result = asset_center.build_asset_memory_center()
+    assert result["reusable_assets"][0]["reuse_asset_id"] == asset.id
+    assert result["reusable_assets"][0]["pattern_type"] == "anchored_portal_popover"
