@@ -42,6 +42,7 @@ from app.core.asset_lifecycle.model import AssetCatalogDB, AssetLearningDB
 from app.core.product_visibility.model import FounderProductVisibilityDB
 from app.core.draft.model import FounderDraftDB
 from app.core.reference.model import IntelligenceReferenceDB
+from app.core.reusable_asset.model import ReusableAssetDB, ReuseEvidenceDB
 from app.core.council.model import CouncilModelRunDB, CouncilRunDB
 from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
 from core.founder_object.model import ConversationObjectContextDB, FounderObjectDB, FounderObjectRevisionDB

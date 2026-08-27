@@ -252,6 +252,18 @@ class ExecutionWorker:
                 except Exception:
                     logger.exception("Task completion reconciliation failed execution_id=%s", execution_id)
                 _project_runtime_truth(conversation_id)
+            try:
+                from app.founder_ai.reusable_asset_bootstrap import extract_historical_anchored_popover_asset
+                extract_historical_anchored_popover_asset(
+                    task_id=session.task_asset_id, execution_id=execution_id,
+                    source_commit_sha=session.commit_hash,
+                )
+            except (LookupError, ValueError):
+                # A completed execution remains valid when it is not reusable.
+                pass
+            except Exception:
+                # Post-completion learning is advisory and must never regress V1 completion.
+                logger.exception("Post-completion reusable learning failed execution_id=%s", execution_id)
             logger.info("Execution completed execution_id=%s", execution_id)
         except ExecutionPausedForDelta:
             save_execution_session(session, package)

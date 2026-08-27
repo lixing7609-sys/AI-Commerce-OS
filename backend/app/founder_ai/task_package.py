@@ -75,6 +75,14 @@ class TaskPackageBuilder:
                 "relevance": "Canonical target, scope and visible-artifact acceptance contract for this execution",
             })
 
+        reuse_context = _mapping(standard_contract.get("reuse_context") or context.get("reuse_context"))
+        if reuse_context:
+            evidence.append({
+                "source": f"reusable_asset:{reuse_context.get('reuse_asset_id', '')}",
+                "fact": reuse_context,
+                "relevance": "Advisory implementation and verification guidance; never scope, risk, or completion authority",
+            })
+
         for reference in _items(context.get("intelligence_references")):
             item = _mapping(reference)
             evidence.append({

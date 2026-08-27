@@ -8,6 +8,7 @@ from app.core.artifact.service import list_founder_artifacts
 from app.core.memory.service import list_founder_memories
 from app.core.task_asset.service import list_founder_task_assets
 from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions
+from app.founder_ai.reusable_asset_service import list_reusable_assets, serialize_reusable_asset
 
 
 EXECUTION_ID_PATTERN = re.compile(r"execution-[a-zA-Z0-9]+")
@@ -132,4 +133,6 @@ def build_asset_memory_center() -> dict[str, Any]:
             "completed_at": session.completed_at if session else None,
         })
     executions.sort(key=lambda item: item["completed_at"] or item["created_at"] or "", reverse=True)
-    return {"artifacts": artifacts, "memories": memories, "executions": executions}
+    reusable_assets = [serialize_reusable_asset(item) for item in list_reusable_assets()]
+    return {"artifacts": artifacts, "memories": memories, "executions": executions,
+            "reusable_assets": reusable_assets}
