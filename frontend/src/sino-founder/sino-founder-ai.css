@@ -1656,6 +1656,7 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
   cursor: pointer;
 }
 .founder-navigation-panel .sino-new-conversation:hover,
+.founder-navigation-panel .sino-new-conversation[aria-expanded="true"],
 .founder-navigation-panel .sino-sidebar-library:hover,
 .founder-navigation-panel .sino-sidebar-library.is-active,
 .founder-navigation-panel .sino-sidebar-products:hover,
@@ -1676,6 +1677,13 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-project-create-entry > svg { flex: 0 0 var(--workspace-icon-size); color: var(--workspace-text-secondary); }
 .founder-navigation-panel .sino-project-expand { border: 0; background: transparent; color: var(--workspace-text-secondary); cursor: pointer; }
 .founder-navigation-panel .sino-project-expand:hover { background: var(--workspace-hover); color: var(--workspace-text); }
+.sino-new-discussion-popover { width: 250px; padding: 6px; }
+.sino-new-discussion-popover__menu { display: grid; gap: 2px; }
+.sino-new-discussion-popover__menu button { display: grid; gap: 2px; width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--workspace-text); font-family: var(--workspace-font); text-align: left; cursor: pointer; }
+.sino-new-discussion-popover__menu button:hover:not(:disabled) { background: var(--workspace-hover); }
+.sino-new-discussion-popover__menu button:disabled { color: var(--workspace-text-secondary); cursor: not-allowed; opacity: .58; }
+.sino-new-discussion-popover__menu b { font-size: var(--workspace-nav-size); font-weight: 500; line-height: 20px; }
+.sino-new-discussion-popover__menu small { color: var(--workspace-text-secondary); font-size: var(--workspace-meta-size); line-height: 18px; }
 .founder-navigation-panel .sino-project-expand .sino-sidebar-row__icon { align-content: center; padding-bottom: 6px; font-size: 16px; line-height: 1; letter-spacing: 1px; }
 .founder-navigation-panel .sino-sidebar-primary-title,
 .founder-navigation-panel .sino-sidebar-primary-title__label {

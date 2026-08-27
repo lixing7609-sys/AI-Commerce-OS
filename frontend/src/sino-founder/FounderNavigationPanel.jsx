@@ -92,7 +92,11 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   const [projectError, setProjectError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const [newDiscussionOpen, setNewDiscussionOpen] = useState(false);
   const [productMatrixOpen, setProductMatrixOpen] = useState(false);
+  const newDiscussionTriggerRef = useRef(null);
+  const newDiscussionPopoverRef = useRef(null);
+  const [newDiscussionPopoverPosition, setNewDiscussionPopoverPosition] = useState({ top: 0, left: 0, arrowTop: 0 });
   const productMatrixTriggerRef = useRef(null);
   const productMatrixPanelRef = useRef(null);
   const createProjectTriggerRef = useRef(null);
@@ -120,6 +124,35 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
   const displayedProjects = normalizedSearch || projectsExpanded ? visibleProjects : visibleProjects.slice(0, 4);
   const visibleConversations = founderConversations.filter((conversation) => matchesSearch(conversation.title));
   const hasSearchResults = visibleProjects.length > 0 || visibleConversations.length > 0;
+  useEffect(() => {
+    if (!newDiscussionOpen) return undefined;
+    const position = () => {
+      const triggerBounds = newDiscussionTriggerRef.current?.getBoundingClientRect();
+      if (!triggerBounds) return;
+      const popoverBounds = newDiscussionPopoverRef.current?.getBoundingClientRect();
+      const popoverHeight = popoverBounds?.height || 112;
+      const anchorCenter = triggerBounds.top + triggerBounds.height / 2;
+      const top = Math.max(12, Math.min(anchorCenter - popoverHeight / 2, window.innerHeight - popoverHeight - 12));
+      setNewDiscussionPopoverPosition({ top, left: triggerBounds.right + 12, arrowTop: anchorCenter - top });
+    };
+    const close = (event) => {
+      if (!newDiscussionTriggerRef.current?.contains(event.target) && !newDiscussionPopoverRef.current?.contains(event.target)) setNewDiscussionOpen(false);
+    };
+    const escape = (event) => { if (event.key === "Escape") setNewDiscussionOpen(false); };
+    position();
+    const frame = window.requestAnimationFrame(position);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", escape);
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", escape);
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+    };
+  }, [newDiscussionOpen]);
   useEffect(() => {
     if (!creatingProject) return undefined;
     const position = () => {
@@ -223,7 +256,7 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
     <div className="sino-sidebar__header">
     <div className="sino-sidebar-top-actions" aria-label="Workspace navigation controls">
       {onCollapse ? <button type="button" className="sino-sidebar-toggle" onClick={onCollapse} title="收起侧边栏" aria-label="收起侧边栏"><SidebarIcon /></button> : null}
-      <button type="button" className="sino-new-conversation" onClick={onNewConversation} title="新建讨论" aria-label="新建讨论"><ComposeIcon /></button>
+      <button ref={newDiscussionTriggerRef} type="button" className="sino-new-conversation" onClick={() => setNewDiscussionOpen((open) => !open)} title="新建讨论" aria-label="新建讨论" aria-haspopup="dialog" aria-expanded={newDiscussionOpen}><ComposeIcon /></button>
     </div>
     <label className="sino-sidebar-search"><SearchIcon /><input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setSearchQuery(""); } }} placeholder="搜索" aria-label="搜索项目和最近会话" /></label>
     {normalizedSearch && !hasSearchResults ? <p className="sino-sidebar-search-empty" role="status">没有找到结果</p> : null}
@@ -260,6 +293,7 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
     </footer>
     {creatingProject && typeof document !== "undefined" ? createPortal(<form ref={createProjectPopoverRef} className="sino-project-create-popover" role="dialog" aria-label="创建项目" onSubmit={createProject} style={{ top: `${createProjectPopoverPosition.top}px`, left: `${createProjectPopoverPosition.left}px`, "--popover-arrow-top": `${createProjectPopoverPosition.arrowTop}px` }}><span className="sino-project-create-popover__arrow" data-popover-arrow aria-hidden="true" /><p>创建一个项目，把相关聊天、文件和工作集中在一起。</p><input autoFocus aria-label="Project 名称" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="项目名称" /><button type="submit" disabled={!projectName.trim()}>创建项目</button></form>, document.body) : null}
     {projectAction && typeof document !== "undefined" ? createPortal(<form ref={projectActionPopoverRef} className={`sino-project-create-popover sino-project-action-popover is-${projectAction.type}`} role="dialog" aria-label={projectAction.type === "menu" ? `项目操作 ${projectAction.project.name}` : `${projectAction.type === "rename" ? "重命名" : projectAction.type === "archive" ? "归档" : "删除"}项目`} onSubmit={(event) => { event.preventDefault(); if (projectAction.type === "rename") renameProject(projectAction.project, projectActionName); else if (projectAction.type === "archive") archiveProject(projectAction.project); else if (projectAction.type === "delete") removeProject(projectAction.project); }} style={{ top: `${projectActionPopoverPosition.top}px`, left: `${projectActionPopoverPosition.left}px`, "--popover-arrow-top": `${projectActionPopoverPosition.arrowTop}px` }}><span className="sino-project-create-popover__arrow" data-popover-arrow aria-hidden="true" />{projectAction.type === "menu" ? <div className="sino-project-action-popover__menu"><button type="button" onClick={() => { setProjectActionName(projectAction.project.name); setProjectAction({ ...projectAction, type: "rename" }); }}>Rename</button><button type="button" onClick={() => setProjectAction({ ...projectAction, type: "archive" })}>Archive</button><button type="button" className="is-menu-danger" onClick={() => setProjectAction({ ...projectAction, type: "delete" })}>Delete</button></div> : projectAction.type === "rename" ? <><p>为「{projectAction.project.name}」输入新的项目名称。</p><input autoFocus aria-label={`重命名 ${projectAction.project.name}`} value={projectActionName} onChange={(event) => setProjectActionName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.form?.requestSubmit(); }} /><button type="submit" disabled={!projectActionName.trim()}>保存</button></> : <><p>{projectAction.type === "archive" ? `归档「${projectAction.project.name}」？归档后项目将不再显示在当前列表中。` : `删除「${projectAction.project.name}」？Conversation 将移出项目，Ready 能力仍会保留。`}</p><div className="sino-project-action-popover__actions"><button type="button" className="is-secondary" onClick={() => setProjectAction(null)}>取消</button><button type="submit" className={projectAction.type === "delete" ? "is-danger" : ""}>{projectAction.type === "archive" ? "归档项目" : "删除项目"}</button></div></>}</form>, document.body) : null}
+    {newDiscussionOpen && typeof document !== "undefined" ? createPortal(<div ref={newDiscussionPopoverRef} className="sino-project-create-popover sino-new-discussion-popover" role="dialog" aria-label="新建讨论选项" style={{ top: `${newDiscussionPopoverPosition.top}px`, left: `${newDiscussionPopoverPosition.left}px`, "--popover-arrow-top": `${newDiscussionPopoverPosition.arrowTop}px` }}><span className="sino-project-create-popover__arrow" data-popover-arrow aria-hidden="true" /><div className="sino-new-discussion-popover__menu"><button type="button" onClick={() => { setNewDiscussionOpen(false); onNewConversation?.(false); }}><b>开始空白讨论</b><small>不关联任何项目</small></button><button type="button" disabled={!activeProjectId} onClick={() => { setNewDiscussionOpen(false); onNewConversation?.(true); }}><b>在当前项目中开始讨论</b><small>{activeProjectId ? "保留当前项目上下文" : "请先打开一个项目"}</small></button></div></div>, document.body) : null}
     {resizeHandle}
   </aside>;
 }

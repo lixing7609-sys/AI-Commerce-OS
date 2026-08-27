@@ -93,6 +93,36 @@ describe("Founder sidebar information architecture", () => {
     expect(onCollapse).toHaveBeenCalledOnce();
   });
 
+  it("offers blank and current-project discussion actions from the new discussion trigger", () => {
+    const onNewConversation = vi.fn();
+    render(<FounderNavigationPanel conversations={[]} projects={[{ id: "project-1", name: "AI Commerce OS" }]} activeProjectId="project-1" onNavigate={vi.fn()} onNewConversation={onNewConversation} />);
+    const trigger = screen.getByRole("button", { name: "新建讨论" });
+    fireEvent.click(trigger);
+    const popover = screen.getByRole("dialog", { name: "新建讨论选项" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(within(popover).getByRole("button", { name: /开始空白讨论/ })).toBeTruthy();
+    expect(within(popover).getByRole("button", { name: /在当前项目中开始讨论/ })).toBeTruthy();
+    fireEvent.click(within(popover).getByRole("button", { name: /在当前项目中开始讨论/ }));
+    expect(onNewConversation).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole("dialog", { name: "新建讨论选项" })).toBeNull();
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: /开始空白讨论/ }));
+    expect(onNewConversation).toHaveBeenLastCalledWith(false);
+  });
+
+  it("disables the current-project action without an active project and closes outside or with Escape", () => {
+    render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={vi.fn()} onNewConversation={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "新建讨论" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("button", { name: /在当前项目中开始讨论/ }).disabled).toBe(true);
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("dialog", { name: "新建讨论选项" })).toBeNull();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "新建讨论选项" })).toBeNull();
+  });
+
   it("uses governance metadata rather than titles to hide non-Founder runs", () => {
     const now = Date.now();
     render(<FounderNavigationPanel
