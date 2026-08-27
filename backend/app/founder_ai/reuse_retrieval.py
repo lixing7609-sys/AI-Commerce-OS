@@ -38,6 +38,7 @@ def lookup_reusable_assets(*, goal: str, semantic_scope: dict, task_id: str,
         assets = list(db.scalars(select(ReusableAssetDB).where(
             ReusableAssetDB.system_id == FOUNDER_SYSTEM_KEY,
             ReusableAssetDB.status == "active",
+            ReusableAssetDB.asset_kind == "ui_interaction_pattern",
             ReusableAssetDB.semantic_module.in_(modules or ["__none__"]),
         )))
         goal_tokens = _tokens(goal)

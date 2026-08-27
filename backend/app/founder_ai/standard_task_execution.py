@@ -378,6 +378,8 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
         }
         if resolution.get("visible_artifact_contract"):
             contract["visible_artifact_contract"] = resolution["visible_artifact_contract"]
+        from app.founder_ai.decision_retrieval import inject_decision_context
+        contract = inject_decision_context(contract=contract, goal=goal, task_id=task_id, risk_level="low")
         from app.founder_ai.reuse_retrieval import inject_reuse_context
         return inject_reuse_context(contract=contract, goal=goal, task_id=task_id)
     return {

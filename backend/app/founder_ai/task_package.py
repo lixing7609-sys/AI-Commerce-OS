@@ -83,6 +83,14 @@ class TaskPackageBuilder:
                 "relevance": "Advisory implementation and verification guidance; never scope, risk, or completion authority",
             })
 
+        decision_context = _mapping(standard_contract.get("decision_context") or context.get("decision_context"))
+        if decision_context:
+            evidence.append({
+                "source": f"decision_strategy:{decision_context.get('decision_asset_id', '')}",
+                "fact": decision_context,
+                "relevance": "Advisory interaction-surface recommendation; never scope, risk, approval, or completion authority",
+            })
+
         for reference in _items(context.get("intelligence_references")):
             item = _mapping(reference)
             evidence.append({

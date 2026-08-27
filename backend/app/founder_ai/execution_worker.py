@@ -264,6 +264,18 @@ class ExecutionWorker:
             except Exception:
                 # Post-completion learning is advisory and must never regress V1 completion.
                 logger.exception("Post-completion reusable learning failed execution_id=%s", execution_id)
+            try:
+                from app.founder_ai.reusable_asset_bootstrap import extract_historical_interaction_surface_decision
+                extract_historical_interaction_surface_decision(
+                    task_id=session.task_asset_id, execution_id=execution_id,
+                    source_commit_sha=session.commit_hash,
+                )
+            except (LookupError, ValueError):
+                # Most completed tasks contain no explicit reusable decision evidence.
+                pass
+            except Exception:
+                # Decision learning is advisory and cannot regress a completed execution.
+                logger.exception("Post-completion decision learning failed execution_id=%s", execution_id)
             logger.info("Execution completed execution_id=%s", execution_id)
         except ExecutionPausedForDelta:
             save_execution_session(session, package)
