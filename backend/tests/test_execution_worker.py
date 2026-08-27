@@ -77,6 +77,34 @@ def test_approved_session_enters_queue(monkeypatch):
     assert session.status == "queued"
 
 
+def test_safely_rolled_back_scope_blocked_execution_resumes_same_execution(monkeypatch, tmp_path):
+    queue = ExecutionQueue()
+    session = ExecutionSession("execution-scope", "task-scope", "package-scope", status="blocked")
+    session.failure_reason = "scope mismatch after one automatic correction"
+    session.result = {
+        "task_owned_patch_persisted": False,
+        "scope_correction_attempts": [{"rollback_succeeded": True, "corrected_rollback_succeeded": True}],
+    }
+    draft = replace(
+        generate_task_asset_draft("把项目 Rename Archive Delete 弹出框改成新建项目弹出框"),
+        conversation_id="conv-scope",
+    )
+    package = replace(build_execution_package(draft), execution_allowed=True)
+    saved = []
+    monkeypatch.setattr(worker_module, "execution_queue", queue)
+    monkeypatch.setattr(worker_module, "get_execution_session", lambda _execution_id: (session, package))
+    monkeypatch.setattr(worker_module, "save_execution_session", lambda current, current_package: saved.append((current, current_package)))
+    monkeypatch.setattr(worker_module, "_workspace_is_resumable", lambda _root: True)
+
+    item = worker_module.resume_execution(session.id)
+
+    assert item.execution_id == session.id
+    assert session.status == "queued"
+    assert session.result is None
+    assert saved[-1][1].context["standard_task_contract"]["scope_source"] == "semantic_module"
+    assert any((event.get("metadata") or {}).get("scope_reconciled") for event in session.events)
+
+
 def test_worker_picks_execution():
     queue = ExecutionQueue()
     queue.enqueue("execution-1")

@@ -545,13 +545,36 @@ def task_understanding_reply(goal: str, route: dict) -> str:
 
 EVENT_SEMANTICS = {
     "queued": "execution_started", "worker_started": "execution_started", "codex_started": "execution_started",
-    "codex_finished": "implementation_completed", "testing_started": "verification_started",
+    "scope_verification_finished": "implementation_completed",
+    "scope_correction_finished": "implementation_completed", "testing_started": "verification_started",
     "testing_finished": "verification_completed", "stall_detected": "technical_incident",
     "technical_resolution_started": "technical_incident", "technical_resolution_completed": "technical_incident_resolved",
     "technical_resolution_exhausted": "technical_incident_exhausted", "founder_stop_requested": "cancellation_started",
     "cancelled_by_founder": "cancelled", "completed": "execution_completed",
     "verification_fallback_finished": "verification_terminal",
 }
+
+
+def _production_implementation_completed(event: dict) -> bool:
+    """A subprocess exit is not proof that an implementation exists or is in scope."""
+    if event.get("event_name") not in {"scope_verification_finished", "scope_correction_finished"}:
+        return False
+    metadata = dict(event.get("metadata") or {})
+    scope = dict(metadata.get("scope_verification") or {})
+    if scope.get("status") != "SCOPE_PASS" or event.get("status") != "scope_passed":
+        return False
+    changed = list(scope.get("actual_changed_files") or [])
+    return any(
+        ".test." not in path and not path.startswith(("backend/tests/", "frontend/tests/", "docs/"))
+        for path in changed
+    )
+
+
+def _event_semantic(event: dict) -> str | None:
+    semantic = EVENT_SEMANTICS.get(event.get("event_name"))
+    if semantic == "implementation_completed" and not _production_implementation_completed(event):
+        return None
+    return semantic
 
 
 def _lifecycle_allows_semantic(route: dict, semantic: str) -> bool:
@@ -572,11 +595,17 @@ def _append_projection(db, *, conversation_id: str, task_id: str | None, source_
     )).all()
     if any((item.grounding or {}).get("source_event_id") == source_event_id for item in messages):
         return False
+    try:
+        persisted_at = datetime.fromisoformat(created_at) if created_at else datetime.now(timezone.utc)
+    except (TypeError, ValueError):
+        persisted_at = datetime.now(timezone.utc)
+    if persisted_at.tzinfo is None:
+        persisted_at = persisted_at.replace(tzinfo=timezone.utc)
     db.add(ConversationMessageDB(
         conversation_id=conversation_id, role="assistant", content=summary,
         message_type="execution_update", intent="execution_progress",
         grounding={"event_id": source_event_id, "source_event_id": source_event_id, "task_id": task_id, "event_type": event_type, "visibility": "founder"},
-        **({"created_at": datetime.fromisoformat(created_at)} if created_at else {}),
+        created_at=persisted_at,
     ))
     return True
 
@@ -600,7 +629,7 @@ def project_execution_events(conversation_id: str) -> int:
                                    if (item.grounding or {}).get("task_id") == task_id}
             grouped = {}
             for event in session.events or []:
-                semantic = EVENT_SEMANTICS.get(event.get("event_name"))
+                semantic = _event_semantic(event)
                 if semantic and semantic not in projected_semantics and _lifecycle_allows_semantic(route, semantic):
                     grouped.setdefault(semantic, []).append(event)
             from app.founder_ai.conversation_core import summarize_execution_events

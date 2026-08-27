@@ -1,7 +1,7 @@
 """Persistent in-process bridge from Founder approval to Codex execution."""
 
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import json
 import logging
@@ -385,17 +385,34 @@ def resume_execution(execution_id: str) -> ExecutionQueueItem:
     if record is None:
         raise LookupError("Execution session not found")
     session, package = record
-    if session.status != "paused":
-        raise ValueError("only paused executions can be resumed")
+    scope_blocked = (
+        session.status == "blocked"
+        and "scope mismatch" in str(session.failure_reason or session.error_message or "").lower()
+        and not bool((session.result or {}).get("task_owned_patch_persisted"))
+        and all(bool(item.get("corrected_rollback_succeeded", item.get("rollback_succeeded")))
+                for item in list((session.result or {}).get("scope_correction_attempts") or []))
+    )
+    if session.status != "paused" and not scope_blocked:
+        raise ValueError("only paused or safely rolled-back scope-blocked executions can be resumed")
     if not package.execution_allowed:
         raise PermissionError("Founder approval is required before resuming execution")
-    if any((session.result, session.artifact, session.memory)):
+    if any((session.result, session.artifact, session.memory)) and not scope_blocked:
         session.recoverable = False
         save_execution_session(session, package)
         raise RuntimeError("Execution has partial durable results and requires manual review")
     if not _workspace_is_resumable(execution_worker.project_root):
         raise RuntimeError("Git workspace is unavailable for execution recovery")
 
+    if scope_blocked:
+        from app.founder_ai.standard_task_execution import build_standard_task_contract
+        refreshed = build_standard_task_contract(
+            conversation_id=package.task_asset.conversation_id,
+            goal=package.goal,
+            task_id=session.task_asset_id,
+        )
+        if refreshed.get("scope_source") == "approval_required":
+            raise RuntimeError("semantic scope is still unresolved")
+        package = replace(package, context={**dict(package.context), "standard_task_contract": refreshed})
     item = execution_queue.requeue(execution_id)
     session.status = "queued"
     session.queued_at = item.created_at.isoformat()
@@ -403,13 +420,18 @@ def resume_execution(execution_id: str) -> ExecutionQueueItem:
     session.testing_at = None
     session.completed_at = None
     session.pause_reason = None
+    session.result = None
+    session.artifact = None
+    session.memory = None
+    session.error_message = None
+    session.failure_reason = None
     session.recoverable = False
     append_event(
         session,
         "execution_resumed",
         status="queued",
-        message="Founder confirmed recovery and execution resumed",
-        metadata={"resumed": True},
+        message="Execution resumed with refreshed semantic scope" if scope_blocked else "Founder confirmed recovery and execution resumed",
+        metadata={"resumed": True, "scope_reconciled": scope_blocked},
     )
     append_event(
         session,
@@ -420,4 +442,10 @@ def resume_execution(execution_id: str) -> ExecutionQueueItem:
         metadata={"resumed": True},
     )
     save_execution_session(session, package)
+    if scope_blocked and package.context.get("quick_fix_contract") and package.task_asset.conversation_id:
+        from app.founder_ai.quick_fix_execution import _update_projection
+        _update_projection(
+            package.task_asset.conversation_id, step="fix", clear_blocker=True,
+            execution={"execution_session_id": session.id, "dispatch_status": "queued", "scope_reconciled": True},
+        )
     return item

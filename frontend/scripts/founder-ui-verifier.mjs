@@ -49,6 +49,29 @@ try {
     evidence.product_vertical_gap_compact = parseFloat(evidence.actual_list_gap) <= 4;
     await page.locator(".founder-conversation-surface").click({ position: { x: 10, y: 10 } });
     evidence.outside_close_works = !(await dialog.isVisible().catch(() => false));
+  } else if (artifactType === "founder_project_action_popovers") {
+    const trigger = page.getByRole("button", { name: /^Project 操作 / }).first();
+    evidence.project_action_trigger_visible = await trigger.isVisible();
+    const results = {};
+    for (const action of ["Rename", "Archive", "Delete"]) {
+      await trigger.click();
+      await page.getByRole("button", { name: action, exact: true }).click();
+      const popover = page.locator(".sino-project-action-popover").first();
+      results[action] = await popover.isVisible().catch(() => false);
+      if (results[action]) {
+        results[`${action}_matches_create_project`] = await popover.evaluate((node) => (
+          node.classList.contains("sino-project-create-popover") && getComputedStyle(node).position === "fixed"
+        ));
+        await page.locator(".founder-conversation-surface").click({ position: { x: 10, y: 10 } });
+        results[`${action}_outside_close`] = !(await popover.isVisible().catch(() => false));
+      }
+    }
+    evidence.rename_popover_visible = Boolean(results.Rename);
+    evidence.archive_popover_visible = Boolean(results.Archive);
+    evidence.delete_popover_visible = Boolean(results.Delete);
+    evidence.project_action_popovers_match_create_project = ["Rename", "Archive", "Delete"].every((action) => results[`${action}_matches_create_project`] === true);
+    evidence.outside_close_works = ["Rename", "Archive", "Delete"].every((action) => results[`${action}_outside_close`] === true);
+    evidence.project_action_popovers = results;
   } else if (artifactType === "founder_sidebar_heading_typography") {
     const projects = page.getByText("项目", { exact: true }).first();
     const conversations = page.getByText("会话", { exact: true }).first();

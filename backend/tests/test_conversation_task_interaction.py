@@ -1,4 +1,4 @@
-from app.founder_ai.conversation_task_interaction import _append_projection, _lifecycle_allows_semantic, conversation_understanding_snapshot, execution_state_reply, has_explicit_execution_intent, has_stop_intent, route_conversation_message, task_understanding_reply
+from app.founder_ai.conversation_task_interaction import _append_projection, _event_semantic, _lifecycle_allows_semantic, conversation_understanding_snapshot, execution_state_reply, has_explicit_execution_intent, has_stop_intent, route_conversation_message, task_understanding_reply
 
 
 def _candidate_factory(monkeypatch, conversation_id="conv-candidate"):
@@ -369,6 +369,40 @@ def test_executor_completion_cannot_claim_task_completion_before_canonical_verif
     complete = {"current_step": "complete", "execution_status": "completed", "autonomous_execution": {"verification": {"status": "PASS"}}}
     assert _lifecycle_allows_semantic(complete, "verification_completed") is True
     assert _lifecycle_allows_semantic(complete, "execution_completed") is True
+
+
+def test_codex_exit_without_scope_pass_cannot_narrate_implementation_completed():
+    assert _event_semantic({"event_name": "codex_finished", "status": "executing", "metadata": {"exit_code": 0}}) is None
+    assert _event_semantic({
+        "event_name": "scope_verification_finished", "status": "scope_mismatch",
+        "metadata": {"scope_verification": {"status": "SCOPE_MISMATCH", "actual_changed_files": ["frontend/src/App.jsx"]}},
+    }) is None
+
+
+def test_scope_pass_requires_production_patch_before_implementation_narration():
+    test_only = {
+        "event_name": "scope_verification_finished", "status": "scope_passed",
+        "metadata": {"scope_verification": {"status": "SCOPE_PASS", "actual_changed_files": ["frontend/src/App.test.jsx"]}},
+    }
+    production = {
+        "event_name": "scope_verification_finished", "status": "scope_passed",
+        "metadata": {"scope_verification": {"status": "SCOPE_PASS", "actual_changed_files": ["frontend/src/App.jsx", "frontend/src/App.test.jsx"]}},
+    }
+    assert _event_semantic(test_only) is None
+    assert _event_semantic(production) == "implementation_completed"
+
+
+def test_runtime_projection_always_persists_created_at(monkeypatch):
+    interaction, factory = _candidate_factory(monkeypatch, "conv-runtime-time")
+    from app.core.conversation_first.model import ConversationMessageDB
+    with factory() as db:
+        assert interaction._append_projection(
+            db, conversation_id="conv-runtime-time", task_id="task-time",
+            source_event_id="event-time", event_type="execution_started", summary="已开始执行。",
+        ) is True
+        db.commit()
+        message = db.query(ConversationMessageDB).filter_by(conversation_id="conv-runtime-time").one()
+        assert message.created_at is not None
 
 
 def test_one_technical_incident_projects_only_one_recovery_message(monkeypatch):

@@ -38,6 +38,34 @@ def test_product_matrix_list_typography_and_spacing_resolves_high_confidence_sid
     assert scope["visible_artifact_contract"]["artifact_type"] == "founder_product_matrix_list_style"
 
 
+def test_unseen_project_action_popover_task_resolves_high_confidence_project_scope():
+    scope = resolve_task_scope(goal="把项目的 Rename Archive Delete 弹出框改成新建项目弹出框的样式和交互")
+    assert scope["scope_source"] == "semantic_module"
+    assert scope["confidence"] == HIGH
+    assert scope["allowed_modules"] == ["Founder Project UI"]
+    assert "frontend/src/sino-founder/FounderNavigationPanel.jsx" in scope["allowed_file_patterns"]
+    assert scope["visible_artifact_contract"]["artifact_type"] == "founder_project_action_popovers"
+
+
+def test_project_action_scope_accepts_production_component_test_and_matching_shared_css():
+    contract = build_standard_task_contract(
+        conversation_id="conv-project-actions",
+        goal="把项目的 Rename Archive Delete 弹出框改成新建项目弹出框的样式和交互",
+    )
+    attribution = {
+        "task_changed_files": [
+            "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+            "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ],
+        "execution_owned_patch": (
+            "+++ b/frontend/src/sino-founder/FounderNavigationPanel.jsx\n+sino-project-action-popover\n"
+            "+++ b/frontend/src/sino-founder/sino-founder-ai.css\n+.sino-project-action-popover { position: fixed; }\n"
+        ),
+    }
+    assert verify_execution_scope(contract=contract, attribution=attribution)["status"] == SCOPE_PASS
+
+
 def test_semantic_scope_allows_discovery_before_bounded_write_scope():
     result = resolve_task_scope(goal=DRAWER_GOAL)
     assert result["discovery_scope"] == {"mode": "read_only", "allowed_patterns": ["**/*"]}

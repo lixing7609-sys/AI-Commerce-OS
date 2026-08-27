@@ -69,14 +69,23 @@ MODULES = (
     ),
     SemanticModule(
         "Founder Project UI",
-        ("project ui", "项目页面", "项目界面", "project conversation", "object discussion"),
         (
+            "project ui", "项目页面", "项目界面", "project conversation", "object discussion",
+            "项目操作", "项目弹出框", "rename", "archive", "delete", "重命名", "归档", "删除",
+            "新建项目", "兴建项目",
+        ),
+        (
+            "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+            "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
             "frontend/src/sino-founder/FounderHome.jsx",
             "frontend/src/sino-founder/FounderHome.test.jsx",
             "frontend/src/sino-founder/ConversationWorkspace.jsx",
             "frontend/src/sino-founder/sino-founder-ai.css",
         ),
-        ("FounderHome", "ConversationWorkspace", "project-", "workspace-"),
+        (
+            "FounderNavigationPanel", "FounderHome", "ConversationWorkspace", "project-", "workspace-",
+            "sino-project-item", "sino-project-action-popover", "sino-project-create-popover",
+        ),
     ),
 )
 
@@ -193,6 +202,16 @@ def _semantic_visible_contract(goal: str, module: SemanticModule) -> dict[str, A
                 "product_matrix_entry_visible", "product_matrix_dialog_visible", "product_items_visible",
                 "product_title_font_size_increased", "product_description_font_size_increased",
                 "product_vertical_gap_compact", "outside_close_works",
+            ],
+        }
+    if module.name == "Founder Project UI" and any(term in goal for term in ("rename", "archive", "delete", "重命名", "归档", "删除")):
+        return {
+            "required": True, "artifact_type": "founder_project_action_popovers",
+            "target_route": "Sino Founder shell / project navigation",
+            "required_assertions": [
+                "project_action_trigger_visible", "rename_popover_visible",
+                "archive_popover_visible", "delete_popover_visible",
+                "project_action_popovers_match_create_project", "outside_close_works",
             ],
         }
     return None

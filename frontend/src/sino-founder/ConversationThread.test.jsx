@@ -197,6 +197,17 @@ describe("ConversationThread layout", () => {
     expect(article.querySelector(":scope > strong")?.textContent).toBe("* Sino");
   });
 
+  it("renders the persisted timestamp for Runtime execution narration", () => {
+    const value = snapshot("runtime-time", [{
+      message_id: "runtime-1", role: "assistant", message_type: "execution_update",
+      content: "修改范围验证通过，正在运行定向测试。", created_at: "2026-08-27T00:28:25Z",
+    }]);
+    const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const timestamp = container.querySelector('[data-role="assistant"] .sino-message-time');
+    expect(timestamp).toBeTruthy();
+    expect(timestamp.getAttribute("datetime")).toBe("2026-08-27T00:28:25Z");
+  });
+
   it("does not render an empty Founder bubble for an image-only message", () => {
     const value = snapshot("image-only", [{ message_id: "f1", role: "founder", content: "", created_at: "2026-08-25T08:39:00Z", attachment_refs: [{ attachment_id: "image-3", original_filename: "only.png" }] }]);
     const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);

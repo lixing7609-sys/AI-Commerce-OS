@@ -41,6 +41,18 @@ def test_true_stall_requires_unhealthy_worker_and_missing_subprocess():
     assert evidence["stalled"] is True
 
 
+def test_finished_subprocess_without_next_pipeline_event_becomes_explicit_stall():
+    now = datetime.now(timezone.utc); old = (now - timedelta(minutes=10)).isoformat()
+    session = ExecutionSession(
+        id="pipeline-stall", task_asset_id="task", execution_package_id="package", status="executing",
+        started_at=old, subprocess_exit_status=0,
+        events=[{"event_name": "codex_finished", "timestamp": old}],
+    )
+    evidence = evaluate_stall(session, now=now, threshold_seconds=180, process_checker=lambda _: False)
+    assert evidence["stalled"] is True
+    assert evidence["subprocess_alive"] is False
+
+
 def test_pending_authorization_is_not_a_stall():
     now = datetime.now(timezone.utc); old = (now - timedelta(minutes=10)).isoformat()
     session = ExecutionSession(id="auth-wait", task_asset_id="task", execution_package_id="package", status="executing",

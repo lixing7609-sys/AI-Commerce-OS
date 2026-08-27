@@ -19,7 +19,13 @@ STALL_THRESHOLD_SECONDS = int(os.getenv("FOUNDER_EXECUTION_STALL_SECONDS", "180"
 LONG_RUNNING_STALL_SECONDS = int(os.getenv("FOUNDER_EXECUTION_LONG_RUNNING_STALL_SECONDS", "900"))
 HEARTBEAT_GRACE_SECONDS = int(os.getenv("FOUNDER_EXECUTION_HEARTBEAT_GRACE_SECONDS", "30"))
 DEFAULT_RETRY_BUDGET = int(os.getenv("FOUNDER_TECHNICAL_RESOLUTION_RETRY_BUDGET", "3"))
-MEANINGFUL_EVENTS = {"queued", "worker_started", "codex_started", "codex_finished", "testing_started", "testing_finished", "artifact_saved", "memory_saved", "completed", "failed"}
+MEANINGFUL_EVENTS = {
+    "queued", "worker_started", "codex_started", "codex_finished",
+    "scope_verification_started", "scope_verification_finished", "scope_correction_started", "scope_correction_finished",
+    "tests_started", "tests_passed", "tests_failed", "build_started", "build_passed", "build_failed",
+    "diff_check_started", "diff_check_passed", "diff_check_failed", "browser_verification_started",
+    "verification_completed", "testing_started", "testing_finished", "artifact_saved", "memory_saved", "completed", "failed",
+}
 
 
 def _now() -> str:
