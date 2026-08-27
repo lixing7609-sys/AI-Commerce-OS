@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { GlobalSecretaryComposer } from "./GlobalSecretaryComposer.jsx";
+import { sinoStatus } from "./founderStatus.js";
 
 const executionStatusLabel = (status) => ({
   draft: "等待 Founder 批准",
@@ -10,7 +12,79 @@ const executionStatusLabel = (status) => ({
   paused: "执行已暂停",
   failed: "执行失败",
 }[status] || status);
-import { ComposerContextControls } from "./ComposerContextControls.jsx";
+
+export function AnchoredComposerContextControls({ healthy, projects = [], activeProjectId, onSelectProject, onCreateProject, onFiles }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
+  const [position, setPosition] = useState({ top: 0, left: 0, arrowLeft: 24 });
+  const status = sinoStatus(healthy);
+  const active = projects.find((project) => project.id === activeProjectId);
+  const filtered = useMemo(() => projects.filter((project) => `${project.name} ${project.description || ""}`.toLowerCase().includes(query.trim().toLowerCase())), [projects, query]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const reposition = () => {
+      const triggerBounds = triggerRef.current?.getBoundingClientRect();
+      if (!triggerBounds) return;
+      const popoverBounds = popoverRef.current?.getBoundingClientRect();
+      const width = popoverBounds?.width || 300;
+      const height = popoverBounds?.height || 260;
+      const gap = 10;
+      const left = Math.max(12, Math.min(triggerBounds.left, window.innerWidth - width - 12));
+      const top = Math.max(12, triggerBounds.top - height - gap);
+      const arrowLeft = Math.max(16, Math.min(triggerBounds.left + triggerBounds.width / 2 - left, width - 16));
+      setPosition({ top, left, arrowLeft });
+    };
+    const close = (event) => {
+      if (!triggerRef.current?.contains(event.target) && !popoverRef.current?.contains(event.target)) setOpen(false);
+    };
+    const escape = (event) => { if (event.key === "Escape") setOpen(false); };
+    reposition();
+    const frame = window.requestAnimationFrame(reposition);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", escape);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", escape);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [open]);
+
+  async function create(event) {
+    event?.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try {
+      await onCreateProject({ name: name.trim(), description: description.trim() || null });
+      setName(""); setDescription(""); setCreating(false); setOpen(false);
+    } finally { setBusy(false); }
+  }
+
+  const popover = open && typeof document !== "undefined" ? createPortal(<div ref={popoverRef} className="sino-project-selector__popover sino-project-selector__popover--anchored" role="dialog" aria-label="选择项目" style={{ top: `${position.top}px`, left: `${position.left}px`, "--popover-arrow-left": `${position.arrowLeft}px` }}>
+    <span className="sino-project-selector__arrow" data-popover-arrow aria-hidden="true" />
+    <input aria-label="搜索项目" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目……" autoFocus />
+    <div className="sino-project-selector__list">{filtered.map((project) => <button type="button" key={project.id} className={project.id === activeProjectId ? "is-active" : ""} onClick={() => { onSelectProject(project.id); setOpen(false); }}>{project.name}</button>)}{!filtered.length && <p>没有匹配的项目</p>}</div>
+    {activeProjectId && <button type="button" className="sino-project-selector__clear" onClick={() => { onSelectProject(null); setOpen(false); }}>不选择项目</button>}
+    <button type="button" className="sino-project-selector__create" onClick={() => setCreating((value) => !value)}>＋ 创建新项目</button>
+    {creating && <div className="sino-project-selector__create-form"><input aria-label="项目名称" value={name} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") create(event); }} placeholder="项目名称" /><textarea aria-label="项目描述" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="可选描述" rows="2" /><button type="button" onClick={create} disabled={busy || !name.trim()}>{busy ? "创建中…" : "创建"}</button></div>}
+  </div>, document.body) : null;
+
+  return <div className="sino-composer-context-controls" aria-label="对话上下文操作">
+    <span className="sino-composer-status"><span className={`sino-workspace-status ${status.className}`} aria-label={`Sino ${status.label}`} /><span>Sino {status.label}</span></span>
+    <div className="sino-project-selector"><button ref={triggerRef} type="button" className="sino-project-selector__trigger" aria-label={active ? `当前项目：${active.name}` : "选择项目"} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((value) => !value)}><span aria-hidden="true">📁</span><span>{active?.name || "选择项目"}</span><i aria-hidden="true">▼</i></button>{popover}</div>
+    <button type="button" className="sino-composer-files" onClick={onFiles}>＋ 文件/文档</button>
+  </div>;
+}
 
 const formatTime = (value) => value ? new Intl.DateTimeFormat(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "";
 
@@ -31,7 +105,7 @@ export function FounderHome({ intelligence, message, onMessage, onSend, busy, on
         large
         mode={mode}
         onModeChange={onModeChange}
-        toolbar={<ComposerContextControls healthy={healthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={onSelectProject} onCreateProject={onCreateProject} onFiles={onFiles} />}
+        toolbar={<AnchoredComposerContextControls healthy={healthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={onSelectProject} onCreateProject={onCreateProject} onFiles={onFiles} />}
         toolbarIncludesStatus
         attachments={pendingAttachments}
         onAddImages={onAddImages}
@@ -55,7 +129,7 @@ export function DraftDiscussion({ message, onMessage, onSend, busy, healthy, pro
         large
         mode={mode}
         onModeChange={onModeChange}
-        toolbar={<ComposerContextControls healthy={healthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={onSelectProject} onCreateProject={onCreateProject} onFiles={onFiles} />}
+        toolbar={<AnchoredComposerContextControls healthy={healthy} projects={projects} activeProjectId={activeProjectId} onSelectProject={onSelectProject} onCreateProject={onCreateProject} onFiles={onFiles} />}
         toolbarIncludesStatus
         attachments={pendingAttachments}
         onAddImages={onAddImages}

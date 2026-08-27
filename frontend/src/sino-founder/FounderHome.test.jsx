@@ -1,11 +1,48 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FounderHome, ProjectIntelligenceContext, ProjectWorkspace } from "./FounderHome.jsx";
+import { AnchoredComposerContextControls, FounderHome, ProjectIntelligenceContext, ProjectWorkspace } from "./FounderHome.jsx";
 
 afterEach(() => cleanup());
 
 describe("Founder AI capability factory home", () => {
+  it("portals the project selector as an anchored popover and preserves selection close behavior", () => {
+    const selectProject = vi.fn();
+    render(<AnchoredComposerContextControls healthy projects={[{ id: "project-1", name: "AI Commerce OS" }, { id: "project-2", name: "Growth OS" }]} activeProjectId="project-1" onSelectProject={selectProject} onCreateProject={vi.fn()} onFiles={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "当前项目：AI Commerce OS" });
+    trigger.getBoundingClientRect = () => ({ top: 600, left: 180, right: 300, bottom: 632, width: 120, height: 32 });
+    fireEvent.click(trigger);
+    const popover = screen.getByRole("dialog", { name: "选择项目" });
+    expect(popover.parentElement).toBe(document.body);
+    expect(popover.classList.contains("sino-project-selector__popover--anchored")).toBe(true);
+    expect(popover.querySelector("[data-popover-arrow]")).toBeTruthy();
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Growth OS" }));
+    expect(selectProject).toHaveBeenCalledWith("project-2");
+    expect(screen.queryByRole("dialog", { name: "选择项目" })).toBeNull();
+  });
+
+  it("keeps search, create, outside-click, Escape and toggle behavior in the anchored popover", async () => {
+    const createProject = vi.fn().mockResolvedValue(undefined);
+    render(<AnchoredComposerContextControls healthy projects={[{ id: "project-1", name: "AI Commerce OS" }]} onSelectProject={vi.fn()} onCreateProject={createProject} onFiles={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "选择项目" });
+    fireEvent.click(trigger);
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索项目" }), { target: { value: "missing" } });
+    expect(screen.getByText("没有匹配的项目")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "＋ 创建新项目" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "项目名称" }), { target: { value: "New Project" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "项目描述" }), { target: { value: "Description" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+    await vi.waitFor(() => expect(createProject).toHaveBeenCalledWith({ name: "New Project", description: "Description" }));
+    await vi.waitFor(() => expect(screen.queryByRole("dialog", { name: "选择项目" })).toBeNull());
+    fireEvent.click(trigger); fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "选择项目" })).toBeNull();
+    fireEvent.click(trigger); fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("dialog", { name: "选择项目" })).toBeNull();
+    fireEvent.click(trigger); fireEvent.click(trigger);
+    expect(screen.queryByRole("dialog", { name: "选择项目" })).toBeNull();
+  });
+
   it("renders the capability-first hero and routes all quick creation entries into discussion", () => {
     const onQuickCreate = vi.fn();
     render(<FounderHome message="" onMessage={vi.fn()} onSend={vi.fn((event) => event.preventDefault())} onQuickCreate={onQuickCreate} healthy projects={[]} onSelectProject={vi.fn()} onCreateProject={vi.fn()} onFiles={vi.fn()} mode="sino" onModeChange={vi.fn()} />);
