@@ -1831,6 +1831,12 @@ button.sino-product-matrix__item:hover, a.sino-product-matrix__item:hover { back
 .sino-project-create-popover .sino-project-action-popover__menu button { justify-self: stretch; width: 100%; padding: 9px 11px; border-radius: 10px; background: transparent; color: var(--workspace-text-secondary, #c0c7bd); text-align: left; }
 .sino-project-create-popover .sino-project-action-popover__menu button:hover { background: rgba(255,255,255,.055); color: var(--workspace-text, #ecefeb); }
 .sino-project-create-popover .sino-project-action-popover__menu button.is-menu-danger { color: #dca49b; }
+.sino-conversation-action-popover { width: min(240px, calc(100vw - 24px)); padding: 7px; }
+.sino-conversation-action-popover__menu { display: grid; gap: 2px; }
+.sino-conversation-action-popover__menu > strong { padding: 7px 11px 5px; color: var(--workspace-text-muted, #929b91); font-size: 11px; font-weight: 500; }
+.sino-project-create-popover .sino-conversation-action-popover__menu button { justify-self: stretch; width: 100%; padding: 9px 11px; border-radius: 10px; background: transparent; color: var(--workspace-text-secondary, #c0c7bd); text-align: left; }
+.sino-project-create-popover .sino-conversation-action-popover__menu button:hover { background: rgba(255,255,255,.055); color: var(--workspace-text, #ecefeb); }
+.sino-project-create-popover .sino-conversation-action-popover__menu button.is-menu-danger { color: #dca49b; }
 .sino-project-action-popover__actions { display: flex; justify-content: flex-end; gap: 8px; }
 .sino-project-create-popover .sino-project-action-popover__actions button { justify-self: auto; }
 .sino-project-create-popover button.is-secondary { border: 1px solid rgba(255,255,255,.09); background: transparent; color: var(--workspace-text-secondary, #c0c7bd); }

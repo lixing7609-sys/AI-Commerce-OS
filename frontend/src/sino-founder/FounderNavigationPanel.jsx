@@ -44,7 +44,41 @@ function conversationTimeLabel(item, now) {
 
 function ConversationList({ items, now, projects, activeConversationId, onSelectConversation, onDeleteConversation, onMoveConversation }) {
   const [menu, setMenu] = useState(null);
-  return <div className="sino-conversation-list">{items.map((item) => <div key={item.id} data-conversation-id={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><b>{item.title || "新讨论"}</b><small>{conversationTimeLabel(item, now)}</small></button><button type="button" className="sino-conversation-item__menu" aria-label={`会话操作 ${item.title}`} onClick={() => setMenu(menu === item.id ? null : item.id)}>···</button>{menu === item.id ? <div className="sino-sidebar-popover sino-conversation-move-menu"><strong>Move to Project</strong>{projects.filter((project) => project.id !== item.project_id).map((project) => <button key={project.id} type="button" onClick={() => { onMoveConversation(item.id, project.id); setMenu(null); }}>{project.name}</button>)}{item.project_id ? <button type="button" onClick={() => { onMoveConversation(item.id, null); setMenu(null); }}>移出 Project</button> : null}<button type="button" onClick={() => onDeleteConversation(item)}>删除会话</button></div> : null}</div>)}</div>;
+  const menuTriggerRefs = useRef(new Map());
+  const menuPopoverRef = useRef(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, arrowTop: 0 });
+  const activeItem = items.find((item) => item.id === menu) || null;
+  useEffect(() => {
+    if (!activeItem) return undefined;
+    const position = () => {
+      const triggerBounds = menuTriggerRefs.current.get(activeItem.id)?.getBoundingClientRect();
+      if (!triggerBounds) return;
+      const popoverBounds = menuPopoverRef.current?.getBoundingClientRect();
+      const popoverHeight = popoverBounds?.height || 190;
+      const anchorCenter = triggerBounds.top + triggerBounds.height / 2;
+      const top = Math.max(12, Math.min(anchorCenter - popoverHeight / 2, window.innerHeight - popoverHeight - 12));
+      setMenuPosition({ top, left: triggerBounds.right + 12, arrowTop: anchorCenter - top });
+    };
+    const close = (event) => {
+      const trigger = menuTriggerRefs.current.get(activeItem.id);
+      if (!trigger?.contains(event.target) && !menuPopoverRef.current?.contains(event.target)) setMenu(null);
+    };
+    const escape = (event) => { if (event.key === "Escape") setMenu(null); };
+    position();
+    const frame = window.requestAnimationFrame(position);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", escape);
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", escape);
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+    };
+  }, [activeItem]);
+  return <div className="sino-conversation-list">{items.map((item) => <div key={item.id} data-conversation-id={item.id} className={`sino-conversation-item${item.id === activeConversationId ? " is-active" : ""}`}><button type="button" className="sino-conversation-item__open" onClick={() => onSelectConversation(item.id)} title={item.title}><b>{item.title || "新讨论"}</b><small>{conversationTimeLabel(item, now)}</small></button><button ref={(node) => { if (node) menuTriggerRefs.current.set(item.id, node); else menuTriggerRefs.current.delete(item.id); }} type="button" className="sino-conversation-item__menu" aria-label={`会话操作 ${item.title}`} aria-expanded={menu === item.id} onClick={() => setMenu(menu === item.id ? null : item.id)}>···</button></div>)}{activeItem && typeof document !== "undefined" ? createPortal(<div ref={menuPopoverRef} className="sino-project-create-popover sino-conversation-action-popover" role="dialog" aria-label={`会话操作 ${activeItem.title}`} style={{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px`, "--popover-arrow-top": `${menuPosition.arrowTop}px` }}><span className="sino-project-create-popover__arrow" data-popover-arrow aria-hidden="true" /><div className="sino-conversation-action-popover__menu"><strong>Move to Project</strong>{projects.filter((project) => project.id !== activeItem.project_id).map((project) => <button key={project.id} type="button" onClick={() => { onMoveConversation(activeItem.id, project.id); setMenu(null); }}>{project.name}</button>)}{activeItem.project_id ? <button type="button" onClick={() => { onMoveConversation(activeItem.id, null); setMenu(null); }}>移出 Project</button> : null}<button type="button" className="is-menu-danger" onClick={() => { setMenu(null); onDeleteConversation(activeItem); }}>删除会话</button></div></div>, document.body) : null}</div>;
 }
 
 export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeHandle, conversations = [], activeConversationId, onNewConversation, onSelectConversation, onDeleteConversation, projects = [], activeProjectId, onSelectProject, onProjectsChanged }) {

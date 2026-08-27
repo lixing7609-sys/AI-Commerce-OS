@@ -423,6 +423,34 @@ describe("Founder sidebar information architecture", () => {
     expect(screen.queryByRole("dialog", { name: "项目操作 Project A" })).toBeNull();
   });
 
+  it("matches the New Project popover for Conversation actions and closes outside", () => {
+    render(<div><FounderNavigationPanel conversations={[{ id: "conv-1", title: "商品讨论", updatedAt: Date.now() }]} projects={[{ id: "project-a", name: "Project A" }]} onSelectConversation={vi.fn()} onDeleteConversation={vi.fn()} /><button type="button">Outside</button></div>);
+    const trigger = screen.getByRole("button", { name: "会话操作 商品讨论" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+    const actionPopover = screen.getByRole("dialog", { name: "会话操作 商品讨论" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(actionPopover.parentElement).toBe(document.body);
+    expect(actionPopover.classList.contains("sino-project-create-popover")).toBe(true);
+    expect(actionPopover.classList.contains("sino-conversation-action-popover")).toBe(true);
+    expect(actionPopover.querySelector("[data-popover-arrow]")).toBeTruthy();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+    expect(screen.queryByRole("dialog", { name: "会话操作 商品讨论" })).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("toggles and Escape-closes the anchored Conversation action popover", () => {
+    render(<FounderNavigationPanel conversations={[{ id: "conv-1", title: "商品讨论", updatedAt: Date.now() }]} projects={[]} onSelectConversation={vi.fn()} onDeleteConversation={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "会话操作 商品讨论" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog", { name: "会话操作 商品讨论" })).toBeTruthy();
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("dialog", { name: "会话操作 商品讨论" })).toBeNull();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "会话操作 商品讨论" })).toBeNull();
+  });
+
   it("drops a deleted Project from the authoritative list and keeps its Conversations unassigned", () => {
     const conversation = { id: "conv-1", project_id: "deleted-project", title: "仍然保留的讨论", updatedAt: Date.now() };
     const { rerender } = render(<FounderNavigationPanel conversations={[conversation]} projects={[{ id: "deleted-project", name: "已删除 Demo Project" }]} activeProjectId="deleted-project" onSelectConversation={vi.fn()} />);
