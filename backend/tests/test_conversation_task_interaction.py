@@ -392,6 +392,13 @@ def test_scope_pass_requires_production_patch_before_implementation_narration():
     assert _event_semantic(production) == "implementation_completed"
 
 
+def test_false_completion_recovery_events_have_runtime_truth_semantics():
+    invalidated = {"event_name": "completion_invalidated"}
+    reopened = {"event_name": "execution_reopened"}
+    assert _event_semantic(invalidated) == "completion_invalidated"
+    assert _event_semantic(reopened) == "execution_reopened"
+
+
 def test_runtime_projection_always_persists_created_at(monkeypatch):
     interaction, factory = _candidate_factory(monkeypatch, "conv-runtime-time")
     from app.core.conversation_first.model import ConversationMessageDB

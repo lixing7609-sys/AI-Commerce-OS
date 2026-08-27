@@ -63,6 +63,8 @@ EXECUTION_EVENT_NAMES = {
     "technical_resolution_completed",
     "technical_resolution_exhausted",
     "evidence_reconciled",
+    "completion_invalidated",
+    "execution_reopened",
     "founder_stop_requested",
     "cancelled_by_founder",
 }

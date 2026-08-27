@@ -14,6 +14,8 @@ STAGE_BY_EVENT = {
     "queued": "QUEUED",
     "worker_started": "DISPATCHING",
     "execution_resumed": "QUEUED",
+    "completion_invalidated": "COMPLETED",
+    "execution_reopened": "READY",
     "backend_restarted": "QUEUED",
     "codex_started": "IMPLEMENTING",
     "codex_finished": "IMPLEMENTING",
