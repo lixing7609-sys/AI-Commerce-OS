@@ -1826,6 +1826,11 @@ button.sino-product-matrix__item:hover, a.sino-product-matrix__item:hover { back
 .sino-project-create-popover input:focus { border-color: rgba(168,215,146,.45); }
 .sino-project-create-popover button { justify-self: end; padding: 8px 13px; border: 0; border-radius: 9px; background: var(--accent, #a8d792); color: #10140f; font: 500 13px/18px var(--workspace-font); cursor: pointer; }
 .sino-project-create-popover button:disabled { opacity: .42; cursor: default; }
+.sino-project-action-popover.is-menu { width: min(240px, calc(100vw - 24px)); padding: 7px; }
+.sino-project-action-popover__menu { display: grid; gap: 2px; }
+.sino-project-create-popover .sino-project-action-popover__menu button { justify-self: stretch; width: 100%; padding: 9px 11px; border-radius: 10px; background: transparent; color: var(--workspace-text-secondary, #c0c7bd); text-align: left; }
+.sino-project-create-popover .sino-project-action-popover__menu button:hover { background: rgba(255,255,255,.055); color: var(--workspace-text, #ecefeb); }
+.sino-project-create-popover .sino-project-action-popover__menu button.is-menu-danger { color: #dca49b; }
 .sino-project-action-popover__actions { display: flex; justify-content: flex-end; gap: 8px; }
 .sino-project-create-popover .sino-project-action-popover__actions button { justify-self: auto; }
 .sino-project-create-popover button.is-secondary { border: 1px solid rgba(255,255,255,.09); background: transparent; color: var(--workspace-text-secondary, #c0c7bd); }

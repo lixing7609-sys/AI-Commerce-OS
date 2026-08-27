@@ -361,6 +361,10 @@ describe("Founder sidebar information architecture", () => {
     await waitFor(() => expect(createFounderProject).toHaveBeenCalledWith({ name: "AI电商", description: null }));
     expect(onSelectProject).toHaveBeenCalledWith("project-commerce");
     fireEvent.click(screen.getByRole("button", { name: /Project 操作 AI电商/ }));
+    const actionMenu = screen.getByRole("dialog", { name: "项目操作 AI电商" });
+    expect(actionMenu.parentElement).toBe(document.body);
+    expect(actionMenu.classList.contains("sino-project-create-popover")).toBe(true);
+    expect(actionMenu.querySelector("[data-popover-arrow]")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Rename" }));
     expect(screen.getByRole("dialog", { name: "重命名项目" }).classList.contains("sino-project-create-popover")).toBe(true);
     expect(screen.getByRole("dialog", { name: "重命名项目" }).querySelector("[data-popover-arrow]")).toBeTruthy();
@@ -391,6 +395,7 @@ describe("Founder sidebar information architecture", () => {
     render(<div><FounderNavigationPanel conversations={[]} projects={[{ id: "project-a", name: "Project A" }]} /><button type="button">Outside</button></div>);
     const menu = screen.getByRole("button", { name: "Project 操作 Project A" });
     fireEvent.click(menu);
+    expect(screen.getByRole("dialog", { name: "项目操作 Project A" }).classList.contains("sino-project-create-popover")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Archive" }));
     const archiveDialog = screen.getByRole("dialog", { name: "归档项目" });
     expect(archiveDialog.classList.contains("sino-project-create-popover")).toBe(true);
@@ -402,6 +407,20 @@ describe("Founder sidebar information architecture", () => {
     expect(screen.getByRole("dialog", { name: "删除项目" }).classList.contains("sino-project-create-popover")).toBe(true);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "删除项目" })).toBeNull();
+  });
+
+  it("toggles and outside-closes the anchored Project action menu", () => {
+    render(<div><FounderNavigationPanel conversations={[]} projects={[{ id: "project-a", name: "Project A" }]} /><button type="button">Outside</button></div>);
+    const trigger = screen.getByRole("button", { name: "Project 操作 Project A" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("dialog", { name: "项目操作 Project A" })).toBeTruthy();
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("dialog", { name: "项目操作 Project A" })).toBeNull();
+    fireEvent.click(trigger);
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+    expect(screen.queryByRole("dialog", { name: "项目操作 Project A" })).toBeNull();
   });
 
   it("drops a deleted Project from the authoritative list and keeps its Conversations unassigned", () => {
