@@ -362,6 +362,8 @@ describe("Founder sidebar information architecture", () => {
     expect(onSelectProject).toHaveBeenCalledWith("project-commerce");
     fireEvent.click(screen.getByRole("button", { name: /Project 操作 AI电商/ }));
     fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    expect(screen.getByRole("dialog", { name: "重命名项目" }).classList.contains("sino-project-create-popover")).toBe(true);
+    expect(screen.getByRole("dialog", { name: "重命名项目" }).querySelector("[data-popover-arrow]")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("重命名 AI电商"), { target: { value: "AI电商系统" } });
     fireEvent.keyDown(screen.getByLabelText("重命名 AI电商"), { key: "Enter" });
     await waitFor(() => expect(updateFounderProject).toHaveBeenCalledWith("project-commerce", { name: "AI电商系统" }));
@@ -385,6 +387,23 @@ describe("Founder sidebar information architecture", () => {
     expect(screen.queryByRole("dialog", { name: "创建项目" })).toBeNull();
   });
 
+  it("shows anchored Archive and Delete Project popovers and closes them outside", () => {
+    render(<div><FounderNavigationPanel conversations={[]} projects={[{ id: "project-a", name: "Project A" }]} /><button type="button">Outside</button></div>);
+    const menu = screen.getByRole("button", { name: "Project 操作 Project A" });
+    fireEvent.click(menu);
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    const archiveDialog = screen.getByRole("dialog", { name: "归档项目" });
+    expect(archiveDialog.classList.contains("sino-project-create-popover")).toBe(true);
+    expect(archiveDialog.querySelector("[data-popover-arrow]")).toBeTruthy();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+    expect(screen.queryByRole("dialog", { name: "归档项目" })).toBeNull();
+    fireEvent.click(menu);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.getByRole("dialog", { name: "删除项目" }).classList.contains("sino-project-create-popover")).toBe(true);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "删除项目" })).toBeNull();
+  });
+
   it("drops a deleted Project from the authoritative list and keeps its Conversations unassigned", () => {
     const conversation = { id: "conv-1", project_id: "deleted-project", title: "仍然保留的讨论", updatedAt: Date.now() };
     const { rerender } = render(<FounderNavigationPanel conversations={[conversation]} projects={[{ id: "deleted-project", name: "已删除 Demo Project" }]} activeProjectId="deleted-project" onSelectConversation={vi.fn()} />);
@@ -399,10 +418,10 @@ describe("Founder sidebar information architecture", () => {
     deleteFounderProject.mockResolvedValue({ deleted: true });
     const onNavigate = vi.fn();
     const onProjectsChanged = vi.fn().mockResolvedValue([]);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<FounderNavigationPanel projects={[{ id: "project-delete", name: "待删除 Project" }]} activeProjectId="project-delete" conversations={[]} onNavigate={onNavigate} onProjectsChanged={onProjectsChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "Project 操作 待删除 Project" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除项目" }));
     await waitFor(() => expect(deleteFounderProject).toHaveBeenCalledWith("project-delete"));
     expect(onNavigate).toHaveBeenCalledWith("home");
     expect(onProjectsChanged).toHaveBeenCalledTimes(1);
