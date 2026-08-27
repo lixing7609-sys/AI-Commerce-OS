@@ -434,6 +434,8 @@ describe("Founder sidebar information architecture", () => {
     expect(actionPopover.classList.contains("sino-project-create-popover")).toBe(true);
     expect(actionPopover.classList.contains("sino-conversation-action-popover")).toBe(true);
     expect(actionPopover.querySelector("[data-popover-arrow]")).toBeTruthy();
+    expect(screen.getByText("移动到项目")).toBeTruthy();
+    expect(screen.queryByText("Move to Project")).toBeNull();
     fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
     expect(screen.queryByRole("dialog", { name: "会话操作 商品讨论" })).toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
