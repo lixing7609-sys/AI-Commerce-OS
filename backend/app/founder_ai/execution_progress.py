@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.founder_ai.execution_registry import get_execution_session
 from app.founder_ai.technical_resolution import evaluate_stall
+from app.founder_ai.execution_state import STAGE_PROGRESS
 
 
 STANDARD_PROGRESS = {"inspect": 10, "plan": 25, "execution": 35, "scope_verification": 60, "correcting_scope": 55, "verification": 80, "learning": 95, "closure": 95, "complete": 100}
@@ -96,7 +97,10 @@ def build_execution_progress(route: dict) -> dict | None:
     if blocker and phase == "complete":
         phase = "verification" if "verification" in str(blocker.get("type")) else "execution"
     weights = STANDARD_PROGRESS if classification == "STANDARD_TASK" else QUICK_FIX_PROGRESS
-    progress = weights.get(phase, 0)
+    canonical = getattr(session, "execution_stage", None) if session and getattr(session, "stage_started_at", None) else None
+    progress = STAGE_PROGRESS.get(canonical, weights.get(phase, 0))
+    if session and session.status == "completed":
+        progress = 100
     if session and session.status == "completed" and phase in {"verification", "verify"}:
         progress = 90
     started_at = (session.started_at or session.queued_at or session.created_at) if session else execution.get("dispatched_at")
@@ -145,5 +149,10 @@ def build_execution_progress(route: dict) -> dict | None:
         "stall_reason": "meaningful_progress_stale" if stalled else None,
         "worker_heartbeat_at": stall_evidence.get("worker_heartbeat_at"),
         "meaningful_progress_at": stall_evidence.get("meaningful_progress_at"),
+        "execution_stage": getattr(session, "execution_stage", None) if session else None,
+        "stage_started_at": getattr(session, "stage_started_at", None) if session else None,
+        "runtime_revision": getattr(session, "runtime_revision", None) if session else None,
+        "execution_created_revision": getattr(session, "execution_created_revision", None) if session else None,
+        "worker_revision": getattr(session, "worker_revision", None) if session else None,
         "codex_authorization_boundary": codex_boundary or None,
     }

@@ -34,8 +34,10 @@ MODULES = (
     ),
     SemanticModule(
         "Founder Conversation",
-        ("conversation", "对话", "消息", "气泡", "附件", "composer", "输入框"),
+        ("conversation", "对话", "会话", "对话标题", "会话标题", "更多操作", "会话操作", "消息", "气泡", "附件", "composer", "输入框"),
         (
+            "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+            "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
             "frontend/src/sino-founder/ConversationThread.jsx",
             "frontend/src/sino-founder/ConversationThread.test.jsx",
             "frontend/src/sino-founder/ConversationWorkspace.jsx",
@@ -43,7 +45,7 @@ MODULES = (
             "frontend/src/sino-founder/FounderHome.test.jsx",
             "frontend/src/sino-founder/sino-founder-ai.css",
         ),
-        ("ConversationThread", "ConversationWorkspace", "sino-conversation", "message-", "composer"),
+        ("FounderNavigationPanel", "ConversationThread", "ConversationWorkspace", "sino-conversation", "sino-conversation-item", "conversation-action-popover", "message-", "composer"),
     ),
     SemanticModule(
         "Founder Settings / Model Center",
@@ -118,18 +120,28 @@ def resolve_task_scope(*, goal: str, risk_level: str = "low", explicit_contract:
     if not normalized or any(normalized == item or normalized.startswith(item) for item in VAGUE_GOALS):
         return _approval("The goal is too vague to identify a safe semantic module.")
 
+    # Wording after comparison/reference terms describes visual inspiration, not
+    # a second write target. Weight the target clause more strongly.
+    target_clause = normalized
+    reference_clause = ""
+    for separator in ("与‘", "与\"", "与“", "参考", "类似", "一致"):
+        if separator in target_clause:
+            target_clause, reference_clause = target_clause.split(separator, 1)
+            break
     scored: list[tuple[int, SemanticModule, list[str]]] = []
     for module in MODULES:
-        matches = [keyword for keyword in module.keywords if keyword in normalized]
+        target_matches = [keyword for keyword in module.keywords if keyword in target_clause]
+        reference_matches = [keyword for keyword in module.keywords if keyword in reference_clause]
+        matches = target_matches + [item for item in reference_matches if item not in target_matches]
         if matches:
-            scored.append((len(matches), module, matches))
+            scored.append((len(target_matches) * 3 + len(reference_matches), module, matches))
     scored.sort(key=lambda item: item[0], reverse=True)
     has_ui_intent = any(term in normalized for term in UI_TERMS)
     if not scored or not has_ui_intent:
         return _approval("No clear LOW-risk Founder frontend UI module could be resolved.")
     best_score, best, matches = scored[0]
     tied = [item for item in scored if item[0] == best_score]
-    confidence = HIGH if best_score >= 2 and len(tied) == 1 else MEDIUM
+    confidence = HIGH if best_score >= 3 and len(tied) == 1 else MEDIUM
     if confidence != HIGH:
         return {
             **_approval("The goal spans or ambiguously names adjacent frontend modules."),
@@ -212,6 +224,15 @@ def _semantic_visible_contract(goal: str, module: SemanticModule) -> dict[str, A
                 "project_action_trigger_visible", "rename_popover_visible",
                 "archive_popover_visible", "delete_popover_visible",
                 "project_action_popovers_match_create_project", "outside_close_works",
+            ],
+        }
+    if module.name == "Founder Conversation" and any(term in goal for term in ("更多操作", "会话操作", "对话标题", "会话标题")):
+        return {
+            "required": True, "artifact_type": "founder_conversation_action_popover",
+            "target_route": "Sino Founder shell / conversation navigation",
+            "required_assertions": [
+                "conversation_action_trigger_visible", "conversation_action_popover_visible",
+                "conversation_action_popover_matches_create_project", "outside_close_works",
             ],
         }
     return None

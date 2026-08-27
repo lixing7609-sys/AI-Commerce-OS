@@ -137,6 +137,20 @@ def test_worker_recovers_persisted_queued_session(monkeypatch, tmp_path: Path):
     assert saved
 
 
+def test_backend_restart_requeues_same_active_execution(monkeypatch, tmp_path: Path):
+    queue = ExecutionQueue()
+    session = ExecutionSession("execution-restart", "task-1", "package-1", status="executing")
+    package = replace(build_execution_package(generate_task_asset_draft("Restore execution")), execution_allowed=True)
+    monkeypatch.setattr(worker_module, "list_execution_sessions", lambda: [session])
+    monkeypatch.setattr(worker_module, "get_execution_session", lambda _execution_id: (session, package))
+    monkeypatch.setattr(worker_module, "save_execution_session", lambda *_args: None)
+    worker = ExecutionWorker(queue=queue, adapter=FakeAdapter(), project_root=tmp_path)
+    worker._recover_sessions()
+    assert session.status == "queued"
+    assert queue.get(session.id).execution_id == session.id
+    assert any(event["event_name"] == "backend_restarted" for event in session.events)
+
+
 def test_worker_calls_codex_adapter(monkeypatch, tmp_path: Path):
     _, adapter, _, _, _ = _run_worker(monkeypatch, tmp_path)
 
@@ -271,7 +285,7 @@ def test_memory_writer_failure_cannot_complete(monkeypatch, tmp_path: Path):
     assert "completed" not in names
 
 
-def test_backend_restart_pauses_inflight_session(monkeypatch, tmp_path: Path):
+def test_backend_restart_restores_inflight_session_to_same_queue(monkeypatch, tmp_path: Path):
     session = ExecutionSession("execution-paused", "task-1", "package-1", status="executing")
     package = replace(build_execution_package(generate_task_asset_draft("Recover safely")), execution_allowed=True)
     saved = []
@@ -279,13 +293,15 @@ def test_backend_restart_pauses_inflight_session(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(worker_module, "get_execution_session", lambda _execution_id: (session, package))
     monkeypatch.setattr(worker_module, "save_execution_session", lambda *_args: saved.append(session.status))
 
-    ExecutionWorker(queue=ExecutionQueue(), adapter=FakeAdapter(), project_root=tmp_path)._recover_sessions()
+    queue = ExecutionQueue()
+    ExecutionWorker(queue=queue, adapter=FakeAdapter(), project_root=tmp_path)._recover_sessions()
 
-    assert session.status == "paused"
-    assert session.pause_reason == "Backend restarted"
+    assert session.status == "queued"
+    assert session.pause_reason is None
     assert session.recoverable is True
+    assert queue.get(session.id).execution_id == session.id
     assert session.events[-1]["event_name"] == "backend_restarted"
-    assert saved[-1] == "paused"
+    assert saved[-1] == "queued"
 
 
 def test_resume_paused_execution_restores_queue(monkeypatch, tmp_path: Path):

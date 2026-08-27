@@ -47,6 +47,15 @@ def test_unseen_project_action_popover_task_resolves_high_confidence_project_sco
     assert scope["visible_artifact_contract"]["artifact_type"] == "founder_project_action_popovers"
 
 
+def test_unseen_conversation_action_popover_uses_target_not_reference_module():
+    scope = resolve_task_scope(goal="把对话标题后的更多操作弹出框改为与‘新建项目’弹出框一致的样式和交互")
+    assert scope["scope_source"] == "semantic_module"
+    assert scope["confidence"] == HIGH
+    assert scope["allowed_modules"] == ["Founder Conversation"]
+    assert "frontend/src/sino-founder/FounderNavigationPanel.jsx" in scope["allowed_file_patterns"]
+    assert scope["visible_artifact_contract"]["artifact_type"] == "founder_conversation_action_popover"
+
+
 def test_project_action_scope_accepts_production_component_test_and_matching_shared_css():
     contract = build_standard_task_contract(
         conversation_id="conv-project-actions",

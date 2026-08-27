@@ -34,6 +34,13 @@ class ExecutionSession:
     execution_logs: list[dict[str, str]] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     current_stage: str | None = None
+    execution_stage: str = "CREATED"
+    stage_started_at: str | None = None
+    last_heartbeat_at: str | None = None
+    last_meaningful_event_at: str | None = None
+    runtime_revision: str | None = None
+    execution_created_revision: str | None = None
+    worker_revision: str | None = None
     failure_reason: str | None = None
     pause_reason: str | None = None
     recoverable: bool = False
@@ -123,6 +130,9 @@ class FounderExecutionLoop:
         self.on_status("executing")
         try:
             result = self.adapter.execute(package, cwd=cwd)
+            session.subprocess_exit_status = result.exit_code
+            session.expected_long_running_operation = None
+            session.expected_operation_started_at = None
             append_event(session, "codex_finished", status="executing",
                          message=f"Codex subprocess finished with exit code {result.exit_code}",
                          metadata={"exit_code": result.exit_code, "codex_run_id": result.codex_run_id,

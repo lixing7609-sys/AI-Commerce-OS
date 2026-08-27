@@ -24,6 +24,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _project_runtime_truth(conversation_id: str | None) -> None:
+    if not conversation_id:
+        return
+    try:
+        from app.founder_ai.conversation_task_interaction import project_execution_events
+        project_execution_events(conversation_id)
+    except Exception:
+        logger.exception("Runtime truth projection failed conversation_id=%s", conversation_id)
+
+
 @dataclass(slots=True)
 class ExecutionQueueItem:
     execution_id: str
@@ -126,6 +136,7 @@ class ExecutionWorker:
         self.memory_repository = memory_repository or SinoMemoryRepository()
         self._stop = Event()
         self._thread: Thread | None = None
+        self._watchdog_thread: Thread | None = None
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -134,6 +145,8 @@ class ExecutionWorker:
         self._recover_sessions()
         self._thread = Thread(target=self._consume, name="sino-execution-worker", daemon=True)
         self._thread.start()
+        self._watchdog_thread = Thread(target=self._watchdog, name="sino-execution-watchdog", daemon=True)
+        self._watchdog_thread.start()
         logger.info("Founder execution worker started")
 
     def stop(self):
@@ -141,6 +154,8 @@ class ExecutionWorker:
         self.queue.wake()
         if self._thread:
             self._thread.join(timeout=5)
+        if self._watchdog_thread:
+            self._watchdog_thread.join(timeout=5)
 
     def _consume(self):
         while not self._stop.is_set():
@@ -156,8 +171,11 @@ class ExecutionWorker:
         session, package = record
         try:
             session.worker_id = "sino-execution-worker"
+            from app.founder_ai.execution_state import runtime_revision
+            session.worker_revision = runtime_revision()
             session.started_at = session.started_at or _now().isoformat()
-            append_event(session, "worker_started", status="executing", message="Execution worker started", timestamp=session.started_at)
+            session.worker_heartbeat_at = _now().isoformat()
+            append_event(session, "worker_started", status="executing", message="Execution worker started", timestamp=session.worker_heartbeat_at)
             save_execution_session(session, package)
             logger.info("Execution worker started execution_id=%s", execution_id)
             heartbeat_stop = Event()
@@ -233,6 +251,7 @@ class ExecutionWorker:
                         )
                 except Exception:
                     logger.exception("Task completion reconciliation failed execution_id=%s", execution_id)
+                _project_runtime_truth(conversation_id)
             logger.info("Execution completed execution_id=%s", execution_id)
         except ExecutionPausedForDelta:
             save_execution_session(session, package)
@@ -251,6 +270,7 @@ class ExecutionWorker:
             if conversation_id:
                 from app.founder_ai.standard_task_execution import project_scope_mismatch
                 project_scope_mismatch(conversation_id=conversation_id, execution_id=execution_id, evidence=session.result or {})
+                _project_runtime_truth(conversation_id)
             logger.warning("Founder execution blocked by scope mismatch execution_id=%s", execution_id)
         except Exception as error:
             previous_event = session.events[-1] if session.events else None
@@ -276,6 +296,7 @@ class ExecutionWorker:
             )
             save_execution_session(session, package)
             self.queue.transition(execution_id, "failed")
+            _project_runtime_truth(package.task_asset.conversation_id)
             logger.exception("Founder execution %s failed", execution_id)
 
     def _record_subprocess(self, execution_id: str, pid: int) -> None:
@@ -296,7 +317,35 @@ class ExecutionWorker:
             if record is None: return
             session, package = record
             session.worker_heartbeat_at = _now().isoformat()
+            session.last_heartbeat_at = session.worker_heartbeat_at
             save_execution_session(session, package)
+            _project_runtime_truth(package.task_asset.conversation_id)
+
+    def _watchdog(self):
+        """Continuously reconcile active executions without UI/API activity."""
+        while not self._stop.wait(1):
+            from app.founder_ai.technical_resolution import check_execution_liveness
+            for session in list_execution_sessions():
+                if session.status not in {"queued", "executing", "testing"}:
+                    continue
+                decision = check_execution_liveness(session, queue_item=self.queue.get(session.id))
+                if decision["action"] == "requeue":
+                    record = get_execution_session(session.id)
+                    if record:
+                        current, package = record
+                        self.queue.requeue(current.id)
+                        current.status = "queued"
+                        append_event(current, "execution_resumed", status="queued", message="Watchdog restored the same execution to the worker queue", metadata={"reason": decision["reason"]})
+                        save_execution_session(current, package)
+                elif decision["action"] == "block":
+                    record = get_execution_session(session.id)
+                    if record:
+                        current, package = record
+                        current.status = "blocked"
+                        current.failure_reason = "PIPELINE_STALLED"
+                        current.error_message = decision["reason"]
+                        append_event(current, "failed", status="blocked", message="Execution pipeline stalled and could not be safely recovered", metadata=decision)
+                        save_execution_session(current, package)
 
     def _on_status(self, execution_id: str, status: str):
         record = get_execution_session(execution_id)
@@ -314,6 +363,36 @@ class ExecutionWorker:
             if record is None:
                 continue
             _, package = record
+            safely_rolled_back_scope_block = (
+                session.status == "blocked"
+                and "scope mismatch" in str(session.failure_reason or session.error_message or "").lower()
+                and not bool((session.result or {}).get("task_owned_patch_persisted"))
+                and all(bool(item.get("corrected_rollback_succeeded", item.get("rollback_succeeded")))
+                        for item in list((session.result or {}).get("scope_correction_attempts") or []))
+            )
+            recoverable_pipeline_stall = (
+                session.status == "blocked"
+                and session.failure_reason == "PIPELINE_STALLED"
+                and not any((session.result, session.artifact, session.memory))
+            )
+            if (safely_rolled_back_scope_block or recoverable_pipeline_stall) and package.execution_allowed:
+                from app.founder_ai.standard_task_execution import build_standard_task_contract
+                refreshed = build_standard_task_contract(
+                    conversation_id=package.task_asset.conversation_id,
+                    goal=package.goal,
+                    task_id=session.task_asset_id,
+                )
+                if refreshed.get("scope_source") != "approval_required":
+                    package = replace(package, context={**dict(package.context), "standard_task_contract": refreshed})
+                    session.status = "queued"
+                    session.result = session.artifact = session.memory = None
+                    session.error_message = session.failure_reason = None
+                    session.completed_at = None
+                    item = self.queue.requeue(session.id)
+                    session.queued_at = item.created_at.isoformat()
+                    append_event(session, "execution_resumed", status="queued", message="Runtime revision restored the same execution", metadata={"scope_reconciled": safely_rolled_back_scope_block, "pipeline_recovered": recoverable_pipeline_stall})
+                    save_execution_session(session, package)
+                    continue
             if session.status in {"approved", "queued"} and package.execution_allowed:
                 queued_at = _parse_time(session.queued_at)
                 item = self.queue.enqueue(session.id, created_at=queued_at)
@@ -324,19 +403,21 @@ class ExecutionWorker:
                 save_execution_session(session, package)
             elif session.status in {"executing", "testing"}:
                 interrupted_status = session.status
-                session.status = "paused"
-                session.pause_reason = "Backend restarted"
                 session.recoverable = not any((session.result, session.artifact, session.memory))
+                session.status = "queued" if session.recoverable else "blocked"
+                session.pause_reason = None if session.recoverable else "Backend restarted with partial durable results"
                 session.error_message = None
-                session.failure_reason = None
+                session.failure_reason = None if session.recoverable else "PIPELINE_STALLED"
                 session.completed_at = None
                 append_event(
                     session,
                     "backend_restarted",
-                    status="paused",
-                    message="Backend restarted during execution; review and resume when safe",
+                    status=session.status,
+                    message="Backend restarted; same execution automatically restored" if session.recoverable else "Backend restarted with partial durable results; execution blocked",
                     metadata={"interrupted_status": interrupted_status, "recoverable": session.recoverable},
                 )
+                if session.recoverable:
+                    self.queue.requeue(session.id)
                 save_execution_session(session, package)
 
 

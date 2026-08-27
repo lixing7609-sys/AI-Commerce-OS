@@ -79,6 +79,20 @@ def evaluate_stall(session, *, now: datetime | None = None, threshold_seconds: i
             "effective_timeout_seconds": effective_timeout, "pending_authorization": pending_authorization}
 
 
+def check_execution_liveness(session, *, queue_item=None, now: datetime | None = None, process_checker=None) -> dict:
+    """Choose one safe watchdog action from owned process and durable state."""
+    evidence = evaluate_stall(session, now=now, process_checker=process_checker)
+    if evidence["subprocess_alive"]:
+        return {"action": "wait", "reason": "owned subprocess is alive; refresh heartbeat without replay", **evidence}
+    if not evidence["stalled"]:
+        return {"action": "wait", "reason": "owned worker/process is live or progress is fresh", **evidence}
+    if session.status == "queued" and (queue_item is None or queue_item.status not in {"queued", "running"}):
+        return {"action": "requeue", "reason": "queued execution is missing from worker queue", **evidence}
+    if not evidence["subprocess_alive"] and getattr(session, "subprocess_exit_status", None) is None and not any((session.result, session.artifact, session.memory)):
+        return {"action": "requeue", "reason": "worker/subprocess disappeared before durable results", **evidence}
+    return {"action": "block", "reason": "active stage has no live owner and cannot be safely replayed", **evidence}
+
+
 def classify_subprocess_constraint(session) -> dict:
     result = dict(session.result or {}); text = f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}".lower()
     denied = "permission denied" in text or "operation not permitted" in text or "not authorized" in text

@@ -12,7 +12,7 @@ from app.founder_ai.execution_loop import ExecutionSession
 from app.founder_ai.execution_registry import save_execution_session
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 from app.founder_ai.technical_resolution import (
-    classify_subprocess_constraint, evaluate_stall, is_local_health_check_goal, resolve_local_health_check, safe_repair_allowed,
+    check_execution_liveness, classify_subprocess_constraint, evaluate_stall, is_local_health_check_goal, resolve_local_health_check, safe_repair_allowed,
 )
 
 
@@ -51,6 +51,24 @@ def test_finished_subprocess_without_next_pipeline_event_becomes_explicit_stall(
     evidence = evaluate_stall(session, now=now, threshold_seconds=180, process_checker=lambda _: False)
     assert evidence["stalled"] is True
     assert evidence["subprocess_alive"] is False
+
+
+def test_watchdog_waits_for_live_process_and_requeues_missing_dead_owner():
+    now = datetime.now(timezone.utc); old = (now - timedelta(minutes=20)).isoformat()
+    live = ExecutionSession(id="live", task_asset_id="task", execution_package_id="package", status="executing", started_at=old, meaningful_progress_at=old, worker_heartbeat_at=now.isoformat(), subprocess_pid=123, subprocess_activity_at=now.isoformat())
+    assert check_execution_liveness(live, now=now, process_checker=lambda _: True)["action"] == "wait"
+    stale_heartbeat_live_process = ExecutionSession(id="live-stale-heartbeat", task_asset_id="task", execution_package_id="package", status="executing", started_at=old, meaningful_progress_at=old, worker_heartbeat_at=old, subprocess_pid=123, subprocess_activity_at=now.isoformat())
+    assert check_execution_liveness(stale_heartbeat_live_process, now=now, process_checker=lambda _: True)["action"] == "wait"
+    dead = ExecutionSession(id="dead", task_asset_id="task", execution_package_id="package", status="executing", started_at=old, meaningful_progress_at=old, worker_heartbeat_at=old, subprocess_pid=123)
+    assert check_execution_liveness(dead, now=now, process_checker=lambda _: False)["action"] == "requeue"
+
+
+def test_watchdog_blocks_unrecoverable_stall_instead_of_leaving_it_active():
+    now = datetime.now(timezone.utc); old = (now - timedelta(minutes=20)).isoformat()
+    session = ExecutionSession(id="partial", task_asset_id="task", execution_package_id="package", status="testing", started_at=old, meaningful_progress_at=old, worker_heartbeat_at=old, result={"changed_files": ["app.py"]})
+    decision = check_execution_liveness(session, now=now, process_checker=lambda _: False)
+    assert decision["action"] == "block"
+    assert "cannot be safely replayed" in decision["reason"]
 
 
 def test_pending_authorization_is_not_a_stall():

@@ -132,9 +132,19 @@ def append_event(
     ).to_dict()
     session.events.append(event)
     session.current_stage = event_name
+    from .execution_state import canonical_stage, runtime_revision
+    stage = canonical_stage(event_name, status)
+    if getattr(session, "execution_stage", None) != stage:
+        session.execution_stage = stage
+        session.stage_started_at = event["timestamp"]
+    revision = runtime_revision()
+    session.runtime_revision = revision
+    session.execution_created_revision = getattr(session, "execution_created_revision", None) or revision
     session.worker_heartbeat_at = event["timestamp"]
+    session.last_heartbeat_at = event["timestamp"]
     if event_name != "worker_heartbeat":
         session.meaningful_progress_at = event["timestamp"]
+        session.last_meaningful_event_at = event["timestamp"]
     # Preserve the old response and persisted shape while clients migrate to events.
     session.execution_logs.append({"timestamp": event["timestamp"], "stage": event_name, "message": message})
     return event

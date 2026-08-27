@@ -72,6 +72,24 @@ try {
     evidence.project_action_popovers_match_create_project = ["Rename", "Archive", "Delete"].every((action) => results[`${action}_matches_create_project`] === true);
     evidence.outside_close_works = ["Rename", "Archive", "Delete"].every((action) => results[`${action}_outside_close`] === true);
     evidence.project_action_popovers = results;
+  } else if (artifactType === "founder_conversation_action_popover") {
+    const activeRow = page.locator(".sino-conversation-item.is-active:visible").first();
+    const visibleRow = await activeRow.count() > 0
+      ? activeRow
+      : page.locator(".sino-conversation-item:visible").first();
+    await visibleRow.waitFor({ state: "visible" });
+    await visibleRow.hover();
+    const trigger = visibleRow.getByRole("button", { name: /^Conversation 操作 |^会话操作 / });
+    await trigger.waitFor({ state: "visible" });
+    evidence.conversation_action_trigger_visible = await trigger.isVisible();
+    await trigger.click();
+    const popover = page.locator(".sino-conversation-action-popover").first();
+    evidence.conversation_action_popover_visible = await popover.isVisible().catch(() => false);
+    evidence.conversation_action_popover_matches_create_project = evidence.conversation_action_popover_visible && await popover.evaluate((node) => (
+      node.classList.contains("sino-project-create-popover") && getComputedStyle(node).position === "fixed"
+    ));
+    await page.locator(".founder-conversation-surface").click({ position: { x: 10, y: 10 } });
+    evidence.outside_close_works = !(await popover.isVisible().catch(() => false));
   } else if (artifactType === "founder_sidebar_heading_typography") {
     const projects = page.getByText("项目", { exact: true }).first();
     const conversations = page.getByText("会话", { exact: true }).first();
