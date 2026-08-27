@@ -14,6 +14,35 @@ def test_new_discussion_interaction_resolves_generic_founder_navigation_scope():
     assert scope["visible_artifact_contract"]["artifact_type"] == "founder_new_discussion_interaction"
 
 
+def test_new_discussion_shared_css_is_attributed_without_allowing_the_whole_file():
+    contract = build_standard_task_contract(
+        conversation_id="conv-new-discussion-css",
+        goal="为左侧栏顶部新建讨论入口增加操作选择，可开始空白讨论或在当前项目中开始讨论。",
+    )
+    matching = {
+        "task_changed_files": ["frontend/src/sino-founder/sino-founder-ai.css"],
+        "execution_owned_patch": (
+            "--- a/frontend/src/sino-founder/sino-founder-ai.css\n"
+            "+++ b/frontend/src/sino-founder/sino-founder-ai.css\n"
+            "@@ -1 +1 @@\n"
+            "+.sino-new-discussion-popover { position: fixed; }\n"
+        ),
+    }
+    assert verify_execution_scope(contract=contract, attribution=matching)["status"] == SCOPE_PASS
+    unrelated = {
+        **matching,
+        "execution_owned_patch": (
+            "--- a/frontend/src/sino-founder/sino-founder-ai.css\n"
+            "+++ b/frontend/src/sino-founder/sino-founder-ai.css\n"
+            "@@ -1 +1 @@\n"
+            "+.sino-model-center { color: red; }\n"
+        ),
+    }
+    result = verify_execution_scope(contract=contract, attribution=unrelated)
+    assert result["status"] == SCOPE_MISMATCH
+    assert result["out_of_scope_hunks"] == ["frontend/src/sino-founder/sino-founder-ai.css#hunk-1"]
+
+
 DRAWER_GOAL = "移除中间残留产品矩阵浮层，保留左下角入口，点击后在左侧导航区域以内以 Drawer 展开，不侵入中间画布。"
 
 

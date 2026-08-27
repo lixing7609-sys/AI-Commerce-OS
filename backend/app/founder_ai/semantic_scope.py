@@ -30,7 +30,12 @@ MODULES = (
             "frontend/src/sino-founder/SecretarySidebar.test.jsx",
             "frontend/src/sino-founder/sino-founder-ai.css",
         ),
-        ("FounderNavigationPanel", "SecretarySidebar", "sino-product-matrix", "sino-sidebar-products", "sino-sidebar", "product-matrix"),
+        (
+            "FounderNavigationPanel", "SecretarySidebar", "sino-product-matrix", "sino-sidebar-products",
+            "sino-sidebar", "product-matrix", "sino-new-discussion", "new-discussion",
+            "new-conversation", "discussion-create", "conversation-create", "sidebar-action",
+            "navigation-popover",
+        ),
     ),
     SemanticModule(
         "Founder Conversation",
@@ -184,9 +189,14 @@ def semantic_scope_file_allowed(scope: dict[str, Any], path: str) -> bool:
     return path in set(scope.get("allowed_file_patterns") or [])
 
 
-def semantic_css_hunk_allowed(scope: dict[str, Any], hunk: str) -> bool:
+def semantic_css_hunk_allowed(
+    scope: dict[str, Any], hunk: str, *, task_owned_class_tokens: set[str] | None = None,
+) -> bool:
     markers = [str(item) for item in scope.get("semantic_hunk_markers") or []]
-    return bool(markers) and any(marker.lower() in hunk.lower() for marker in markers)
+    normalized_hunk = hunk.lower()
+    if markers and any(marker.lower() in normalized_hunk for marker in markers):
+        return True
+    return any(f".{token.lower()}" in normalized_hunk for token in (task_owned_class_tokens or set()))
 
 
 def _semantic_visible_contract(goal: str, module: SemanticModule) -> dict[str, Any] | None:

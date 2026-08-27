@@ -119,10 +119,47 @@ def test_applicable_context_returns_applicable():
     assert state == APPLICABLE
 
 
+def test_clear_contextual_low_risk_choice_is_applicable_without_surface_name():
+    factory, asset = _save()
+    goal = "为左侧栏顶部新建讨论入口增加操作选择，可开始空白讨论或在当前项目中开始讨论。"
+    state, _ = assess_decision_applicability(
+        asset=asset, goal=goal, semantic_scope=_scope(), risk_level="low",
+        constraints=["compact action set", "preserve current navigation context"],
+    )
+    assert state == APPLICABLE
+    result = lookup_decision_strategies(
+        goal=goal, semantic_scope=_scope(), task_id="task-surface-unspecified",
+        constraints=["compact action set", "preserve current navigation context"],
+        session_factory=factory,
+    )
+    context = result["decision_context"]
+    assert context["recommended_strategy"] == "anchored_popover"
+    assert set(context["rejected_strategies"]) >= {"drawer", "modal"}
+    assert context["scope_authority"] is False and context["risk_authority"] is False
+    assert context["approval_authority"] is False and context["completion_authority"] is False
+
+
 def test_incompatible_context_returns_not_applicable():
     _, asset = _save()
     state, _ = assess_decision_applicability(
         asset=asset, goal="点击入口后必须全屏多步骤编辑", semantic_scope=_scope(), risk_level="low"
+    )
+    assert state == NOT_APPLICABLE
+
+
+def test_explicit_modal_or_destructive_confirmation_is_not_applicable():
+    _, asset = _save()
+    for goal in ("点击入口后必须 modal 确认", "点击入口后执行 destructive 高风险确认"):
+        state, _ = assess_decision_applicability(
+            asset=asset, goal=goal, semantic_scope=_scope(), risk_level="low"
+        )
+        assert state == NOT_APPLICABLE
+
+
+def test_large_multistep_editor_is_not_applicable():
+    _, asset = _save()
+    state, _ = assess_decision_applicability(
+        asset=asset, goal="点击入口后进入大工作区进行多步骤编辑", semantic_scope=_scope(), risk_level="low"
     )
     assert state == NOT_APPLICABLE
 

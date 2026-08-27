@@ -30,7 +30,10 @@ def assess_decision_applicability(*, asset: ReusableAssetDB, goal: str, semantic
     text = " ".join([goal, *(constraints or [])]).lower()
     if any(term in text for term in ("必须 modal", "必须模态", "全屏", "full-screen", "多步骤", "大工作区", "高风险", "destructive")):
         return NOT_APPLICABLE, "current constraints hit an invalidation condition"
-    compact = any(term in text for term in ("一组操作", "几个操作", "操作入口", "菜单", "下拉", "弹出", "popover", "点击后", "contextual"))
+    compact = any(term in text for term in (
+        "一组操作", "几个操作", "操作入口", "操作选择", "操作选项", "菜单", "下拉", "弹出",
+        "action set", "action choice", "actions", "menu", "点击后", "contextual",
+    ))
     anchored = any(term in text for term in ("入口", "trigger", "按钮", "图标", "标题后", "底部"))
     if compact and anchored:
         return APPLICABLE, "compact low-risk actions are contextual to a visible trigger"

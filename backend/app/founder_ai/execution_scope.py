@@ -13,6 +13,21 @@ SCOPE_PASS = "PASS"
 SCOPE_MISMATCH = "SCOPE_MISMATCH"
 
 
+def _task_owned_jsx_class_tokens(patch: str) -> set[str]:
+    """Extract class tokens introduced by this execution's production JSX patch."""
+    tokens: set[str] = set()
+    current_path = ""
+    for line in patch.splitlines():
+        if line.startswith("+++ b/"):
+            current_path = line[6:]
+            continue
+        if not current_path.endswith((".jsx", ".tsx")) or not line.startswith("+") or line.startswith("+++"):
+            continue
+        for value in re.findall(r"className\s*=\s*[\"'`]([^\"'`]+)[\"'`]", line[1:]):
+            tokens.update(token for token in re.findall(r"[A-Za-z_][\w-]{3,}", value) if "${" not in token)
+    return tokens
+
+
 def _run(repo_root: Path, *args: str, input_text: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", *args], cwd=repo_root, input=input_text, capture_output=True, text=True, check=False,
@@ -106,6 +121,7 @@ def verify_execution_scope(*, contract: dict[str, Any], attribution: dict[str, A
     ))
     allowed_css_selectors = [str(item) for item in contract.get("allowed_css_selectors") or []]
     patch = str(attribution.get("execution_owned_patch") or "")
+    task_owned_class_tokens = _task_owned_jsx_class_tokens(patch)
     out_of_scope_hunks: list[str] = []
     if allowed_css_selectors:
         for path in sorted(changed & allowed):
@@ -133,7 +149,9 @@ def verify_execution_scope(*, contract: dict[str, Any], attribution: dict[str, A
                 file_patch = file_patch[:next_file]
             hunks = [f"@@{item}" for item in file_patch.split("\n@@")[1:]]
             for index, hunk in enumerate(hunks, start=1):
-                if not semantic_css_hunk_allowed(semantic_scope, hunk):
+                if not semantic_css_hunk_allowed(
+                    semantic_scope, hunk, task_owned_class_tokens=task_owned_class_tokens,
+                ):
                     out_of_scope_hunks.append(f"{path}#hunk-{index}")
     status = SCOPE_PASS if not unexpected and not out_of_scope_hunks else SCOPE_MISMATCH
     return {

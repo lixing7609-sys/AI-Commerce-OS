@@ -115,6 +115,51 @@ def test_shared_css_hunk_is_checked_against_the_task_selector():
     assert mismatch["out_of_scope_hunks"] == ["frontend/src/sino-founder/sino-founder-ai.css#hunk-1"]
 
 
+def test_task_owned_jsx_class_attributes_matching_shared_css_hunk_only():
+    contract = {
+        "objective": "add a bounded navigation interaction",
+        "scope_source": "semantic_module",
+        "scope_confidence": "HIGH",
+        "implementation_scope": [
+            "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ],
+        "semantic_scope": {
+            "scope_source": "semantic_module",
+            "confidence": "HIGH",
+            "allowed_file_patterns": [
+                "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+                "frontend/src/sino-founder/sino-founder-ai.css",
+            ],
+            "semantic_hunk_markers": ["FounderNavigationPanel"],
+        },
+    }
+    matching = {
+        "task_changed_files": list(contract["implementation_scope"]),
+        "execution_owned_patch": (
+            "--- a/frontend/src/sino-founder/FounderNavigationPanel.jsx\n"
+            "+++ b/frontend/src/sino-founder/FounderNavigationPanel.jsx\n"
+            "@@ -1 +1 @@\n"
+            "+<div className=\"sino-task-owned-discussion-menu\" />\n"
+            "--- a/frontend/src/sino-founder/sino-founder-ai.css\n"
+            "+++ b/frontend/src/sino-founder/sino-founder-ai.css\n"
+            "@@ -1 +1 @@\n"
+            "+.sino-task-owned-discussion-menu { position: fixed; }\n"
+        ),
+    }
+    assert verify_execution_scope(contract=contract, attribution=matching)["status"] == SCOPE_PASS
+    unrelated = {
+        **matching,
+        "execution_owned_patch": matching["execution_owned_patch"].replace(
+            ".sino-task-owned-discussion-menu { position: fixed; }",
+            ".sino-model-center { position: fixed; }",
+        ),
+    }
+    result = verify_execution_scope(contract=contract, attribution=unrelated)
+    assert result["status"] == SCOPE_MISMATCH
+    assert result["out_of_scope_hunks"] == ["frontend/src/sino-founder/sino-founder-ai.css#hunk-1"]
+
+
 def test_committed_change_is_still_attributed_and_marked_non_reversible(repo):
     baseline, contents = capture_execution_baseline(repo)
     (repo / "unrelated.txt").write_text("committed wrong\n")
