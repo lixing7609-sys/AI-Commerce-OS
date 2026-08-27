@@ -21,7 +21,7 @@ class SemanticModule:
 MODULES = (
     SemanticModule(
         "Founder Sidebar / Navigation",
-        ("左侧栏", "左边栏", "侧边栏", "左下角", "sidebar", "navigation", "导航", "产品矩阵", "sino ai 产品", "产品弹出框", "入口", "popover", "drawer", "浮层"),
+        ("左侧栏", "左边栏", "侧边栏", "左下角", "sidebar", "navigation", "导航", "产品矩阵", "sino ai 产品", "产品弹出框", "入口", "popover", "drawer", "浮层", "新建讨论", "new discussion", "new conversation", "start discussion", "blank discussion", "空白讨论", "当前项目中开始讨论"),
         (
             "frontend/src/sino-founder/FounderNavigationPanel.jsx",
             "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
@@ -91,7 +91,7 @@ MODULES = (
     ),
 )
 
-UI_TERMS = ("ui", "界面", "页面", "布局", "位置", "样式", "字号", "字体", "颜色", "间距", "圆角", "弹出", "展开", "drawer", "popover", "modal")
+UI_TERMS = ("ui", "界面", "页面", "布局", "位置", "样式", "字号", "字体", "颜色", "间距", "圆角", "弹出", "展开", "按钮", "入口", "操作选择", "drawer", "popover", "modal")
 HIGH_RISK_TERMS = ("数据库", "database", "schema", "secret", "密钥", "production", "生产", "deploy", "部署", "git push", "删除数据", "付费 api", "系统权限")
 VAGUE_GOALS = ("优化系统", "优化一下", "改进系统", "完善系统")
 
@@ -191,6 +191,18 @@ def semantic_css_hunk_allowed(scope: dict[str, Any], hunk: str) -> bool:
 
 def _semantic_visible_contract(goal: str, module: SemanticModule) -> dict[str, Any] | None:
     """Compile a declarative UI check from common interaction semantics."""
+    if module.name == "Founder Sidebar / Navigation" and any(
+        term in goal for term in ("新建讨论", "new discussion", "new conversation", "start discussion", "blank discussion")
+    ):
+        return {
+            "required": True, "artifact_type": "founder_new_discussion_interaction",
+            "target_route": "Sino Founder shell / sidebar navigation",
+            "required_assertions": [
+                "new_discussion_trigger_visible", "interaction_surface_visible",
+                "blank_discussion_action_visible", "current_project_discussion_action_visible",
+                "outside_close_works", "escape_close_works",
+            ],
+        }
     if module.name == "Founder Sidebar / Navigation" and "drawer" in goal:
         label = "Sino AI 产品矩阵" if "产品矩阵" in goal else None
         if label:

@@ -101,6 +101,25 @@ class ExecutionScopeBlocked(RuntimeError):
     """Raised after bounded scope correction cannot produce an in-scope patch."""
 
 
+def _production_changed_files(attribution: dict[str, Any]) -> list[str]:
+    production = []
+    for path in list(attribution.get("task_changed_files") or []):
+        lowered = path.lower()
+        name = Path(lowered).name
+        if lowered.startswith("docs/") or lowered.endswith((".md", ".rst")):
+            continue
+        if any(marker in name for marker in (".test.", ".spec.", "_test.")) or lowered.startswith("backend/tests/"):
+            continue
+        production.append(path)
+    return production
+
+
+def _result_attribution(result: CodexExecutionResult) -> dict[str, Any]:
+    attribution = dict(result.execution_attribution or {})
+    attribution.setdefault("task_changed_files", list(result.changed_files or []))
+    return attribution
+
+
 class FounderExecutionLoop:
     def __init__(self, adapter: CodexAdapter, on_status=None):
         self.adapter = adapter
@@ -204,6 +223,19 @@ class FounderExecutionLoop:
                     if not corrected_rollback:
                         raise ExecutionScopeBlocked("scope mismatch after correction; execution-owned patch could not be safely reversed")
                     raise ExecutionScopeBlocked("scope mismatch after one automatic correction")
+            implementation_required = bool(contract.get("implementation_required", True))
+            normalized_attribution = _result_attribution(result)
+            production_files = _production_changed_files(normalized_attribution)
+            if implementation_required and not production_files:
+                session.result = {
+                    "scope_verification": scope_result,
+                    "scope_correction_attempts": correction_attempts,
+                    "task_owned_patch_persisted": False,
+                    "production_changed_files": [],
+                    "implementation_required": True,
+                }
+                session.status = "blocked"
+                raise ExecutionScopeBlocked("NO_IMPLEMENTATION_EVIDENCE: implementation task produced no production patch")
             if contract:
                 from .post_implementation import run_post_implementation_pipeline
 
@@ -212,7 +244,7 @@ class FounderExecutionLoop:
                     self.on_status(status)
 
                 post_verification = run_post_implementation_pipeline(
-                    package=package, attribution=dict(result.execution_attribution or {}), repo_root=cwd,
+                    package=package, attribution=normalized_attribution, repo_root=cwd,
                     preferred_browser=result.browser_verification, on_event=project_post_event,
                 )
             else:
@@ -238,7 +270,9 @@ class FounderExecutionLoop:
                 "execution_baseline": result.execution_baseline,
                 "execution_attribution": result.execution_attribution,
                 "scope_verification": scope_result,
-                "task_owned_patch_persisted": scope_result["status"] == SCOPE_PASS,
+                "task_owned_patch_persisted": scope_result["status"] == SCOPE_PASS and bool(production_files),
+                "production_changed_files": production_files,
+                "implementation_required": implementation_required,
                 "scope_correction_attempts": correction_attempts,
                 "post_implementation_verification": post_verification,
                 "task_id": session.task_asset_id,

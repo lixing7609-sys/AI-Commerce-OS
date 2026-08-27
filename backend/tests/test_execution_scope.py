@@ -172,5 +172,27 @@ def test_second_scope_correction_failure_is_terminal_blocked(repo):
     assert (repo / "unrelated.txt").read_text() == "base\n"
 
 
+class EmptyCorrectionAdapter(CorrectingAdapter):
+    def execute(self, task_package, *, cwd):
+        self.calls += 1
+        baseline, contents = capture_execution_baseline(cwd)
+        if self.calls == 1:
+            (cwd / "unrelated.txt").write_text("wrong\n")
+        attribution = attribute_execution_changes(cwd, baseline=baseline, dirty_contents_before=contents)
+        return CodexExecutionResult("done", "", 0, attribution["task_changed_files"], [], None,
+                                    execution_baseline=baseline, execution_attribution=attribution,
+                                    codex_run_id=f"empty-{self.calls}")
+
+
+def test_scope_correction_empty_patch_is_not_persisted_or_completed(repo):
+    adapter = EmptyCorrectionAdapter(repo)
+    session = ExecutionSession("execution", "task", "package", status="approved")
+    with pytest.raises(ExecutionScopeBlocked, match="NO_IMPLEMENTATION_EVIDENCE"):
+        FounderExecutionLoop(adapter).run(session, package(), cwd=repo)
+    assert session.status == "blocked"
+    assert session.result["task_owned_patch_persisted"] is False
+    assert session.result["production_changed_files"] == []
+
+
 def test_codex_run_identity_is_extracted_without_reusing_previous_task_context():
     assert codex_run_id("header\nsession id: 01abc-current\n") == "01abc-current"

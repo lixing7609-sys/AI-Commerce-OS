@@ -299,6 +299,7 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
         return {
             "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
             "task_type": "STANDARD_TASK", "target_surface": "Local Development Environment",
+            "implementation_required": False,
             "objective": "Verify Founder frontend, Backend, Database, Worker, Execution Lifecycle and Git Working Tree.",
             "acceptance_criteria": ["Frontend responds", "Backend and Database are healthy", "Lifecycle is healthy", "Git working tree is clean"],
             "constraints": ["application_owned_evidence_only", "no_privileged_cross_app_inspection", "no_business_changes"],
@@ -354,6 +355,7 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
         contract = {
             "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
             "task_type": "STANDARD_TASK", "target_surface": target, "target_component": target,
+            "implementation_required": True,
             "objective": goal,
             "acceptance_criteria": [
                 "The requested UI behavior is implemented within the resolved semantic module.",
@@ -717,17 +719,20 @@ def evaluate_standard_verification_evidence(
     scope_verification_pass: bool = True,
     diff_check_pass: bool = True,
     checkpoint_requested: bool = False,
+    preexisting_acceptance_verified: bool = False,
 ) -> dict:
     """Separate verified task completion from optional version-control closure."""
     task_completion_evidence = {
-        "implementation_complete": implementation_complete,
+        "implementation_complete": implementation_complete or preexisting_acceptance_verified,
         "task_owned_tests_pass": task_owned_tests_pass,
         "build_pass": build_pass,
         "diff_check_pass": diff_check_pass,
         "visible_artifact_pass": visible_artifact_pass,
         "scope_verification_pass": scope_verification_pass,
+        "preexisting_acceptance_verified": preexisting_acceptance_verified,
     }
-    missing = [name for name, passed in task_completion_evidence.items() if not passed]
+    required = {key: value for key, value in task_completion_evidence.items() if key != "preexisting_acceptance_verified"}
+    missing = [name for name, passed in required.items() if not passed]
     checkpoint_status = (
         "NOT_REQUESTED" if not checkpoint_requested
         else "CREATED" if checkpoint_exists and task_owned_files_clean
@@ -747,6 +752,28 @@ def evaluate_standard_verification_evidence(
         "verification_complete": not missing,
         "missing_evidence": missing,
     }
+
+
+def command_evidence_passed(item: dict | None, *, required: bool) -> bool:
+    """A required command passes only when a real command ran and returned PASS."""
+    if not required:
+        return True
+    item = dict(item or {})
+    return item.get("status") == "PASS" and bool((item.get("evidence") or {}).get("command"))
+
+
+def production_implementation_evidence_passed(
+    *, result: dict, executor_passed: bool, scope_passed: bool, implementation_required: bool,
+) -> bool:
+    """Recheck implementation truth at final reconcile instead of trusting projected state."""
+    if not implementation_required:
+        return True
+    return bool(
+        executor_passed
+        and scope_passed
+        and result.get("task_owned_patch_persisted")
+        and list(result.get("production_changed_files") or [])
+    )
 
 
 def refresh_completed_execution_artifacts(*, execution_id: str, repo_root: Path = REPO_ROOT) -> bool:
@@ -989,16 +1016,31 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
         save_execution_session(session, package)
     checkpoint_requirement = str(package.commit_requirement if package else "").strip().lower()
     checkpoint_requested = bool(checkpoint_requirement and checkpoint_requirement not in {"none", "not requested", "not_required"})
+    result_data = dict(session.result or {})
+    production_files = list(result_data.get("production_changed_files") or [])
+    implementation_required = bool(contract.get("implementation_required", not verification_only))
+    preexisting_acceptance_verified = bool(result_data.get("preexisting_acceptance_verified"))
+    tests_evidence = dict(command_evidence.get("targeted_tests") or {})
+    build_evidence = dict(command_evidence.get("build") or {})
+    visible_required = bool((contract.get("visible_artifact_contract") or {}).get("required")) or any(
+        path.startswith("frontend/") for path in production_files
+    )
+    implementation_evidence_passed = production_implementation_evidence_passed(
+        result=result_data, executor_passed=executor_passed,
+        scope_passed=durable_scope.get("status") == "PASS",
+        implementation_required=implementation_required,
+    )
     closure_evidence = evaluate_standard_verification_evidence(
-        implementation_complete=session.status == "completed" and executor_passed,
-        task_owned_tests_pass=executor_passed and (not tests_required or command_evidence.get("targeted_tests", {}).get("status") == "PASS"),
-        build_pass=executor_passed and (not build_required or command_evidence.get("build", {}).get("status") == "PASS"),
-        visible_artifact_pass=visible_gate is None or visible_gate["completion_allowed"],
+        implementation_complete=session.status == "completed" and implementation_evidence_passed,
+        task_owned_tests_pass=executor_passed and command_evidence_passed(tests_evidence, required=tests_required),
+        build_pass=executor_passed and command_evidence_passed(build_evidence, required=build_required),
+        visible_artifact_pass=not visible_required or bool(visible_gate and visible_gate["completion_allowed"]),
         checkpoint_exists=(bool(session.commit_hash) and not task_owned_dirty) or not task_owned_paths or (verification_only and not task_owned_dirty),
         task_owned_files_clean=clean and diff_ok,
         scope_verification_pass=dict((session.result or {}).get("scope_verification") or {}).get("status") == "PASS",
         diff_check_pass=diff_ok,
         checkpoint_requested=checkpoint_requested,
+        preexisting_acceptance_verified=preexisting_acceptance_verified,
     )
     passed = closure_evidence["verification_complete"]
     verification = {"status": "PASS" if passed else "FAIL", "targeted_tests": command_evidence.get("targeted_tests"), "build": command_evidence.get("build"), "git_diff_check": "PASS" if diff_ok else "FAIL", "checkpoint": closure_evidence["checkpoint_status"],

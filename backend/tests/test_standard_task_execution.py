@@ -1,4 +1,7 @@
-from app.founder_ai.standard_task_execution import build_standard_task_contract, evaluate_standard_verification_evidence
+from app.founder_ai.standard_task_execution import (
+    build_standard_task_contract, command_evidence_passed,
+    evaluate_standard_verification_evidence, production_implementation_evidence_passed,
+)
 from app.founder_ai.task_complexity_router import QUICK_FIX, STANDARD_TASK, STRATEGIC_TASK, route_task_complexity
 
 
@@ -11,6 +14,15 @@ def test_clear_repository_search_is_a_standard_task_without_founder_confirmation
     assert route["clarification_required"] is False
     assert route["founder_gate_required"] is False
     assert route["strategy_meeting_required"] is False
+
+
+def test_read_only_local_health_check_does_not_require_implementation_patch():
+    contract = build_standard_task_contract(
+        conversation_id="conv-health",
+        goal="执行本地健康检查，检查 frontend、backend、database、worker、execution lifecycle 和 git。",
+    )
+    assert contract["target_surface"] == "Local Development Environment"
+    assert contract["implementation_required"] is False
 
 
 def test_standard_task_contract_is_inspected_and_bounded():
@@ -47,8 +59,10 @@ def test_new_discussion_three_column_contract_resolves_real_target_from_discussi
 
 def test_new_discussion_phrase_without_confirmed_three_columns_does_not_guess_target_contract():
     contract = build_standard_task_contract(conversation_id="conv-incomplete", goal="调整新建讨论按钮")
-    assert contract["target_surface"] == "Unresolved bounded task"
-    assert contract["implementation_scope"] == []
+    assert contract["target_surface"] == "Founder Sidebar / Navigation"
+    assert contract["scope_confidence"] == "HIGH"
+    assert contract["implementation_required"] is True
+    assert contract["visible_artifact_contract"]["required"] is True
 
 
 def test_founder_sidebar_spacing_resolves_its_own_bounded_target():
@@ -134,6 +148,39 @@ def test_complete_task_scoped_evidence_closes_verification_even_if_callback_was_
     )
     assert result["verification_complete"] is True
     assert result["missing_evidence"] == []
+
+
+def test_noop_requires_explicit_preexisting_acceptance_evidence():
+    missing = evaluate_standard_verification_evidence(
+        implementation_complete=False, task_owned_tests_pass=True, build_pass=True,
+        visible_artifact_pass=True, checkpoint_exists=False, task_owned_files_clean=True,
+    )
+    verified = evaluate_standard_verification_evidence(
+        implementation_complete=False, task_owned_tests_pass=True, build_pass=True,
+        visible_artifact_pass=True, checkpoint_exists=False, task_owned_files_clean=True,
+        preexisting_acceptance_verified=True,
+    )
+    assert missing["verification_complete"] is False
+    assert "implementation_complete" in missing["missing_evidence"]
+    assert verified["verification_complete"] is True
+
+
+def test_empty_test_or_build_command_cannot_be_projected_as_pass():
+    projected_pass = {"status": "PASS", "evidence": {"command": []}}
+    real_pass = {"status": "PASS", "evidence": {"command": ["npm", "run", "build"]}}
+    assert command_evidence_passed(projected_pass, required=True) is False
+    assert command_evidence_passed(real_pass, required=True) is True
+
+
+def test_codex_exit_zero_without_production_patch_is_not_implementation_complete():
+    assert production_implementation_evidence_passed(
+        result={"task_owned_patch_persisted": True, "production_changed_files": []},
+        executor_passed=True, scope_passed=True, implementation_required=True,
+    ) is False
+    assert production_implementation_evidence_passed(
+        result={"task_owned_patch_persisted": True, "production_changed_files": ["frontend/src/App.jsx"]},
+        executor_passed=True, scope_passed=True, implementation_required=True,
+    ) is True
 
 
 def test_scope_failure_prevents_completion_even_when_all_other_evidence_passes():

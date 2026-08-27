@@ -3,6 +3,17 @@ from app.founder_ai.semantic_scope import HIGH, LOW, resolve_task_scope
 from app.founder_ai.standard_task_execution import build_standard_task_contract
 
 
+def test_new_discussion_interaction_resolves_generic_founder_navigation_scope():
+    scope = resolve_task_scope(
+        goal="为左侧栏顶部新建讨论入口增加操作选择，可开始空白讨论或在当前项目中开始讨论。"
+    )
+    assert scope["scope_source"] == "semantic_module"
+    assert scope["confidence"] == HIGH
+    assert scope["allowed_modules"] == ["Founder Sidebar / Navigation"]
+    assert "frontend/src/sino-founder/FounderNavigationPanel.jsx" in scope["allowed_file_patterns"]
+    assert scope["visible_artifact_contract"]["artifact_type"] == "founder_new_discussion_interaction"
+
+
 DRAWER_GOAL = "移除中间残留产品矩阵浮层，保留左下角入口，点击后在左侧导航区域以内以 Drawer 展开，不侵入中间画布。"
 
 

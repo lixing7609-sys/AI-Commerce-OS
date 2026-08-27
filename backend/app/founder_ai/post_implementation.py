@@ -45,33 +45,45 @@ def run_post_implementation_pipeline(*, package, attribution: dict, repo_root: P
     frontend_changed = any(path.startswith("frontend/") for path in changed_files)
     checks: list[dict] = []
 
+    if contract.get("implementation_required", True) and not changed_files:
+        return {
+            "status": "BLOCKED", "stage": "implementation_evidence", "evidence": checks,
+            "failure_reason": "NO_IMPLEMENTATION_EVIDENCE: implementation task produced no task-owned patch",
+        }
+
     tests = _frontend_tests(contract, changed_files, repo_root)
     emit("tests_started", "testing", "Targeted tests started", {"tests": tests})
     if frontend_changed and tests:
         test_result = _run(["npm", "test", "--", "--run", *tests], cwd=repo_root / "frontend")
         test_status = PASS if test_result["exit_code"] == 0 else ACCEPTANCE_FAILED
+    elif frontend_changed:
+        test_result = {"command": [], "exit_code": None, "stdout": "", "stderr": "No targeted frontend test command resolved"}
+        test_status = UNAVAILABLE
     else:
-        test_result = {"command": [], "exit_code": 0, "stdout": "No targeted frontend test required", "stderr": ""}
-        test_status = PASS
+        test_result = {"command": [], "exit_code": None, "stdout": "Targeted frontend tests not required", "stderr": ""}
+        test_status = "NOT_REQUIRED"
     test_evidence = evidence("targeted_tests", test_status, detail=test_result,
-                             failure_reason=None if test_status == PASS else "targeted tests failed")
+                             failure_reason=None if test_status in {PASS, "NOT_REQUIRED"} else "targeted tests were not executed")
     checks.append(test_evidence)
-    emit("tests_passed" if test_status == PASS else "tests_failed", "testing", f"Targeted tests: {test_status}", test_evidence)
-    if test_status != PASS:
-        return {"status": "FAILED", "stage": "tests", "evidence": checks}
+    test_event = "tests_passed" if test_status == PASS else "tests_skipped" if test_status == "NOT_REQUIRED" else "tests_failed"
+    emit(test_event, "testing", f"Targeted tests: {test_status}", test_evidence)
+    if test_status not in {PASS, "NOT_REQUIRED"}:
+        return {"status": "BLOCKED" if test_status == UNAVAILABLE else "FAILED", "stage": "tests", "evidence": checks,
+                "failure_reason": test_evidence.get("failure_reason")}
 
     emit("build_started", "building", "Production build started", {})
     if frontend_changed:
         build_result = _run(["npm", "run", "build"], cwd=repo_root / "frontend")
         build_status = PASS if build_result["exit_code"] == 0 else ACCEPTANCE_FAILED
     else:
-        build_result = {"command": [], "exit_code": 0, "stdout": "No frontend build required", "stderr": ""}
-        build_status = PASS
+        build_result = {"command": [], "exit_code": None, "stdout": "Frontend build not required", "stderr": ""}
+        build_status = "NOT_REQUIRED"
     build_evidence = evidence("build", build_status, detail=build_result,
-                              failure_reason=None if build_status == PASS else "production build failed")
+                              failure_reason=None if build_status in {PASS, "NOT_REQUIRED"} else "production build failed")
     checks.append(build_evidence)
-    emit("build_passed" if build_status == PASS else "build_failed", "building", f"Production build: {build_status}", build_evidence)
-    if build_status != PASS:
+    build_event = "build_passed" if build_status == PASS else "build_skipped" if build_status == "NOT_REQUIRED" else "build_failed"
+    emit(build_event, "building", f"Production build: {build_status}", build_evidence)
+    if build_status not in {PASS, "NOT_REQUIRED"}:
         return {"status": "FAILED", "stage": "build", "evidence": checks}
 
     emit("diff_check_started", "verifying", "git diff --check started", {})
@@ -85,6 +97,9 @@ def run_post_implementation_pipeline(*, package, attribution: dict, repo_root: P
         return {"status": "FAILED", "stage": "diff_check", "evidence": checks}
 
     visible = dict(contract.get("visible_artifact_contract") or {})
+    if frontend_changed and not visible.get("required"):
+        return {"status": "BLOCKED", "stage": "browser", "evidence": checks,
+                "failure_reason": "UI implementation requires a visible artifact contract and browser evidence"}
     if visible.get("required"):
         emit("browser_verification_started", "verifying", "Visible artifact verification started", {})
         chain = execute_ui_verification_chain(
