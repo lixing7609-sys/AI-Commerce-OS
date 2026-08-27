@@ -90,6 +90,25 @@ try {
     ));
     await page.locator(".founder-conversation-surface").click({ position: { x: 10, y: 10 } });
     evidence.outside_close_works = !(await popover.isVisible().catch(() => false));
+  } else if (artifactType === "founder_conversation_project_selector_popover") {
+    const trigger = page.getByRole("button", { name: /选择项目|当前项目：/ }).last();
+    evidence.project_selector_trigger_visible = await trigger.isVisible();
+    await trigger.click();
+    const popover = page.getByRole("dialog", { name: "选择项目", exact: true });
+    evidence.project_selector_popover_visible = await popover.isVisible().catch(() => false);
+    evidence.project_selector_uses_portal = evidence.project_selector_popover_visible && await popover.evaluate((node) => node.parentElement === document.body);
+    evidence.project_selector_fixed_position = evidence.project_selector_popover_visible && await popover.evaluate((node) => getComputedStyle(node).position === "fixed");
+    evidence.project_selector_arrow_visible = evidence.project_selector_popover_visible && await popover.locator("[data-popover-arrow]").isVisible().catch(() => false);
+    evidence.project_selector_business_controls_visible = evidence.project_selector_popover_visible
+      && await popover.getByRole("textbox", { name: "搜索项目" }).isVisible().catch(() => false)
+      && await popover.getByRole("button", { name: "＋ 创建新项目" }).isVisible().catch(() => false)
+      && await popover.locator(".sino-project-selector__list button").count() > 0;
+    await page.locator(".founder-conversation-surface").click({ position: { x: 10, y: 10 } });
+    evidence.outside_close_works = !(await popover.isVisible().catch(() => false));
+    await trigger.click(); await page.keyboard.press("Escape");
+    evidence.escape_close_works = !(await popover.isVisible().catch(() => false));
+    await trigger.click(); await trigger.click();
+    evidence.toggle_close_works = !(await popover.isVisible().catch(() => false));
   } else if (artifactType === "founder_sidebar_heading_typography") {
     const projects = page.getByText("项目", { exact: true }).first();
     const conversations = page.getByText("会话", { exact: true }).first();

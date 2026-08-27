@@ -108,6 +108,25 @@ def test_unrelated_shared_css_hunk_is_rejected_by_same_semantic_model():
     assert verify_execution_scope(contract=contract, attribution=attribution)["status"] == SCOPE_MISMATCH
 
 
+def test_conversation_project_selector_shared_css_is_attributed_to_composer_task():
+    contract = build_standard_task_contract(
+        conversation_id="conv-project-selector",
+        goal="把 Conversation Composer 底部的选择项目弹出框改成 anchored Popover",
+    )
+    attribution = {
+        "task_changed_files": ["frontend/src/sino-founder/sino-founder-ai.css"],
+        "execution_owned_patch": (
+            "--- a/frontend/src/sino-founder/sino-founder-ai.css\n"
+            "+++ b/frontend/src/sino-founder/sino-founder-ai.css\n"
+            "@@ -1 +1 @@\n"
+            "+.sino-project-selector__popover--anchored { position: fixed; }\n"
+            "+.sino-project-selector__arrow { position: absolute; }\n"
+        ),
+    }
+    assert verify_execution_scope(contract=contract, attribution=attribution)["status"] == SCOPE_PASS
+    assert contract["visible_artifact_contract"]["artifact_type"] == "founder_conversation_project_selector_popover"
+
+
 def test_vague_goal_requires_resolution_instead_of_auto_execution():
     result = resolve_task_scope(goal="优化系统")
     assert result["scope_source"] == "approval_required"

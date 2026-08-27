@@ -45,7 +45,7 @@ MODULES = (
             "frontend/src/sino-founder/FounderHome.test.jsx",
             "frontend/src/sino-founder/sino-founder-ai.css",
         ),
-        ("FounderNavigationPanel", "ConversationThread", "ConversationWorkspace", "sino-conversation", "sino-conversation-item", "conversation-action-popover", "message-", "composer"),
+        ("FounderNavigationPanel", "ConversationThread", "ConversationWorkspace", "sino-conversation", "sino-conversation-item", "conversation-action-popover", "sino-project-selector", "message-", "composer"),
     ),
     SemanticModule(
         "Founder Settings / Model Center",
@@ -233,6 +233,17 @@ def _semantic_visible_contract(goal: str, module: SemanticModule) -> dict[str, A
             "required_assertions": [
                 "conversation_action_trigger_visible", "conversation_action_popover_visible",
                 "conversation_action_popover_matches_create_project", "outside_close_works",
+            ],
+        }
+    if module.name == "Founder Conversation" and "选择项目" in goal and any(term in goal for term in ("弹出框", "popover", "锚定")):
+        return {
+            "required": True, "artifact_type": "founder_conversation_project_selector_popover",
+            "target_route": "Sino Founder shell / conversation composer",
+            "required_assertions": [
+                "project_selector_trigger_visible", "project_selector_popover_visible",
+                "project_selector_uses_portal", "project_selector_fixed_position",
+                "project_selector_arrow_visible", "project_selector_business_controls_visible",
+                "outside_close_works", "escape_close_works", "toggle_close_works",
             ],
         }
     return None

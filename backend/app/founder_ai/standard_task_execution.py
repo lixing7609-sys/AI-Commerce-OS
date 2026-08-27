@@ -805,7 +805,10 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
         previous_scope = dict((session.result or {}).get("scope_verification") or {})
         recoverable_scope_block = (
             previous_scope.get("status") == "SCOPE_MISMATCH"
-            and str(session.failure_reason or "").startswith("scope mismatch after execution-owned commit")
+            and str(session.failure_reason or "").startswith((
+                "scope mismatch after execution-owned commit",
+                "scope mismatch after correction-owned commit",
+            ))
         )
         if recoverable_scope_block:
             from app.founder_ai.execution_scope import SCOPE_PASS, verify_execution_scope
@@ -833,10 +836,19 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
             codex_metadata = dict((codex_event or {}).get("metadata") or {})
             safe_commit = bool(head and changed_files and set(changed_files).issubset(committed_files))
             if resolved_scope["status"] == SCOPE_PASS and safe_commit and codex_metadata.get("exit_code") == 0:
-                from app.founder_ai.verification_fallback import codex_command_evidence
+                from app.founder_ai.post_implementation import run_post_implementation_pipeline
                 verification = [*contract["acceptance_criteria"], "targeted frontend tests", "frontend build", "git diff --check"]
-                transcript = str(codex_metadata.get("stderr_summary") or "")
                 package = replace(package, context={**dict(package.context), "standard_task_contract": contract}, verification=verification)
+                def emit(event_name, status, message, metadata):
+                    append_event(session, event_name, status=status, message=message, metadata=metadata)
+                    save_execution_session(session, package)
+                post_verification = run_post_implementation_pipeline(
+                    package=package, attribution=attribution, repo_root=repo_root, on_event=emit,
+                )
+                command_evidence = list(post_verification.get("evidence") or [])
+                browser_checks = [item for item in command_evidence if item.get("verifier") in {
+                    "preferred_browser", "system_chrome_playwright", "component_static_acceptance",
+                }]
                 session.result = {
                     **dict(session.result or {}),
                     "changed_files": changed_files,
@@ -845,12 +857,34 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
                     "scope_verification_before_reconcile": previous_scope,
                     "scope_verification": resolved_scope,
                     "task_owned_patch_persisted": True,
-                    "command_verification_evidence": codex_command_evidence(transcript, exit_code=0, required=verification),
+                    "command_verification_evidence": command_evidence,
+                    "browser_verification": ({"status": "PASS", "evidence": browser_checks}
+                                             if post_verification.get("status") == "VERIFIED" and browser_checks else {}),
                     "codex_run_id": codex_metadata.get("codex_run_id"),
                     "task_id": task_id,
                     "execution_id": execution_id,
                     "execution_package_id": session.execution_package_id,
                 }
+                if post_verification.get("status") != "VERIFIED":
+                    session.status = "failed" if post_verification.get("status") == "FAILED" else "blocked"
+                    session.failure_reason = post_verification.get("failure_reason") or f"post-implementation {post_verification.get('stage')} failed"
+                    save_execution_session(session, package)
+                    return _project(
+                        conversation_id,
+                        step="verification",
+                        blocker={
+                            "type": "standard_task_verification_failed",
+                            "terminal_status": session.status.upper(),
+                            "reason": session.failure_reason,
+                            "verification_stage": post_verification.get("stage"),
+                            "founder_gate_required": False,
+                        },
+                        execution={
+                            "execution_session_id": execution_id,
+                            "dispatch_status": session.status,
+                            "scope_verification": resolved_scope,
+                        },
+                    )
                 session.status = "completed"; session.subprocess_exit_status = 0; session.commit_hash = head
                 session.error_message = None; session.failure_reason = None; session.recoverable = False
                 session.completed_at = _now()
@@ -995,4 +1029,13 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
     result = {"status": "completed", "verification": verification, "checkpoint_commit": session.commit_hash, "learning": learning, "closure": closure, "visible_result": visible_result}
     with SessionLocal() as db:
         task = db.get(TaskAssetDB, task_id); task.status = "completed"; task.execution_status = "completed"; task.result = result; db.commit()
+    if session.current_stage != "completed":
+        append_event(
+            session,
+            "completed",
+            status="completed",
+            message="Task execution completed with all required verification evidence.",
+            metadata={"verification_status": verification["status"]},
+        )
+        save_execution_session(session, package)
     return _project(conversation_id, step="complete", execution={"dispatch_status": "completed", "verification": verification, "learning": learning, "closure": closure, "result": result})
