@@ -16,7 +16,8 @@ def _tokens(value: str) -> set[str]:
     return {item for item in re.split(r"[^\w\u4e00-\u9fff]+", value.lower()) if item}
 
 
-def assess_reuse_compatibility(*, asset: ReusableAssetDB, goal: str, semantic_scope: dict) -> tuple[str, str]:
+def assess_reuse_compatibility(*, asset: ReusableAssetDB, goal: str, semantic_scope: dict,
+                               recommended_strategy: str | None = None) -> tuple[str, str]:
     modules = list(semantic_scope.get("allowed_modules") or [])
     if semantic_scope.get("scope_source") != "semantic_module" or semantic_scope.get("confidence") != "HIGH":
         return UNCERTAIN, "current semantic target is not resolved with HIGH confidence"
@@ -25,13 +26,18 @@ def assess_reuse_compatibility(*, asset: ReusableAssetDB, goal: str, semantic_sc
     lowered = goal.lower()
     if any(term in lowered for term in ("全屏", "full-screen", "bottom sheet", "移动端 sheet")):
         return REJECT, "current goal hits an asset invalidation condition"
+    if recommended_strategy and recommended_strategy != "anchored_popover":
+        return REJECT, "the applicable Decision recommends a different interaction surface"
+    if recommended_strategy == "anchored_popover":
+        return PASS, "the applicable Decision recommendation matches the anchored popover pattern"
     if any(term in lowered for term in ("popover", "弹出框", "弹窗", "菜单", "更多操作")):
         return PASS, "semantic module and compact anchored interaction are compatible"
     return UNCERTAIN, "target interaction does not clearly require an anchored popover"
 
 
 def lookup_reusable_assets(*, goal: str, semantic_scope: dict, task_id: str,
-                           execution_id: str | None = None, session_factory=SessionLocal) -> dict:
+                           execution_id: str | None = None, recommended_strategy: str | None = None,
+                           session_factory=SessionLocal) -> dict:
     """Lookup after scope resolution; returned guidance has no scope authority."""
     modules = list(semantic_scope.get("allowed_modules") or [])
     with session_factory() as db:
@@ -49,7 +55,10 @@ def lookup_reusable_assets(*, goal: str, semantic_scope: dict, task_id: str,
         ), reverse=True)
         selected = None; compatibility = None; reason = None
         for candidate in assets:
-            state, candidate_reason = assess_reuse_compatibility(asset=candidate, goal=goal, semantic_scope=semantic_scope)
+            state, candidate_reason = assess_reuse_compatibility(
+                asset=candidate, goal=goal, semantic_scope=semantic_scope,
+                recommended_strategy=recommended_strategy,
+            )
             if state == PASS:
                 selected, compatibility, reason = candidate, state, candidate_reason
                 break
@@ -60,6 +69,7 @@ def lookup_reusable_assets(*, goal: str, semantic_scope: dict, task_id: str,
             context = {
                 "advisory": True, "scope_authority": False, "risk_authority": False, "completion_authority": False,
                 "reuse_lookup_performed": True, "reuse_asset_id": selected.id,
+                "asset_fingerprint": selected.fingerprint,
                 "pattern_type": selected.pattern_type, "source_task_id": selected.source_task_id,
                 "source_execution_id": selected.source_execution_id, "compatibility": PASS,
                 "implementation_guidance": dict(selected.implementation_pattern),
@@ -99,7 +109,15 @@ def inject_reuse_context(*, contract: dict, goal: str, task_id: str | None,
     if semantic_scope.get("scope_source") != "semantic_module":
         return contract
     before = (list(semantic_scope.get("allowed_modules") or []), list(semantic_scope.get("allowed_file_patterns") or []))
-    lookup = lookup_reusable_assets(goal=goal, semantic_scope=semantic_scope, task_id=task_id, session_factory=session_factory)
+    decision = dict(contract.get("decision_context") or {})
+    recommended_strategy = (
+        decision.get("recommended_strategy")
+        if decision.get("applicability") == "APPLICABLE" else None
+    )
+    lookup = lookup_reusable_assets(
+        goal=goal, semantic_scope=semantic_scope, task_id=task_id,
+        recommended_strategy=recommended_strategy, session_factory=session_factory,
+    )
     result = dict(contract)
     result["reuse_lookup"] = {key: value for key, value in lookup.items() if key != "reuse_context"}
     if lookup["reuse_context"]:

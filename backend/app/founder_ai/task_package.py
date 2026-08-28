@@ -91,6 +91,17 @@ class TaskPackageBuilder:
                 "relevance": "Advisory interaction-surface recommendation; never scope, risk, approval, or completion authority",
             })
 
+        playbook_context = _mapping(standard_contract.get("playbook_context") or context.get("playbook_context"))
+        if playbook_context:
+            evidence.append({
+                "source": f"execution_playbook:{playbook_context.get('playbook_id', '')}",
+                "fact": playbook_context,
+                "relevance": (
+                    "Task-specific advisory composition of Decision, Pattern, current constraints and verification; "
+                    "never scope, risk, approval, completion, or verification-override authority"
+                ),
+            })
+
         for reference in _items(context.get("intelligence_references")):
             item = _mapping(reference)
             evidence.append({

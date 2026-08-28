@@ -383,7 +383,12 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
         from app.founder_ai.decision_retrieval import inject_decision_context
         contract = inject_decision_context(contract=contract, goal=goal, task_id=task_id, risk_level="low")
         from app.founder_ai.reuse_retrieval import inject_reuse_context
-        return inject_reuse_context(contract=contract, goal=goal, task_id=task_id)
+        contract = inject_reuse_context(contract=contract, goal=goal, task_id=task_id)
+        from app.founder_ai.playbook_composer import compose_execution_playbook
+        return compose_execution_playbook(
+            contract=contract, task_id=task_id, goal=goal, risk="low",
+            founder_constraints=discussion_context,
+        )
     return {
         "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
         "task_type": "STANDARD_TASK", "target_surface": "Unresolved bounded task",
