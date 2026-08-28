@@ -13,8 +13,9 @@ const executionStatusLabel = (status) => ({
   failed: "执行失败",
 }[status] || status);
 
-export function AnchoredComposerContextControls({ healthy, projects = [], activeProjectId, onSelectProject, onCreateProject, onFiles }) {
+export function AnchoredComposerContextControls({ healthy, projects = [], activeProjectId, onSelectProject, onCreateProject, onFiles, onSelectDocument }) {
   const [open, setOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -22,6 +23,9 @@ export function AnchoredComposerContextControls({ healthy, projects = [], active
   const [busy, setBusy] = useState(false);
   const triggerRef = useRef(null);
   const popoverRef = useRef(null);
+  const filesTriggerRef = useRef(null);
+  const filesPopoverRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [position, setPosition] = useState({ top: 0, left: 0, arrowLeft: 24 });
   const status = sinoStatus(healthy);
   const active = projects.find((project) => project.id === activeProjectId);
@@ -60,6 +64,39 @@ export function AnchoredComposerContextControls({ healthy, projects = [], active
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!filesOpen) return undefined;
+    const reposition = () => {
+      const triggerBounds = filesTriggerRef.current?.getBoundingClientRect();
+      if (!triggerBounds) return;
+      const popoverBounds = filesPopoverRef.current?.getBoundingClientRect();
+      const width = popoverBounds?.width || 220;
+      const height = popoverBounds?.height || 104;
+      const gap = 10;
+      const left = Math.max(12, Math.min(triggerBounds.left, window.innerWidth - width - 12));
+      const top = Math.max(12, triggerBounds.top - height - gap);
+      const arrowLeft = Math.max(16, Math.min(triggerBounds.left + triggerBounds.width / 2 - left, width - 16));
+      setPosition({ top, left, arrowLeft });
+    };
+    const close = (event) => {
+      if (!filesTriggerRef.current?.contains(event.target) && !filesPopoverRef.current?.contains(event.target)) setFilesOpen(false);
+    };
+    const escape = (event) => { if (event.key === "Escape") setFilesOpen(false); };
+    reposition();
+    const frame = window.requestAnimationFrame(reposition);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", escape);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", escape);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [filesOpen]);
+
   async function create(event) {
     event?.preventDefault();
     if (!name.trim() || busy) return;
@@ -78,11 +115,17 @@ export function AnchoredComposerContextControls({ healthy, projects = [], active
     <button type="button" className="sino-project-selector__create" onClick={() => setCreating((value) => !value)}>＋ 创建新项目</button>
     {creating && <div className="sino-project-selector__create-form"><input aria-label="项目名称" value={name} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") create(event); }} placeholder="项目名称" /><textarea aria-label="项目描述" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="可选描述" rows="2" /><button type="button" onClick={create} disabled={busy || !name.trim()}>{busy ? "创建中…" : "创建"}</button></div>}
   </div>, document.body) : null;
+  const filesPopover = filesOpen && typeof document !== "undefined" ? createPortal(<div ref={filesPopoverRef} className="sino-composer-files-popover" role="menu" aria-label="文件和文档" style={{ top: `${position.top}px`, left: `${position.left}px`, "--popover-arrow-left": `${position.arrowLeft}px` }}>
+    <span className="sino-composer-files-popover__arrow" data-popover-arrow aria-hidden="true" />
+    <button type="button" role="menuitem" onClick={() => { setFilesOpen(false); fileInputRef.current?.click(); }}><span aria-hidden="true">↑</span><span><strong>上传文件</strong><small>支持 PNG、JPEG、WebP</small></span></button>
+    <button type="button" role="menuitem" onClick={() => { setFilesOpen(false); onSelectDocument?.(); }}><span aria-hidden="true">▤</span><span><strong>选择已有文档</strong><small>从文档库选择</small></span></button>
+  </div>, document.body) : null;
 
   return <div className="sino-composer-context-controls" aria-label="对话上下文操作">
     <span className="sino-composer-status"><span className={`sino-workspace-status ${status.className}`} aria-label={`Sino ${status.label}`} /><span>Sino {status.label}</span></span>
-    <div className="sino-project-selector"><button ref={triggerRef} type="button" className="sino-project-selector__trigger" aria-label={active ? `当前项目：${active.name}` : "选择项目"} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((value) => !value)}><span aria-hidden="true">📁</span><span>{active?.name || "选择项目"}</span><i aria-hidden="true">▼</i></button>{popover}</div>
-    <button type="button" className="sino-composer-files" onClick={onFiles}>＋ 文件/文档</button>
+    <div className="sino-project-selector"><button ref={triggerRef} type="button" className="sino-project-selector__trigger" aria-label={active ? `当前项目：${active.name}` : "选择项目"} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setFilesOpen(false); setOpen((value) => !value); }}><span aria-hidden="true">📁</span><span>{active?.name || "选择项目"}</span><i aria-hidden="true">▼</i></button>{popover}</div>
+    <input ref={fileInputRef} className="sino-image-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { onFiles?.([...event.target.files]); event.target.value = ""; }} />
+    <button ref={filesTriggerRef} type="button" className="sino-composer-files" aria-haspopup="menu" aria-expanded={filesOpen} onClick={() => { setOpen(false); setFilesOpen((value) => !value); }}>＋ 文件/文档</button>{filesPopover}
   </div>;
 }
 

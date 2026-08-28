@@ -43,6 +43,39 @@ describe("Founder AI capability factory home", () => {
     expect(screen.queryByRole("dialog", { name: "选择项目" })).toBeNull();
   });
 
+  it("opens an anchored file choice popover and uses the real image attachment callback", () => {
+    const onFiles = vi.fn(); const onSelectDocument = vi.fn();
+    render(<AnchoredComposerContextControls healthy projects={[]} onSelectProject={vi.fn()} onCreateProject={vi.fn()} onFiles={onFiles} onSelectDocument={onSelectDocument} />);
+    const trigger = screen.getByRole("button", { name: "＋ 文件/文档" });
+    trigger.getBoundingClientRect = () => ({ top: 600, left: 420, right: 520, bottom: 632, width: 100, height: 32 });
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu", { name: "文件和文档" });
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu.querySelector("[data-popover-arrow]")).toBeTruthy();
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    const input = document.querySelector('.sino-composer-context-controls input[type="file"]');
+    const click = vi.spyOn(input, "click");
+    fireEvent.click(screen.getByRole("menuitem", { name: /上传文件/ }));
+    expect(click).toHaveBeenCalledTimes(1);
+    const image = new File(["png"], "shot.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [image] } });
+    expect(onFiles).toHaveBeenCalledWith([image]);
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: /选择已有文档/ }));
+    expect(onSelectDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the file choice popover on Escape, outside click and trigger toggle", () => {
+    render(<AnchoredComposerContextControls healthy projects={[]} onSelectProject={vi.fn()} onCreateProject={vi.fn()} onFiles={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "＋ 文件/文档" });
+    fireEvent.click(trigger); fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "文件和文档" })).toBeNull();
+    fireEvent.click(trigger); fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu", { name: "文件和文档" })).toBeNull();
+    fireEvent.click(trigger); fireEvent.click(trigger);
+    expect(screen.queryByRole("menu", { name: "文件和文档" })).toBeNull();
+  });
+
   it("renders the capability-first hero and routes all quick creation entries into discussion", () => {
     const onQuickCreate = vi.fn();
     render(<FounderHome message="" onMessage={vi.fn()} onSend={vi.fn((event) => event.preventDefault())} onQuickCreate={onQuickCreate} healthy projects={[]} onSelectProject={vi.fn()} onCreateProject={vi.fn()} onFiles={vi.fn()} mode="sino" onModeChange={vi.fn()} />);

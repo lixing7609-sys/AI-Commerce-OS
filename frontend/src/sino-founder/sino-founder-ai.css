@@ -376,6 +376,15 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-composer-context-controls { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .sino-composer-files, .sino-project-selector__clear { padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; color: #7b8479; font-size: var(--font-label); cursor: pointer; }
 .sino-composer-files:hover, .sino-project-selector__clear:hover { background: #171a16; color: #d7ddd4; }
+.sino-composer-files[aria-expanded="true"] { background: #171a16; color: #d7ddd4; }
+.sino-composer-files-popover { --workspace-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; position: fixed; z-index: 120; display: grid; gap: 2px; box-sizing: border-box; width: min(240px, calc(100vw - 24px)); padding: 7px; border: 1px solid var(--line, #343c32); border-radius: 12px; background: #111411; box-shadow: 0 18px 48px rgba(0,0,0,.42); color: #dce1dc; font-family: var(--workspace-font); }
+.sino-composer-files-popover__arrow { position: absolute; left: var(--popover-arrow-left); bottom: -6px; width: 10px; height: 10px; border-right: 1px solid var(--line, #343c32); border-bottom: 1px solid var(--line, #343c32); background: #111411; transform: translateX(-50%) rotate(45deg); }
+.sino-composer-files-popover > button { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 9px; width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; background: transparent; color: #dce1dc; text-align: left; cursor: pointer; }
+.sino-composer-files-popover > button:hover, .sino-composer-files-popover > button:focus-visible { outline: none; background: #191d17; }
+.sino-composer-files-popover > button > span:first-child { color: #a8b19f; font-size: 18px; text-align: center; }
+.sino-composer-files-popover > button > span:last-child { display: grid; gap: 1px; }
+.sino-composer-files-popover strong { font-size: 13px; font-weight: 500; }
+.sino-composer-files-popover small { color: #7f887d; font-size: 11px; }
 .sino-council-mode { display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: rgba(255,255,255,.025); }
 .sino-composer > .sino-council-mode, .sino-composer__input-area > .sino-council-mode { align-self: flex-start; margin-bottom: 12px; }
 .sino-council-mode button { padding: 4px 7px; border: 0; border-radius: 5px; background: transparent; color: #737b73; font-size: 12px; cursor: pointer; }
