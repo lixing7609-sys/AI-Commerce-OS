@@ -22,6 +22,15 @@ run_contract "Verification Non-Weakening & Authority Isolation" tests/test_reusa
 run_contract "Safety Gate" tests/test_reusable_execution_playbook.py::test_decision_then_compatible_pattern_composes_ui_playbook tests/test_reusable_execution_playbook.py::test_founder_conflict_rejects_historical_asset_and_records_reason tests/test_reusable_execution_playbook.py::test_incomplete_compatibility_is_uncertain_and_not_applied
 run_contract "Evidence, Idempotency & Cycle Guard" tests/test_reusable_execution_playbook.py::test_playbook_identity_and_fingerprint_are_stable_on_retry tests/test_reusable_execution_playbook.py::test_playbook_evidence_is_persisted_idempotently_without_new_table tests/test_reusable_execution_playbook.py::test_cycle_guard_rejects_recursive_lineage_and_persists_rejection tests/test_reusable_execution_playbook.py::test_source_lineage_references_both_assets_and_their_sources
 run_contract "Task Package Injection" tests/test_reusable_execution_playbook.py::test_task_package_receives_structured_playbook_context
+run_contract "Cross-Module Composition & Source Leakage" tests/test_reusable_execution_playbook.py::test_conversation_task_composes_cross_module_decision_with_same_module_pattern tests/test_reusable_execution_playbook.py::test_playbook_rejects_deliberate_historical_source_file_leakage
+
+echo "Cross-Module Compatibility Extension"
+if SINO_CROSS_MODULE_EXTENSION_ONLY=1 "$repo_root/scripts/test-sino-learning-reuse-cross-module"; then
+  echo "Cross-Module Compatibility Extension: PASS"
+else
+  echo "Cross-Module Compatibility Extension: FAIL"
+  failures=$((failures + 1))
+fi
 
 echo "Frozen Capability 2"
 if "$repo_root/scripts/test-sino-learning-reuse-capability-2"; then echo "Frozen Capability 2: PASS"; else echo "Frozen Capability 2: FAIL"; failures=$((failures + 1)); fi

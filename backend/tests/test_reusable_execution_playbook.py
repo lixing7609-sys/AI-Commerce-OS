@@ -9,10 +9,13 @@ from app.founder_ai.decision_retrieval import inject_decision_context
 from app.founder_ai.decision_strategy_extractor import extract_interaction_surface_decision
 from app.founder_ai.learning_extractor import extract_anchored_portal_popover_learning
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
-from app.founder_ai.playbook_composer import PASS, REJECT, UNCERTAIN, compose_execution_playbook
+from app.founder_ai.playbook_composer import (
+    PASS, REJECT, UNCERTAIN, compose_execution_playbook, finalize_playbook_evidence,
+)
 from app.founder_ai.reusable_asset_service import save_reusable_asset
 from app.founder_ai.reuse_retrieval import inject_reuse_context
 from app.founder_ai.task_package import TaskPackageBuilder
+from app.founder_ai.visible_artifact_contract import refine_visible_artifact_contract
 
 
 def _factory():
@@ -266,3 +269,122 @@ def test_cross_module_playbook_evidence_persists_provenance_and_applicability():
         assert playbook["current_semantic_module"] == "Founder Conversation"
         assert playbook["source_file_leakage_check"] == PASS
         assert len(playbook["applicability_domains"]) == 2
+
+
+def test_playbook_guidance_refines_base_visible_contract_without_weakening_it():
+    base = {
+        "required": True,
+        "artifact_type": "founder_conversation_file_actions",
+        "required_assertions": ["trigger_visible", "interaction_surface_visible"],
+    }
+    playbook = {
+        "applied": True, "safety_gate": PASS, "verification_override_authority": False,
+        "verification_guidance": {
+            "historical": {"guidance": [
+                "Verify anchor geometry and bounding rectangle",
+                "Verify outside-click and Escape close",
+                "Verify anchor geometry and bounding rectangle",
+            ]},
+        },
+    }
+    refined = refine_visible_artifact_contract(
+        base_contract=base, acceptance_criteria=["Browser verification remains required"],
+        playbook_context=playbook, refined_at="2026-08-28T00:00:00+00:00",
+        runtime_revision_value="test-runtime",
+    )
+    assert base["required_assertions"] == ["trigger_visible", "interaction_surface_visible"]
+    assert set(base["required_assertions"]).issubset(refined["required_assertions"])
+    assert {"anchor_positioning", "outside_close", "escape_close"}.issubset(refined["required_assertions"])
+    assert refined["required"] is True
+    assert refined["refinement"]["playbook_guidance_applied"] is True
+    assert refined["refinement"]["verification_weakened"] is False
+    assert refined["refinement"]["verification_override_authority"] is False
+    assert refined["refinement"]["guidance_sources"].count(
+        "Verify anchor geometry and bounding rectangle"
+    ) == 1
+
+
+def test_visible_contract_refinement_is_deterministic_and_cannot_remove_base_requirements():
+    base = {
+        "required": True,
+        "artifact_type": "founder_conversation_file_actions",
+        "required_assertions": ["trigger_visible", "filechooser_opened", "file_selected_false"],
+    }
+    playbook = {
+        "applied": True, "safety_gate": PASS, "verification_override_authority": False,
+        "verification_guidance": {"historical": {"guidance": ["Verify viewport after scroll and resize"]}},
+    }
+    kwargs = {
+        "base_contract": base, "acceptance_criteria": [], "playbook_context": playbook,
+        "refined_at": "2026-08-28T00:00:00+00:00", "runtime_revision_value": "test-runtime",
+    }
+    assert refine_visible_artifact_contract(**kwargs) == refine_visible_artifact_contract(**kwargs)
+    refined = refine_visible_artifact_contract(**kwargs)
+    assert set(base["required_assertions"]).issubset(refined["required_assertions"])
+    assert {"viewport_contained", "not_composer_clipped"}.issubset(refined["required_assertions"])
+
+
+def test_playbook_evidence_finalization_preserves_identity_lineage_and_is_idempotent():
+    factory = _factory(); decision, pattern = _seed(factory); contract = _contract(factory)
+    result = _compose(factory, contract=contract)
+    playbook = result["playbook_context"]
+    evidence_id = result["decision_lookup"]["decision_evidence_id"]
+    with factory() as db:
+        pending = db.get(ReuseEvidenceDB, evidence_id).final_result["playbook_evidence"]
+        original_lineage = list(pending["source_lineage"])
+        assert pending["verification_result"] == "pending_current_task_verification"
+    outcome = finalize_playbook_evidence(
+        task_id=contract["task_id"], execution_id="execution-current",
+        playbook_context=playbook, final_result="completed", verification_result="PASS",
+        final_task_status="completed", final_execution_status="completed",
+        final_canonical_stage="COMPLETED", final_progress=100,
+        browser_verification_result="PASS", scope_result="PASS", tests_result="PASS",
+        build_result="PASS", diff_result="PASS", finalized_at="2026-08-28T01:00:00+00:00",
+        session_factory=factory,
+    )
+    assert outcome["status"] == "FINALIZED"
+    retry = finalize_playbook_evidence(
+        task_id=contract["task_id"], execution_id="execution-current",
+        playbook_context=playbook, final_result="completed", verification_result="PASS",
+        final_task_status="completed", final_execution_status="completed",
+        final_canonical_stage="COMPLETED", final_progress=100,
+        browser_verification_result="PASS", scope_result="PASS", tests_result="PASS",
+        build_result="PASS", diff_result="PASS", finalized_at="2026-08-28T02:00:00+00:00",
+        session_factory=factory,
+    )
+    assert retry["status"] == "ALREADY_FINALIZED"
+    with factory() as db:
+        evidence = db.get(ReuseEvidenceDB, evidence_id)
+        final = evidence.final_result["playbook_evidence"]
+        assert evidence.execution_id == "execution-current"
+        assert final["final_result"] == "completed" and final["verification_result"] == "PASS"
+        assert final["playbook_id"] == playbook["playbook_id"]
+        assert final["composition_fingerprint"] == playbook["composition_fingerprint"]
+        assert final["decision_asset_ids"] == [decision.id]
+        assert final["pattern_asset_ids"] == [pattern.id]
+        assert final["source_lineage"] == original_lineage
+        assert evidence.telemetry_events.count("playbook_finalized") == 1
+
+
+def test_late_browser_resume_finalizes_same_playbook_evidence_truthfully():
+    factory = _factory(); _seed(factory); contract = _contract(factory)
+    result = _compose(factory, contract=contract)
+    playbook = result["playbook_context"]
+    blocked = finalize_playbook_evidence(
+        task_id=contract["task_id"], execution_id="execution-resume", playbook_context=playbook,
+        final_result="blocked", verification_result="blocked", final_task_status="in_progress",
+        final_execution_status="blocked", final_canonical_stage="UI_VERIFYING", final_progress=100,
+        browser_verification_result="BLOCKED", scope_result="PASS", tests_result="PASS",
+        build_result="PASS", diff_result="PASS", session_factory=factory,
+    )
+    assert blocked["status"] == "FINALIZED"
+    completed = finalize_playbook_evidence(
+        task_id=contract["task_id"], execution_id="execution-resume", playbook_context=playbook,
+        final_result="completed", verification_result="PASS", final_task_status="completed",
+        final_execution_status="completed", final_canonical_stage="COMPLETED", final_progress=100,
+        browser_verification_result="PASS", scope_result="PASS", tests_result="PASS",
+        build_result="PASS", diff_result="PASS", session_factory=factory,
+    )
+    assert completed["status"] == "FINALIZED"
+    assert completed["playbook_id"] == playbook["playbook_id"]
+    assert completed["composition_fingerprint"] == playbook["composition_fingerprint"]

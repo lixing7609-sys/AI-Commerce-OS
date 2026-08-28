@@ -79,6 +79,58 @@ def test_visible_contract_gap_resumes_only_browser_on_same_execution(monkeypatch
     assert saved and session.status == "completed"
 
 
+def test_completed_same_execution_can_finalize_playbook_evidence_without_rerunning_work(monkeypatch):
+    import app.founder_ai.standard_task_execution as execution
+    task_id = "task-playbook-finalize"
+    session = ExecutionSession(
+        id="execution-playbook-finalize", task_asset_id=task_id,
+        execution_package_id="package-playbook-finalize", executor="codex",
+        status="completed", execution_stage="COMPLETED", current_stage="completed",
+        result={
+            "scope_verification": {"status": "PASS"},
+            "browser_verification": {"status": "PASS"},
+            "command_verification_evidence": [
+                {"verifier": name, "status": "PASS", "evidence": {"command": [name]}}
+                for name in ("targeted_tests", "build", "git_diff_check")
+            ],
+        },
+        events=[{"event_name": "completed", "status": "completed"}],
+    )
+    package = _package("点击输入区的＋ 文件/文档，提供上传文件和选择已有文档。")
+    package.context["standard_task_contract"] = {
+        "playbook_context": {
+            "playbook_id": "playbook-stable", "composition_fingerprint": "fingerprint-stable",
+        },
+    }
+    monkeypatch.setattr(execution, "get_execution_session", lambda _execution_id: (session, package))
+    monkeypatch.setattr(execution, "list_execution_sessions", lambda: [session])
+
+    class CompletedTask:
+        status = "completed"
+        execution_status = "completed"
+
+    class ReadSession:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def get(self, _model, _task_id): return CompletedTask()
+
+    monkeypatch.setattr(execution, "SessionLocal", ReadSession)
+    finalized = []
+    monkeypatch.setattr(
+        execution, "_finalize_execution_playbook",
+        lambda **kwargs: finalized.append(kwargs) or {"status": "FINALIZED"},
+    )
+    result = execution.reconcile_playbook_evidence_from_execution(
+        task_id=task_id, execution_id=session.id,
+    )
+    assert result["status"] == "FINALIZED"
+    assert len(finalized) == 1
+    assert finalized[0]["task_id"] == task_id
+    assert finalized[0]["execution_id"] == session.id
+    assert finalized[0]["verification_result"] == "PASS"
+    assert finalized[0]["contract"]["playbook_context"]["playbook_id"] == "playbook-stable"
+
+
 def test_read_only_local_health_check_does_not_require_implementation_patch():
     contract = build_standard_task_contract(
         conversation_id="conv-health",

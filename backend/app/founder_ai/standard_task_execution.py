@@ -14,7 +14,7 @@ from sqlalchemy import select
 from app.core.task_asset.model import TaskAssetDB
 from app.core.task_asset.service import create_task_asset
 from app.database.db import SessionLocal
-from app.founder_ai.execution_registry import create_execution_session, get_execution_session, save_execution_session
+from app.founder_ai.execution_registry import create_execution_session, get_execution_session, list_execution_sessions, save_execution_session
 from app.founder_ai.execution_worker import enqueue_execution
 from app.founder_ai.execution_events import append_event
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
@@ -385,10 +385,19 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
         from app.founder_ai.reuse_retrieval import inject_reuse_context
         contract = inject_reuse_context(contract=contract, goal=goal, task_id=task_id)
         from app.founder_ai.playbook_composer import compose_execution_playbook
-        return compose_execution_playbook(
+        contract = compose_execution_playbook(
             contract=contract, task_id=task_id, goal=goal, risk="low",
             founder_constraints=discussion_context,
         )
+        from app.founder_ai.visible_artifact_contract import refine_visible_artifact_contract
+        refined = refine_visible_artifact_contract(
+            base_contract=contract.get("visible_artifact_contract"),
+            acceptance_criteria=contract.get("acceptance_criteria"),
+            playbook_context=contract.get("playbook_context"),
+        )
+        if refined:
+            contract["visible_artifact_contract"] = refined
+        return contract
     return {
         "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
         "task_type": "STANDARD_TASK", "target_surface": "Unresolved bounded task",
@@ -908,6 +917,69 @@ def resume_visible_artifact_verification(
     return {"status": "VERIFIED", "browser_verification": browser_gate, "contract": visible}
 
 
+def _command_result(result: dict, verifier: str) -> str | None:
+    item = next((row for row in result.get("command_verification_evidence") or [] if row.get("verifier") == verifier), None)
+    return str((item or {}).get("status")) if item else None
+
+
+def _finalize_execution_playbook(
+    *, task_id: str, execution_id: str, contract: dict, result: dict,
+    task_status: str, execution_status: str, canonical_stage: str, progress: int,
+    verification_result: str,
+) -> dict:
+    from app.founder_ai.playbook_composer import finalize_playbook_evidence
+    browser = dict(result.get("browser_verification") or {})
+    return finalize_playbook_evidence(
+        task_id=task_id, execution_id=execution_id,
+        playbook_context=dict(contract.get("playbook_context") or {}),
+        final_result=execution_status, verification_result=verification_result,
+        final_task_status=task_status, final_execution_status=execution_status,
+        final_canonical_stage=canonical_stage, final_progress=progress,
+        browser_verification_result=browser.get("status"),
+        scope_result=dict(result.get("scope_verification") or {}).get("status"),
+        tests_result=_command_result(result, "targeted_tests"),
+        build_result=_command_result(result, "build"),
+        diff_result=_command_result(result, "git_diff_check"),
+    )
+
+
+def reconcile_playbook_evidence_from_execution(*, task_id: str, execution_id: str) -> dict:
+    """Evidence-only finalization for an already terminal canonical execution."""
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise LookupError("Standard execution session not found")
+    session, package = record
+    if session.task_asset_id != task_id:
+        raise ValueError("task_execution_identity_mismatch")
+    if sum(item.task_asset_id == task_id for item in list_execution_sessions()) != 1:
+        return {"status": "REJECTED", "reason": "single canonical execution invariant failed"}
+    with SessionLocal() as db:
+        task = db.get(TaskAssetDB, task_id)
+        task_status = str(task.status) if task else "not_found"
+        task_execution_status = str(task.execution_status) if task else "not_found"
+    result = dict(session.result or {})
+    commands_pass = all(
+        command_evidence_passed(next((row for row in result.get("command_verification_evidence") or [] if row.get("verifier") == name), None), required=True)
+        for name in ("targeted_tests", "build", "git_diff_check")
+    )
+    completed_event = any(event.get("event_name") == "completed" and event.get("status") == "completed" for event in session.events)
+    eligible = bool(
+        task_status == "completed" and task_execution_status == "completed"
+        and session.status == "completed" and session.execution_stage == "COMPLETED"
+        and completed_event and commands_pass
+        and dict(result.get("scope_verification") or {}).get("status") == "PASS"
+        and dict(result.get("browser_verification") or {}).get("status") == "PASS"
+    )
+    if not eligible:
+        return {"status": "REJECTED", "reason": "canonical completion evidence is incomplete"}
+    contract = dict((package.context or {}).get("standard_task_contract") or {})
+    return _finalize_execution_playbook(
+        task_id=task_id, execution_id=execution_id, contract=contract, result=result,
+        task_status="completed", execution_status="completed", canonical_stage="COMPLETED",
+        progress=100, verification_result="PASS",
+    )
+
+
 def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, execution_id: str, repo_root: Path = REPO_ROOT) -> dict:
     session, package = get_execution_session(execution_id) or (None, None)
     if session is None: raise LookupError("Standard execution session not found")
@@ -1030,6 +1102,14 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
                     **dict(route.get("autonomous_execution") or {}), "scope_verification": resolved_scope,
                 }
     if session.status != "completed":
+        terminal_contract = dict((package.context or {}).get("standard_task_contract") or {}) if package else {}
+        if session.status in {"failed", "blocked", "cancelled"}:
+            _finalize_execution_playbook(
+                task_id=task_id, execution_id=execution_id, contract=terminal_contract,
+                result=dict(session.result or {}), task_status="in_progress",
+                execution_status=session.status, canonical_stage=session.execution_stage,
+                progress=100, verification_result="not_completed" if session.status == "cancelled" else session.status,
+            )
         if session.status == "blocked" and (session.result or {}).get("scope_verification"):
             return project_scope_mismatch(conversation_id=conversation_id, execution_id=execution_id, evidence=session.result or {})
         return _project(conversation_id, step="execution", blocker={"type": "standard_task_execution_failed", "reason": session.failure_reason, "founder_gate_required": False}, execution={"dispatch_status": session.status})
@@ -1148,6 +1228,13 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
     if verification["status"] != "PASS":
         outcome = str((visible_gate or {}).get("status") or "BLOCKED")
         failed = outcome == "FAILED"
+        _finalize_execution_playbook(
+            task_id=task_id, execution_id=execution_id, contract=contract,
+            result=dict(session.result or {}), task_status="in_progress",
+            execution_status="failed" if failed else "blocked",
+            canonical_stage="FAILED" if failed else "BLOCKED", progress=100,
+            verification_result="failed" if failed else "blocked",
+        )
         return _project(conversation_id, step="verification", blocker={
             "type": "standard_task_acceptance_failed" if failed else "standard_task_verification_blocked",
             "terminal_status": "FAILED" if failed else "BLOCKED", "evidence": verification,
@@ -1178,4 +1265,10 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
             metadata={"verification_status": verification["status"]},
         )
         save_execution_session(session, package)
+    _finalize_execution_playbook(
+        task_id=task_id, execution_id=execution_id, contract=contract,
+        result=dict(session.result or {}), task_status="completed",
+        execution_status="completed", canonical_stage="COMPLETED", progress=100,
+        verification_result="PASS",
+    )
     return _project(conversation_id, step="complete", execution={"dispatch_status": "completed", "verification": verification, "learning": learning, "closure": closure, "result": result})

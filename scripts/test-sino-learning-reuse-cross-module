@@ -35,6 +35,11 @@ run_contract "Cross-Module Playbook Composition" \
   tests/test_reusable_execution_playbook.py::test_sidebar_task_composes_same_module_decision_with_cross_module_pattern \
   tests/test_reusable_execution_playbook.py::test_cross_module_playbook_evidence_persists_provenance_and_applicability
 
+if [[ "${SINO_CROSS_MODULE_EXTENSION_ONLY:-0}" == "1" ]]; then
+  if (( failures == 0 )); then echo "Overall: PASS"; exit 0; fi
+  echo "Overall: FAIL ($failures contract groups failed)"; exit 1
+fi
+
 echo "Capability 3"
 if "$repo_root/scripts/test-sino-learning-reuse-capability-3"; then
   echo "Capability 3: PASS"

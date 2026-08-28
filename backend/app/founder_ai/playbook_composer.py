@@ -13,6 +13,8 @@ import json
 import re
 from typing import Any
 
+from sqlalchemy import select
+
 from app.core.reusable_asset.model import ReuseEvidenceDB
 from app.database.db import SessionLocal
 from app.founder_ai.execution_state import runtime_revision
@@ -207,6 +209,7 @@ def _persist_playbook_evidence(*, evidence_id: str | None, playbook: dict,
                 "cross_module_reuse": playbook["cross_module_reuse"],
                 "applicability_domains": playbook["applicability_domains"],
                 "source_file_leakage_check": playbook["source_file_leakage_check"],
+                "source_lineage": playbook["source_lineage"],
                 "composition_reason": playbook["composition_reason"], **AUTHORITY_FLAGS,
                 "injected_at": playbook["created_at"] if playbook["applied"] else None,
                 "final_result": "planning_injected" if playbook["applied"] else "not_applied",
@@ -214,6 +217,62 @@ def _persist_playbook_evidence(*, evidence_id: str | None, playbook: dict,
             },
         }
         db.commit()
+
+
+def finalize_playbook_evidence(
+    *, task_id: str, execution_id: str, playbook_context: dict,
+    final_result: str, verification_result: str, final_task_status: str,
+    final_execution_status: str, final_canonical_stage: str, final_progress: int,
+    browser_verification_result: str | None = None, scope_result: str | None = None,
+    tests_result: str | None = None, build_result: str | None = None,
+    diff_result: str | None = None, finalized_at: str | None = None,
+    session_factory=SessionLocal,
+) -> dict:
+    """Attach canonical execution outcome to the existing Playbook evidence row."""
+    playbook = dict(playbook_context or {})
+    playbook_id = playbook.get("playbook_id")
+    fingerprint = playbook.get("composition_fingerprint")
+    if not playbook_id or not fingerprint:
+        return {"status": "NOT_APPLICABLE", "reason": "playbook identity missing"}
+    with session_factory() as db:
+        candidates = list(db.scalars(select(ReuseEvidenceDB).where(
+            ReuseEvidenceDB.task_asset_id == task_id,
+        ).order_by(ReuseEvidenceDB.created_at)))
+        evidence = next((item for item in candidates if
+                         dict((item.final_result or {}).get("playbook_evidence") or {}).get("playbook_id") == playbook_id), None)
+        if evidence is None:
+            return {"status": "NOT_FOUND", "playbook_id": playbook_id}
+        current = dict((evidence.final_result or {}).get("playbook_evidence") or {})
+        if current.get("composition_fingerprint") != fingerprint:
+            return {"status": "REJECTED", "reason": "playbook composition fingerprint mismatch"}
+        outcome = {
+            "execution_id": execution_id,
+            "final_result": final_result,
+            "verification_result": verification_result,
+            "finalized_at": finalized_at or datetime.now(timezone.utc).isoformat(),
+            "final_task_status": final_task_status,
+            "final_execution_status": final_execution_status,
+            "final_canonical_stage": final_canonical_stage,
+            "final_progress": final_progress,
+            "browser_verification_result": browser_verification_result,
+            "scope_result": scope_result,
+            "tests_result": tests_result,
+            "build_result": build_result,
+            "diff_result": diff_result,
+        }
+        comparable = {key: value for key, value in outcome.items() if key != "finalized_at"}
+        if evidence.execution_id == execution_id and all(current.get(key) == value for key, value in comparable.items()):
+            return {"status": "ALREADY_FINALIZED", "evidence_id": evidence.id, "playbook_id": playbook_id}
+        evidence.execution_id = execution_id
+        evidence.telemetry_events = _dedup([*list(evidence.telemetry_events or []), "playbook_finalized"])
+        evidence.final_result = {
+            **dict(evidence.final_result or {}),
+            "status": final_result,
+            "playbook_evidence": {**current, **outcome},
+        }
+        db.commit()
+        return {"status": "FINALIZED", "evidence_id": evidence.id, "playbook_id": playbook_id,
+                "composition_fingerprint": fingerprint, **outcome}
 
 
 def compose_execution_playbook(*, contract: dict, task_id: str | None, goal: str, risk: str,
