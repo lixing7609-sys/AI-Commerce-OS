@@ -23,19 +23,23 @@ def _factory():
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
-def _scope():
+def _scope(module="Founder Conversation"):
+    file_name = (
+        "frontend/src/sino-founder/FounderNavigationPanel.jsx"
+        if module == "Founder Sidebar / Navigation"
+        else "frontend/src/sino-founder/ConversationWorkspace.jsx"
+    )
     return {
         "scope_source": "semantic_module", "confidence": "HIGH",
-        "allowed_modules": ["Founder Conversation"],
-        "allowed_file_patterns": ["frontend/src/sino-founder/FounderNavigationPanel.jsx"],
+        "allowed_modules": [module], "allowed_file_patterns": [file_name],
     }
 
 
-def _seed(factory):
+def _seed(factory, *, decision_module="Founder Conversation", pattern_module="Founder Conversation"):
     decision = extract_interaction_surface_decision(
         task_id="decision-source", execution_id="decision-execution", task_status="completed",
         verification_status="PASS", changed_files=["frontend/src/sino-founder/ConversationWorkspace.jsx"],
-        semantic_module="Founder Conversation", source_conversation_id="decision-conversation",
+        semantic_module=decision_module, source_conversation_id="decision-conversation",
         source_commit_sha="decision-commit", conversation_messages=[{
             "message_id": "decision-message", "role": "founder",
             "content": "不要 Drawer，保留入口，只把弹层改成 Popover。",
@@ -45,16 +49,17 @@ def _seed(factory):
         task_id="pattern-source", execution_id="pattern-execution",
         goal="将更多操作弹出框改成 anchored portal popover", task_status="completed",
         task_result={"status": "completed", "verification": {"status": "PASS"}},
-        semantic_scope=_scope(), changed_files=["frontend/src/sino-founder/ConversationThread.jsx"],
+        semantic_scope=_scope(pattern_module), changed_files=["frontend/src/sino-founder/ConversationThread.jsx"],
         source_commit_sha="pattern-commit", execution_events=[{"event_name": "verification_completed"}],
     )
     return save_reusable_asset(decision, session_factory=factory), save_reusable_asset(pattern, session_factory=factory)
 
 
-def _contract(factory, *, task_id="task-current", goal="点击通知入口后展示一组操作"):
+def _contract(factory, *, task_id="task-current", goal="点击通知入口后展示一组操作",
+              module="Founder Conversation"):
     contract = {
-        "task_id": task_id, "target_component": "Founder Conversation",
-        "semantic_scope": _scope(), "constraints": ["semantic_module_only"],
+        "task_id": task_id, "target_component": module,
+        "semantic_scope": _scope(module), "constraints": ["semantic_module_only"],
         "acceptance_criteria": ["保留现有行为", "真实浏览器交互验证通过"],
     }
     contract = inject_decision_context(
@@ -65,7 +70,9 @@ def _contract(factory, *, task_id="task-current", goal="点击通知入口后展
 
 def _compose(factory, **kwargs):
     goal = kwargs.pop("goal", "点击通知入口后展示一组操作")
-    contract = kwargs.pop("contract", _contract(factory, goal=goal))
+    contract = kwargs.pop("contract", None)
+    if contract is None:
+        contract = _contract(factory, goal=goal)
     return compose_execution_playbook(
         contract=contract, task_id=contract["task_id"], goal=goal, risk="low",
         session_factory=factory, created_at="2026-08-28T00:00:00+00:00",
@@ -200,3 +207,62 @@ def test_current_task_still_requires_independent_frozen_verification():
     assert playbook["verification_guidance"]["frozen_required"]
     assert playbook["completion_authority"] is False
     assert playbook["verification_override_authority"] is False
+
+
+def test_conversation_task_composes_cross_module_decision_with_same_module_pattern():
+    factory = _factory()
+    decision, pattern = _seed(factory, decision_module="Founder Sidebar / Navigation")
+    goal = "点击 Conversation 输入框底部的＋文件/文档按钮后显示一组操作：上传文件、选择已有文档"
+    contract = _contract(factory, task_id="task-file-docs", goal=goal, module="Founder Conversation")
+    playbook = _compose(
+        factory, contract=contract, goal=goal,
+        founder_constraints=["必须保留图片入口和发送逻辑", "不要在选择前上传或创建数据"],
+    )["playbook_context"]
+    assert contract["decision_context"]["decision_asset_id"] == decision.id
+    assert contract["decision_context"]["cross_module_reuse"] is True
+    assert contract["reuse_context"]["reuse_asset_id"] == pattern.id
+    assert contract["reuse_context"]["cross_module_reuse"] is False
+    assert playbook["safety_gate"] == PASS and playbook["applied"] is True
+    assert playbook["cross_module_reuse"] is True
+    assert playbook["source_file_leakage_check"] == PASS
+    assert all(playbook["safety_checks"].values())
+
+
+def test_sidebar_task_composes_same_module_decision_with_cross_module_pattern():
+    factory = _factory()
+    decision, pattern = _seed(factory, decision_module="Founder Sidebar / Navigation")
+    goal = "点击左侧栏搜索框按钮后显示一组操作供我选择搜索范围"
+    contract = _contract(factory, task_id="task-search", goal=goal, module="Founder Sidebar / Navigation")
+    playbook = _compose(factory, contract=contract, goal=goal)["playbook_context"]
+    assert contract["decision_context"]["decision_asset_id"] == decision.id
+    assert contract["reuse_context"]["reuse_asset_id"] == pattern.id
+    assert contract["reuse_context"]["cross_module_reuse"] is True
+    assert playbook["safety_gate"] == PASS and playbook["applied"] is True
+    assert playbook["current_semantic_module"] == "Founder Sidebar / Navigation"
+
+
+def test_playbook_rejects_deliberate_historical_source_file_leakage():
+    factory = _factory(); _seed(factory); contract = _contract(factory)
+    contract["reuse_context"] = {
+        **contract["reuse_context"],
+        "source_file_leakage": True,
+        "source_file_leakage_check": REJECT,
+    }
+    playbook = _compose(factory, contract=contract)["playbook_context"]
+    assert playbook["safety_gate"] == REJECT and playbook["applied"] is False
+    assert playbook["source_file_leakage_check"] == REJECT
+    assert any(item["conflict_type"] == "historical_source_file_leakage" for item in playbook["conflicts"])
+
+
+def test_cross_module_playbook_evidence_persists_provenance_and_applicability():
+    factory = _factory(); _seed(factory, decision_module="Founder Sidebar / Navigation")
+    goal = "点击 Conversation 输入框底部的＋文件/文档按钮后显示一组操作：上传文件、选择已有文档"
+    contract = _contract(factory, task_id="task-cross-evidence", goal=goal)
+    result = _compose(factory, contract=contract, goal=goal)
+    with factory() as db:
+        evidence = db.get(ReuseEvidenceDB, result["decision_lookup"]["decision_evidence_id"])
+        playbook = evidence.final_result["playbook_evidence"]
+        assert playbook["cross_module_reuse"] is True
+        assert playbook["current_semantic_module"] == "Founder Conversation"
+        assert playbook["source_file_leakage_check"] == PASS
+        assert len(playbook["applicability_domains"]) == 2

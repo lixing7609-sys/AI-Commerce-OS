@@ -11,6 +11,9 @@ from app.database.base import Base
 from app.founder_ai.learning_extractor import extract_anchored_portal_popover_learning
 from app.founder_ai.reusable_asset_service import candidate_fingerprint, save_reusable_asset
 from app.founder_ai.reuse_retrieval import PASS, REJECT, assess_reuse_compatibility, inject_reuse_context, lookup_reusable_assets
+from app.founder_ai.reuse_applicability import (
+    infer_applicability_profile, source_file_leakage, source_module_rank,
+)
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 from app.founder_ai.task_package import TaskPackageBuilder
 import app.founder_ai.asset_memory_center as asset_center
@@ -184,3 +187,92 @@ def test_asset_memory_center_projects_reusable_asset(monkeypatch):
     result = asset_center.build_asset_memory_center()
     assert result["reusable_assets"][0]["reuse_asset_id"] == asset.id
     assert result["reusable_assets"][0]["pattern_type"] == "anchored_portal_popover"
+
+
+def test_cross_module_pattern_is_compatible_with_decision_selected_surface():
+    factory = _factory(); asset = save_reusable_asset(_candidate(), session_factory=factory)
+    sidebar = _scope("Founder Sidebar / Navigation")
+    state, reason = assess_reuse_compatibility(
+        asset=asset, goal="点击左侧栏搜索框按钮后显示一组操作供我选择搜索范围",
+        semantic_scope=sidebar, recommended_strategy="anchored_popover", risk_level="low",
+    )
+    assert state == PASS and "cross-module" in reason
+
+
+def test_cross_module_pattern_lookup_preserves_scope_and_projects_provenance_not_source_files():
+    factory = _factory(); asset = save_reusable_asset(_candidate(), session_factory=factory)
+    scope = _scope("Founder Sidebar / Navigation")
+    contract = {
+        "semantic_scope": scope,
+        "constraints": ["preserve current search behavior"],
+        "decision_context": {"applicability": "APPLICABLE", "recommended_strategy": "anchored_popover"},
+    }
+    result = inject_reuse_context(
+        contract=contract, goal="点击左侧栏搜索框按钮后显示一组操作供我选择搜索范围",
+        task_id="task-cross-pattern", session_factory=factory,
+    )
+    context = result["reuse_context"]
+    assert result["semantic_scope"] == scope
+    assert context["reuse_asset_id"] == asset.id and context["cross_module_reuse"] is True
+    assert context["source_semantic_module"] == "Founder Conversation"
+    assert context["current_semantic_module"] == "Founder Sidebar / Navigation"
+    assert context["source_file_leakage"] is False and context["scope_before"] == context["scope_after"]
+    assert "production_artifacts" not in context["implementation_guidance"]
+    draft = TaskAssetDraft(title="Search", description="Search", scope={"context": {}}, constraints=[], risk="low", approval_required=False)
+    package = ExecutionPackage(
+        goal="Search", context={"standard_task_contract": result}, task_asset=draft,
+        constraints=[], verification=["tests", "build", "browser"], commit_requirement="none",
+    )
+    assert TaskPackageBuilder().build(package).relevant_files == []
+
+
+def test_cross_module_pattern_wrong_intent_risk_and_invalidation_are_rejected():
+    factory = _factory(); asset = save_reusable_asset(_candidate(), session_factory=factory)
+    sidebar = _scope("Founder Sidebar / Navigation")
+    cases = [
+        ("调整左侧栏字号", "low"),
+        ("点击左侧栏按钮后显示一组操作", "high"),
+        ("点击左侧栏按钮后必须全屏多步骤编辑", "low"),
+    ]
+    for goal, risk in cases:
+        state, _ = assess_reuse_compatibility(
+            asset=asset, goal=goal, semantic_scope=sidebar,
+            recommended_strategy="anchored_popover", risk_level=risk,
+        )
+        assert state == REJECT
+
+
+def test_legacy_pattern_profile_is_inferred_without_asset_migration():
+    factory = _factory(); asset = save_reusable_asset(_candidate(), session_factory=factory)
+    profile = infer_applicability_profile(asset)
+    assert profile["profile_version"] == "capability-1.1-legacy-inferred"
+    assert profile["cross_module_allowed"] is True
+    assert set(profile["supported_semantic_modules"]) == {"Founder Conversation", "Founder Sidebar / Navigation"}
+
+
+def test_source_module_exact_match_is_only_a_rank_signal():
+    factory = _factory(); asset = save_reusable_asset(_candidate(), session_factory=factory)
+    same = _scope("Founder Conversation"); cross = _scope("Founder Sidebar / Navigation")
+    assert source_module_rank(asset, same) == 1 and source_module_rank(asset, cross) == 0
+    assert assess_reuse_compatibility(
+        asset=asset, goal="点击按钮后显示一组操作", semantic_scope=same,
+        recommended_strategy="anchored_popover",
+    )[0] == PASS
+    assert assess_reuse_compatibility(
+        asset=asset, goal="点击按钮后显示一组操作", semantic_scope=cross,
+        recommended_strategy="anchored_popover",
+    )[0] == PASS
+
+
+def test_deliberate_historical_source_file_leakage_is_rejected():
+    scope = _scope("Founder Sidebar / Navigation")
+    historical_path = "frontend/src/sino-founder/LegacySource.jsx"
+    widened = {**scope, "allowed_file_patterns": [
+        *scope["allowed_file_patterns"], historical_path,
+    ]}
+    result = source_file_leakage(
+        source_files=[historical_path],
+        scope_before=scope, scope_after=widened,
+    )
+    assert result["check"] == REJECT
+    assert result["leaked_source_files"] == [historical_path]

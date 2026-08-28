@@ -15,6 +15,7 @@ from app.founder_ai.decision_retrieval import (
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 from app.founder_ai.reusable_asset_service import candidate_fingerprint, classify_learning_candidate, save_reusable_asset, serialize_reusable_asset
 from app.founder_ai.reuse_retrieval import lookup_reusable_assets
+from app.founder_ai.reuse_applicability import infer_applicability_profile, source_module_rank
 from app.founder_ai.task_package import TaskPackageBuilder
 
 
@@ -260,8 +261,76 @@ def test_asset_center_projection_exposes_strategy_name_and_source_count():
     assert projected["asset_kind"] == "decision_strategy"
     assert projected["strategy_name"] == "anchored_overlay_choice"
     assert projected["source_count"] == 1
+    assert projected["source_semantic_module"] == asset.semantic_module
+    assert projected["applicability_profile"]["profile_version"] == "capability-2.1-legacy-inferred"
 
 
 def test_decision_strategy_requires_independent_verification_guidance():
     _, asset = _save()
     assert asset.verification_pattern["requires_own_evidence"] == ["scope", "targeted_tests", "build", "diff_check", "browser_or_artifact"]
+
+
+def test_cross_module_conversation_task_can_apply_sidebar_decision_strategy():
+    factory = _factory()
+    asset = save_reusable_asset(_candidate(semantic_module="Founder Sidebar / Navigation"), session_factory=factory)
+    state, reason = assess_decision_applicability(
+        asset=asset,
+        goal="点击 Conversation 输入框底部的＋文件/文档按钮后显示一组操作",
+        semantic_scope=_scope("Founder Conversation"), risk_level="low",
+    )
+    assert state == APPLICABLE and "cross-module" in reason
+
+
+def test_cross_module_decision_lookup_persists_provenance_and_preserves_scope():
+    factory = _factory()
+    asset = save_reusable_asset(_candidate(semantic_module="Founder Sidebar / Navigation"), session_factory=factory)
+    scope = _scope("Founder Conversation")
+    contract = {"semantic_scope": scope, "constraints": ["必须保留发送逻辑"]}
+    result = inject_decision_context(
+        contract=contract,
+        goal="点击 Conversation 输入框底部的＋文件/文档按钮后显示一组操作",
+        task_id="task-cross-decision", risk_level="low", session_factory=factory,
+    )
+    context = result["decision_context"]
+    assert result["semantic_scope"] == scope and context["decision_asset_id"] == asset.id
+    assert context["source_semantic_module"] == "Founder Sidebar / Navigation"
+    assert context["current_semantic_module"] == "Founder Conversation"
+    assert context["cross_module_reuse"] is True
+    assert context["scope_before"] == context["scope_after"]
+
+
+def test_cross_module_decision_rejects_wrong_intent_and_protected_contexts():
+    factory = _factory()
+    asset = save_reusable_asset(_candidate(semantic_module="Founder Sidebar / Navigation"), session_factory=factory)
+    assert assess_decision_applicability(
+        asset=asset, goal="调整 Conversation 输入框字号",
+        semantic_scope=_scope("Founder Conversation"), risk_level="low",
+    )[0] == NOT_APPLICABLE
+    assert assess_decision_applicability(
+        asset=asset, goal="点击 Conversation 输入框按钮后执行 destructive 高风险确认",
+        semantic_scope=_scope("Founder Conversation"), risk_level="low",
+    )[0] == NOT_APPLICABLE
+    assert assess_decision_applicability(
+        asset=asset, goal="优化体验",
+        semantic_scope=_scope("Founder Conversation"), risk_level="low",
+    )[0] == UNCERTAIN
+
+
+def test_legacy_decision_profile_is_inferred_without_asset_migration():
+    factory = _factory()
+    asset = save_reusable_asset(_candidate(semantic_module="Founder Sidebar / Navigation"), session_factory=factory)
+    profile = infer_applicability_profile(asset)
+    assert profile["profile_version"] == "capability-2.1-legacy-inferred"
+    assert profile["cross_module_allowed"] is True
+    assert "Founder Conversation" in profile["supported_semantic_modules"]
+
+
+def test_decision_source_module_exact_match_is_only_a_rank_signal():
+    factory = _factory()
+    asset = save_reusable_asset(_candidate(semantic_module="Founder Sidebar / Navigation"), session_factory=factory)
+    sidebar = _scope("Founder Sidebar / Navigation"); conversation = _scope("Founder Conversation")
+    assert source_module_rank(asset, sidebar) == 1 and source_module_rank(asset, conversation) == 0
+    for scope in (sidebar, conversation):
+        assert assess_decision_applicability(
+            asset=asset, goal="点击按钮后显示一组操作", semantic_scope=scope, risk_level="low",
+        )[0] == APPLICABLE

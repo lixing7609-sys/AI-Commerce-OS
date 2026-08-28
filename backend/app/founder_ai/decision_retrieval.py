@@ -7,6 +7,10 @@ from sqlalchemy import select
 
 from app.core.reusable_asset.model import ReusableAssetDB, ReuseEvidenceDB
 from app.database.db import SessionLocal
+from app.founder_ai.reuse_applicability import (
+    infer_applicability_profile, interaction_factors, profile_supports_scope,
+    semantic_scope_fingerprint, source_module_rank,
+)
 
 APPLICABLE, NOT_APPLICABLE, UNCERTAIN = "APPLICABLE", "NOT_APPLICABLE", "UNCERTAIN"
 FOUNDER_SYSTEM_KEY = "founder_ai"
@@ -18,25 +22,26 @@ def _tokens(value: str) -> set[str]:
 
 def assess_decision_applicability(*, asset: ReusableAssetDB, goal: str, semantic_scope: dict,
                                   risk_level: str = "low", constraints: list[str] | None = None) -> tuple[str, str]:
-    modules = list(semantic_scope.get("allowed_modules") or [])
     if semantic_scope.get("scope_source") != "semantic_module" or semantic_scope.get("confidence") != "HIGH":
         return UNCERTAIN, "semantic target is not resolved with HIGH confidence"
     if asset.asset_kind != "decision_strategy" or asset.pattern_type != "interaction_surface_choice":
         return NOT_APPLICABLE, "asset is not an interaction-surface decision strategy"
-    if asset.semantic_module not in modules:
-        return NOT_APPLICABLE, "semantic module does not match the current target"
-    if risk_level.lower() != "low":
+    profile = infer_applicability_profile(asset)
+    if not profile_supports_scope(profile, semantic_scope):
+        return NOT_APPLICABLE, "current target is outside the Decision applicability domain"
+    if risk_level.lower() not in set(profile.get("supported_risk_levels") or []):
         return NOT_APPLICABLE, "historical low-risk strategy cannot lower current risk"
-    text = " ".join([goal, *(constraints or [])]).lower()
-    if any(term in text for term in ("必须 modal", "必须模态", "全屏", "full-screen", "多步骤", "大工作区", "高风险", "destructive")):
+    factors = interaction_factors(goal=goal, constraints=constraints)
+    if any(factors[key] for key in (
+        "explicit_modal", "destructive_or_high_risk", "large_or_multistep",
+        "full_screen", "accessibility_incompatible",
+    )):
         return NOT_APPLICABLE, "current constraints hit an invalidation condition"
-    compact = any(term in text for term in (
-        "一组操作", "几个操作", "操作入口", "操作选择", "操作选项", "菜单", "下拉", "弹出",
-        "action set", "action choice", "actions", "menu", "点击后", "contextual",
-    ))
-    anchored = any(term in text for term in ("入口", "trigger", "按钮", "图标", "标题后", "底部"))
-    if compact and anchored:
-        return APPLICABLE, "compact low-risk actions are contextual to a visible trigger"
+    if factors["clear_non_surface_intent"]:
+        return NOT_APPLICABLE, "current task does not require an interaction-surface decision"
+    if factors["compact"] and factors["contextual_trigger"]:
+        relation = "cross-module" if asset.semantic_module not in (semantic_scope.get("allowed_modules") or []) else "same-module"
+        return APPLICABLE, f"{relation} Decision profile matches compact low-risk contextual actions"
     return UNCERTAIN, "interaction surface requirements are not explicit enough"
 
 
@@ -49,11 +54,12 @@ def lookup_decision_strategies(*, goal: str, semantic_scope: dict, task_id: str,
             ReusableAssetDB.system_id == FOUNDER_SYSTEM_KEY,
             ReusableAssetDB.status == "active",
             ReusableAssetDB.asset_kind == "decision_strategy",
-            ReusableAssetDB.semantic_module.in_(modules or ["__none__"]),
+            ReusableAssetDB.pattern_type == "interaction_surface_choice",
         )))
+        assets = [asset for asset in assets if profile_supports_scope(infer_applicability_profile(asset), semantic_scope)]
         goal_tokens = _tokens(goal)
         assets.sort(key=lambda item: (
-            item.semantic_module in modules,
+            source_module_rank(item, semantic_scope),
             item.pattern_type == "interaction_surface_choice",
             len(goal_tokens & _tokens(" ".join(item.target_keywords or []))),
             float(item.confidence), item.updated_at,
@@ -73,12 +79,21 @@ def lookup_decision_strategies(*, goal: str, semantic_scope: dict, task_id: str,
         if selected is not None:
             payload = dict(selected.implementation_pattern or {}).get("decision_strategy") or {}
             sources = list(selected.source_evidence or [])
+            profile = infer_applicability_profile(selected)
+            source_module = selected.semantic_module
+            current_module = modules[0] if modules else None
+            scope_fingerprint = semantic_scope_fingerprint(semantic_scope)
             context = {
                 "advisory": True,
                 "scope_authority": False, "risk_authority": False,
                 "approval_authority": False, "completion_authority": False,
                 "decision_lookup_performed": True, "decision_asset_id": selected.id,
                 "asset_fingerprint": selected.fingerprint,
+                "source_semantic_module": source_module, "current_semantic_module": current_module,
+                "cross_module_reuse": source_module != current_module,
+                "applicability_profile": profile,
+                "applicability_domain": (profile.get("domains") or [None])[0],
+                "scope_before": scope_fingerprint, "scope_after": scope_fingerprint,
                 "strategy_type": selected.pattern_type,
                 "strategy_name": payload.get("strategy_name", "anchored_overlay_choice"),
                 "applicability": APPLICABLE,
@@ -117,6 +132,11 @@ def lookup_decision_strategies(*, goal: str, semantic_scope: dict, task_id: str,
             "recommended_strategy": context.get("recommended_strategy"),
             "rejected_strategies": context.get("rejected_strategies") or [],
             "reason": reason,
+            "source_semantic_module": context.get("source_semantic_module"),
+            "current_semantic_module": context.get("current_semantic_module"),
+            "cross_module_reuse": context.get("cross_module_reuse", False),
+            "applicability_domain": context.get("applicability_domain"),
+            "scope_before": context.get("scope_before"), "scope_after": context.get("scope_after"),
             "source_task_ids": sorted({item.get("task_id") for item in (selected.source_evidence or []) if item.get("task_id")}) if selected else [],
             "source_execution_ids": sorted({item.get("execution_id") for item in (selected.source_evidence or []) if item.get("execution_id")}) if selected else [],
             "source_message_ids": sorted({message.get("message_id") for item in (selected.source_evidence or []) for message in (item.get("evidence", {}).get("messages") or []) if message.get("message_id")}) if selected else [],

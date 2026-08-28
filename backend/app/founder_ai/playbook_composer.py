@@ -16,6 +16,7 @@ from typing import Any
 from app.core.reusable_asset.model import ReuseEvidenceDB
 from app.database.db import SessionLocal
 from app.founder_ai.execution_state import runtime_revision
+from app.founder_ai.reuse_applicability import semantic_scope_fingerprint
 
 
 PASS, REJECT, UNCERTAIN = "PASS", "REJECT", "UNCERTAIN"
@@ -130,6 +131,36 @@ def _guidance_conflicts(founder_constraints: list[str], decision: dict, pattern:
     return conflicts
 
 
+def _cross_module_safety_conflicts(*, semantic_scope: dict, decision: dict, pattern: dict) -> list[dict[str, Any]]:
+    current_scope = semantic_scope_fingerprint(semantic_scope)
+    conflicts = []
+    for context, asset_key, kind in (
+        (decision, "decision_asset_id", "decision_strategy"),
+        (pattern, "reuse_asset_id", "ui_interaction_pattern"),
+    ):
+        if not context.get(asset_key):
+            continue
+        if context.get("scope_before") not in (None, current_scope) or context.get("scope_after") not in (None, current_scope):
+            conflicts.append({
+                "conflicting_asset_id": context.get(asset_key),
+                "conflict_type": "historical_reuse_scope_mutation",
+                "authoritative_constraint": "current semantic scope must remain unchanged",
+                "historical_guidance": kind,
+                "resolution": "historical_asset_rejected",
+                "rejected_reason": "historical reuse scope fingerprint differs from the current Task scope",
+            })
+        if context.get("source_file_leakage") is True or context.get("source_file_leakage_check") == REJECT:
+            conflicts.append({
+                "conflicting_asset_id": context.get(asset_key),
+                "conflict_type": "historical_source_file_leakage",
+                "authoritative_constraint": "historical source files cannot enter current write scope",
+                "historical_guidance": kind,
+                "resolution": "historical_asset_rejected",
+                "rejected_reason": "historical source files leaked into added current write scope",
+            })
+    return conflicts
+
+
 def composition_fingerprint(*, task_id: str, semantic_target: str, semantic_scope: dict,
                             risk: str, founder_constraints: list[str], decision_context: dict,
                             pattern_context: dict, required_verification: list[str]) -> str:
@@ -171,6 +202,11 @@ def _persist_playbook_evidence(*, evidence_id: str | None, playbook: dict,
                 "advisory_constraint_count": len(playbook["advisory_constraints"]),
                 "rejected_assets": playbook["rejected_assets"], "rejected_reasons": playbook["rejected_reasons"],
                 "compatibility": playbook["compatibility"], "safety_gate": playbook["safety_gate"],
+                "source_semantic_modules": playbook["source_semantic_modules"],
+                "current_semantic_module": playbook["current_semantic_module"],
+                "cross_module_reuse": playbook["cross_module_reuse"],
+                "applicability_domains": playbook["applicability_domains"],
+                "source_file_leakage_check": playbook["source_file_leakage_check"],
                 "composition_reason": playbook["composition_reason"], **AUTHORITY_FLAGS,
                 "injected_at": playbook["created_at"] if playbook["applied"] else None,
                 "final_result": "planning_injected" if playbook["applied"] else "not_applied",
@@ -224,15 +260,28 @@ def compose_execution_playbook(*, contract: dict, task_id: str | None, goal: str
         *[_constraint(item, priority="P7", source=f"ui_interaction_pattern:{pattern.get('reuse_asset_id')}", authority="advisory") for item in pattern.get("reuse_constraints") or []],
     ])
     conflicts = _guidance_conflicts(explicit, decision, pattern)
+    conflicts.extend(_cross_module_safety_conflicts(
+        semantic_scope=semantic_scope, decision=decision, pattern=pattern,
+    ))
     conflicts.extend(_cycle_conflicts(task_id=task_id, execution_id=execution_id, playbook_id=playbook_id,
                                       lineage=lineage, ancestor_lineage_ids=ancestor_lineage_ids))
 
     decision_ok = decision.get("applicability") == "APPLICABLE" and bool(decision.get("decision_asset_id"))
     pattern_ok = pattern.get("compatibility") == "PASS" and bool(pattern.get("reuse_asset_id"))
     scope_ok = semantic_scope.get("scope_source") == "semantic_module" and semantic_scope.get("confidence") == "HIGH"
+    scope_fingerprint = semantic_scope_fingerprint(semantic_scope)
+    source_file_leakage_ok = not any(
+        context.get("source_file_leakage") is True or context.get("source_file_leakage_check") == REJECT
+        for context in (decision, pattern)
+    )
+    reuse_scope_unchanged = all(
+        context.get("scope_before") in (None, scope_fingerprint)
+        and context.get("scope_after") in (None, scope_fingerprint)
+        for context in (decision, pattern)
+    )
     safety_checks = {
         "semantic_target_preserved": bool(semantic_target) and scope_ok,
-        "semantic_scope_unchanged": True,
+        "semantic_scope_unchanged": reuse_scope_unchanged,
         "risk_not_lowered": str(risk).lower() == "low",
         "approval_boundary_unchanged": True,
         "decision_applicability_valid": decision_ok,
@@ -240,6 +289,7 @@ def compose_execution_playbook(*, contract: dict, task_id: str | None, goal: str
         "no_authoritative_constraint_conflict": not bool(conflicts),
         "verification_requirements_not_weakened": set(REQUIRED_EVIDENCE).issubset(required),
         "completion_requirements_not_weakened": True,
+        "source_file_leakage_absent": source_file_leakage_ok,
         "no_lineage_cycle": not any(item.get("conflict_type") in {"recursive_lineage", "lineage_depth_exceeded"} for item in conflicts),
     }
     if conflicts:
@@ -260,6 +310,15 @@ def compose_execution_playbook(*, contract: dict, task_id: str | None, goal: str
         "semantic_target": semantic_target,
         "semantic_module": (semantic_scope.get("allowed_modules") or [None])[0],
         "recommended_strategy": decision.get("recommended_strategy"),
+        "source_semantic_modules": _dedup([
+            decision.get("source_semantic_module"), pattern.get("source_semantic_module"),
+        ]),
+        "current_semantic_module": (semantic_scope.get("allowed_modules") or [None])[0],
+        "cross_module_reuse": bool(decision.get("cross_module_reuse") or pattern.get("cross_module_reuse")),
+        "applicability_domains": _dedup([
+            decision.get("applicability_domain"), pattern.get("applicability_domain"),
+        ]),
+        "source_file_leakage_check": PASS if source_file_leakage_ok else REJECT,
         "decision_asset_ids": _dedup([decision.get("decision_asset_id")]),
         "pattern_asset_ids": _dedup([pattern.get("reuse_asset_id")]),
         "authoritative_constraints": authoritative, "advisory_constraints": advisory,

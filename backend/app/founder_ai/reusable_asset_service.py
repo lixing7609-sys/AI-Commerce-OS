@@ -12,6 +12,7 @@ from app.core.reusable_asset.model import ReusableAssetDB
 from app.database.db import SessionLocal
 from app.founder_ai.learning_extractor import LearningCandidate
 from app.founder_ai.decision_strategy_extractor import DecisionStrategyCandidate
+from app.founder_ai.reuse_applicability import infer_applicability_profile
 
 FOUNDER_SYSTEM_KEY = "founder_ai"
 
@@ -106,6 +107,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class _AssetView:
     reuse_asset_id: str; artifact_id: str; asset_kind: str; pattern_type: str; semantic_module: str
+    source_semantic_module: str; applicability_profile: dict
     target_keywords: list; source_task_id: str; source_execution_id: str; source_artifact_id: str | None
     source_memory_ids: list; implementation_pattern: dict; verification_pattern: dict; reuse_conditions: list
     invalidation_conditions: list; confidence: float; status: str; fingerprint: str; superseded_by: str | None
@@ -115,6 +117,7 @@ class _AssetView:
     def from_record(cls, item):
         decision = dict(item.implementation_pattern or {}).get("decision_strategy") or {}
         return cls(item.id, item.artifact_id, item.asset_kind, item.pattern_type, item.semantic_module,
+                   item.semantic_module, infer_applicability_profile(item),
                    list(item.target_keywords or []), item.source_task_id, item.source_execution_id,
                    item.source_artifact_id, list(item.source_memory_ids or []), dict(item.implementation_pattern),
                    dict(item.verification_pattern), list(item.reuse_conditions or []),
