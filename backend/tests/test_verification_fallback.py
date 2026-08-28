@@ -62,6 +62,17 @@ def test_system_chrome_process_crash_is_unavailable_not_acceptance_failure(monke
     assert "SIGABRT" in result["failure_reason"]
 
 
+def test_conversation_file_adapter_targets_only_visible_active_textarea_and_truthful_boundaries():
+    from pathlib import Path
+    script = (Path(__file__).resolve().parents[2] / "frontend/scripts/founder-ui-verifier.mjs").read_text()
+    assert "founder_conversation_file_actions" in script
+    assert ".sino-global-composer textarea:visible" in script
+    assert "active_textarea_count" in script
+    assert "tolerance = 1" in script
+    assert "filechooser_opened" in script and "file_selected_false" in script
+    assert "document_boundary_truthful" in script and "document_data_not_fabricated" in script
+
+
 def test_conversation_narration_matches_terminal_verification_state():
     verified = execute_ui_verification_chain(preferred=None, system_browser=passed("system_chrome_playwright"), static_acceptance=unavailable("static"))
     blocked = execute_ui_verification_chain(preferred=None, system_browser=unavailable("chrome"), static_acceptance=unavailable("static"))

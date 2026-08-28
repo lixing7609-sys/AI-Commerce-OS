@@ -39,7 +39,7 @@ MODULES = (
     ),
     SemanticModule(
         "Founder Conversation",
-        ("conversation", "对话", "会话", "对话标题", "会话标题", "更多操作", "会话操作", "消息", "气泡", "附件", "composer", "输入框"),
+        ("conversation", "对话", "会话", "对话标题", "会话标题", "更多操作", "会话操作", "消息", "气泡", "附件", "composer", "输入框", "输入区", "文件/文档", "上传文件", "选择已有文档"),
         (
             "frontend/src/sino-founder/FounderNavigationPanel.jsx",
             "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
@@ -96,7 +96,7 @@ MODULES = (
     ),
 )
 
-UI_TERMS = ("ui", "界面", "页面", "布局", "位置", "样式", "字号", "字体", "颜色", "间距", "圆角", "弹出", "展开", "按钮", "入口", "操作选择", "drawer", "popover", "modal")
+UI_TERMS = ("ui", "界面", "页面", "布局", "位置", "样式", "字号", "字体", "颜色", "间距", "圆角", "弹出", "展开", "按钮", "入口", "操作选择", "点击", "drawer", "popover", "modal")
 HIGH_RISK_TERMS = ("数据库", "database", "schema", "secret", "密钥", "production", "生产", "deploy", "部署", "git push", "删除数据", "付费 api", "系统权限")
 VAGUE_GOALS = ("优化系统", "优化一下", "改进系统", "完善系统")
 
@@ -266,6 +266,25 @@ def _semantic_visible_contract(goal: str, module: SemanticModule) -> dict[str, A
                 "project_selector_uses_portal", "project_selector_fixed_position",
                 "project_selector_arrow_visible", "project_selector_business_controls_visible",
                 "outside_close_works", "escape_close_works", "toggle_close_works",
+            ],
+        }
+    if module.name == "Founder Conversation" and any(term in goal for term in ("文件/文档", "文件和文档", "上传文件")) and any(
+        term in goal for term in ("选择已有文档", "已有文档", "文档库")
+    ):
+        return {
+            "required": True,
+            "artifact_type": "founder_conversation_file_actions",
+            "target_route": "Sino Founder shell / conversation composer",
+            "required_assertions": [
+                "trigger_visible", "interaction_surface_visible",
+                "upload_option_visible", "existing_document_option_visible",
+                "recommended_surface_match", "portal_parent_body",
+                "position_fixed", "anchor_positioning", "arrow_visible",
+                "viewport_contained", "not_composer_clipped",
+                "outside_close", "escape_close", "toggle_close",
+                "filechooser_opened", "file_selected_false",
+                "document_boundary_truthful", "document_data_not_fabricated",
+                "conversation_input_preserved", "project_context_preserved",
             ],
         }
     return None

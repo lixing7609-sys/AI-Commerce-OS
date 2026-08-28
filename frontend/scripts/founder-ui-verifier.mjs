@@ -109,6 +109,59 @@ try {
     evidence.escape_close_works = !(await popover.isVisible().catch(() => false));
     await trigger.click(); await trigger.click();
     evidence.toggle_close_works = !(await popover.isVisible().catch(() => false));
+  } else if (artifactType === "founder_conversation_file_actions") {
+    const trigger = page.getByRole("button", { name: "＋ 文件/文档", exact: true });
+    const activeControls = trigger.locator("xpath=ancestor::*[@aria-label='对话上下文操作'][1]");
+    const activeTextarea = page.locator(".founder-conversation-surface .sino-conversation-composer-dock .sino-global-composer textarea:visible").first();
+    const projectTrigger = page.getByRole("button", { name: /选择项目|当前项目：/ }).last();
+    const composer = page.locator(".founder-conversation-surface .sino-conversation-composer-dock").first();
+    const sameBox = (left, right, tolerance = 1) => left && right
+      && ["x", "y", "width", "height"].every((key) => Math.abs(left[key] - right[key]) <= tolerance);
+    await activeTextarea.waitFor({ state: "visible" });
+    evidence.active_textarea_count = await page.locator(".founder-conversation-surface .sino-conversation-composer-dock .sino-global-composer textarea:visible").count();
+    const inputBefore = await activeTextarea.boundingBox();
+    const projectBefore = await projectTrigger.textContent().catch(() => null);
+    evidence.trigger_visible = await trigger.isVisible();
+    await trigger.click();
+    const surface = page.getByRole("menu", { name: "文件和文档", exact: true });
+    evidence.interaction_surface_visible = await surface.isVisible().catch(() => false);
+    evidence.upload_option_visible = await surface.getByRole("menuitem", { name: /上传文件/ }).isVisible().catch(() => false);
+    evidence.existing_document_option_visible = await surface.getByRole("menuitem", { name: /选择已有文档/ }).isVisible().catch(() => false);
+    evidence.recommended_surface_match = evidence.interaction_surface_visible && await surface.evaluate((node) => node.classList.contains("sino-composer-files-popover"));
+    evidence.portal_parent_body = evidence.interaction_surface_visible && await surface.evaluate((node) => node.parentElement === document.body);
+    evidence.position_fixed = evidence.interaction_surface_visible && await surface.evaluate((node) => getComputedStyle(node).position === "fixed");
+    evidence.arrow_visible = await surface.locator("[data-popover-arrow]").isVisible().catch(() => false);
+    const triggerBox = await trigger.boundingBox();
+    const surfaceBox = await surface.boundingBox();
+    const composerBox = await composer.boundingBox();
+    evidence.anchor_positioning = Boolean(triggerBox && surfaceBox && surfaceBox.y + surfaceBox.height <= triggerBox.y + 2
+      && Math.abs(surfaceBox.x - triggerBox.x) <= Math.max(24, surfaceBox.width));
+    evidence.viewport_contained = Boolean(surfaceBox && surfaceBox.x >= 0 && surfaceBox.y >= 0
+      && surfaceBox.x + surfaceBox.width <= 1512 && surfaceBox.y + surfaceBox.height <= 982);
+    evidence.not_composer_clipped = Boolean(surfaceBox && composerBox && surfaceBox.y < composerBox.y && evidence.portal_parent_body);
+    const inputDuring = await activeTextarea.boundingBox();
+    await page.locator(".founder-conversation-surface").click({ position: { x: 10, y: 10 } });
+    evidence.outside_close = !(await surface.isVisible().catch(() => false));
+    await trigger.click(); await page.keyboard.press("Escape");
+    evidence.escape_close = !(await surface.isVisible().catch(() => false));
+    await trigger.click(); await trigger.click();
+    evidence.toggle_close = !(await surface.isVisible().catch(() => false));
+    const inputAfter = await activeTextarea.boundingBox();
+    const projectAfter = await projectTrigger.textContent().catch(() => null);
+    evidence.input_geometry = { before: inputBefore, during: inputDuring, after: inputAfter, tolerance_px: 1 };
+    evidence.conversation_input_preserved = sameBox(inputBefore, inputDuring) && sameBox(inputBefore, inputAfter);
+    evidence.project_context_preserved = projectBefore === projectAfter;
+    await trigger.click();
+    const chooser = page.waitForEvent("filechooser", { timeout: 3000 });
+    await surface.getByRole("menuitem", { name: /上传文件/ }).click();
+    await chooser;
+    evidence.filechooser_opened = true;
+    evidence.file_selected_false = (await activeControls.locator("input[type=file].sino-image-file-input").inputValue()) === "";
+    await trigger.click();
+    await surface.getByRole("menuitem", { name: /选择已有文档/ }).click();
+    const boundary = page.getByRole("alert").filter({ hasText: "文件/文档入口已预留" }).last();
+    evidence.document_boundary_truthful = await boundary.isVisible().catch(() => false);
+    evidence.document_data_not_fabricated = (await page.getByText(/已选择文档|文档已添加/).count()) === 0;
   } else if (artifactType === "founder_sidebar_heading_typography") {
     const projects = page.getByText("项目", { exact: true }).first();
     const conversations = page.getByText("会话", { exact: true }).first();

@@ -817,6 +817,97 @@ def refresh_completed_execution_artifacts(*, execution_id: str, repo_root: Path 
     return updated
 
 
+def resume_visible_artifact_verification(
+    *, conversation_id: str, task_id: str, execution_id: str, repo_root: Path = REPO_ROOT,
+) -> dict:
+    """Resume only the missing real-browser stage after a contract-mapping gap.
+
+    This transition is deliberately ineligible unless the same execution already
+    owns a production patch and has durable PASS evidence for scope, tests, build,
+    and diff. It never creates an execution or reruns implementation commands.
+    """
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise LookupError("Standard execution session not found")
+    session, package = record
+    if session.task_asset_id != task_id:
+        raise ValueError("task_execution_identity_mismatch")
+    expected_reason = "UI implementation requires a visible artifact contract and browser evidence"
+    if session.status not in {"failed", "blocked"} or session.failure_reason != expected_reason:
+        return {"status": "NOT_APPLICABLE", "reason": "execution is not blocked by the visible-artifact contract gap"}
+    result = dict(session.result or {})
+    command_evidence = {item.get("verifier"): item for item in result.get("command_verification_evidence") or []}
+    scope_pass = dict(result.get("scope_verification") or {}).get("status") == "PASS"
+    commands_pass = all(
+        command_evidence_passed(command_evidence.get(name), required=True)
+        for name in ("targeted_tests", "build", "git_diff_check")
+    )
+    implementation_pass = bool(
+        scope_pass and commands_pass and result.get("task_owned_patch_persisted")
+        and list(result.get("production_changed_files") or [])
+    )
+    if not implementation_pass:
+        return {"status": "REJECTED", "reason": "required durable pre-browser evidence is incomplete"}
+    contract = build_standard_task_contract(
+        conversation_id=conversation_id, goal=package.goal, task_id=task_id,
+    )
+    visible = dict(contract.get("visible_artifact_contract") or {})
+    if not visible.get("required"):
+        return {"status": "REJECTED", "reason": "visible artifact contract still unresolved"}
+    package = replace(
+        package,
+        context={**dict(package.context), "standard_task_contract": contract},
+    )
+    from app.founder_ai.verification_fallback import PASS, system_chrome_playwright_verifier
+    append_event(session, "browser_verification_started", status="verifying",
+                 message="Visible artifact verification resumed on the same execution.",
+                 metadata={"artifact_type": visible.get("artifact_type")})
+    append_event(session, "fallback_browser_started", status="verifying",
+                 message="System Chrome + Playwright fallback started",
+                 metadata={"verifier": "system_chrome_playwright"})
+    browser = system_chrome_playwright_verifier(repo_root=repo_root, contract=visible)
+    event_name = "fallback_browser_passed" if browser.get("status") == PASS else (
+        "fallback_browser_unavailable" if browser.get("status") in {"UNAVAILABLE", "TIMEOUT"}
+        else "fallback_browser_failed"
+    )
+    append_event(session, event_name, status=str(browser.get("status") or "unknown").lower(),
+                 message=f"system_chrome_playwright verification: {browser.get('status')}",
+                 metadata={"verification_evidence": browser})
+    if browser.get("status") != PASS:
+        session.failure_reason = browser.get("failure_reason") or "visible artifact verification did not pass"
+        save_execution_session(session, package)
+        return {"status": "BLOCKED" if browser.get("status") in {"UNAVAILABLE", "TIMEOUT"} else "FAILED",
+                "browser_verification": browser}
+    browser_gate = {"status": "PASS", "evidence": [browser]}
+    session.result = {
+        **result,
+        "browser_verification": browser_gate,
+        "verification_evidence": [browser],
+        "verification_outcome": "VERIFIED",
+    }
+    append_event(session, "verification_completed", status="verified",
+                 message="Post-implementation browser verification completed on the same execution.",
+                 metadata={"browser_verification": browser_gate})
+    session.status = "completed"
+    session.subprocess_exit_status = 0
+    session.error_message = None
+    session.failure_reason = None
+    session.recoverable = False
+    session.completed_at = _now()
+    save_execution_session(session, package)
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is not None:
+            discovery = dict(state.discovery or {})
+            route = dict(discovery.get("task_complexity_route") or {})
+            route["standard_task_contract"] = contract
+            discovery["standard_task_contract"] = contract
+            discovery["task_complexity_route"] = route
+            state.discovery = discovery
+            db.commit()
+    return {"status": "VERIFIED", "browser_verification": browser_gate, "contract": visible}
+
+
 def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, execution_id: str, repo_root: Path = REPO_ROOT) -> dict:
     session, package = get_execution_session(execution_id) or (None, None)
     if session is None: raise LookupError("Standard execution session not found")

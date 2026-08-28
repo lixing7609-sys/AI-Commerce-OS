@@ -1,11 +1,26 @@
 from app.founder_ai.standard_task_execution import (
     build_standard_task_contract, command_evidence_passed,
     evaluate_standard_verification_evidence, production_implementation_evidence_passed,
+    resume_visible_artifact_verification,
 )
+from app.founder_ai.execution_loop import ExecutionSession
+from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 from app.founder_ai.task_complexity_router import QUICK_FIX, STANDARD_TASK, STRATEGIC_TASK, route_task_complexity
 
 
 GOAL = "给能力仓库增加搜索功能，可以按能力名称和 Domain 搜索，保持现有页面结构和风格不变。"
+
+
+def _package(goal):
+    draft = TaskAssetDraft(
+        title=goal, description=goal, scope={}, constraints=[], risk="low",
+        approval_required=False, conversation_id="conv-browser-resume",
+    )
+    return ExecutionPackage(
+        goal=goal, context={}, task_asset=draft, constraints=[],
+        verification=["targeted tests", "frontend build", "git diff --check"],
+        commit_requirement="none", approval_required=False, execution_allowed=True,
+    )
 
 
 def test_clear_repository_search_is_a_standard_task_without_founder_confirmation():
@@ -14,6 +29,54 @@ def test_clear_repository_search_is_a_standard_task_without_founder_confirmation
     assert route["clarification_required"] is False
     assert route["founder_gate_required"] is False
     assert route["strategy_meeting_required"] is False
+
+
+def test_visible_contract_gap_resumes_only_browser_on_same_execution(monkeypatch):
+    import app.founder_ai.standard_task_execution as execution
+    task_id = "task-browser-resume"
+    session = ExecutionSession(
+        id="execution-browser-resume", task_asset_id=task_id,
+        execution_package_id="package-browser-resume", executor="codex", status="failed",
+        failure_reason="UI implementation requires a visible artifact contract and browser evidence",
+        subprocess_exit_status=0,
+        result={
+            "production_changed_files": ["frontend/src/sino-founder/FounderHome.jsx"],
+            "task_owned_patch_persisted": True,
+            "scope_verification": {"status": "PASS"},
+            "command_verification_evidence": [
+                {"verifier": name, "status": "PASS", "evidence": {"command": [name]}}
+                for name in ("targeted_tests", "build", "git_diff_check")
+            ],
+        },
+    )
+    package = _package("点击输入区的＋ 文件/文档，提供上传文件和选择已有文档。")
+    visible = {"required": True, "artifact_type": "founder_conversation_file_actions", "required_assertions": ["trigger_visible"]}
+    monkeypatch.setattr(execution, "get_execution_session", lambda _execution_id: (session, package))
+    monkeypatch.setattr(execution, "build_standard_task_contract", lambda **_kwargs: {"visible_artifact_contract": visible})
+    saved = []
+    monkeypatch.setattr(execution, "save_execution_session", lambda item, updated: saved.append((item.id, updated)))
+    monkeypatch.setattr(
+        "app.founder_ai.verification_fallback.system_chrome_playwright_verifier",
+        lambda **_kwargs: {"verifier": "system_chrome_playwright", "status": "PASS", "evidence": {"trigger_visible": True}},
+    )
+
+    class NoStateSession:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def scalar(self, *_args, **_kwargs): return None
+
+    monkeypatch.setattr(execution, "SessionLocal", NoStateSession)
+    result = resume_visible_artifact_verification(
+        conversation_id="conv-browser-resume", task_id=task_id, execution_id=session.id,
+    )
+    assert result["status"] == "VERIFIED"
+    assert session.id == "execution-browser-resume" and session.task_asset_id == task_id
+    assert session.result["browser_verification"]["status"] == "PASS"
+    assert [event["event_name"] for event in session.events] == [
+        "browser_verification_started", "fallback_browser_started",
+        "fallback_browser_passed", "verification_completed",
+    ]
+    assert saved and session.status == "completed"
 
 
 def test_read_only_local_health_check_does_not_require_implementation_patch():

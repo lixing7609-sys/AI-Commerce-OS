@@ -96,6 +96,24 @@ def test_unseen_conversation_action_popover_uses_target_not_reference_module():
     assert scope["visible_artifact_contract"]["artifact_type"] == "founder_conversation_action_popover"
 
 
+def test_conversation_file_actions_compile_generic_visible_artifact_contract():
+    goal = (
+        "点击 Founder Conversation 输入区底部的＋ 文件/文档后，先提供上传文件和选择已有文档，"
+        "保留当前 Conversation 输入和项目上下文。"
+    )
+    contract = build_standard_task_contract(conversation_id="conv-file-actions", goal=goal)
+    visible = contract["visible_artifact_contract"]
+    assert contract["scope_confidence"] == HIGH
+    assert contract["semantic_scope"]["allowed_modules"] == ["Founder Conversation"]
+    assert visible["artifact_type"] == "founder_conversation_file_actions"
+    assert visible["required"] is True
+    assert {
+        "filechooser_opened", "file_selected_false", "document_boundary_truthful",
+        "document_data_not_fabricated", "conversation_input_preserved",
+        "project_context_preserved", "outside_close", "escape_close", "toggle_close",
+    }.issubset(visible["required_assertions"])
+
+
 def test_project_action_scope_accepts_production_component_test_and_matching_shared_css():
     contract = build_standard_task_contract(
         conversation_id="conv-project-actions",
