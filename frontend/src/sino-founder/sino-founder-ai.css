@@ -525,7 +525,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .sino-sidebar .sino-new-conversation { flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 40px; margin-top: 34px; border-color: transparent; background: #171a16; }
 .sino-sidebar .sino-new-conversation span { color: var(--accent); font-size: 16px; }.sino-sidebar .sino-new-conversation b { font-size: 12px; font-weight: 500; }
 .sino-sidebar-section { margin-top: 26px; }
-.sino-sidebar__conversation-title { flex: none; }
+.sino-sidebar__conversation-title { display: flex; flex: none; align-items: center; gap: 6px; }
+.sino-sidebar__conversation-count { color: var(--text-muted); font-size: var(--font-metadata); font-variant-numeric: tabular-nums; font-weight: 500; line-height: var(--line-metadata); }
 .sino-sidebar-section__toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 7px 10px; border: 0; background: transparent; color: #757d73; font-size: 12px; text-align: left; cursor: pointer; }
 .sino-sidebar-section__toggle i { color: #4f574e; font-style: normal; }
 .sino-sidebar-primary-title { box-sizing: border-box; width: 100%; padding: 7px 10px; color: #757d73; font-size: 12px; font-weight: 500; line-height: 16px; }

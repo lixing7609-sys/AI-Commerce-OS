@@ -200,7 +200,9 @@ describe("Founder sidebar information architecture", () => {
     />);
 
     const search = screen.getByPlaceholderText("搜索");
+    const visibleConversationCount = () => screen.getByLabelText(/当前可见会话/).textContent;
     expect(search.getAttribute("data-native-search-cancel")).toBe("hidden");
+    expect(visibleConversationCount()).toBe("2");
     expect(screen.queryByRole("button", { name: "清除搜索" })).toBeNull();
     fireEvent.change(search, { target: { value: "  Commerce  " } });
     expect(screen.getByRole("button", { name: "清除搜索" })).toBeTruthy();
@@ -211,12 +213,14 @@ describe("Founder sidebar information architecture", () => {
     expect(onSelectProject).toHaveBeenCalledWith("commerce");
 
     fireEvent.change(search, { target: { value: "gpt" } });
+    expect(visibleConversationCount()).toBe("1");
     expect(screen.getByText("把图标改成 GPT 风格")).toBeTruthy();
     expect(screen.queryByText("广告平台解析")).toBeNull();
     fireEvent.click(document.querySelector('.sino-conversation-item__open[title="把图标改成 GPT 风格"]'));
     expect(onSelectConversation).toHaveBeenCalledWith("gpt");
 
     fireEvent.click(screen.getByRole("button", { name: "清除搜索" }));
+    expect(visibleConversationCount()).toBe("2");
     expect(search.value).toBe("");
     expect(screen.queryByRole("button", { name: "清除搜索" })).toBeNull();
     expect(screen.getByText("Sino Operator AI")).toBeTruthy();
