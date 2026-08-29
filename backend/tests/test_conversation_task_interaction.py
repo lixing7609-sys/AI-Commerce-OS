@@ -511,7 +511,50 @@ def test_one_technical_incident_projects_only_one_recovery_message(monkeypatch):
     assert interaction.project_execution_events("conv-incident") == 0
     with factory() as db:
         messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-incident", message_type="execution_update").all()
-        assert [item.content for item in messages] == ["当前发现执行异常，正在自动恢复。"]
+    assert [item.content for item in messages] == ["当前发现执行异常，正在自动恢复。"]
+
+
+def test_execution_narration_releases_database_connection_before_model_io(monkeypatch, tmp_path):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import QueuePool
+    from app.database.base import Base
+    from app.core.conversation.model import ConversationDB
+    from app.core.conversation_first.model import SinoBrainSessionDB
+    from app.founder_ai.execution_loop import ExecutionSession
+    from app.founder_ai.execution_events import append_event
+    import app.founder_ai.conversation_task_interaction as interaction
+    import app.founder_ai.conversation_core as conversation_core
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'pool-lifecycle.sqlite'}", poolclass=QueuePool,
+        pool_size=1, max_overflow=0,
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(interaction, "SessionLocal", factory)
+    execution = ExecutionSession("execution-pool", "task-pool", "package", status="executing")
+    append_event(execution, "worker_started", status="executing", message="started")
+    monkeypatch.setattr(interaction, "get_execution_session", lambda _execution_id: (execution, object()))
+
+    observed = []
+    def summarize(_conversation_id, _events, **_kwargs):
+        observed.append(engine.pool.checkedout())
+        return "执行已经开始。"
+    route = {"classification": "STANDARD_TASK", "autonomous_execution": {
+        "task_id": "task-pool", "execution_session_id": execution.id,
+    }}
+    with factory() as db:
+        db.add(ConversationDB(id="conv-pool", system_id="founder_ai", title="pool"))
+        db.add(SinoBrainSessionDB(conversation_id="conv-pool", discovery={"task_complexity_route": route}))
+        db.commit()
+
+    assert interaction.project_execution_events("conv-pool", summarizer=summarize) == 1
+    assert observed == [0]
+    assert interaction.project_execution_events("conv-pool", summarizer=summarize) == 0
+    assert observed == [0]
+    assert engine.pool.checkedout() == 0
+    engine.dispose()
 
 
 def test_visible_result_projection_is_idempotent_when_verified_at_changes(monkeypatch):

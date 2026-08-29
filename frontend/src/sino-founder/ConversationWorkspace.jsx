@@ -63,6 +63,11 @@ export const conversationResponseMatches = (requestedId, activeId, response) => 
   return Boolean(requestedId && requestedId === activeId && responseId === requestedId);
 };
 
+export const conversationRestoreDisposition = (requestError) =>
+  requestError?.status === 404 || requestError?.code === "conversation_not_found"
+    ? "NOT_FOUND"
+    : "RESTORE_FAILED";
+
 export const mergeConversationSnapshot = (current, incoming) => {
   if (!incoming) return current;
   const canonical = incoming.messages || [];
@@ -152,7 +157,12 @@ export function ConversationWorkspace() {
   const skipNextRestoreRef = useRef(false);
   const initialRestoreRef = useRef(Boolean(conversationId));
   const activeConversationRef = useRef(conversationId);
+  const snapshotCacheRef = useRef(new Map());
   useEffect(() => { activeConversationRef.current = conversationId; }, [conversationId]);
+  useEffect(() => {
+    const snapshotConversationId = snapshot?.conversation?.id;
+    if (snapshotConversationId) snapshotCacheRef.current.set(snapshotConversationId, snapshot);
+  }, [snapshot]);
 
   const resetConversationProjection = useCallback(() => {
     setSnapshot(null); setGoal(null); setResult(null); setExecution(null); setExecutionId(null); setApproved(false);
@@ -240,6 +250,7 @@ export function ConversationWorkspace() {
   const applyConversationSnapshot = useCallback((id, restored) => {
     const resolvedId = restored.conversation?.id || id;
     if (!conversationResponseMatches(id, activeConversationRef.current, restored)) return false;
+    snapshotCacheRef.current.set(resolvedId, restored);
     setConversationId(resolvedId); setSnapshot(restored); setDiscussionMessage(""); setExecutionMessage(""); setError("");
     setActiveProjectId(restored.conversation?.project_id || null); setProjectIntelligence(null);
     remember(CONVERSATION_KEY, resolvedId); remember(PROJECT_KEY, restored.conversation?.project_id || null);
@@ -271,15 +282,15 @@ export function ConversationWorkspace() {
 
   useEffect(() => {
     if (!conversationId || !initialRestoreRef.current) return undefined;
-    initialRestoreRef.current = false;
-    if (skipNextRestoreRef.current) { skipNextRestoreRef.current = false; return undefined; }
+    if (skipNextRestoreRef.current) { skipNextRestoreRef.current = false; initialRestoreRef.current = false; return undefined; }
     let active = true;
     getConversationWorkspace(conversationId).then((restored) => {
       if (!active) return;
       if (!conversationResponseMatches(conversationId, activeConversationRef.current, restored)) return;
+      initialRestoreRef.current = false;
       const resolvedId = restored.conversation?.id || conversationId;
       if (resolvedId !== conversationId) setConversationId(resolvedId);
-      setSnapshot(restored);
+      snapshotCacheRef.current.set(resolvedId, restored); setSnapshot(restored);
       setActiveProjectId(restored.conversation?.project_id || null);
       remember(PROJECT_KEY, restored.conversation?.project_id || null);
       remember(CONVERSATION_KEY, resolvedId);
@@ -289,7 +300,20 @@ export function ConversationWorkspace() {
       if (restored.active_execution) {
         setExecution(restored.active_execution); setExecutionId(restored.active_execution.id); setApproved(Boolean(restored.active_execution.execution_allowed)); remember(EXECUTION_KEY, restored.active_execution.id);
       }
-    }).catch((requestError) => { if (active) { setError(requestError.message); if (requestError.status === 404) removeConversationHistory(conversationId); remember(CONVERSATION_KEY, null); setConversationId(null); setSnapshot(null); setView("conversation"); } });
+    }).catch((requestError) => { if (active) {
+      initialRestoreRef.current = false;
+      const disposition = conversationRestoreDisposition(requestError);
+      if (disposition === "NOT_FOUND") {
+        removeConversationHistory(conversationId); remember(CONVERSATION_KEY, null);
+        setConversationId(null); activeConversationRef.current = null; setSnapshot(null);
+      } else {
+        // A transport failure is not evidence that the durable Conversation is empty.
+        // Keep its identity and any last-known-good projection for a later retry.
+        remember(CONVERSATION_KEY, conversationId);
+      }
+      setError(disposition === "RESTORE_FAILED" ? "当前讨论状态暂时无法刷新，已保留已有内容。" : requestError.message);
+      setView("conversation");
+    } });
     return () => { active = false; };
   }, [conversationId, rememberConversation, removeConversationHistory]);
   useEffect(() => {
@@ -721,7 +745,13 @@ export function ConversationWorkspace() {
 
   async function selectConversation(id) {
     if (!id) return;
-    activeConversationRef.current = id; resetConversationProjection(); setConversationId(id); remember(CONVERSATION_KEY, id); setProjectLanding(false); setView("conversation");
+    const previousId = conversationId;
+    const cached = snapshotCacheRef.current.get(id);
+    activeConversationRef.current = id;
+    if (cached) {
+      setConversationId(id); remember(CONVERSATION_KEY, id); applyConversationSnapshot(id, cached);
+    }
+    setProjectLanding(false); setView("conversation");
     setBusy(true); setError("");
     try {
       const restored = await getConversationWorkspace(id);
@@ -729,8 +759,17 @@ export function ConversationWorkspace() {
       applyConversationSnapshot(id, restored);
       setView("conversation");
     } catch (requestError) {
-      if (requestError.status === 404 || requestError.code === "conversation_not_found") removeConversationHistory(id);
-      setError(requestError.message);
+      const disposition = conversationRestoreDisposition(requestError);
+      if (disposition === "NOT_FOUND") {
+        removeConversationHistory(id);
+        if (cached) { setConversationId(null); setSnapshot(null); remember(CONVERSATION_KEY, null); }
+        activeConversationRef.current = previousId;
+      } else {
+        // Fetch/Validate/Commit: a failed target fetch never destroys the stable
+        // source snapshot. A cached target remains the target's durable LKG view.
+        if (!cached) activeConversationRef.current = previousId;
+        setError("当前讨论状态暂时无法刷新，已保留已有内容。");
+      }
     } finally { setBusy(false); }
   }
 

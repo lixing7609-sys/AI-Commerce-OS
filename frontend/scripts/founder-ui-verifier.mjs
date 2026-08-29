@@ -348,6 +348,67 @@ try {
     evidence.filtered_state_passed = filtered.passed === true;
     evidence.restored_state_passed = restored.passed === true && (restored.skipped || restored.visible_count === baseline.visible_count);
     evidence.existing_behaviors_preserved = evidence.restored_state_passed && await page.locator(contract.target_route === "Founder Sidebar / Navigation" ? ".founder-navigation-panel" : "body").isVisible();
+  } else if (artifactType === "conversation_durable_resume") {
+    page.setDefaultTimeout(8000);
+    const conversationA = String(contract.conversation_a_id || "");
+    const conversationB = String(contract.conversation_b_id || "");
+    if (!conversationA || !conversationB || conversationA === conversationB) throw new Error("two distinct existing conversations are required");
+    const row = (id) => page.locator(`.sino-conversation-item[data-conversation-id="${id}"]`);
+    const open = (id) => row(id).locator(".sino-conversation-item__open");
+    const workspaceResponse = (id) => page.waitForResponse((response) =>
+      response.ok() && response.url().includes(`/founder-ai/conversations/${id}/workspace`),
+    );
+    const waitActive = async (id) => {
+      await row(id).waitFor({ state: "visible" });
+      await page.waitForFunction((target) => document.querySelector(`.sino-conversation-item[data-conversation-id="${target}"]`)?.classList.contains("is-active"), id);
+      await page.locator(".sino-conversation-thread").waitFor({ state: "visible" });
+    };
+    const readStableView = async () => ({
+      content: (await page.locator(".sino-conversation-thread .sino-message-stack").allInnerTexts()).join("\n").trim(),
+      execution: (await page.locator(".sino-brain-context").innerText()).trim(),
+      model: (await page.locator(".sino-model-selector__trigger").getAttribute("aria-label")) || "",
+    });
+    const initialActive = await page.locator(".sino-conversation-item.is-active").getAttribute("data-conversation-id").catch(() => null);
+    await Promise.all([workspaceResponse(conversationA), open(conversationA).click()]); await waitActive(conversationA);
+    const baseline = await readStableView();
+    await Promise.all([workspaceResponse(conversationB), open(conversationB).click()]); await waitActive(conversationB);
+    await Promise.all([workspaceResponse(conversationA), open(conversationA).click()]); await waitActive(conversationA);
+    const restored = await readStableView();
+    evidence.a_to_b_to_a_identity = await row(conversationA).evaluate((node) => node.classList.contains("is-active"));
+    evidence.a_to_b_to_a_content_restored = Boolean(baseline.content) && restored.content === baseline.content;
+    evidence.a_to_b_to_a_execution_restored = Boolean(baseline.execution) && restored.execution === baseline.execution;
+    evidence.a_to_b_to_a_model_restored = Boolean(baseline.model) && restored.model === baseline.model;
+    await Promise.all([workspaceResponse(conversationA), page.reload({ waitUntil: "domcontentloaded", timeout: 15000 })]);
+    await waitActive(conversationA);
+    let refreshBarrierPassed = true;
+    await page.waitForFunction((expected) => {
+      const content = Array.from(document.querySelectorAll(".sino-conversation-thread .sino-message-stack"))
+        .map((node) => node.innerText).join("\n").trim();
+      const execution = document.querySelector(".sino-brain-context")?.innerText.trim() || "";
+      const model = document.querySelector(".sino-model-selector__trigger")?.getAttribute("aria-label") || "";
+      return content === expected.content && execution === expected.execution && model === expected.model;
+    }, baseline).catch(() => { refreshBarrierPassed = false; });
+    const refreshed = await readStableView();
+    evidence.refresh_barrier_passed = refreshBarrierPassed;
+    evidence.refresh_diagnostics = {
+      baseline_content_length: baseline.content.length, refreshed_content_length: refreshed.content.length,
+      baseline_execution_length: baseline.execution.length, refreshed_execution_length: refreshed.execution.length,
+      baseline_model: baseline.model, refreshed_model: refreshed.model,
+      restore_alert_visible: await page.getByRole("alert").isVisible().catch(() => false),
+    };
+    evidence.refresh_identity_restored = await row(conversationA).evaluate((node) => node.classList.contains("is-active"));
+    evidence.refresh_content_restored = refreshed.content === baseline.content;
+    evidence.refresh_execution_restored = refreshed.execution === baseline.execution;
+    evidence.refresh_model_restored = refreshed.model === baseline.model;
+    evidence.no_blank_workspace = Boolean(refreshed.content);
+    evidence.no_failed_to_fetch = (await page.getByText("Failed to fetch", { exact: false }).count()) === 0;
+    await page.locator(".sino-model-selector__trigger").click();
+    evidence.no_false_empty_model = (await page.getByText("暂无可用 Conversation Model", { exact: true }).count()) === 0;
+    await page.keyboard.press("Escape");
+    evidence.no_false_empty_execution = !/暂无执行事项|暂无执行$/.test(refreshed.execution);
+    if (initialActive && initialActive !== conversationA && await row(initialActive).count()) {
+      await Promise.all([workspaceResponse(initialActive), open(initialActive).click()]); await waitActive(initialActive);
+    }
   } else if (artifactType === "founder_sidebar_heading_typography") {
     const projects = page.getByText("项目", { exact: true }).first();
     const conversations = page.getByText("会话", { exact: true }).first();

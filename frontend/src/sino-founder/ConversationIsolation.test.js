@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conversationFallbackAfterDelete, conversationResponseMatches } from "./ConversationWorkspace.jsx";
+import { conversationFallbackAfterDelete, conversationResponseMatches, conversationRestoreDisposition } from "./ConversationWorkspace.jsx";
 
 describe("Conversation projection isolation", () => {
   it("accepts only the active conversation response", () => {
@@ -7,6 +7,13 @@ describe("Conversation projection isolation", () => {
     expect(conversationResponseMatches("conv-old", "conv-new", { conversation: { id: "conv-old" } })).toBe(false);
     expect(conversationResponseMatches("conv-new", "conv-new", { conversation: { id: "conv-old" } })).toBe(false);
     expect(conversationResponseMatches("conv-new", "conv-new", {})).toBe(false);
+  });
+
+  it("distinguishes confirmed deletion from retryable transport failure", () => {
+    expect(conversationRestoreDisposition({ status: 404 })).toBe("NOT_FOUND");
+    expect(conversationRestoreDisposition({ code: "conversation_not_found" })).toBe("NOT_FOUND");
+    expect(conversationRestoreDisposition({ status: 500 })).toBe("RESTORE_FAILED");
+    expect(conversationRestoreDisposition(new TypeError("Failed to fetch"))).toBe("RESTORE_FAILED");
   });
 
   it("selects a deterministic id-bound neighbor after deleting the active row", () => {

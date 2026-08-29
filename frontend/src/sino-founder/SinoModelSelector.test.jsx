@@ -39,6 +39,15 @@ describe("Sino AI Conversation Model selector", () => {
     expect(screen.queryByText("DeepSeek Chat")).toBeNull();
   });
 
+  it("projects model transport failure as LOAD_FAILED instead of an empty model catalog", async () => {
+    getModelCenter.mockRejectedValue(new TypeError("Failed to fetch"));
+    getSinoAssignedModels.mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<SinoModelSelector conversation={{ id: "conv-1", title: "持久讨论" }} />);
+    fireEvent.click(screen.getByRole("button", { name: /持久讨论/ }));
+    expect(await screen.findByText("模型状态暂时无法加载，已保留当前模型。")).toBeTruthy();
+    expect(screen.queryByText("暂无可用 Conversation Model")).toBeNull();
+  });
+
   it("shows Sino identity, opens the menu, marks the configured default, and preselects before creation", async () => {
     getModelCenter.mockResolvedValue(center);
     getSinoAssignedModels.mockResolvedValue(assigned);

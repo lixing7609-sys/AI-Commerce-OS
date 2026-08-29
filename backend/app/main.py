@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
 from app.api.v1.agents import router as agents_router
 from app.api.v1.analytics import router as analytics_router
@@ -47,6 +48,7 @@ from app.services.runtime_recovery_service import RuntimeRecoveryService
 from app.services.runtime_state_service import RuntimeStateService
 from app.services.task_consumer_service import task_consumer_service
 from app.core.model_center.service import _bootstrap_legacy_runtime_once
+from app.database.db import pool_metrics_snapshot, record_pool_acquire_timeout
 
 logging.basicConfig(
     level=logging.INFO,
@@ -192,6 +194,15 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def record_database_pool_timeouts(request, call_next):
+    try:
+        return await call_next(request)
+    except SQLAlchemyTimeoutError:
+        record_pool_acquire_timeout()
+        raise
 
 
 app.add_middleware(
@@ -371,3 +382,9 @@ def health():
         "migration": "head",
         "revision": readiness.current_revision,
     }
+
+
+@app.get("/health/database-pool", tags=["System"])
+def database_pool_health():
+    """Expose bounded local pool evidence without opening another DB session."""
+    return {"status": "ok", **pool_metrics_snapshot()}

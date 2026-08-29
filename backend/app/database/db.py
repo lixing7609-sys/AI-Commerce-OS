@@ -1,4 +1,6 @@
-from sqlalchemy import create_engine
+from threading import Lock
+
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_sqlalchemy_echo
@@ -53,6 +55,46 @@ engine = create_engine(
     DATABASE_URL,
     echo=get_sqlalchemy_echo(),
 )
+
+
+_pool_metric_lock = Lock()
+_pool_metrics = {
+    "checkout_total": 0,
+    "checkin_total": 0,
+    "acquire_timeout_count": 0,
+}
+
+
+@event.listens_for(engine, "checkout")
+def _record_pool_checkout(*_args) -> None:
+    with _pool_metric_lock:
+        _pool_metrics["checkout_total"] += 1
+
+
+@event.listens_for(engine, "checkin")
+def _record_pool_checkin(*_args) -> None:
+    with _pool_metric_lock:
+        _pool_metrics["checkin_total"] += 1
+
+
+def record_pool_acquire_timeout() -> None:
+    """Record a QueuePool acquisition timeout without changing error handling."""
+    with _pool_metric_lock:
+        _pool_metrics["acquire_timeout_count"] += 1
+
+
+def pool_metrics_snapshot() -> dict:
+    """Return bounded, non-sensitive QueuePool health evidence."""
+    pool = engine.pool
+    with _pool_metric_lock:
+        counters = dict(_pool_metrics)
+    return {
+        "pool_size": pool.size(),
+        "checked_in": pool.checkedin(),
+        "checked_out": pool.checkedout(),
+        "overflow": pool.overflow(),
+        **counters,
+    }
 
 
 SessionLocal = sessionmaker(

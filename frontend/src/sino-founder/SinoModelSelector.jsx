@@ -19,12 +19,26 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
   const menuRef = useRef(null);
   const [center, setCenter] = useState(null);
   const [assigned, setAssigned] = useState(null);
+  const [loadState, setLoadState] = useState("LOADING");
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ top: 0, left: 0, arrowLeft: 0 });
 
-  useEffect(() => { let live = true; Promise.all([getModelCenter(), getSinoAssignedModels()]).then(([value, candidates]) => { if (live) { setCenter(value); setAssigned(candidates); } }).catch(() => { if (live) { setCenter({ roles: [] }); setAssigned({ models: [] }); } }); return () => { live = false; }; }, []);
+  useEffect(() => {
+    let live = true;
+    Promise.all([getModelCenter(), getSinoAssignedModels()]).then(([value, candidates]) => {
+      if (live) {
+        setCenter(value); setAssigned(candidates);
+        setLoadState((candidates?.models || []).length ? "LOADED_AVAILABLE" : "LOADED_EMPTY");
+      }
+    }).catch(() => {
+      // Transport failure is not authoritative empty data. Retain any previous
+      // model/binding projection and expose a retryable load failure instead.
+      if (live) setLoadState("LOAD_FAILED");
+    });
+    return () => { live = false; };
+  }, []);
   useEffect(() => {
     if (!open) return undefined;
     const position = () => {
@@ -101,7 +115,9 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
         <span><strong>{option.displayName}</strong><small>{option.providerName} · {option.model}</small></span>
         <i>{option.key === selectedKey ? "✓" : option.available ? "" : "不可用"}</i>
       </button>)}
-      {!models.length ? <p>暂无可用 Conversation Model</p> : null}
+      {loadState === "LOADING" ? <p role="status">正在加载 Conversation Model…</p> : null}
+      {loadState === "LOADED_EMPTY" ? <p>暂无可用 Conversation Model</p> : null}
+      {loadState === "LOAD_FAILED" ? <p role="status">模型状态暂时无法加载，已保留当前模型。</p> : null}
     </div>, document.body) : null}
     {error ? <div className="sino-model-selector__error" role="status">{error}</div> : null}
   </div>;

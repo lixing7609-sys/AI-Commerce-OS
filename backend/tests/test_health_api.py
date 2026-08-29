@@ -32,3 +32,17 @@ def test_health_is_unhealthy_when_database_is_not_ready(monkeypatch):
     response = TestClient(app).get("/health")
     assert response.status_code == 503
     assert response.json()["database"] == "unhealthy"
+
+
+def test_database_pool_health_exposes_connection_lifecycle(monkeypatch):
+    monkeypatch.setattr("app.main.pool_metrics_snapshot", lambda: {
+        "pool_size": 5, "checked_in": 4, "checked_out": 1, "overflow": 0,
+        "checkout_total": 12, "checkin_total": 11, "acquire_timeout_count": 2,
+    })
+    response = TestClient(app).get("/health/database-pool")
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok", "pool_size": 5, "checked_in": 4, "checked_out": 1,
+        "overflow": 0, "checkout_total": 12, "checkin_total": 11,
+        "acquire_timeout_count": 2,
+    }

@@ -674,75 +674,143 @@ def _append_projection(db, *, conversation_id: str, task_id: str | None, source_
     return True
 
 
-def project_execution_events(conversation_id: str) -> int:
+def _deterministic_projection_summary(semantic: str, events: list[dict]) -> str | None:
+    latest = events[-1] if events else {}
+    supplied = str((latest.get("metadata") or {}).get("founder_summary") or "").strip()
+    if supplied:
+        return supplied
+    if semantic == "execution_started":
+        return "任务已开始执行。"
+    if semantic in {"verification_completed", "verification_terminal", "technical_incident_resolved"}:
+        return "验证已完成。"
+    if semantic == "verification_started":
+        return "正在验证任务结果。"
+    if semantic == "execution_completed":
+        return "任务已完成。"
+    if semantic in {"technical_resolution", "technical_incident"}:
+        return "当前发现执行异常，正在自动恢复。"
+    if semantic == "technical_incident_exhausted":
+        return "自动恢复未能完成，任务已阻塞。"
+    if semantic == "founder_action_required":
+        return "任务需要 Founder 处理一项真实阻塞。"
+    if semantic == "founder_acceptance_required":
+        return "任务验证已完成。"
+    return None
+
+
+def project_execution_events(conversation_id: str, *, summarizer=None) -> int:
+    """Project durable execution events without holding a DB connection over LLM I/O.
+
+    Workspace reads can overlap with HMR, polling, model and heartbeat requests.  The
+    previous implementation kept a checked-out connection (and a row lock) while
+    ``summarize_execution_events`` performed remote model calls.  A bounded burst
+    could therefore occupy the complete QueuePool for the duration of network I/O.
+    Read the durable inputs first, release the session, generate summaries, then open
+    one short write transaction for the idempotent projection.
+    """
     with SessionLocal() as db:
         state = db.scalar(select(SinoBrainSessionDB).where(
-            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+            SinoBrainSessionDB.conversation_id == conversation_id))
         route = dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
         execution = dict(route.get("autonomous_execution") or {})
         execution_id = execution.get("execution_session_id")
         record = get_execution_session(execution_id) if execution_id else None
         task_id = execution.get("task_id") or (route.get("standard_task_contract") or route.get("quick_fix_contract") or {}).get("task_id")
-        added = 0
-        if record:
-            session, _ = record
-            existing = db.scalars(select(ConversationMessageDB).where(
+        existing_sources = {
+            (item.grounding or {}).get("source_event_id")
+            for item in db.scalars(select(ConversationMessageDB).where(
                 ConversationMessageDB.conversation_id == conversation_id,
                 ConversationMessageDB.message_type == "execution_update",
             )).all()
-            grouped = {}
-            for event in session.events or []:
-                semantic = _event_semantic(event)
-                if semantic and _lifecycle_allows_semantic(route, semantic):
-                    grouped.setdefault(_narration_category(semantic), []).append((semantic, event))
-            from app.founder_ai.conversation_core import summarize_execution_events
-            for category, semantic_events in grouped.items():
-                semantic, _ = semantic_events[-1]
-                events = [item[1] for item in semantic_events]
-                summary = ((events[-1].get("metadata") or {}).get("founder_summary")
-                           or summarize_execution_events(conversation_id, events))
-                source = "semantic-events:" + ":".join(item["event_id"] for item in events)
-                if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id,
-                        source_event_id=source, event_type=semantic, summary=summary,
-                        created_at=events[-1].get("timestamp"), execution_id=execution_id,
-                        narration_category=category):
-                    added += 1
-        resolution = dict(route.get("technical_resolution_contract") or {})
-        if resolution:
-            status = resolution.get("resolution_status")
-            incident_id = resolution.get("technical_incident_id")
-            incident_already_projected = bool(record and incident_id and any(
-                item.get("event_name") in {"stall_detected", "technical_resolution_started", "technical_resolution_completed"}
-                and (item.get("metadata") or {}).get("technical_incident_id") == incident_id
-                for item in record[0].events or []
-            ))
-            source = f"technical-resolution:{incident_id or execution_id}:{status}:{resolution.get('attempt_count', 0)}"
-            summary = None
-            if not incident_already_projected:
-                from app.founder_ai.conversation_core import summarize_execution_events
-                summary = summarize_execution_events(conversation_id, [{"event_name": "technical_resolution", "status": status,
-                    "issue_type": resolution.get("issue_type"), "attempt_count": resolution.get("attempt_count"), "retry_limit": resolution.get("retry_limit")}])
-            if summary and not incident_already_projected and _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="technical_resolution", summary=summary): added += 1
-        gate = dict(route.get("founder_gate_contract") or {})
-        if gate and route.get("founder_gate_required"):
-            source = f"founder-gate:{gate.get('gate_id') or gate.get('decision_id') or task_id}:pending"
-            from app.founder_ai.conversation_core import summarize_execution_events
-            summary = summarize_execution_events(conversation_id, [{"event_name": "founder_action_required", "reason": gate.get("reason"),
-                "gate_type": gate.get("gate_type"), "scope": gate.get("scope"), "action_queue_location": "right_panel"}])
-            if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="founder_action_required", summary=summary): added += 1
-        visible = dict(route.get("visible_result") or {})
-        if visible.get("verification_status") == "PASS":
-            # Reconciliation can refresh verified_at, but one task has only one
-            # semantic Founder-acceptance transition. Keep its idempotency key stable.
-            source = f"visible-result:{task_id}:pass"
-            from app.founder_ai.conversation_core import summarize_execution_events
-            summary = summarize_execution_events(conversation_id, [{"event_name": "founder_acceptance_required", "verification_status": "PASS",
-                "target_surface": visible.get("target_surface"), "action_queue_location": "right_panel"}])
-            if summary and _append_projection(
-                db, conversation_id=conversation_id, task_id=task_id, execution_id=execution_id,
-                source_event_id=source, event_type="founder_acceptance_required", summary=summary,
-                narration_category="completed",
-            ): added += 1
+        }
+    grouped = {}
+    if record:
+        session, _ = record
+        for event in session.events or []:
+            semantic = _event_semantic(event)
+            if semantic and _lifecycle_allows_semantic(route, semantic):
+                grouped.setdefault(_narration_category(semantic), []).append((semantic, event))
+
+    summarize = summarizer or (lambda _conversation_id, events, semantic=None:
+        _deterministic_projection_summary(semantic or _event_semantic(events[-1]), events))
+    projections = []
+    for category, semantic_events in grouped.items():
+        semantic, _ = semantic_events[-1]
+        events = [item[1] for item in semantic_events]
+        source_event_id = "semantic-events:" + ":".join(item["event_id"] for item in events)
+        if source_event_id in existing_sources:
+            continue
+        summary = summarize(conversation_id, events, semantic=semantic)
+        projections.append({
+            "source_event_id": source_event_id,
+            "event_type": semantic, "summary": summary,
+            "created_at": events[-1].get("timestamp"), "narration_category": category,
+        })
+
+    resolution = dict(route.get("technical_resolution_contract") or {})
+    if resolution:
+        status = resolution.get("resolution_status")
+        incident_id = resolution.get("technical_incident_id")
+        incident_already_projected = bool(record and incident_id and any(
+            item.get("event_name") in {"stall_detected", "technical_resolution_started", "technical_resolution_completed"}
+            and (item.get("metadata") or {}).get("technical_incident_id") == incident_id
+            for item in record[0].events or []
+        ))
+        if not incident_already_projected:
+            source_event_id = f"technical-resolution:{incident_id or execution_id}:{status}:{resolution.get('attempt_count', 0)}"
+            if source_event_id in existing_sources:
+                source_event_id = None
+        if not incident_already_projected and source_event_id:
+            projections.append({
+                "source_event_id": source_event_id,
+                "event_type": "technical_resolution",
+                "summary": summarize(conversation_id, [{
+                    "event_name": "technical_resolution", "status": status,
+                    "issue_type": resolution.get("issue_type"), "attempt_count": resolution.get("attempt_count"),
+                    "retry_limit": resolution.get("retry_limit"),
+                }], semantic="technical_resolution"),
+                "created_at": None, "narration_category": None,
+            })
+    gate = dict(route.get("founder_gate_contract") or {})
+    if gate and route.get("founder_gate_required"):
+        source_event_id = f"founder-gate:{gate.get('gate_id') or gate.get('decision_id') or task_id}:pending"
+    else:
+        source_event_id = None
+    if source_event_id and source_event_id not in existing_sources:
+        projections.append({
+            "source_event_id": source_event_id,
+            "event_type": "founder_action_required",
+            "summary": summarize(conversation_id, [{
+                "event_name": "founder_action_required", "reason": gate.get("reason"),
+                "gate_type": gate.get("gate_type"), "scope": gate.get("scope"),
+                "action_queue_location": "right_panel",
+            }], semantic="founder_action_required"),
+            "created_at": None, "narration_category": None,
+        })
+    visible = dict(route.get("visible_result") or {})
+    visible_source = f"visible-result:{task_id}:pass"
+    if visible.get("verification_status") == "PASS" and visible_source not in existing_sources:
+        projections.append({
+            "source_event_id": visible_source,
+            "event_type": "founder_acceptance_required",
+            "summary": summarize(conversation_id, [{
+                "event_name": "founder_acceptance_required", "verification_status": "PASS",
+                "target_surface": visible.get("target_surface"), "action_queue_location": "right_panel",
+            }], semantic="founder_acceptance_required"),
+            "created_at": None, "narration_category": "completed",
+        })
+
+    added = 0
+    with SessionLocal() as db:
+        # Serialize only the short idempotent write, never the model call above.
+        db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        for projection in projections:
+            if projection["summary"] and _append_projection(
+                db, conversation_id=conversation_id, task_id=task_id,
+                execution_id=execution_id, **projection,
+            ):
+                added += 1
         if added:
             conversation = db.get(ConversationDB, conversation_id)
             if conversation: conversation.updated_at = datetime.now(timezone.utc)
