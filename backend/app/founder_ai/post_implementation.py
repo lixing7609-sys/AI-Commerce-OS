@@ -7,7 +7,7 @@ from typing import Callable
 
 from .verification_fallback import (
     ACCEPTANCE_FAILED, PASS, UNAVAILABLE, evidence, execute_ui_verification_chain,
-    system_chrome_playwright_verifier,
+    canonical_verification_attempt, system_chrome_playwright_verifier,
 )
 
 
@@ -37,6 +37,7 @@ def _frontend_tests(contract: dict, changed_files: list[str], repo_root: Path) -
 
 def run_post_implementation_pipeline(*, package, attribution: dict, repo_root: Path,
                                      preferred_browser: dict | None = None,
+                                     execution_id: str | None = None,
                                      on_event: Callable[[str, str, str, dict], None] | None = None) -> dict:
     """Run required local verification without another Founder interaction."""
     emit = on_event or (lambda *_args: None)
@@ -101,7 +102,11 @@ def run_post_implementation_pipeline(*, package, attribution: dict, repo_root: P
         return {"status": "BLOCKED", "stage": "browser", "evidence": checks,
                 "failure_reason": "UI implementation requires a visible artifact contract and browser evidence"}
     if visible.get("required"):
-        emit("browser_verification_started", "verifying", "Visible artifact verification started", {})
+        attempt_identity = canonical_verification_attempt(
+            execution_id=execution_id or "unbound-execution", verification_stage="visible_artifact",
+            contract=visible,
+        )
+        emit("browser_verification_started", "verifying", "Visible artifact verification started", attempt_identity)
         chain = execute_ui_verification_chain(
             preferred=preferred_browser,
             system_browser=lambda: system_chrome_playwright_verifier(repo_root=repo_root, contract=visible),
@@ -110,6 +115,7 @@ def run_post_implementation_pipeline(*, package, attribution: dict, repo_root: P
                 detail={"passing_component_tests": tests},
                 failure_reason=None if test_status == PASS and tests else "no passing component acceptance test",
             ),
+            requirements=dict(visible.get("verification_requirements") or {}),
             timeout_seconds=45,
         )
         for attempt in chain["evidence"]:
@@ -120,10 +126,16 @@ def run_post_implementation_pipeline(*, package, attribution: dict, repo_root: P
                 "component_static_acceptance": "component_static_acceptance",
             }.get(verifier, verifier)
             event_suffix = "pass" if event_prefix == "component_static_acceptance" and suffix == "passed" else suffix
-            emit(f"{event_prefix}_{event_suffix}", "verifying", f"{verifier}: {attempt.get('status')}", attempt)
+            emit(f"{event_prefix}_{event_suffix}", "verifying", f"{verifier}: {attempt.get('status')}", {**attempt, **attempt_identity})
         checks.extend(chain["evidence"])
         if chain["status"] != "VERIFIED":
             return {"status": chain["status"], "stage": "browser", "evidence": checks,
+                    "verification_attempt": {**attempt_identity, "status": chain["status"]},
                     "failure_reason": chain.get("failure_reason")}
     emit("verification_completed", "verified", "Post-implementation verification completed", {})
-    return {"status": "VERIFIED", "stage": "complete", "evidence": checks}
+    result = {"status": "VERIFIED", "stage": "complete", "evidence": checks}
+    if visible.get("required"):
+        result["verification_attempt"] = {**attempt_identity, "status": "VERIFIED"}
+        result["authority_satisfied"] = chain.get("authority_satisfied", True)
+        result["verification_source"] = chain.get("verification_source")
+    return result

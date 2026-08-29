@@ -161,7 +161,7 @@ DERIVED_COLLECTION_TARGETS = (
 CONTROL_STATE_TARGETS = (
     {
         "canonical_name": "Conversation Mode Selector State",
-        "aliases": ("讨论模式", "对话模式", "conversation mode", "mode selector"),
+        "aliases": ("讨论模式", "对话模式", "模式选择", "三个模式", "conversation mode", "mode selector"),
         "module": "Founder Conversation",
         "region": "conversation_composer",
         "control_group": "discussion_mode_selector",
@@ -224,6 +224,7 @@ def _control_state_target(normalized: str) -> dict[str, Any] | None:
     state_intent = any(term in normalized for term in (
         "选中", "当前状态", "导航状态", "可访问状态", "展开状态", "收起状态", "active", "selected",
         "pressed", "expanded", "aria-pressed", "aria-current", "aria-selected", "aria-expanded",
+        "唯一选中", "单一选中", "系统明确识别", "系统可读取", "取消选中", "互斥",
     ))
     if not state_intent:
         return None

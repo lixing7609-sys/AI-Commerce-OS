@@ -1,6 +1,6 @@
 from app.founder_ai.execution_scope import SCOPE_MISMATCH, SCOPE_PASS, verify_execution_scope
 from app.founder_ai.semantic_scope import HIGH, LOW, resolve_task_scope
-from app.founder_ai.standard_task_execution import build_standard_task_contract
+from app.founder_ai.standard_task_execution import build_standard_task_contract, standard_task_dispatch_admission
 
 
 def test_new_discussion_interaction_resolves_generic_founder_navigation_scope():
@@ -170,6 +170,24 @@ def test_conversation_mode_state_resolves_canonical_bounded_control_target():
     assert visible["state_exclusivity"] == {"expected_active_count": 1}
     assert visible["accessibility_state"]["attribute"] == "aria-pressed"
     assert visible["verification_override_authority"] is False
+
+
+def test_generic_state_language_normalizes_to_control_state_while_click_only_stays_generic():
+    state = build_standard_task_contract(
+        conversation_id="conv-state-normalization",
+        goal="让当前对话输入区上方的三个模式具有唯一且可被系统明确识别的当前选中状态。",
+    )
+    assert state["semantic_scope"]["interaction_type"] == "generic_control_state"
+    assert state["visible_artifact_contract"]["interaction_type"] == "generic_control_state"
+    requirements = state["visible_artifact_contract"]["verification_requirements"]
+    assert requirements["real_browser_required"] is True
+    assert requirements["component_static_allowed"] is False
+    click_only = build_standard_task_contract(
+        conversation_id="conv-click-only",
+        goal="让左侧导航的快捷入口更容易点击，并保留现有行为。",
+    )
+    assert click_only["visible_artifact_contract"]["interaction_type"] == "generic_control"
+    assert standard_task_dispatch_admission(click_only)["status"] == "BLOCKED"
 
 
 def test_library_navigation_state_resolves_canonical_bounded_control_target():

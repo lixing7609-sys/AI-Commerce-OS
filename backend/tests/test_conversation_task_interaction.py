@@ -362,6 +362,45 @@ def test_founder_readable_execution_projection_is_idempotent_by_source_event():
     assert db.messages[0].grounding["visibility"] == "founder"
 
 
+def test_founder_verification_narration_supersedes_by_execution_category():
+    class Results:
+        def __init__(self, rows): self.rows = rows
+        def all(self): return self.rows
+
+    class FakeDB:
+        def __init__(self): self.messages = []
+        def scalars(self, _query): return Results(self.messages)
+        def add(self, item): self.messages.append(item)
+
+    db = FakeDB()
+    assert _append_projection(
+        db, conversation_id="conv-narration", task_id="task-1", execution_id="execution-1",
+        source_event_id="event-verification-start", event_type="verification_started",
+        summary="正在验证。",
+    ) is True
+    assert _append_projection(
+        db, conversation_id="conv-narration", task_id="task-1", execution_id="execution-1",
+        source_event_id="event-verification-finish", event_type="verification_completed",
+        summary="验证完成。",
+    ) is True
+    assert len(db.messages) == 1
+    assert db.messages[0].content == "验证完成。"
+    assert db.messages[0].grounding["narration_category"] == "verification"
+    assert _append_projection(
+        db, conversation_id="conv-narration", task_id="task-1", execution_id="execution-1",
+        source_event_id="event-completed", event_type="execution_completed",
+        summary="任务已完成。",
+    ) is True
+    assert len(db.messages) == 2
+
+
+def test_failed_or_blocked_runtime_cannot_project_completed_narration():
+    failed = {"current_step": "verification", "execution_status": "failed", "autonomous_execution": {"verification": {"status": "FAIL"}}}
+    blocked = {"current_step": "verification", "execution_status": "blocked", "autonomous_execution": {"verification": {"status": "FAIL"}}}
+    assert _lifecycle_allows_semantic(failed, "execution_completed") is False
+    assert _lifecycle_allows_semantic(blocked, "execution_completed") is False
+
+
 def test_executor_completion_cannot_claim_task_completion_before_canonical_verification():
     blocked = {"current_step": "verification", "execution_status": "blocked", "autonomous_execution": {"verification": {"status": "FAIL"}}}
     assert _lifecycle_allows_semantic(blocked, "verification_completed") is False

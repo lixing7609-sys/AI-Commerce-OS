@@ -245,7 +245,8 @@ class FounderExecutionLoop:
 
                 post_verification = run_post_implementation_pipeline(
                     package=package, attribution=normalized_attribution, repo_root=cwd,
-                    preferred_browser=result.browser_verification, on_event=project_post_event,
+                    preferred_browser=result.browser_verification, execution_id=session.id,
+                    on_event=project_post_event,
                 )
             else:
                 from .verification_fallback import codex_command_evidence

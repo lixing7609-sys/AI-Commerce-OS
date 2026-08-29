@@ -558,11 +558,24 @@ def standard_task_dispatch_admission(contract: dict) -> dict:
                 "codex_dispatch_allowed": False,
             }
     visible_ui = bool(semantic.get("interaction_type") or semantic.get("semantic_target"))
-    if implementation_required and visible_ui and not dict(contract.get("visible_artifact_contract") or {}).get("required"):
+    visible_contract = dict(contract.get("visible_artifact_contract") or {})
+    if implementation_required and visible_ui and not visible_contract.get("required"):
         return {
             "status": "BLOCKED", "reason": "Visible UI verification contract must exist before Codex dispatch.",
             "founder_gate_required": False, "codex_dispatch_allowed": False,
         }
+    if implementation_required and visible_contract.get("required"):
+        artifact_type = str(visible_contract.get("artifact_type") or "")
+        interaction_type = str(visible_contract.get("interaction_type") or "")
+        supported = artifact_type != "generic_visible_interaction" or interaction_type in {
+            "search_clear", "derived_visible_count", "generic_control_state",
+        }
+        if not supported:
+            return {
+                "status": "BLOCKED",
+                "reason": "Required visible verification contract has no compatible browser adapter.",
+                "founder_gate_required": False, "codex_dispatch_allowed": False,
+            }
     return {"status": "PASS", "reason": None, "founder_gate_required": False, "codex_dispatch_allowed": True}
 
 
@@ -878,6 +891,24 @@ def command_evidence_passed(item: dict | None, *, required: bool) -> bool:
     return item.get("status") == "PASS" and bool((item.get("evidence") or {}).get("command"))
 
 
+def visible_verification_authorized(gate: dict | None, contract: dict | None) -> bool:
+    """Final reconcile must validate evidence source authority, not only a projected PASS label."""
+    visible = dict((contract or {}).get("visible_artifact_contract") or {})
+    if not visible.get("required"):
+        return True
+    gate = dict(gate or {})
+    if gate.get("status") != "PASS" or gate.get("completion_allowed") is not True:
+        return False
+    from app.founder_ai.verification_fallback import verification_source_authorized
+    requirements = dict(visible.get("verification_requirements") or {
+        "artifact_required": True, "real_browser_required": True,
+        "interaction_required": True, "component_static_allowed": False,
+    })
+    return verification_source_authorized(
+        {"status": "VERIFIED", "evidence": list(gate.get("evidence") or [])}, requirements,
+    )
+
+
 def production_implementation_evidence_passed(
     *, result: dict, executor_passed: bool, scope_passed: bool, implementation_required: bool,
 ) -> bool:
@@ -1142,7 +1173,8 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
                     append_event(session, event_name, status=status, message=message, metadata=metadata)
                     save_execution_session(session, package)
                 post_verification = run_post_implementation_pipeline(
-                    package=package, attribution=attribution, repo_root=repo_root, on_event=emit,
+                    package=package, attribution=attribution, repo_root=repo_root,
+                    execution_id=execution_id, on_event=emit,
                 )
                 command_evidence = list(post_verification.get("evidence") or [])
                 browser_checks = [item for item in command_evidence if item.get("verifier") in {
@@ -1247,8 +1279,23 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
     if contract.get("visible_artifact_contract", {}).get("required"):
         from app.founder_ai.verification_fallback import (
             PASS, UNAVAILABLE, evidence, execute_ui_verification_chain, system_chrome_playwright_verifier,
+            verification_source_authorized,
         )
         visible_contract = dict(contract.get("visible_artifact_contract") or {})
+        requirements = dict(visible_contract.get("verification_requirements") or {})
+        post_verification = dict((session.result or {}).get("post_implementation_verification") or {})
+        post_attempts = [item for item in post_verification.get("evidence") or [] if item.get("verifier") in {
+            "preferred_browser", "system_chrome_playwright", "component_static_acceptance",
+        }]
+        post_chain = {"status": post_verification.get("status"), "evidence": post_attempts}
+        if post_verification.get("status") == "VERIFIED" and verification_source_authorized(post_chain, requirements):
+            visible_gate = {
+                "status": "PASS", "completion_allowed": True, "authority_satisfied": True,
+                "verification_source": post_verification.get("verification_source"),
+                "verification_requirements": requirements, "evidence": post_attempts,
+                "verification_attempt": post_verification.get("verification_attempt"),
+                "failure_reason": None,
+            }
 
         def system_browser():
             return system_chrome_playwright_verifier(repo_root=repo_root, contract=visible_contract)
@@ -1259,39 +1306,21 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
                 return evidence("component_static_acceptance", PASS, detail={"task_owned_component_tests": owned_tests})
             return evidence("component_static_acceptance", UNAVAILABLE, failure_reason="no passing task-owned component acceptance test")
 
-        chain = execute_ui_verification_chain(
-            preferred=browser_evidence, system_browser=system_browser, static_acceptance=static_acceptance,
-            timeout_seconds=45,
-        )
-        from app.founder_ai.verification_fallback import founder_verification_narration
-        narration = founder_verification_narration(chain)
-        for attempt in chain["evidence"]:
-            verifier = str(attempt.get("verifier") or "verification")
-            if verifier == "preferred_browser":
-                append_event(session, "preferred_browser_started", status="verifying",
-                             message="Preferred browser verification started", timestamp=attempt.get("started_at"),
-                             metadata={"verifier": verifier})
-                event_name = "preferred_browser_passed" if attempt.get("status") == "PASS" else "preferred_browser_unavailable" if attempt.get("status") in {"UNAVAILABLE", "TIMEOUT"} else "preferred_browser_failed"
-            elif verifier == "system_chrome_playwright":
-                append_event(session, "fallback_browser_started", status="verifying",
-                             message="System Chrome + Playwright fallback started", timestamp=attempt.get("started_at"),
-                             metadata={"verifier": verifier})
-                event_name = "fallback_browser_passed" if attempt.get("status") == "PASS" else "fallback_browser_unavailable" if attempt.get("status") in {"UNAVAILABLE", "TIMEOUT"} else "fallback_browser_failed"
-            else:
-                event_name = f"{verifier}_{str(attempt.get('status') or 'unknown').lower()}"
-            append_event(session, event_name, status=str(attempt.get("status") or "unknown").lower(),
-                         message=f"{verifier} verification: {attempt.get('status')}", metadata={"verification_evidence": attempt})
-        visible_gate = {
-            "status": "PASS" if chain["status"] == "VERIFIED" else chain["status"],
-            "completion_allowed": chain["status"] == "VERIFIED",
-            "evidence": chain["evidence"],
-            "failure_reason": chain.get("failure_reason"),
-        }
-        session.result = {**dict(session.result or {}), "verification_evidence": chain["evidence"], "verification_outcome": chain["status"]}
-        append_event(session, "verification_fallback_finished", status=chain["status"].lower(),
-                     message=f"Verification fallback finished: {chain['status']}",
-                     metadata={"verification": chain, "founder_summary": narration})
-        save_execution_session(session, package)
+        if visible_gate is None:
+            chain = execute_ui_verification_chain(
+                preferred=browser_evidence, system_browser=system_browser, static_acceptance=static_acceptance,
+                requirements=requirements, timeout_seconds=45,
+            )
+            visible_gate = {
+                "status": "PASS" if chain["status"] == "VERIFIED" else chain["status"],
+                "completion_allowed": chain["status"] == "VERIFIED" and chain.get("authority_satisfied") is not False,
+                "authority_satisfied": chain.get("authority_satisfied", False),
+                "verification_source": chain.get("verification_source"),
+                "verification_requirements": requirements,
+                "evidence": chain["evidence"], "failure_reason": chain.get("failure_reason"),
+            }
+            session.result = {**dict(session.result or {}), "verification_evidence": chain["evidence"], "verification_outcome": chain["status"]}
+            save_execution_session(session, package)
     checkpoint_requirement = str(package.commit_requirement if package else "").strip().lower()
     checkpoint_requested = bool(checkpoint_requirement and checkpoint_requirement not in {"none", "not requested", "not_required"})
     result_data = dict(session.result or {})
@@ -1312,7 +1341,7 @@ def reconcile_standard_task_execution(*, conversation_id: str, task_id: str, exe
         implementation_complete=session.status == "completed" and implementation_evidence_passed,
         task_owned_tests_pass=executor_passed and command_evidence_passed(tests_evidence, required=tests_required),
         build_pass=executor_passed and command_evidence_passed(build_evidence, required=build_required),
-        visible_artifact_pass=not visible_required or bool(visible_gate and visible_gate["completion_allowed"]),
+        visible_artifact_pass=not visible_required or visible_verification_authorized(visible_gate, contract),
         checkpoint_exists=(bool(session.commit_hash) and not task_owned_dirty) or not task_owned_paths or (verification_only and not task_owned_dirty),
         task_owned_files_clean=clean and diff_ok,
         scope_verification_pass=dict((session.result or {}).get("scope_verification") or {}).get("status") == "PASS",

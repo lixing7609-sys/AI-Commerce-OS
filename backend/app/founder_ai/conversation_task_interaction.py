@@ -580,6 +580,25 @@ def _event_semantic(event: dict) -> str | None:
     return semantic
 
 
+NARRATION_CATEGORIES = {
+    "execution_started": "execution_started",
+    "implementation_completed": "verification",
+    "verification_started": "verification",
+    "verification_completed": "verification",
+    "verification_terminal": "verification",
+    "founder_action_required": "approval_required",
+    "technical_incident": "blocked",
+    "technical_incident_resolved": "verification",
+    "technical_incident_exhausted": "failed",
+    "execution_completed": "completed",
+    "cancelled": "failed",
+}
+
+
+def _narration_category(semantic: str) -> str:
+    return NARRATION_CATEGORIES.get(semantic, semantic)
+
+
 def _lifecycle_allows_semantic(route: dict, semantic: str) -> bool:
     """Executor completion is evidence, not canonical task completion."""
     if semantic not in {"verification_completed", "execution_completed"}:
@@ -590,7 +609,9 @@ def _lifecycle_allows_semantic(route: dict, semantic: str) -> bool:
     return verified if semantic == "verification_completed" else verified and lifecycle_complete
 
 
-def _append_projection(db, *, conversation_id: str, task_id: str | None, source_event_id: str, event_type: str, summary: str, created_at: str | None = None) -> bool:
+def _append_projection(db, *, conversation_id: str, task_id: str | None, source_event_id: str,
+                       event_type: str, summary: str, created_at: str | None = None,
+                       execution_id: str | None = None, narration_category: str | None = None) -> bool:
     # JSON predicates differ between SQLite/PostgreSQL; bounded per-conversation scan is portable.
     messages = db.scalars(select(ConversationMessageDB).where(
         ConversationMessageDB.conversation_id == conversation_id,
@@ -598,16 +619,29 @@ def _append_projection(db, *, conversation_id: str, task_id: str | None, source_
     )).all()
     if any((item.grounding or {}).get("source_event_id") == source_event_id for item in messages):
         return False
+    category = narration_category or _narration_category(event_type)
+    dedupe_key = f"{execution_id or task_id or conversation_id}:{category}"
     try:
         persisted_at = datetime.fromisoformat(created_at) if created_at else datetime.now(timezone.utc)
     except (TypeError, ValueError):
         persisted_at = datetime.now(timezone.utc)
     if persisted_at.tzinfo is None:
         persisted_at = persisted_at.replace(tzinfo=timezone.utc)
+    existing = next((item for item in messages if (item.grounding or {}).get("narration_dedupe_key") == dedupe_key), None)
+    grounding = {
+        "event_id": source_event_id, "source_event_id": source_event_id, "task_id": task_id,
+        "execution_id": execution_id, "event_type": event_type, "narration_category": category,
+        "narration_dedupe_key": dedupe_key, "visibility": "founder",
+    }
+    if existing is not None:
+        existing.content = summary
+        existing.grounding = grounding
+        existing.created_at = persisted_at
+        return True
     db.add(ConversationMessageDB(
         conversation_id=conversation_id, role="assistant", content=summary,
         message_type="execution_update", intent="execution_progress",
-        grounding={"event_id": source_event_id, "source_event_id": source_event_id, "task_id": task_id, "event_type": event_type, "visibility": "founder"},
+        grounding=grounding,
         created_at=persisted_at,
     ))
     return True
@@ -615,7 +649,8 @@ def _append_projection(db, *, conversation_id: str, task_id: str | None, source_
 
 def project_execution_events(conversation_id: str) -> int:
     with SessionLocal() as db:
-        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
         route = dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
         execution = dict(route.get("autonomous_execution") or {})
         execution_id = execution.get("execution_session_id")
@@ -628,20 +663,22 @@ def project_execution_events(conversation_id: str) -> int:
                 ConversationMessageDB.conversation_id == conversation_id,
                 ConversationMessageDB.message_type == "execution_update",
             )).all()
-            projected_semantics = {(item.grounding or {}).get("event_type") for item in existing
-                                   if (item.grounding or {}).get("task_id") == task_id}
             grouped = {}
             for event in session.events or []:
                 semantic = _event_semantic(event)
-                if semantic and semantic not in projected_semantics and _lifecycle_allows_semantic(route, semantic):
-                    grouped.setdefault(semantic, []).append(event)
+                if semantic and _lifecycle_allows_semantic(route, semantic):
+                    grouped.setdefault(_narration_category(semantic), []).append((semantic, event))
             from app.founder_ai.conversation_core import summarize_execution_events
-            for semantic, events in grouped.items():
+            for category, semantic_events in grouped.items():
+                semantic, _ = semantic_events[-1]
+                events = [item[1] for item in semantic_events]
                 summary = ((events[-1].get("metadata") or {}).get("founder_summary")
                            or summarize_execution_events(conversation_id, events))
                 source = "semantic-events:" + ":".join(item["event_id"] for item in events)
                 if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id,
-                        source_event_id=source, event_type=semantic, summary=summary, created_at=events[-1].get("timestamp")):
+                        source_event_id=source, event_type=semantic, summary=summary,
+                        created_at=events[-1].get("timestamp"), execution_id=execution_id,
+                        narration_category=category):
                     added += 1
         resolution = dict(route.get("technical_resolution_contract") or {})
         if resolution:
@@ -674,7 +711,11 @@ def project_execution_events(conversation_id: str) -> int:
             from app.founder_ai.conversation_core import summarize_execution_events
             summary = summarize_execution_events(conversation_id, [{"event_name": "founder_acceptance_required", "verification_status": "PASS",
                 "target_surface": visible.get("target_surface"), "action_queue_location": "right_panel"}])
-            if summary and _append_projection(db, conversation_id=conversation_id, task_id=task_id, source_event_id=source, event_type="founder_acceptance_required", summary=summary): added += 1
+            if summary and _append_projection(
+                db, conversation_id=conversation_id, task_id=task_id, execution_id=execution_id,
+                source_event_id=source, event_type="founder_acceptance_required", summary=summary,
+                narration_category="completed",
+            ): added += 1
         if added:
             conversation = db.get(ConversationDB, conversation_id)
             if conversation: conversation.updated_at = datetime.now(timezone.utc)

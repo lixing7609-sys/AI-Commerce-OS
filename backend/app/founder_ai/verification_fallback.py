@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import queue
@@ -90,28 +91,82 @@ def codex_command_evidence(stdout: str, *, exit_code: int, required: list[str]) 
     return checks
 
 
+def verification_attempt_key(*, execution_id: str, verification_stage: str, contract: dict) -> str:
+    payload = json.dumps(contract or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    fingerprint = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"{execution_id}:{verification_stage}:{fingerprint}"
+
+
+def canonical_verification_attempt(*, execution_id: str, verification_stage: str, contract: dict,
+                                   previous: dict | None = None, retry_reason: str | None = None) -> dict:
+    """Reuse the canonical attempt unless an explicit, explained retry is requested."""
+    key = verification_attempt_key(
+        execution_id=execution_id, verification_stage=verification_stage, contract=contract,
+    )
+    previous = dict(previous or {})
+    same_attempt = previous.get("verification_attempt_key") == key
+    if same_attempt and not retry_reason:
+        return {**previous, "reused": True}
+    prior_number = int(previous.get("attempt_number") or 0) if same_attempt else 0
+    return {
+        "verification_attempt_key": key,
+        "attempt_number": prior_number + 1,
+        "retry_reason": retry_reason,
+        "previous_result": previous.get("status") if same_attempt and retry_reason else None,
+        "status": "RUNNING", "reused": False,
+    }
+
+
+def verification_source_authorized(result: dict | None, requirements: dict | None) -> bool:
+    """A PASS is completion evidence only when its source has the required authority."""
+    result = dict(result or {})
+    requirements = dict(requirements or {})
+    if result.get("status") not in {PASS, "VERIFIED"}:
+        return False
+    passed = [item for item in result.get("evidence") or [] if item.get("status") == PASS]
+    sources = {item.get("verifier") for item in passed}
+    if requirements.get("real_browser_required") or requirements.get("interaction_required"):
+        return bool(sources & {"preferred_browser", "system_chrome_playwright"})
+    if "component_static_acceptance" in sources:
+        return bool(requirements.get("component_static_allowed"))
+    return bool(sources)
+
+
 def execute_ui_verification_chain(*, preferred: dict | None,
                                   system_browser: Callable[[], dict],
                                   static_acceptance: Callable[[], dict],
+                                  requirements: dict | None = None,
                                   timeout_seconds: float = 30) -> dict:
     """Return one terminal VERIFIED/BLOCKED/FAILED decision and all attempted evidence."""
     attempts = [preferred_browser_evidence(preferred)]
     if attempts[-1]["status"] == PASS:
-        return {"status": "VERIFIED", "terminal": True, "evidence": attempts}
+        return {
+            "status": "VERIFIED", "terminal": True, "authority_satisfied": True,
+            "verification_source": "preferred_browser", "evidence": attempts,
+        }
     if attempts[-1]["status"] == ACCEPTANCE_FAILED:
         return {"status": "FAILED", "terminal": True, "failure_reason": attempts[-1]["failure_reason"], "evidence": attempts}
 
+    requirements = dict(requirements or {})
     for name, callback in (("system_chrome_playwright", system_browser), ("component_static_acceptance", static_acceptance)):
         attempt = run_with_timeout(name, callback, timeout_seconds)
         attempts.append(attempt)
         if attempt["status"] == PASS:
-            return {"status": "VERIFIED", "terminal": True, "evidence": attempts}
+            candidate = {"status": "VERIFIED", "terminal": True, "evidence": attempts}
+            if verification_source_authorized(candidate, requirements):
+                return {**candidate, "authority_satisfied": True, "verification_source": name}
+            if name == "component_static_acceptance":
+                return {
+                    "status": "BLOCKED", "terminal": True, "authority_satisfied": False,
+                    "failure_reason": "component static evidence cannot satisfy required visible verification",
+                    "verification_source": name, "evidence": attempts,
+                }
         if attempt["status"] == ACCEPTANCE_FAILED:
             return {"status": "FAILED", "terminal": True, "failure_reason": attempt["failure_reason"], "evidence": attempts}
     return {
         "status": "BLOCKED", "terminal": True,
         "failure_reason": "no available UI acceptance verifier",
-        "evidence": attempts,
+        "authority_satisfied": False, "evidence": attempts,
     }
 
 

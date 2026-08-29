@@ -2,6 +2,7 @@ from pathlib import Path
 
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 from app.founder_ai.post_implementation import run_post_implementation_pipeline
+from app.founder_ai.verification_fallback import UNAVAILABLE, evidence
 
 
 def package():
@@ -113,3 +114,32 @@ def test_frontend_change_without_visible_contract_cannot_complete(monkeypatch, t
     )
     assert result["status"] == "BLOCKED"
     assert result["stage"] == "browser"
+
+
+def test_component_tests_cannot_complete_real_browser_required_interaction(monkeypatch, tmp_path: Path):
+    frontend = tmp_path / "frontend/src/sino-founder"
+    frontend.mkdir(parents=True)
+    (frontend / "FounderNavigationPanel.test.jsx").write_text("test")
+    monkeypatch.setattr("app.founder_ai.post_implementation._run", lambda command, cwd: {
+        "command": command, "exit_code": 0, "stdout": "PASS", "stderr": "",
+    })
+    monkeypatch.setattr(
+        "app.founder_ai.post_implementation.system_chrome_playwright_verifier",
+        lambda **_kwargs: evidence("system_chrome_playwright", UNAVAILABLE, failure_reason="adapter unavailable"),
+    )
+    required = package()
+    required.context["standard_task_contract"]["visible_artifact_contract"].update({
+        "interaction_type": "generic_control_state",
+        "verification_requirements": {
+            "real_browser_required": True, "interaction_required": True,
+            "component_static_allowed": False,
+        },
+    })
+    result = run_post_implementation_pipeline(
+        package=required, repo_root=tmp_path, execution_id="execution-authority",
+        attribution={"task_changed_files": ["frontend/src/sino-founder/FounderNavigationPanel.jsx"]},
+    )
+    assert result["status"] == "BLOCKED"
+    assert result["stage"] == "browser"
+    assert result["verification_attempt"]["attempt_number"] == 1
+    assert result["evidence"][-1]["verifier"] == "component_static_acceptance"

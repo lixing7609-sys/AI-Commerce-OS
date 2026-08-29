@@ -4,6 +4,7 @@ from app.founder_ai.standard_task_execution import (
     build_standard_task_contract, command_evidence_passed,
     evaluate_standard_verification_evidence, production_implementation_evidence_passed,
     resume_visible_artifact_verification, standard_task_dispatch_admission,
+    visible_verification_authorized,
 )
 from app.founder_ai.execution_loop import ExecutionSession
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
@@ -11,6 +12,26 @@ from app.founder_ai.task_complexity_router import QUICK_FIX, STANDARD_TASK, STRA
 
 
 GOAL = "给能力仓库增加搜索功能，可以按能力名称和 Domain 搜索，保持现有页面结构和风格不变。"
+
+
+def test_final_reconcile_rejects_component_static_for_real_browser_required_contract():
+    contract = {"visible_artifact_contract": {
+        "required": True,
+        "verification_requirements": {
+            "real_browser_required": True, "interaction_required": True,
+            "component_static_allowed": False,
+        },
+    }}
+    static_gate = {
+        "status": "PASS", "completion_allowed": True,
+        "evidence": [{"verifier": "component_static_acceptance", "status": "PASS"}],
+    }
+    browser_gate = {
+        "status": "PASS", "completion_allowed": True,
+        "evidence": [{"verifier": "system_chrome_playwright", "status": "PASS"}],
+    }
+    assert visible_verification_authorized(static_gate, contract) is False
+    assert visible_verification_authorized(browser_gate, contract) is True
 
 
 def _package(goal):

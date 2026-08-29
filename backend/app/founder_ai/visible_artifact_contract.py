@@ -49,6 +49,23 @@ CONTROL_STATE_ASSERTIONS = (
     "original_behavior_preserved",
 )
 
+REAL_BROWSER_INTERACTIONS = {
+    "search_clear", "derived_visible_count", "generic_control_state",
+}
+
+
+def visible_verification_requirements(interaction_type: str, *, component_static_allowed: bool = False) -> dict:
+    """Describe which evidence source has authority for the current visible contract."""
+    interaction_required = interaction_type in REAL_BROWSER_INTERACTIONS
+    real_browser_required = interaction_required or interaction_type == "generic_control"
+    return {
+        "artifact_required": True,
+        "real_browser_required": real_browser_required,
+        "interaction_required": interaction_required,
+        "component_static_allowed": bool(component_static_allowed),
+        "fallback_can_satisfy_required_visible_verification": bool(component_static_allowed),
+    }
+
 
 def _dedup(values: list[Any]) -> list[Any]:
     result = []
@@ -93,6 +110,12 @@ def build_generic_visible_artifact_contract(
         "existing_behavior_discovery": deepcopy(existing_behavior_discovery or {}),
         "verification_authority": "current_task",
         "verification_override_authority": False,
+        "verification_requirements": visible_verification_requirements(interaction_type),
+        "fallback_authority": {
+            "component_static_acceptance": False,
+            "system_chrome_playwright": True,
+            "preferred_browser": True,
+        },
     }
     if is_derived_count:
         assertion = {

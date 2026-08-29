@@ -2,7 +2,8 @@ import time
 
 from app.founder_ai.verification_fallback import (
     ACCEPTANCE_FAILED, PASS, UNAVAILABLE, codex_command_evidence, evidence, execute_ui_verification_chain,
-    founder_verification_narration, system_chrome_playwright_verifier,
+    canonical_verification_attempt, founder_verification_narration, system_chrome_playwright_verifier,
+    verification_attempt_key,
 )
 
 
@@ -46,9 +47,54 @@ def test_verifier_timeout_continues_to_next_fallback():
         time.sleep(.05)
         return passed("late")()
     result = execute_ui_verification_chain(preferred=None, system_browser=stuck,
-        static_acceptance=passed("static"), timeout_seconds=.001)
+        static_acceptance=passed("component_static_acceptance"),
+        requirements={"component_static_allowed": True}, timeout_seconds=.001)
     assert result["status"] == "VERIFIED"
     assert [item["status"] for item in result["evidence"]] == [UNAVAILABLE, "TIMEOUT", PASS]
+
+
+def test_component_static_cannot_satisfy_real_browser_or_interaction_authority():
+    result = execute_ui_verification_chain(
+        preferred=None, system_browser=unavailable("system_chrome_playwright"),
+        static_acceptance=passed("component_static_acceptance"),
+        requirements={"real_browser_required": True, "interaction_required": True,
+                      "component_static_allowed": False},
+    )
+    assert result["status"] == "BLOCKED"
+    assert result["authority_satisfied"] is False
+    assert result["evidence"][-1]["status"] == PASS
+
+
+def test_explicit_component_static_authority_remains_a_legal_fallback():
+    result = execute_ui_verification_chain(
+        preferred=None, system_browser=unavailable("system_chrome_playwright"),
+        static_acceptance=passed("component_static_acceptance"),
+        requirements={"component_static_allowed": True},
+    )
+    assert result["status"] == "VERIFIED"
+    assert result["authority_satisfied"] is True
+    assert result["verification_source"] == "component_static_acceptance"
+
+
+def test_verification_attempt_identity_is_deterministic_per_execution_stage_and_contract():
+    contract = {"artifact_type": "generic_visible_interaction", "interaction_type": "generic_control_state"}
+    first = verification_attempt_key(execution_id="execution-1", verification_stage="visible_artifact", contract=contract)
+    assert first == verification_attempt_key(execution_id="execution-1", verification_stage="visible_artifact", contract=dict(reversed(list(contract.items()))))
+    assert first != verification_attempt_key(execution_id="execution-2", verification_stage="visible_artifact", contract=contract)
+    attempt = canonical_verification_attempt(
+        execution_id="execution-1", verification_stage="visible_artifact", contract=contract,
+    )
+    reused = canonical_verification_attempt(
+        execution_id="execution-1", verification_stage="visible_artifact", contract=contract,
+        previous={**attempt, "status": "PASS"},
+    )
+    assert reused["attempt_number"] == 1 and reused["reused"] is True
+    retry = canonical_verification_attempt(
+        execution_id="execution-1", verification_stage="visible_artifact", contract=contract,
+        previous={**attempt, "status": "UNAVAILABLE"}, retry_reason="transient browser restart",
+    )
+    assert retry["attempt_number"] == 2
+    assert retry["previous_result"] == "UNAVAILABLE"
 
 
 def test_system_chrome_process_crash_is_unavailable_not_acceptance_failure(monkeypatch, tmp_path):
