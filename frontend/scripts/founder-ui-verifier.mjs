@@ -1,4 +1,5 @@
 import { chromium } from "playwright";
+import { effectiveVisibleControlCount, evaluateVisibleCardinality } from "./founder-ui-verifier-core.mjs";
 
 const contract = JSON.parse(process.argv[2] || "{}");
 const artifactType = contract.artifact_type;
@@ -162,6 +163,83 @@ try {
     const boundary = page.getByRole("alert").filter({ hasText: "文件/文档入口已预留" }).last();
     evidence.document_boundary_truthful = await boundary.isVisible().catch(() => false);
     evidence.document_data_not_fabricated = (await page.getByText(/已选择文档|文档已添加/).count()) === 0;
+  } else if (artifactType === "generic_visible_interaction" && contract.interaction_type === "search_clear") {
+    const container = contract.container_selector ? page.locator(contract.container_selector).first() : page.locator("body");
+    const searchInput = container.locator(contract.target_selector || "input[type='search']").filter({ visible: true }).first();
+    await searchInput.waitFor({ state: "visible" });
+    evidence.search_input_visible = await searchInput.isVisible();
+    const projects = container.locator((contract.preserved_collection_selectors || [])[0] || ".sino-project-item");
+    const conversations = container.locator((contract.preserved_collection_selectors || [])[1] || ".sino-conversation-item");
+    const projectCountBefore = await projects.count();
+    const conversationCountBefore = await conversations.count();
+    await searchInput.fill("__sino_no_matching_item__");
+    evidence.query_value_entered = await searchInput.inputValue() === "__sino_no_matching_item__";
+    const appControls = container.locator(contract.application_control_selector || "button[aria-label*='clear' i]");
+    const applicationVisibleCount = await appControls.evaluateAll((nodes) => nodes.filter((node) => {
+      const style = getComputedStyle(node); const box = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
+    }).length);
+    const nativeSearchCancelState = await searchInput.evaluate((node) => {
+      if (node.type !== "search" || !node.value) return { visible: false, suppressed: false, matching_rules: [] };
+      const matchingRules = [];
+      const suppressesNativeCancel = (rules) => Array.from(rules || []).some((rule) => {
+        if (rule.cssRules) return suppressesNativeCancel(rule.cssRules);
+        const selector = String(rule.selectorText || "");
+        if (!selector.includes("::-webkit-search-cancel-button")) return false;
+        const baseSelector = selector.replace(/::-webkit-search-cancel-button/g, "").trim();
+        if (!baseSelector || !node.matches(baseSelector)) return false;
+        const display = rule.style?.getPropertyValue("display");
+        const appearance = rule.style?.getPropertyValue("appearance") || rule.style?.getPropertyValue("-webkit-appearance");
+        matchingRules.push({ selector, display, appearance });
+        return display === "none" || appearance === "none";
+      });
+      const explicitlySuppressed = Array.from(document.styleSheets).some((sheet) => {
+        try { return suppressesNativeCancel(sheet.cssRules); } catch { return false; }
+      });
+      const suppressionDeclared = node.dataset.nativeSearchCancel === "hidden";
+      const inlineStyleSources = Array.from(document.querySelectorAll("style")).map((styleNode) => styleNode.textContent || "").join("\n");
+      const declaredRulePresent = suppressionDeclared
+        && /\[data-native-search-cancel=["']hidden["']\]::-webkit-search-cancel-button\s*\{[^}]*display\s*:\s*none/i.test(inlineStyleSources);
+      if (explicitlySuppressed || declaredRulePresent) return {
+        visible: false, suppressed: true, suppression_declared: suppressionDeclared,
+        declared_rule_present: declaredRulePresent, matching_rules: matchingRules,
+      };
+      const style = getComputedStyle(node, "::-webkit-search-cancel-button");
+      return { visible: style.display !== "none" && style.visibility !== "hidden"
+        && style.webkitAppearance !== "none" && style.appearance !== "none", suppressed: false,
+        suppression_declared: suppressionDeclared, declared_rule_present: declaredRulePresent, matching_rules: matchingRules };
+    });
+    const nativeSearchCancel = nativeSearchCancelState.visible;
+    const effectiveCount = effectiveVisibleControlCount({ nativeVisible: nativeSearchCancel, applicationVisibleCount });
+    const cardinality = evaluateVisibleCardinality(contract.acceptance_cardinality, effectiveCount);
+    evidence.native_search_cancel_capability = await searchInput.getAttribute("type") === "search";
+    evidence.native_search_cancel_visible = nativeSearchCancel;
+    evidence.native_search_cancel_suppression = nativeSearchCancelState;
+    evidence.application_clear_control_count = applicationVisibleCount;
+    evidence.effective_visible_clear_control_count = effectiveCount;
+    evidence.clear_control_visible = effectiveCount > 0;
+    evidence.clear_control_count_matches = cardinality.matches;
+    evidence.duplicate_control_absent = cardinality.duplicateAbsent;
+    evidence.empty_state_preserved = await container.getByRole(contract.empty_state_role || "status").isVisible().catch(() => false);
+    if (applicationVisibleCount > 0) {
+      await appControls.filter({ visible: true }).first().click();
+    } else {
+      await searchInput.fill("");
+    }
+    await page.waitForFunction((selector) => document.querySelector(selector)?.value === "", contract.target_selector || "input[type='search']");
+    evidence.clear_action_works = await searchInput.inputValue() === "";
+    const projectCountAfter = await projects.count();
+    const conversationCountAfter = await conversations.count();
+    evidence.collection_counts = {
+      projects_before: projectCountBefore, projects_after: projectCountAfter,
+      conversations_before: conversationCountBefore, conversations_after: conversationCountAfter,
+    };
+    evidence.projects_restored = projectCountAfter === projectCountBefore;
+    evidence.recent_conversations_restored = conversationCountAfter === conversationCountBefore;
+    await searchInput.fill("escape-check");
+    await searchInput.press("Escape");
+    evidence.escape_clear_preserved = await searchInput.inputValue() === "";
+    evidence.no_unrelated_sidebar_regression = await container.isVisible();
   } else if (artifactType === "founder_sidebar_heading_typography") {
     const projects = page.getByText("项目", { exact: true }).first();
     const conversations = page.getByText("会话", { exact: true }).first();

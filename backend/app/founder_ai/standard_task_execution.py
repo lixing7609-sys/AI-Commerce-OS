@@ -351,6 +351,16 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
         return _with_explicit_scope(_capability_repository_search_contract(conversation_id=conversation_id, goal=goal, task_id=task_id))
     resolution = resolve_task_scope(goal=goal, risk_level="low")
     if resolution["scope_source"] == "semantic_module" and resolution["confidence"] == HIGH:
+        from app.founder_ai.ui_behavior_discovery import (
+            discover_existing_ui_controls, extract_acceptance_cardinality,
+            extract_founder_acceptance_criteria,
+        )
+        acceptance_text = "\n".join([goal, *(discussion_context or [])])
+        acceptance_cardinality = extract_acceptance_cardinality(acceptance_text)
+        existing_behavior = discover_existing_ui_controls(
+            repo_root=REPO_ROOT, semantic_scope=resolution, acceptance_text=acceptance_text,
+        )
+        founder_acceptance = extract_founder_acceptance_criteria(acceptance_text)
         target = resolution["allowed_modules"][0]
         contract = {
             "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
@@ -358,6 +368,7 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
             "implementation_required": True,
             "objective": goal,
             "acceptance_criteria": [
+                *founder_acceptance,
                 "The requested UI behavior is implemented within the resolved semantic module.",
                 "No denied module or unrelated UI surface changes.",
                 "Targeted tests, production build, git diff --check and real localhost UI verification pass.",
@@ -367,6 +378,8 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
             "module_boundary": [],
             "prohibited_scope": resolution["denied_modules"],
             "semantic_scope": resolution,
+            "existing_behavior_discovery": existing_behavior,
+            "acceptance_cardinality": acceptance_cardinality,
             "scope_source": "semantic_module", "scope_confidence": HIGH,
             "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
             "inspect_status": "ready_for_discovery",
@@ -378,8 +391,14 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
             ],
             "source_goal": goal,
         }
-        if resolution.get("visible_artifact_contract"):
-            contract["visible_artifact_contract"] = resolution["visible_artifact_contract"]
+        from app.founder_ai.visible_artifact_contract import build_generic_visible_artifact_contract
+        base_visible_contract = resolution.get("visible_artifact_contract") or build_generic_visible_artifact_contract(
+            goal=acceptance_text, semantic_scope=resolution,
+            acceptance_cardinality=acceptance_cardinality,
+            existing_behavior_discovery=existing_behavior,
+        )
+        if base_visible_contract:
+            contract["visible_artifact_contract"] = base_visible_contract
         from app.founder_ai.decision_retrieval import inject_decision_context
         contract = inject_decision_context(contract=contract, goal=goal, task_id=task_id, risk_level="low")
         from app.founder_ai.reuse_retrieval import inject_reuse_context

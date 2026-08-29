@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from app.founder_ai.execution_registry import get_execution_session
 from app.founder_ai.technical_resolution import evaluate_stall
-from app.founder_ai.execution_state import STAGE_PROGRESS
+from app.founder_ai.execution_state import STAGE_BY_EVENT, STAGE_PROGRESS
 
 
 STANDARD_PROGRESS = {"inspect": 10, "plan": 25, "execution": 35, "scope_verification": 60, "correcting_scope": 55, "verification": 80, "learning": 95, "closure": 95, "complete": 100}
@@ -22,6 +22,18 @@ def _elapsed(started_at, completed_at=None):
     start = _parse(started_at)
     end = _parse(completed_at) or datetime.now(timezone.utc)
     return max(0, int((end - start).total_seconds())) if start else 0
+
+
+def _last_successful_stage_progress(session, fallback: int) -> int:
+    """Project terminal failure from durable successful work, never as completion."""
+    if not session:
+        return min(fallback, 95)
+    terminal_stages = {"BLOCKED", "FAILED", "CANCELLED", "COMPLETED"}
+    for event in reversed(list(session.events or [])):
+        stage = STAGE_BY_EVENT.get(str(event.get("event_name") or event.get("name") or event.get("event") or ""))
+        if stage and stage not in terminal_stages:
+            return min(STAGE_PROGRESS.get(stage, fallback), 95)
+    return min(fallback, 95)
 
 
 def build_execution_progress(route: dict) -> dict | None:
@@ -99,6 +111,8 @@ def build_execution_progress(route: dict) -> dict | None:
     weights = STANDARD_PROGRESS if classification == "STANDARD_TASK" else QUICK_FIX_PROGRESS
     canonical = getattr(session, "execution_stage", None) if session and getattr(session, "stage_started_at", None) else None
     progress = STAGE_PROGRESS.get(canonical, weights.get(phase, 0))
+    if canonical in {"FAILED", "BLOCKED"} or bool(session and session.status in {"failed", "blocked"}):
+        progress = _last_successful_stage_progress(session, weights.get(phase, 0))
     if session and session.status == "completed":
         progress = 100
     if session and session.status == "completed" and phase in {"verification", "verify"}:

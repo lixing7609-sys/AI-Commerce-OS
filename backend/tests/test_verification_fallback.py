@@ -73,6 +73,19 @@ def test_conversation_file_adapter_targets_only_visible_active_textarea_and_trut
     assert "document_boundary_truthful" in script and "document_data_not_fabricated" in script
 
 
+def test_generic_visible_adapter_counts_native_and_application_controls():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "frontend/scripts/founder-ui-verifier.mjs").read_text()
+    core = (root / "frontend/scripts/founder-ui-verifier-core.mjs").read_text()
+    assert 'artifactType === "generic_visible_interaction"' in script
+    assert 'contract.interaction_type === "search_clear"' in script
+    assert "::-webkit-search-cancel-button" in script
+    assert "effective_visible_clear_control_count" in script
+    assert "clear_control_count_matches" in script and "duplicate_control_absent" in script
+    assert "effectiveVisibleControlCount" in core and "evaluateVisibleCardinality" in core
+
+
 def test_conversation_narration_matches_terminal_verification_state():
     verified = execute_ui_verification_chain(preferred=None, system_browser=passed("system_chrome_playwright"), static_acceptance=unavailable("static"))
     blocked = execute_ui_verification_chain(preferred=None, system_browser=unavailable("chrome"), static_acceptance=unavailable("static"))

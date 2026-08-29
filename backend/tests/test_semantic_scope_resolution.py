@@ -114,6 +114,42 @@ def test_conversation_file_actions_compile_generic_visible_artifact_contract():
     }.issubset(visible["required_assertions"])
 
 
+def test_high_confidence_low_risk_search_clear_task_gets_generic_visible_contract():
+    goal = (
+        "在左侧栏搜索中输入内容后，显示一个清晰的清除入口。\n"
+        "1. 保留项目与最近会话联合搜索。\n"
+        "2. 保留无结果提示。\n"
+        "3. 保留 Escape 清除行为。"
+    )
+    contract = build_standard_task_contract(conversation_id="conv-generic-search-clear", goal=goal)
+    visible = contract["visible_artifact_contract"]
+    assert contract["scope_confidence"] == HIGH
+    assert visible["required"] is True
+    assert visible["artifact_type"] == "generic_visible_interaction"
+    assert visible["interaction_type"] == "search_clear"
+    assert visible["acceptance_cardinality"]["expected_visible_count"] == 1
+    assert {"clear_control_count_matches", "duplicate_control_absent", "escape_clear_preserved"}.issubset(
+        visible["required_assertions"]
+    )
+    assert contract["existing_behavior_discovery"]["mode"] == "read_only"
+    assert contract["existing_behavior_discovery"]["scope_unchanged"] is True
+    assert any(item["input_type"] == "search" for item in contract["existing_behavior_discovery"]["controls"])
+    assert any(item["capability"] == "search_cancel" for item in contract["existing_behavior_discovery"]["browser_native_controls"])
+    assert "保留 Escape 清除行为。" in contract["acceptance_criteria"]
+
+
+def test_unseen_visible_ui_task_gets_non_null_generic_contract_without_weakening_browser_requirement():
+    contract = build_standard_task_contract(
+        conversation_id="conv-generic-visible",
+        goal="让左侧导航的快捷入口展开动画更紧凑，并保留现有点击行为。",
+    )
+    visible = contract["visible_artifact_contract"]
+    assert visible["required"] is True
+    assert visible["artifact_type"] == "generic_visible_interaction"
+    assert visible["verification_authority"] == "current_task"
+    assert visible["verification_override_authority"] is False
+
+
 def test_project_action_scope_accepts_production_component_test_and_matching_shared_css():
     contract = build_standard_task_contract(
         conversation_id="conv-project-actions",

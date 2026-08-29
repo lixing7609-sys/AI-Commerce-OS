@@ -30,12 +30,55 @@ GUIDANCE_ASSERTION_MAP = (
 )
 
 
+GENERIC_VISIBLE_ASSERTIONS = ("target_visible", "requested_behavior_visible")
+SEARCH_CLEAR_ASSERTIONS = (
+    "search_input_visible", "query_value_entered", "clear_control_visible",
+    "clear_control_count_matches", "duplicate_control_absent", "clear_action_works",
+    "projects_restored", "recent_conversations_restored", "empty_state_preserved",
+    "escape_clear_preserved", "no_unrelated_sidebar_regression",
+)
+
+
 def _dedup(values: list[Any]) -> list[Any]:
     result = []
     for value in values:
         if value not in result:
             result.append(value)
     return result
+
+
+def build_generic_visible_artifact_contract(
+    *, goal: str, semantic_scope: dict[str, Any], acceptance_cardinality: dict | None,
+    existing_behavior_discovery: dict | None,
+) -> dict | None:
+    """Create a non-null base contract for a resolved LOW-risk visible UI task."""
+    if semantic_scope.get("confidence") != "HIGH" or semantic_scope.get("scope_source") != "semantic_module":
+        return None
+    normalized = " ".join(str(goal or "").lower().split())
+    module = next(iter(semantic_scope.get("allowed_modules") or []), None)
+    is_search_clear = any(term in normalized for term in ("搜索", "search")) and any(
+        term in normalized for term in ("清除", "清空", "clear", "reset")
+    )
+    contract = {
+        "required": True,
+        "artifact_type": "generic_visible_interaction",
+        "interaction_type": "search_clear" if is_search_clear else "generic_control",
+        "target_route": module,
+        "required_assertions": list(SEARCH_CLEAR_ASSERTIONS if is_search_clear else GENERIC_VISIBLE_ASSERTIONS),
+        "acceptance_cardinality": deepcopy(acceptance_cardinality),
+        "existing_behavior_discovery": deepcopy(existing_behavior_discovery or {}),
+        "verification_authority": "current_task",
+        "verification_override_authority": False,
+    }
+    if is_search_clear:
+        contract.update({
+            "container_selector": ".founder-navigation-panel" if module == "Founder Sidebar / Navigation" else None,
+            "target_selector": "input[type='search']",
+            "application_control_selector": "button[aria-label*='清除'], button[aria-label*='Clear' i]",
+            "empty_state_role": "status",
+            "preserved_collection_selectors": [".sino-project-item", ".sino-conversation-item"],
+        })
+    return contract
 
 
 def refine_visible_artifact_contract(

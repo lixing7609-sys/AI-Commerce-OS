@@ -66,6 +66,31 @@ def test_standard_progress_uses_canonical_phase_and_backend_time():
     assert progress["founder_action_required"] is False
 
 
+@pytest.mark.parametrize("terminal_status,canonical_stage", [("failed", "FAILED"), ("blocked", "BLOCKED")])
+def test_failed_or_blocked_progress_uses_last_successful_stage_not_100(terminal_status, canonical_stage):
+    session = _session(terminal_status)
+    session.events = [
+        {"event_name": "build_passed", "timestamp": session.started_at},
+        {"event_name": "failed", "timestamp": session.started_at},
+    ]
+    session.execution_stage = canonical_stage
+    session.stage_started_at = session.started_at
+    save_execution_session(session)
+    progress = build_execution_progress(_route(
+        session.id, step="verification", status=terminal_status,
+        blocker={"type": "standard_task_verification_failed"},
+    ))
+    assert progress["progress_percent"] == 70
+    assert progress["progress_percent"] < 100
+
+
+def test_only_completed_execution_projects_100_percent():
+    completed = _session("completed", commit="checkpoint-complete")
+    completed.completed_at = datetime.now(timezone.utc).isoformat()
+    save_execution_session(completed)
+    assert build_execution_progress(_route(completed.id))["progress_percent"] == 100
+
+
 def test_stalled_worker_and_completed_projection_are_truthful():
     stalled = _session("executing", old=True)
     stalled_progress = build_execution_progress(_route(stalled.id))
