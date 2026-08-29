@@ -167,15 +167,49 @@ def test_confirm_resumes_the_same_paused_execution(monkeypatch):
     assert result["route"]["autonomous_execution"]["dispatch_status"] == "queued"
 
 
-def test_confirm_without_execution_remains_ready_and_resolvable(monkeypatch):
+def test_confirm_without_execution_is_ready_only_after_canonical_admission_passes(monkeypatch):
     interaction, _factory = _candidate_factory(monkeypatch)
     candidate = interaction.persist_task_candidate("conv-candidate", _mature_candidate())
     result = interaction.decide_task_candidate("conv-candidate", candidate["candidate_id"], "confirm", dispatch=lambda *_: {
-        "classification": "STANDARD_TASK"})
+        "classification": "STANDARD_TASK", "dispatch_admission": {
+            "status": "PASS", "codex_dispatch_allowed": True,
+        }})
     assert result["status"] == "ready_to_execute"
     current = interaction.current_conversation_task_context("conv-candidate")
     assert current["candidate"]["candidate_id"] == candidate["candidate_id"]
     assert current["execution_id"] is None
+
+
+def test_pre_dispatch_blocker_with_no_execution_projects_truth_once(monkeypatch):
+    interaction, factory = _candidate_factory(monkeypatch)
+    candidate = interaction.persist_task_candidate("conv-candidate", _mature_candidate())
+    blocked = {
+        "classification": "STANDARD_TASK", "execution_status": "blocked",
+        "dispatch_admission": {"status": "BLOCKED", "codex_dispatch_allowed": False,
+                               "reason": "Required visible verification contract has no compatible browser adapter."},
+        "technical_blocker": {"terminal_status": "BLOCKED",
+                              "reason": "Required visible verification contract has no compatible browser adapter."},
+        "canonical_pre_dispatch_decision": {"decision_fingerprint": "decision-1"},
+    }
+    first = interaction.decide_task_candidate(
+        "conv-candidate", candidate["candidate_id"], "confirm", dispatch=lambda *_: blocked)
+    assert first["status"] == "blocked"
+    assert first["task_candidate"]["execution_id"] is None
+    with factory() as db:
+        from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-candidate").one()
+        assert state.discovery["task_projection"]["status"] == "blocked"
+        assert state.discovery["task_projection"]["stage"] == "pre_dispatch"
+        messages = db.query(ConversationMessageDB).filter_by(
+            conversation_id="conv-candidate", message_type="execution_update").all()
+        assert len(messages) == 1
+        assert messages[0].grounding["narration_category"] == "blocked"
+        assert "尚未进入执行" in messages[0].content
+        assert interaction._append_projection(
+            db, conversation_id="conv-candidate", task_id=None,
+            source_event_id="pre-dispatch-blocked:%s:decision-1" % candidate["candidate_id"],
+            event_type="pre_dispatch_blocked", summary="duplicate", narration_category="blocked",
+        ) is False
 
 
 def test_current_task_resolver_recovers_active_canonical_task_asset(monkeypatch):

@@ -382,10 +382,25 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
     with SessionLocal() as db:
         state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
         discovery = dict(state.discovery or {}); confirmed = dict(discovery.get("task_candidate") or {})
-        lifecycle_status = "confirmed" if execution.get("execution_session_id") else "ready_to_execute"
+        admission = dict(route.get("dispatch_admission") or {})
+        blocker = dict(route.get("technical_blocker") or {})
+        pre_dispatch_blocked = (
+            str(route.get("execution_status") or "").lower() == "blocked"
+            or admission.get("status") == "BLOCKED"
+            or blocker.get("terminal_status") == "BLOCKED"
+        )
+        if execution.get("execution_session_id"):
+            lifecycle_status = "confirmed"
+        elif pre_dispatch_blocked or admission.get("codex_dispatch_allowed") is not True:
+            lifecycle_status = "blocked"
+        else:
+            lifecycle_status = "ready_to_execute"
+        blocked_reason = blocker.get("reason") or admission.get("reason") if lifecycle_status == "blocked" else None
         confirmed.update({"status": lifecycle_status, "task_id": execution.get("task_id") or confirmed.get("task_id"),
                           "execution_id": execution.get("execution_session_id"),
-                          "execution_package_id": execution.get("execution_package_id"), "updated_at": datetime.now(timezone.utc).isoformat()})
+                          "execution_package_id": execution.get("execution_package_id"),
+                          "blocked_reason": blocked_reason, "blocked_stage": "pre_dispatch" if blocked_reason else None,
+                          "updated_at": datetime.now(timezone.utc).isoformat()})
         queue = [dict(entry) for entry in discovery.get("founder_action_queue") or []]
         for entry in queue:
             if entry.get("type") == "TASK_CONFIRMATION" and entry.get("candidate_id") == candidate_id:
@@ -396,8 +411,20 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
                                           for item in discovery.get("task_candidates") or []]
         discovery["focused_task_id"] = confirmed.get("task_id") or f"candidate:{candidate_id}"
         discovery["task_projection"] = {"status": lifecycle_status, "candidate_id": candidate_id, "task_id": confirmed.get("task_id"),
-                                         "title": confirmed["title"], "founder_action_required": False}
-        discovery["founder_action_required"] = False; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+                                         "title": confirmed["title"], "founder_action_required": False,
+                                         "stage": "pre_dispatch" if blocked_reason else None,
+                                         "blocked_reason": blocked_reason}
+        discovery["founder_action_required"] = False; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc)
+        if blocked_reason:
+            decision = dict(route.get("canonical_pre_dispatch_decision") or {})
+            source = f"pre-dispatch-blocked:{candidate_id}:{decision.get('decision_fingerprint') or admission.get('reason')}"
+            _append_projection(
+                db, conversation_id=conversation_id, task_id=confirmed.get("task_id"),
+                source_event_id=source, event_type="pre_dispatch_blocked",
+                summary=f"任务尚未进入执行：{blocked_reason}", created_at=confirmed["updated_at"],
+                narration_category="blocked",
+            )
+        db.commit()
         return {"status": lifecycle_status, "task_candidate": confirmed, "route": route}
 
 

@@ -1,8 +1,11 @@
 """Autonomous execution lane for clear, bounded non-strategic development tasks."""
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
+import hashlib
+import json
 from pathlib import Path
 import subprocess
 from threading import Thread
@@ -22,10 +25,141 @@ from core.conversation_first.model import ConversationMessageDB, SinoBrainSessio
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STEPS = ("inspect", "plan", "execution", "verification", "checkpoint", "learning", "closure", "complete")
+PRE_DISPATCH_DECISION_REVISION = "canonical-pre-dispatch-v1"
+SUPPORTED_BROWSER_ADAPTERS = {
+    ("generic_visible_interaction", "search_clear"): "system_chrome_playwright",
+    ("generic_visible_interaction", "derived_visible_count"): "system_chrome_playwright",
+    ("generic_visible_interaction", "generic_control_state"): "system_chrome_playwright",
+}
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _canonical_hash(value) -> str:
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _normalized_values(values) -> list[str]:
+    return sorted({" ".join(str(item or "").split()) for item in values or [] if str(item or "").strip()})
+
+
+def pre_dispatch_intent_fingerprint(*, goal: str, founder_constraints=None,
+                                    founder_acceptance_criteria=None, current_route: str | None = None) -> str:
+    """Identify one Founder-authoritative task intent without timestamps or runtime identities."""
+    return _canonical_hash({
+        "goal": " ".join(str(goal or "").casefold().split()),
+        "authoritative_constraints": _normalized_values(founder_constraints),
+        "acceptance_criteria": _normalized_values(founder_acceptance_criteria),
+        "current_route": str(current_route or ""),
+    })
+
+
+def _classify_scope_files(paths: list[str]) -> dict:
+    production, tests, support = [], [], []
+    for path in paths:
+        if ".test." in path or path.startswith(("backend/tests/", "frontend/tests/")):
+            tests.append(path)
+        elif path.endswith((".css", ".scss", ".sass", ".less")):
+            support.append(path)
+        else:
+            production.append(path)
+    return {
+        "allowed_production_files": production,
+        "allowed_test_files": tests,
+        "allowed_shared_support_files": support,
+        "allowed_files": list(paths),
+    }
+
+
+def _contract_fingerprint(contract: dict) -> str:
+    visible = dict(contract.get("visible_artifact_contract") or {})
+    requirements = dict(visible.get("verification_requirements") or {})
+    return _canonical_hash({
+        "artifact_type": visible.get("artifact_type"),
+        "interaction_type": visible.get("interaction_type"),
+        "required_assertions": sorted(visible.get("required_assertions") or []),
+        "verification_requirements": requirements,
+        "control_group_locator": visible.get("control_group_locator"),
+        "control_locator": visible.get("control_locator"),
+        "action": visible.get("action"),
+        "restore_action": visible.get("restore_action"),
+    })
+
+
+def build_pre_dispatch_decision(*, conversation_id: str, goal: str, discussion_context=None,
+                                founder_acceptance_criteria=None, founder_constraints=None,
+                                task_id: str | None = None, current_route: str | None = None,
+                                runtime_available: bool = True) -> dict:
+    """One canonical builder shared by candidate audits and production dispatch."""
+    acceptance = list(founder_acceptance_criteria or [])
+    constraints = list(founder_constraints or [])
+    contract = build_standard_task_contract(
+        conversation_id=conversation_id, goal=goal, task_id=task_id,
+        discussion_context=list(discussion_context or []),
+        founder_acceptance_criteria=acceptance, founder_constraints=constraints,
+    )
+    scope = dict(contract.get("semantic_scope") or {})
+    visible = dict(contract.get("visible_artifact_contract") or {})
+    scope_files = _classify_scope_files(list(contract.get("implementation_scope") or []))
+    semantic_target = dict(scope.get("semantic_target") or {})
+    scope_fingerprint = _canonical_hash({
+        "semantic_target": semantic_target,
+        "allowed_modules": sorted(scope.get("allowed_modules") or []),
+        "production_files": scope_files["allowed_production_files"],
+        "test_files": scope_files["allowed_test_files"],
+        "shared_support_files": scope_files["allowed_shared_support_files"],
+        "authoritative_constraints": _normalized_values(constraints),
+    })
+    contract_fingerprint = _contract_fingerprint(contract)
+    admission = standard_task_dispatch_admission(contract)
+    if not runtime_available and admission["status"] == "PASS":
+        admission = {
+            "status": "BLOCKED", "reason": "Autonomous execution runtime is unavailable before dispatch.",
+            "founder_gate_required": False, "codex_dispatch_allowed": False,
+        }
+    artifact_type = str(visible.get("artifact_type") or "")
+    interaction_type = str(visible.get("interaction_type") or "")
+    browser_adapter = (
+        SUPPORTED_BROWSER_ADAPTERS.get((artifact_type, interaction_type))
+        or ("system_chrome_playwright" if visible.get("required") and artifact_type != "generic_visible_interaction" else None)
+    )
+    decision = {
+        "semantic_target": semantic_target or None,
+        "semantic_module": next(iter(scope.get("allowed_modules") or []), None),
+        "interaction_intent": scope.get("interaction_type") or interaction_type or None,
+        "semantic_confidence": contract.get("scope_confidence"),
+        "allowed_modules": list(scope.get("allowed_modules") or []),
+        **scope_files,
+        "scope_fingerprint": scope_fingerprint,
+        "visible_artifact_contract": deepcopy(visible) or None,
+        "contract_fingerprint": contract_fingerprint,
+        "verification_requirement": deepcopy(visible.get("verification_requirements") or {}),
+        "browser_adapter": browser_adapter,
+        "adapter_compatibility": "PASS" if browser_adapter or not visible.get("required") else "BLOCKED",
+        "risk": "low", "approval_required": False,
+        "clarification_required": contract.get("scope_confidence") != "HIGH",
+        "dispatch_allowed": admission.get("codex_dispatch_allowed") is True,
+        "blocked_reason": admission.get("reason"),
+        "decision_revision": PRE_DISPATCH_DECISION_REVISION,
+        "created_at": _now(),
+        "intent_fingerprint": pre_dispatch_intent_fingerprint(
+            goal=goal, founder_constraints=constraints,
+            founder_acceptance_criteria=acceptance, current_route=current_route,
+        ),
+        "standard_task_contract": contract,
+        "dispatch_admission": admission,
+    }
+    decision["decision_fingerprint"] = _canonical_hash({
+        "intent_fingerprint": decision["intent_fingerprint"],
+        "scope_fingerprint": scope_fingerprint,
+        "contract_fingerprint": contract_fingerprint,
+        "dispatch_allowed": decision["dispatch_allowed"],
+        "decision_revision": PRE_DISPATCH_DECISION_REVISION,
+    })
+    return decision
 
 
 def _new_discussion_three_column_contract(*, conversation_id: str, goal: str, task_id: str | None) -> dict:
@@ -402,6 +536,7 @@ def build_standard_task_contract(
             ],
             "source_goal": goal,
         }
+        contract["scope_classification"] = _classify_scope_files(contract["implementation_scope"])
         from app.founder_ai.visible_artifact_contract import build_generic_visible_artifact_contract
         base_visible_contract = resolution.get("visible_artifact_contract") or build_generic_visible_artifact_contract(
             goal=acceptance_text, semantic_scope=resolution,
@@ -487,12 +622,15 @@ def begin_standard_task(*, conversation_id: str, goal: str, route: dict, source_
     result.update({"clarification_required": False, "founder_gate_required": False, "manual_continue_required": False,
                    "manual_continue_count": 0, "manual_codex_instruction_count": 0, "current_step": "inspect",
                    "execution_status": "inspecting", "progress_log": ["inspect"]})
-    result["standard_task_contract"] = build_standard_task_contract(
+    decision = build_pre_dispatch_decision(
         conversation_id=conversation_id, goal=goal,
         discussion_context=list(route.get("discussion_context") or []),
         founder_acceptance_criteria=list(route.get("founder_acceptance_criteria") or []),
         founder_constraints=list(route.get("founder_constraints") or []),
     )
+    result["canonical_pre_dispatch_decision"] = decision
+    result["standard_task_contract"] = decision["standard_task_contract"]
+    result["dispatch_admission"] = decision["dispatch_admission"]
     if source_message_id:
         from app.founder_ai.task_identity import build_task_identity
         result["task_identity"] = build_task_identity(source_message_id=source_message_id,
@@ -546,9 +684,10 @@ def standard_task_dispatch_admission(contract: dict) -> dict:
     interaction_type = str(semantic.get("interaction_type") or "")
     if implementation_required and interaction_type == "generic_control_state":
         visible = dict(contract.get("visible_artifact_contract") or {})
+        classified = _classify_scope_files(scope)
         if (
             not dict(semantic.get("semantic_target") or {})
-            or len(scope) > 3
+            or len(classified.get("allowed_production_files") or []) > 3
             or visible.get("interaction_type") != "generic_control_state"
         ):
             return {
@@ -592,12 +731,23 @@ def dispatch_standard_task(*, conversation_id: str, goal: str, source_message_id
             return route
     existing_contract = dict(route.get("standard_task_contract") or {})
     discussion_context = list(route.get("discussion_context") or existing_contract.get("confirmed_conversation_context") or [])
-    contract = build_standard_task_contract(
-        conversation_id=conversation_id, goal=goal, discussion_context=discussion_context,
-        founder_acceptance_criteria=list(route.get("founder_acceptance_criteria") or []),
-        founder_constraints=list(route.get("founder_constraints") or []),
+    acceptance = list(route.get("founder_acceptance_criteria") or [])
+    constraints = list(route.get("founder_constraints") or [])
+    expected_intent = pre_dispatch_intent_fingerprint(
+        goal=goal, founder_constraints=constraints, founder_acceptance_criteria=acceptance,
     )
-    admission = standard_task_dispatch_admission(contract)
+    decision = deepcopy(route.get("canonical_pre_dispatch_decision") or {})
+    if decision.get("intent_fingerprint") != expected_intent:
+        decision = build_pre_dispatch_decision(
+            conversation_id=conversation_id, goal=goal, discussion_context=discussion_context,
+            founder_acceptance_criteria=acceptance, founder_constraints=constraints,
+        )
+        decision["snapshot_status"] = "AUDIT_SNAPSHOT_STALE" if route.get("canonical_pre_dispatch_decision") else "CREATED"
+    else:
+        decision["snapshot_status"] = "REUSED"
+    contract = deepcopy(decision["standard_task_contract"])
+    admission = dict(decision["dispatch_admission"])
+    route["canonical_pre_dispatch_decision"] = decision
     if admission["status"] != "PASS":
         route["standard_task_contract"] = contract
         route["dispatch_admission"] = admission
@@ -614,11 +764,7 @@ def dispatch_standard_task(*, conversation_id: str, goal: str, source_message_id
     if getattr(task, "duplicate_reason", None):
         route["task_duplicate"] = {"duplicate_of_task_id": task.id, "duplicate_reason": task.duplicate_reason}
         return _save_route(conversation_id, route)
-    contract = build_standard_task_contract(
-        conversation_id=conversation_id, goal=goal, task_id=task.id, discussion_context=discussion_context,
-        founder_acceptance_criteria=list(route.get("founder_acceptance_criteria") or []),
-        founder_constraints=list(route.get("founder_constraints") or []),
-    )
+    contract["task_id"] = task.id
     if discussion_context:
         contract["confirmed_conversation_context"] = discussion_context
     route["standard_task_contract"] = contract

@@ -200,6 +200,31 @@ def test_library_navigation_state_resolves_canonical_bounded_control_target():
     assert scope["control_state_profile"]["accessibility_semantics"]["attribute"] == "aria-current"
 
 
+def test_founder_business_language_for_library_current_page_uses_same_control_state_target():
+    goal = "让左侧栏能够依据用户实际所在页面，唯一且准确地识别“库”或 Sino AI 为当前页面，并在两者之间往返导航时同步更新当前状态。"
+    contract = build_standard_task_contract(
+        conversation_id="conv-library-production-language", goal=goal,
+        founder_acceptance_criteria=[
+            "点击“库”后，“库”被明确标记为当前页面，Sino AI 不再处于当前状态",
+            "返回 Sino AI 后当前状态同步切回",
+        ],
+    )
+    semantic = contract["semantic_scope"]
+    assert semantic["semantic_target"]["canonical_name"] == "Sidebar Navigation Current State"
+    assert semantic["interaction_type"] == "generic_control_state"
+    assert contract["visible_artifact_contract"]["interaction_type"] == "generic_control_state"
+    classified = contract["scope_classification"]
+    assert classified["allowed_production_files"] == [
+        "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+    ]
+    assert classified["allowed_test_files"] == [
+        "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
+    ]
+    assert classified["allowed_shared_support_files"] == [
+        "frontend/src/sino-founder/sino-founder-ai.css",
+    ]
+
+
 def test_sidebar_collapse_state_resolves_without_candidate_identity_hardcodes():
     scope = resolve_task_scope(goal="让侧边栏收起按钮明确表达当前展开状态，并保留原来的点击行为。")
     assert scope["confidence"] == HIGH

@@ -180,7 +180,10 @@ CONTROL_STATE_TARGETS = (
     },
     {
         "canonical_name": "Sidebar Navigation Current State",
-        "aliases": ("库入口", "library entry", "library navigation", "当前导航"),
+        "aliases": (
+            "库入口", "library entry", "library navigation", "当前导航",
+            "左侧栏的“库”", "左侧栏“库”", "左侧栏的库", "左侧栏库", "“库”",
+        ),
         "module": "Founder Sidebar / Navigation",
         "region": "primary_navigation",
         "control_group": "sidebar_primary_navigation",
@@ -222,7 +225,7 @@ CONTROL_STATE_TARGETS = (
 
 def _control_state_target(normalized: str) -> dict[str, Any] | None:
     state_intent = any(term in normalized for term in (
-        "选中", "当前状态", "导航状态", "可访问状态", "展开状态", "收起状态", "active", "selected",
+        "选中", "当前状态", "当前页面", "实际所在页面", "导航状态", "可访问状态", "展开状态", "收起状态", "active", "selected",
         "pressed", "expanded", "aria-pressed", "aria-current", "aria-selected", "aria-expanded",
         "唯一选中", "单一选中", "系统明确识别", "系统可读取", "取消选中", "互斥",
     ))

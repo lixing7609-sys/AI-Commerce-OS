@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 from app.founder_ai.standard_task_execution import (
-    build_standard_task_contract, command_evidence_passed,
+    build_pre_dispatch_decision, build_standard_task_contract, command_evidence_passed,
     evaluate_standard_verification_evidence, production_implementation_evidence_passed,
     resume_visible_artifact_verification, standard_task_dispatch_admission,
     visible_verification_authorized,
@@ -12,6 +12,39 @@ from app.founder_ai.task_complexity_router import QUICK_FIX, STANDARD_TASK, STRA
 
 
 GOAL = "给能力仓库增加搜索功能，可以按能力名称和 Domain 搜索，保持现有页面结构和风格不变。"
+LIBRARY_STATE_GOAL = "让左侧栏能够依据用户实际所在页面，唯一且准确地识别“库”或 Sino AI 为当前页面，并在两者之间往返导航时同步更新当前状态。"
+
+
+def test_candidate_audit_and_production_share_one_canonical_pre_dispatch_decision():
+    kwargs = {
+        "conversation_id": "conv-library-consistency",
+        "goal": LIBRARY_STATE_GOAL,
+        "founder_acceptance_criteria": [
+            "点击“库”后，“库”是当前页面，Sino AI 不再处于当前状态",
+            "返回 Sino AI 后当前状态同步切回",
+        ],
+        "founder_constraints": ["保留现有视觉样式和导航行为"],
+    }
+    audit = build_pre_dispatch_decision(**kwargs)
+    production = build_pre_dispatch_decision(**kwargs)
+    assert audit["semantic_target"] == production["semantic_target"]
+    assert audit["interaction_intent"] == production["interaction_intent"] == "generic_control_state"
+    assert audit["scope_fingerprint"] == production["scope_fingerprint"]
+    assert audit["contract_fingerprint"] == production["contract_fingerprint"]
+    assert audit["browser_adapter"] == production["browser_adapter"] == "system_chrome_playwright"
+    assert audit["dispatch_allowed"] is production["dispatch_allowed"] is True
+    assert audit["decision_fingerprint"] == production["decision_fingerprint"]
+    assert len(audit["allowed_production_files"]) <= 3
+
+
+def test_runtime_unavailable_is_a_truthful_pre_dispatch_blocker():
+    decision = build_pre_dispatch_decision(
+        conversation_id="conv-runtime-unavailable", goal=LIBRARY_STATE_GOAL,
+        runtime_available=False,
+    )
+    assert decision["dispatch_allowed"] is False
+    assert decision["dispatch_admission"]["status"] == "BLOCKED"
+    assert "runtime is unavailable" in decision["blocked_reason"]
 
 
 def test_final_reconcile_rejects_component_static_for_real_browser_required_contract():
@@ -197,7 +230,13 @@ def test_control_state_dispatch_requires_canonical_target_narrow_scope_and_suppo
         if mutation == "target":
             invalid["semantic_scope"]["semantic_target"] = None
         elif mutation == "scope":
-            invalid["implementation_scope"].append("frontend/src/unrelated.jsx")
+            invalid["implementation_scope"].extend(
+                [
+                    "frontend/src/unrelated-a.jsx",
+                    "frontend/src/unrelated-b.jsx",
+                    "frontend/src/unrelated-c.jsx",
+                ]
+            )
         else:
             invalid["visible_artifact_contract"]["interaction_type"] = "generic_control"
         admission = standard_task_dispatch_admission(invalid)
