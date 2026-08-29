@@ -11,6 +11,35 @@ vi.mock("../services/founderAiApi.js", () => ({ bindFounderConversationProject: 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Founder sidebar information architecture", () => {
+  it("derives the single current primary destination from the actual page", () => {
+    const onNavigate = vi.fn();
+    const { rerender } = render(<FounderNavigationPanel active="conversation" conversations={[]} projects={[]} onNavigate={onNavigate} />);
+    const home = screen.getByRole("button", { name: "Sino AI" });
+    const library = screen.getByRole("button", { name: "库" });
+    const currentPrimaryDestinations = () => document.querySelectorAll('.sino-sidebar__fixed-top > .sino-sidebar-row[aria-current="page"].is-active');
+
+    expect(home.getAttribute("aria-current")).toBe("page");
+    expect(library.getAttribute("aria-current")).toBeNull();
+    expect(currentPrimaryDestinations()).toHaveLength(1);
+
+    fireEvent.click(library);
+    expect(onNavigate).toHaveBeenLastCalledWith("library");
+    expect(home.getAttribute("aria-current")).toBe("page");
+    expect(library.getAttribute("aria-current")).toBeNull();
+
+    rerender(<FounderNavigationPanel active="library" conversations={[]} projects={[]} onNavigate={onNavigate} />);
+    expect(home.getAttribute("aria-current")).toBeNull();
+    expect(library.getAttribute("aria-current")).toBe("page");
+    expect(currentPrimaryDestinations()).toHaveLength(1);
+
+    fireEvent.click(home);
+    expect(onNavigate).toHaveBeenLastCalledWith("conversation");
+    rerender(<FounderNavigationPanel active="conversation" conversations={[]} projects={[]} onNavigate={onNavigate} />);
+    expect(home.getAttribute("aria-current")).toBe("page");
+    expect(library.getAttribute("aria-current")).toBeNull();
+    expect(currentPrimaryDestinations()).toHaveLength(1);
+  });
+
   it("uses one fixed Settings entry and navigates to the existing settings view", () => {
     const onNavigate = vi.fn();
     render(<FounderNavigationPanel conversations={[]} projects={[]} onNavigate={onNavigate} />);
