@@ -150,6 +150,52 @@ def test_unseen_visible_ui_task_gets_non_null_generic_contract_without_weakening
     assert visible["verification_override_authority"] is False
 
 
+def test_conversation_mode_state_resolves_canonical_bounded_control_target():
+    contract = build_standard_task_contract(
+        conversation_id="conv-mode-state",
+        goal="让讨论模式入口在切换时显示明确且可访问的当前选中状态，并保留现有切换行为。",
+    )
+    semantic = contract["semantic_scope"]
+    assert contract["scope_confidence"] == HIGH
+    assert semantic["semantic_target"]["canonical_name"] == "Conversation Mode Selector State"
+    assert semantic["interaction_type"] == "generic_control_state"
+    assert contract["implementation_scope"] == [
+        "frontend/src/sino-founder/GlobalSecretaryComposer.jsx",
+        "frontend/src/sino-founder/GlobalSecretaryComposer.test.jsx",
+        "frontend/src/sino-founder/sino-founder-ai.css",
+    ]
+    visible = contract["visible_artifact_contract"]
+    assert visible["artifact_type"] == "generic_visible_interaction"
+    assert visible["interaction_type"] == "generic_control_state"
+    assert visible["state_exclusivity"] == {"expected_active_count": 1}
+    assert visible["accessibility_state"]["attribute"] == "aria-pressed"
+    assert visible["verification_override_authority"] is False
+
+
+def test_library_navigation_state_resolves_canonical_bounded_control_target():
+    scope = resolve_task_scope(goal="让库入口在打开后明确表达当前导航状态，并保留原有导航行为。")
+    assert scope["confidence"] == HIGH
+    assert scope["allowed_modules"] == ["Founder Sidebar / Navigation"]
+    assert scope["semantic_target"]["canonical_name"] == "Sidebar Navigation Current State"
+    assert scope["interaction_type"] == "generic_control_state"
+    assert len(scope["allowed_file_patterns"]) == 3
+    assert scope["control_state_profile"]["accessibility_semantics"]["attribute"] == "aria-current"
+
+
+def test_sidebar_collapse_state_resolves_without_candidate_identity_hardcodes():
+    scope = resolve_task_scope(goal="让侧边栏收起按钮明确表达当前展开状态，并保留原来的点击行为。")
+    assert scope["confidence"] == HIGH
+    assert scope["semantic_target"]["canonical_name"] == "Sidebar Collapse Control State"
+    assert scope["semantic_target"]["property"] == "expanded"
+    assert len(scope["allowed_file_patterns"]) == 3
+
+
+def test_ambiguous_control_state_does_not_guess_a_high_confidence_group():
+    scope = resolve_task_scope(goal="让当前按钮的状态更明确")
+    assert scope["confidence"] != HIGH
+    assert scope["allowed_file_patterns"] == []
+
+
 def test_sidebar_recent_heading_count_resolves_bounded_derived_value_contract():
     acceptance = [
         "无搜索条件时，最近旁显示完整可见最近会话数量",

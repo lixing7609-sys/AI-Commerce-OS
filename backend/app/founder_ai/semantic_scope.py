@@ -99,7 +99,8 @@ MODULES = (
 UI_TERMS = (
     "ui", "界面", "页面", "布局", "位置", "样式", "字号", "字体", "颜色", "间距", "圆角",
     "弹出", "展开", "按钮", "入口", "操作选择", "点击", "显示", "可见", "标题", "数量", "计数",
-    "列表", "drawer", "popover", "modal", "count",
+    "列表", "选中", "当前状态", "展开状态", "收起状态", "可访问状态", "active", "selected",
+    "pressed", "expanded", "current", "drawer", "popover", "modal", "count",
 )
 HIGH_RISK_TERMS = ("数据库", "database", "schema", "secret", "密钥", "production", "生产", "deploy", "部署", "git push", "删除数据", "付费 api", "系统权限")
 VAGUE_GOALS = ("优化系统", "优化一下", "改进系统", "完善系统")
@@ -157,6 +158,91 @@ DERIVED_COLLECTION_TARGETS = (
 )
 
 
+CONTROL_STATE_TARGETS = (
+    {
+        "canonical_name": "Conversation Mode Selector State",
+        "aliases": ("讨论模式", "对话模式", "conversation mode", "mode selector"),
+        "module": "Founder Conversation",
+        "region": "conversation_composer",
+        "control_group": "discussion_mode_selector",
+        "state_property": "active",
+        "group_locator": {"strategy": "css", "value": ".sino-council-mode"},
+        "control_locator": {"strategy": "css", "value": "button"},
+        "action_target": {"strategy": "non_initial_enabled_control"},
+        "state_representation": {"type": "class", "name": "is-active", "active_value": True},
+        "accessibility_semantics": {"attribute": "aria-pressed", "active_value": "true", "inactive_value": "false"},
+        "expected_active_count": 1,
+        "bounded_files": (
+            "frontend/src/sino-founder/GlobalSecretaryComposer.jsx",
+            "frontend/src/sino-founder/GlobalSecretaryComposer.test.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ),
+    },
+    {
+        "canonical_name": "Sidebar Navigation Current State",
+        "aliases": ("库入口", "library entry", "library navigation", "当前导航"),
+        "module": "Founder Sidebar / Navigation",
+        "region": "primary_navigation",
+        "control_group": "sidebar_primary_navigation",
+        "state_property": "current",
+        "group_locator": {"strategy": "css", "value": ".sino-sidebar__fixed-top"},
+        "control_locator": {"strategy": "css", "value": ":scope > .sino-sidebar-row"},
+        "action_target": {"strategy": "css", "value": ".sino-sidebar-library"},
+        "restore_target": {"strategy": "css", "value": ".sino-sidebar-home"},
+        "state_representation": {"type": "class", "name": "is-active", "active_value": True},
+        "accessibility_semantics": {"attribute": "aria-current", "active_value": "page", "inactive_value": None},
+        "expected_active_count": 1,
+        "bounded_files": (
+            "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+            "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ),
+    },
+    {
+        "canonical_name": "Sidebar Collapse Control State",
+        "aliases": ("侧边栏收起", "侧边栏展开", "sidebar collapse", "sidebar expanded"),
+        "module": "Founder Sidebar / Navigation",
+        "region": "sidebar_header",
+        "control_group": "sidebar_visibility_control",
+        "state_property": "expanded",
+        "group_locator": {"strategy": "css", "value": ".sino-sidebar-top-actions"},
+        "control_locator": {"strategy": "css", "value": ".sino-sidebar-toggle"},
+        "action_target": {"strategy": "first_enabled_control"},
+        "state_representation": {"type": "aria", "name": "aria-expanded", "active_value": "true", "inactive_value": "false"},
+        "accessibility_semantics": {"attribute": "aria-expanded", "active_value": "true", "inactive_value": "false"},
+        "expected_active_count": 1,
+        "bounded_files": (
+            "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+            "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
+            "frontend/src/sino-founder/SinoFounderShell.test.jsx",
+        ),
+    },
+)
+
+
+def _control_state_target(normalized: str) -> dict[str, Any] | None:
+    state_intent = any(term in normalized for term in (
+        "选中", "当前状态", "导航状态", "可访问状态", "展开状态", "收起状态", "active", "selected",
+        "pressed", "expanded", "aria-pressed", "aria-current", "aria-selected", "aria-expanded",
+    ))
+    if not state_intent:
+        return None
+    matches = [item for item in CONTROL_STATE_TARGETS if any(alias in normalized for alias in item["aliases"])]
+    if len(matches) != 1:
+        return None
+    profile = dict(matches[0])
+    return {
+        "canonical_name": profile.pop("canonical_name"),
+        "surface": profile["module"],
+        "region": profile["region"],
+        "entity": profile["control_group"],
+        "visible_element": "application_control_group",
+        "property": profile["state_property"],
+        "interaction_intent": "generic_control_state",
+        "control_state_profile": profile,
+    }
+
+
 def _derived_visible_target(normalized: str) -> dict[str, Any] | None:
     """Resolve bounded collection-count UI semantics without task-specific identities."""
     count_intent = any(term in normalized for term in ("数量", "计数", "总数", "几个", "count"))
@@ -202,6 +288,27 @@ def resolve_task_scope(*, goal: str, risk_level: str = "low", explicit_contract:
         return _approval("Task crosses a protected or non-LOW-risk boundary.")
     if not normalized or any(normalized == item or normalized.startswith(item) for item in VAGUE_GOALS):
         return _approval("The goal is too vague to identify a safe semantic module.")
+
+    control_state_target = _control_state_target(normalized)
+    if control_state_target:
+        module = next(item for item in MODULES if item.name == control_state_target["surface"])
+        profile = dict(control_state_target["control_state_profile"])
+        bounded_files = list(profile.pop("bounded_files"))
+        denied = [item.name for item in MODULES if item.name != module.name]
+        denied.extend(["backend", "database", "runtime infrastructure", "provider", "production"])
+        return {
+            "scope_source": "semantic_module", "confidence": HIGH,
+            "allowed_modules": [module.name], "allowed_file_patterns": bounded_files,
+            "denied_modules": denied, "semantic_keywords": [control_state_target["entity"], "generic_control_state"],
+            "semantic_hunk_markers": list(module.hunk_markers), "discovered_files": bounded_files,
+            "discovery_scope": {"mode": "read_only", "allowed_patterns": ["**/*"]},
+            "write_scope": {"mode": "semantic_module", "allowed_patterns": bounded_files},
+            "reason": f"Resolved a bounded application control state to {module.name}.",
+            "semantic_target": {key: value for key, value in control_state_target.items() if key != "control_state_profile"},
+            "interaction_type": "generic_control_state",
+            "control_state_profile": profile,
+            "visible_artifact_contract": None,
+        }
 
     derived_target = _derived_visible_target(normalized)
     if derived_target:

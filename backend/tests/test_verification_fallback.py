@@ -98,6 +98,18 @@ def test_generic_visible_adapter_supports_derived_count_across_baseline_filter_a
     assert "evaluateDerivedCount" in core and "evaluateDerivedStates" in core
 
 
+def test_generic_visible_adapter_supports_application_control_state_contracts():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "frontend/scripts/founder-ui-verifier.mjs").read_text()
+    core = (root / "frontend/scripts/founder-ui-verifier-core.mjs").read_text()
+    assert 'contract.interaction_type === "generic_control_state"' in script
+    assert "control_group_locator" in script and "expected_state_after_action" in script
+    assert "previous_control_state_cleared" in script and "state_exclusivity_preserved" in script
+    assert "accessibility_state_matches" in script and "original_behavior_preserved" in script
+    assert "evaluateControlStateTransition" in core and "accessibilityStateMatches" in core
+
+
 def test_conversation_narration_matches_terminal_verification_state():
     verified = execute_ui_verification_chain(preferred=None, system_browser=passed("system_chrome_playwright"), static_acceptance=unavailable("static"))
     blocked = execute_ui_verification_chain(preferred=None, system_browser=unavailable("chrome"), static_acceptance=unavailable("static"))

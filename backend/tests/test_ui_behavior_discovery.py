@@ -65,3 +65,34 @@ def test_discovery_distinguishes_native_capability_from_declared_visibility(tmp_
     )
     assert result["browser_native_controls"][0]["suppression_declared"] is True
     assert result["current_control_cardinality"]["declared_effective_clear_controls"] == 1
+
+
+def test_control_state_discovery_records_existing_behavior_without_mutating_scope(tmp_path):
+    (tmp_path / "ModeControl.jsx").write_text(
+        '<div className="mode-group"><button className={active ? "is-active" : ""} '
+        'aria-pressed={active} onClick={() => choose()}>Mode</button></div>'
+    )
+    scope = {
+        "allowed_modules": ["Fixture UI"],
+        "allowed_file_patterns": ["ModeControl.jsx"],
+        "write_scope": {"allowed_patterns": ["ModeControl.jsx"]},
+        "control_state_profile": {
+            "control_group": "mode_selector",
+            "control_locator": {"strategy": "css", "value": "button"},
+            "state_representation": {"type": "class", "name": "is-active", "active_value": True},
+            "accessibility_semantics": {"attribute": "aria-pressed", "active_value": "true", "inactive_value": "false"},
+            "expected_active_count": 1,
+        },
+    }
+    original = deepcopy(scope)
+    result = discover_existing_ui_controls(
+        repo_root=tmp_path, semantic_scope=scope, acceptance_text="make selected state accessible",
+    )
+    discovery = result["control_state_discovery"]
+    assert discovery["mode"] == "read_only"
+    assert discovery["existing_class_states"] == ["is-active"]
+    assert discovery["existing_aria_states"] == ["aria-pressed"]
+    assert discovery["single_active_behavior_detected"] is True
+    assert discovery["click_behavior_detected"] is True
+    assert result["scope_unchanged"] is True
+    assert scope == original

@@ -78,6 +78,8 @@ def discover_existing_ui_controls(*, repo_root: Path, semantic_scope: dict[str, 
     controls: list[dict[str, Any]] = []
     native_capabilities: list[dict[str, Any]] = []
     keyboard_behaviors: list[dict[str, Any]] = []
+    control_state_observations: list[dict[str, Any]] = []
+    state_profile = dict(semantic_scope.get("control_state_profile") or {})
     inspected_files = []
     for relative in semantic_scope.get("allowed_file_patterns") or []:
         path = repo_root / relative
@@ -85,6 +87,25 @@ def discover_existing_ui_controls(*, repo_root: Path, semantic_scope: dict[str, 
             continue
         source = path.read_text(errors="replace")
         inspected_files.append(relative)
+        if state_profile:
+            representation = dict(state_profile.get("state_representation") or {})
+            accessibility = dict(state_profile.get("accessibility_semantics") or {})
+            state_name = str(representation.get("name") or "")
+            aria_name = str(accessibility.get("attribute") or "")
+            control_state_observations.append({
+                "source_file": relative,
+                "control_group": state_profile.get("control_group"),
+                "control_locator": dict(state_profile.get("control_locator") or {}),
+                "existing_class_state": state_name if representation.get("type") == "class" and state_name in source else None,
+                "existing_aria_state": aria_name if aria_name and aria_name in source else None,
+                "existing_single_active_behavior": bool(
+                    state_profile.get("expected_active_count") == 1
+                    and representation.get("type") == "class"
+                    and state_name and state_name in source
+                ),
+                "existing_click_behavior": "application_handler_present" if "onClick" in source else "not_detected",
+                "inspection_mode": "read_only",
+            })
         for match in _INPUT_RE.finditer(source):
             attrs = _attributes(match.group("attrs"))
             input_type = attrs.get("type", "text").lower()
@@ -115,6 +136,24 @@ def discover_existing_ui_controls(*, repo_root: Path, semantic_scope: dict[str, 
         "mode": "read_only", "acceptance_intent": str(acceptance_text or ""),
         "inspected_files": inspected_files, "controls": controls,
         "browser_native_controls": native_capabilities, "keyboard_behaviors": keyboard_behaviors,
+        "control_state_discovery": {
+            "profile_present": bool(state_profile),
+            "control_group": state_profile.get("control_group"),
+            "observations": control_state_observations,
+            "existing_class_states": sorted({
+                item["existing_class_state"] for item in control_state_observations if item.get("existing_class_state")
+            }),
+            "existing_aria_states": sorted({
+                item["existing_aria_state"] for item in control_state_observations if item.get("existing_aria_state")
+            }),
+            "single_active_behavior_detected": any(
+                item.get("existing_single_active_behavior") for item in control_state_observations
+            ),
+            "click_behavior_detected": any(
+                item.get("existing_click_behavior") == "application_handler_present" for item in control_state_observations
+            ),
+            "mode": "read_only",
+        },
         "current_control_cardinality": {
             "application_clear_controls": application_clear_count,
             "native_search_cancel_capabilities": native_search_count,

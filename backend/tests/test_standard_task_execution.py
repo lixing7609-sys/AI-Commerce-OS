@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from app.founder_ai.standard_task_execution import (
     build_standard_task_contract, command_evidence_passed,
     evaluate_standard_verification_evidence, production_implementation_evidence_passed,
@@ -160,6 +162,26 @@ def test_resolved_derived_value_contract_is_admitted_with_bounded_scope_and_brow
     assert standard_task_dispatch_admission(contract)["status"] == "PASS"
     assert contract["implementation_scope"]
     assert contract["visible_artifact_contract"]["required"] is True
+
+
+def test_control_state_dispatch_requires_canonical_target_narrow_scope_and_supported_contract():
+    contract = build_standard_task_contract(
+        conversation_id="conv-control-admission",
+        goal="让讨论模式入口在切换时显示明确且可访问的当前选中状态。",
+    )
+    assert standard_task_dispatch_admission(contract)["status"] == "PASS"
+    assert len(contract["implementation_scope"]) == 3
+    for mutation in ("target", "scope", "contract"):
+        invalid = deepcopy(contract)
+        if mutation == "target":
+            invalid["semantic_scope"]["semantic_target"] = None
+        elif mutation == "scope":
+            invalid["implementation_scope"].append("frontend/src/unrelated.jsx")
+        else:
+            invalid["visible_artifact_contract"]["interaction_type"] = "generic_control"
+        admission = standard_task_dispatch_admission(invalid)
+        assert admission["status"] == "BLOCKED"
+        assert admission["codex_dispatch_allowed"] is False
 
 
 def test_dispatch_never_creates_task_or_execution_when_semantic_scope_is_unresolved(monkeypatch):

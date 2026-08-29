@@ -1,5 +1,8 @@
 import { chromium } from "playwright";
-import { effectiveVisibleControlCount, evaluateDerivedCount, evaluateDerivedStates, evaluateVisibleCardinality } from "./founder-ui-verifier-core.mjs";
+import {
+  controlStateMatches, effectiveVisibleControlCount, evaluateControlStateTransition,
+  evaluateDerivedCount, evaluateDerivedStates, evaluateVisibleCardinality,
+} from "./founder-ui-verifier-core.mjs";
 
 const contract = JSON.parse(process.argv[2] || "{}");
 const artifactType = contract.artifact_type;
@@ -240,6 +243,59 @@ try {
     await searchInput.press("Escape");
     evidence.escape_clear_preserved = await searchInput.inputValue() === "";
     evidence.no_unrelated_sidebar_regression = await container.isVisible();
+  } else if (artifactType === "generic_visible_interaction" && contract.interaction_type === "generic_control_state") {
+    const groupDescriptor = contract.control_group_locator || {};
+    const controlDescriptor = contract.control_locator || {};
+    if (groupDescriptor.strategy !== "css" || controlDescriptor.strategy !== "css") {
+      throw new Error("unsupported generic control-state locator strategy");
+    }
+    const group = page.locator(groupDescriptor.value).filter({ visible: true }).first();
+    await group.waitFor({ state: "visible" });
+    const controls = group.locator(controlDescriptor.value);
+    const representation = contract.expected_state_after_action || {};
+    const accessibility = contract.accessibility_state || {};
+    const snapshot = async () => controls.evaluateAll((nodes) => nodes.map((node) => ({
+      visible: (() => { const style = getComputedStyle(node); const box = node.getBoundingClientRect(); return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0; })(),
+      disabled: Boolean(node.disabled),
+      classes: Array.from(node.classList),
+      attributes: Object.fromEntries(Array.from(node.attributes).map((item) => [item.name, item.value])),
+      properties: { checked: Boolean(node.checked), disabled: Boolean(node.disabled) },
+    })));
+    const before = await snapshot();
+    const previousIndex = before.findIndex((item) => controlStateMatches(item, representation, true));
+    const action = contract.action || {};
+    let targetIndex = -1;
+    if (action.strategy === "css") {
+      targetIndex = await controls.evaluateAll((nodes, selector) => nodes.findIndex((node) => node.matches(selector)), action.value);
+    } else if (action.strategy === "non_initial_enabled_control") {
+      targetIndex = before.findIndex((item, index) => index !== previousIndex && !item.disabled && item.visible);
+    } else if (action.strategy === "first_enabled_control") {
+      targetIndex = before.findIndex((item) => !item.disabled && item.visible);
+    }
+    if (targetIndex < 0) throw new Error("generic control-state action target unavailable");
+    await controls.nth(targetIndex).click();
+    await page.waitForTimeout(80);
+    const after = await snapshot();
+    const result = evaluateControlStateTransition({
+      before, after, previousIndex, targetIndex, representation, accessibility,
+      expectedActiveCount: Number(contract.state_exclusivity?.expected_active_count ?? 1),
+    });
+    evidence.control_group_visible = await group.isVisible();
+    evidence.initial_state_recorded = result.initialStateRecorded;
+    evidence.action_completed = true;
+    evidence.expected_state_after_action = result.targetActive;
+    evidence.previous_control_state_cleared = result.previousCleared;
+    evidence.state_exclusivity_preserved = result.exclusivityPreserved;
+    evidence.accessibility_state_matches = result.accessibilityMatches;
+    evidence.original_behavior_preserved = result.originalBehaviorPreserved;
+    evidence.control_state_transition = { before, after, previous_index: previousIndex, target_index: targetIndex, ...result };
+    const restore = contract.restore_action || {};
+    if (restore.strategy === "css") {
+      const restoreIndex = await controls.evaluateAll((nodes, selector) => nodes.findIndex((node) => node.matches(selector)), restore.value);
+      if (restoreIndex >= 0) await controls.nth(restoreIndex).click();
+    } else if (previousIndex >= 0 && previousIndex !== targetIndex && !before[previousIndex]?.disabled) {
+      await controls.nth(previousIndex).click();
+    }
   } else if (artifactType === "generic_visible_interaction" && contract.interaction_type === "derived_visible_count") {
     const assertion = contract.derived_value_assertion || {};
     const displaySelector = assertion.display_target?.selector;

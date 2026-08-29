@@ -543,6 +543,20 @@ def standard_task_dispatch_admission(contract: dict) -> dict:
             "founder_gate_required": confidence not in {"LOW", "MEDIUM"}, "codex_dispatch_allowed": False,
         }
     semantic = dict(contract.get("semantic_scope") or {})
+    interaction_type = str(semantic.get("interaction_type") or "")
+    if implementation_required and interaction_type == "generic_control_state":
+        visible = dict(contract.get("visible_artifact_contract") or {})
+        if (
+            not dict(semantic.get("semantic_target") or {})
+            or len(scope) > 3
+            or visible.get("interaction_type") != "generic_control_state"
+        ):
+            return {
+                "status": "BLOCKED",
+                "reason": "Generic control-state target, bounded component scope and browser contract must resolve before Codex dispatch.",
+                "founder_gate_required": False,
+                "codex_dispatch_allowed": False,
+            }
     visible_ui = bool(semantic.get("interaction_type") or semantic.get("semantic_target"))
     if implementation_required and visible_ui and not dict(contract.get("visible_artifact_contract") or {}).get("required"):
         return {

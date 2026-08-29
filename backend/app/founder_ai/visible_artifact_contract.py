@@ -42,6 +42,12 @@ DERIVED_COUNT_ASSERTIONS = (
     "baseline_state_passed", "filtered_state_passed", "restored_state_passed",
     "existing_behaviors_preserved",
 )
+CONTROL_STATE_ASSERTIONS = (
+    "control_group_visible", "initial_state_recorded", "action_completed",
+    "expected_state_after_action", "previous_control_state_cleared",
+    "state_exclusivity_preserved", "accessibility_state_matches",
+    "original_behavior_preserved",
+)
 
 
 def _dedup(values: list[Any]) -> list[Any]:
@@ -62,18 +68,26 @@ def build_generic_visible_artifact_contract(
     normalized = " ".join(str(goal or "").lower().split())
     module = next(iter(semantic_scope.get("allowed_modules") or []), None)
     derived_profile = deepcopy(semantic_scope.get("derived_value_profile") or {})
+    control_state_profile = deepcopy(semantic_scope.get("control_state_profile") or {})
     is_derived_count = semantic_scope.get("interaction_type") == "visible_derived_count" and bool(derived_profile)
+    is_control_state = semantic_scope.get("interaction_type") == "generic_control_state" and bool(control_state_profile)
     is_search_clear = any(term in normalized for term in ("搜索", "search")) and any(
         term in normalized for term in ("清除", "清空", "clear", "reset")
     )
-    interaction_type = "derived_visible_count" if is_derived_count else ("search_clear" if is_search_clear else "generic_control")
+    interaction_type = (
+        "derived_visible_count" if is_derived_count else
+        "generic_control_state" if is_control_state else
+        "search_clear" if is_search_clear else "generic_control"
+    )
     contract = {
         "required": True,
         "artifact_type": "generic_visible_interaction",
         "interaction_type": interaction_type,
         "target_route": module,
         "required_assertions": list(
-            DERIVED_COUNT_ASSERTIONS if is_derived_count else (SEARCH_CLEAR_ASSERTIONS if is_search_clear else GENERIC_VISIBLE_ASSERTIONS)
+            DERIVED_COUNT_ASSERTIONS if is_derived_count else
+            CONTROL_STATE_ASSERTIONS if is_control_state else
+            SEARCH_CLEAR_ASSERTIONS if is_search_clear else GENERIC_VISIBLE_ASSERTIONS
         ),
         "acceptance_cardinality": deepcopy(acceptance_cardinality),
         "existing_behavior_discovery": deepcopy(existing_behavior_discovery or {}),
@@ -110,6 +124,24 @@ def build_generic_visible_artifact_contract(
             "semantic_target": deepcopy(semantic_scope.get("semantic_target") or {}),
             "derived_value_assertion": assertion,
             "verification_states": states,
+            "preserved_behaviors": _dedup([
+                item.strip() for item in str(goal or "").splitlines()
+                if any(term in item for term in ("保留", "保持", "不变", "preserve"))
+            ]),
+            "scope_authority": False,
+        })
+    if is_control_state:
+        contract.update({
+            "semantic_target": deepcopy(semantic_scope.get("semantic_target") or {}),
+            "control_group_locator": deepcopy(control_state_profile.get("group_locator") or {}),
+            "control_locator": deepcopy(control_state_profile.get("control_locator") or {}),
+            "action": deepcopy(control_state_profile.get("action_target") or {}),
+            "restore_action": deepcopy(control_state_profile.get("restore_target") or {}),
+            "initial_state": {"capture": True},
+            "expected_state_after_action": deepcopy(control_state_profile.get("state_representation") or {}),
+            "previous_control_state": {"expected_active": False},
+            "state_exclusivity": {"expected_active_count": int(control_state_profile.get("expected_active_count") or 1)},
+            "accessibility_state": deepcopy(control_state_profile.get("accessibility_semantics") or {}),
             "preserved_behaviors": _dedup([
                 item.strip() for item in str(goal or "").splitlines()
                 if any(term in item for term in ("保留", "保持", "不变", "preserve"))
