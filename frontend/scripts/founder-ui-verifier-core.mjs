@@ -15,3 +15,26 @@ export function evaluateVisibleCardinality(cardinality, effectiveCount) {
   }
   return { matches: true, duplicateAbsent: true };
 }
+
+export function evaluateDerivedCount(displayedValue, visibleCount, aggregation = "count", comparison = "equals") {
+  if (aggregation !== "count" || comparison !== "equals") {
+    return { supported: false, displayInteger: false, matches: false };
+  }
+  const normalized = typeof displayedValue === "number"
+    ? displayedValue
+    : /^\s*\d+\s*$/.test(String(displayedValue ?? "")) ? Number(String(displayedValue).trim()) : NaN;
+  const displayInteger = Number.isInteger(normalized);
+  return { supported: true, displayInteger, matches: displayInteger && normalized === visibleCount };
+}
+
+export function countVisibleElements(elements = []) {
+  return elements.filter((item) => item && item.visible === true).length;
+}
+
+export function evaluateDerivedStates(states = []) {
+  const required = states.filter((item) => !item.skipped);
+  return {
+    passed: required.length > 0 && required.every((item) => item.passed === true),
+    failedStates: required.filter((item) => item.passed !== true).map((item) => item.name),
+  };
+}

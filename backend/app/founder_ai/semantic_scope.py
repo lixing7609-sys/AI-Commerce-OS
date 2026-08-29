@@ -96,9 +96,87 @@ MODULES = (
     ),
 )
 
-UI_TERMS = ("ui", "界面", "页面", "布局", "位置", "样式", "字号", "字体", "颜色", "间距", "圆角", "弹出", "展开", "按钮", "入口", "操作选择", "点击", "drawer", "popover", "modal")
+UI_TERMS = (
+    "ui", "界面", "页面", "布局", "位置", "样式", "字号", "字体", "颜色", "间距", "圆角",
+    "弹出", "展开", "按钮", "入口", "操作选择", "点击", "显示", "可见", "标题", "数量", "计数",
+    "列表", "drawer", "popover", "modal", "count",
+)
 HIGH_RISK_TERMS = ("数据库", "database", "schema", "secret", "密钥", "production", "生产", "deploy", "部署", "git push", "删除数据", "付费 api", "系统权限")
 VAGUE_GOALS = ("优化系统", "优化一下", "改进系统", "完善系统")
+
+
+DERIVED_COLLECTION_TARGETS = (
+    {
+        "canonical_name": "Recent Conversations Heading Count",
+        "entity": "recent_conversations",
+        "labels": ("最近会话", "最近"),
+        "module": "Founder Sidebar / Navigation",
+        "region": "recent_conversations",
+        "display_selector": ".sino-sidebar__conversation-count",
+        "collection_selector": ".sino-conversation-item",
+        "search_selector": ".sino-sidebar-search input[type='search']",
+        "source_text_selector": ".sino-conversation-item__open b",
+        "bounded_files": (
+            "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+            "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ),
+    },
+    {
+        "canonical_name": "Projects Heading Count",
+        "entity": "projects",
+        "labels": ("项目列表", "项目"),
+        "module": "Founder Sidebar / Navigation",
+        "region": "projects",
+        "display_selector": ".sino-project-heading .sino-sidebar__collection-count",
+        "collection_selector": ".sino-project-item",
+        "search_selector": ".sino-sidebar-search input[type='search']",
+        "source_text_selector": ".sino-project-item__open span",
+        "bounded_files": (
+            "frontend/src/sino-founder/FounderNavigationPanel.jsx",
+            "frontend/src/sino-founder/FounderNavigationPanel.test.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ),
+    },
+    {
+        "canonical_name": "Execution Tasks Heading Count",
+        "entity": "tasks",
+        "labels": ("执行任务", "任务列表", "任务"),
+        "module": "Founder Execution Center",
+        "region": "execution_tasks",
+        "display_selector": "[data-execution-task-count]",
+        "collection_selector": "[data-execution-task-row]",
+        "search_selector": None,
+        "source_text_selector": "[data-execution-task-row]",
+        "bounded_files": (
+            "frontend/src/sino-founder/ExecutionCenter.jsx",
+            "frontend/src/sino-founder/ExecutionCenter.test.jsx",
+            "frontend/src/sino-founder/sino-founder-ai.css",
+        ),
+    },
+)
+
+
+def _derived_visible_target(normalized: str) -> dict[str, Any] | None:
+    """Resolve bounded collection-count UI semantics without task-specific identities."""
+    count_intent = any(term in normalized for term in ("数量", "计数", "总数", "几个", "count"))
+    visible_intent = any(term in normalized for term in ("显示", "可见", "标题", "旁", "徽标", "数字", "count"))
+    if not count_intent or not visible_intent:
+        return None
+    matches = [item for item in DERIVED_COLLECTION_TARGETS if any(label in normalized for label in item["labels"])]
+    if len(matches) != 1:
+        return None
+    target = dict(matches[0])
+    return {
+        "canonical_name": target.pop("canonical_name"),
+        "surface": target["module"],
+        "region": target["region"],
+        "entity": target["entity"],
+        "visible_element": "heading_count",
+        "property": "displayed_integer",
+        "interaction_intent": "visible_derived_count",
+        "derived_value_profile": target,
+    }
 
 
 def resolve_task_scope(*, goal: str, risk_level: str = "low", explicit_contract: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -124,6 +202,26 @@ def resolve_task_scope(*, goal: str, risk_level: str = "low", explicit_contract:
         return _approval("Task crosses a protected or non-LOW-risk boundary.")
     if not normalized or any(normalized == item or normalized.startswith(item) for item in VAGUE_GOALS):
         return _approval("The goal is too vague to identify a safe semantic module.")
+
+    derived_target = _derived_visible_target(normalized)
+    if derived_target:
+        module = next(item for item in MODULES if item.name == derived_target["surface"])
+        bounded_files = list(derived_target["derived_value_profile"].pop("bounded_files"))
+        denied = [item.name for item in MODULES if item.name != module.name]
+        denied.extend(["backend", "database", "runtime infrastructure", "provider", "production"])
+        return {
+            "scope_source": "semantic_module", "confidence": HIGH,
+            "allowed_modules": [module.name], "allowed_file_patterns": bounded_files,
+            "denied_modules": denied, "semantic_keywords": [derived_target["entity"], "visible_derived_count"],
+            "semantic_hunk_markers": list(module.hunk_markers), "discovered_files": bounded_files,
+            "discovery_scope": {"mode": "read_only", "allowed_patterns": ["**/*"]},
+            "write_scope": {"mode": "semantic_module", "allowed_patterns": bounded_files},
+            "reason": f"Resolved a bounded visible collection count to {module.name}.",
+            "semantic_target": {key: value for key, value in derived_target.items() if key != "derived_value_profile"},
+            "interaction_type": "visible_derived_count",
+            "derived_value_profile": derived_target["derived_value_profile"],
+            "visible_artifact_contract": None,
+        }
 
     # Wording after comparison/reference terms describes visual inspiration, not
     # a second write target. Weight the target clause more strongly.

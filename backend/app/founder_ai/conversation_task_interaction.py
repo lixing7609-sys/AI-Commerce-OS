@@ -342,6 +342,8 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
             from app.founder_ai.task_complexity_router import route_task_complexity
             route = route_task_complexity(candidate["goal"])
             route["discussion_context"] = [candidate["goal"], str(candidate.get("scope") or "")]
+            route["founder_acceptance_criteria"] = list(candidate.get("acceptance_criteria") or [])
+            route["founder_constraints"] = list(candidate.get("constraints") or [])
             route["confirmed_decisions"] = list(candidate.get("confirmed_decisions") or [])
             source_message_id = candidate.get("source_message_id")
             if route.get("classification") == "QUICK_FIX":

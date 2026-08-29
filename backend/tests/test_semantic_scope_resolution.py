@@ -150,6 +150,65 @@ def test_unseen_visible_ui_task_gets_non_null_generic_contract_without_weakening
     assert visible["verification_override_authority"] is False
 
 
+def test_sidebar_recent_heading_count_resolves_bounded_derived_value_contract():
+    acceptance = [
+        "无搜索条件时，最近旁显示完整可见最近会话数量",
+        "输入搜索条件后，数量等于筛选后实际显示的最近会话数量",
+        "清除搜索后，数量恢复为完整最近会话数量",
+        "现有会话排序、时间显示、打开会话、更多操作和列表滚动行为保持不变",
+    ]
+    contract = build_standard_task_contract(
+        conversation_id="conv-recent-count",
+        goal="在左侧栏最近标题旁显示当前实际可见的最近会话数量，并随搜索筛选实时同步。",
+        founder_acceptance_criteria=acceptance,
+    )
+    assert contract["scope_confidence"] == HIGH
+    assert contract["target_surface"] == "Founder Sidebar / Navigation"
+    assert contract["semantic_scope"]["semantic_target"]["canonical_name"] == "Recent Conversations Heading Count"
+    assert contract["semantic_scope"]["interaction_type"] == "visible_derived_count"
+    assert "frontend/src/sino-founder/FounderNavigationPanel.jsx" in contract["implementation_scope"]
+    assert all(item in contract["acceptance_criteria"] for item in acceptance)
+    visible = contract["visible_artifact_contract"]
+    assert visible["artifact_type"] == "generic_visible_interaction"
+    assert visible["interaction_type"] == "derived_visible_count"
+    assert visible["derived_value_assertion"] == {
+        "display_target": {"selector": ".sino-sidebar__conversation-count", "value_type": "integer"},
+        "source_collection": {"selector": ".sino-conversation-item", "visibility": "visible"},
+        "aggregation": "count", "comparison": "equals",
+    }
+    assert [item["name"] for item in visible["verification_states"]] == ["baseline", "filtered", "restored"]
+    assert visible["scope_authority"] is False and visible["verification_override_authority"] is False
+    assert acceptance[-1] in visible["preserved_behaviors"]
+
+
+def test_generic_project_and_task_collection_counts_resolve_without_r1_identity_hardcodes():
+    projects = resolve_task_scope(goal="在左侧栏项目标题旁显示当前可见项目数量")
+    tasks = resolve_task_scope(goal="在执行中心任务列表标题旁显示当前可见任务数量")
+    assert projects["confidence"] == HIGH
+    assert projects["semantic_target"]["entity"] == "projects"
+    assert tasks["confidence"] == HIGH
+    assert tasks["allowed_modules"] == ["Founder Execution Center"]
+    assert tasks["semantic_target"]["entity"] == "tasks"
+
+
+def test_ambiguous_visible_count_does_not_guess_high_confidence_target():
+    result = resolve_task_scope(goal="在标题旁显示当前可见数量")
+    assert result["confidence"] != HIGH
+    assert result["allowed_file_patterns"] == []
+
+
+def test_unresolved_scope_appends_blocker_without_replacing_founder_acceptance():
+    acceptance = ["显示值必须等于当前可见条目数", "保留现有打开行为"]
+    contract = build_standard_task_contract(
+        conversation_id="conv-unresolved-count", goal="在标题旁显示当前可见数量",
+        founder_acceptance_criteria=acceptance, founder_constraints=["不修改其他模块"],
+    )
+    assert contract["acceptance_criteria"][:2] == acceptance
+    assert contract["acceptance_criteria"][-1] == "Resolve the exact semantic target before modifying files."
+    assert "保留现有打开行为" in contract["acceptance_criteria"]
+    assert "不修改其他模块" in contract["constraints"]
+
+
 def test_project_action_scope_accepts_production_component_test_and_matching_shared_css():
     contract = build_standard_task_contract(
         conversation_id="conv-project-actions",

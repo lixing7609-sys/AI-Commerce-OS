@@ -37,6 +37,11 @@ SEARCH_CLEAR_ASSERTIONS = (
     "projects_restored", "recent_conversations_restored", "empty_state_preserved",
     "escape_clear_preserved", "no_unrelated_sidebar_regression",
 )
+DERIVED_COUNT_ASSERTIONS = (
+    "display_target_visible", "display_value_integer", "derived_count_matches",
+    "baseline_state_passed", "filtered_state_passed", "restored_state_passed",
+    "existing_behaviors_preserved",
+)
 
 
 def _dedup(values: list[Any]) -> list[Any]:
@@ -56,20 +61,61 @@ def build_generic_visible_artifact_contract(
         return None
     normalized = " ".join(str(goal or "").lower().split())
     module = next(iter(semantic_scope.get("allowed_modules") or []), None)
+    derived_profile = deepcopy(semantic_scope.get("derived_value_profile") or {})
+    is_derived_count = semantic_scope.get("interaction_type") == "visible_derived_count" and bool(derived_profile)
     is_search_clear = any(term in normalized for term in ("搜索", "search")) and any(
         term in normalized for term in ("清除", "清空", "clear", "reset")
     )
+    interaction_type = "derived_visible_count" if is_derived_count else ("search_clear" if is_search_clear else "generic_control")
     contract = {
         "required": True,
         "artifact_type": "generic_visible_interaction",
-        "interaction_type": "search_clear" if is_search_clear else "generic_control",
+        "interaction_type": interaction_type,
         "target_route": module,
-        "required_assertions": list(SEARCH_CLEAR_ASSERTIONS if is_search_clear else GENERIC_VISIBLE_ASSERTIONS),
+        "required_assertions": list(
+            DERIVED_COUNT_ASSERTIONS if is_derived_count else (SEARCH_CLEAR_ASSERTIONS if is_search_clear else GENERIC_VISIBLE_ASSERTIONS)
+        ),
         "acceptance_cardinality": deepcopy(acceptance_cardinality),
         "existing_behavior_discovery": deepcopy(existing_behavior_discovery or {}),
         "verification_authority": "current_task",
         "verification_override_authority": False,
     }
+    if is_derived_count:
+        assertion = {
+            "display_target": {"selector": derived_profile["display_selector"], "value_type": "integer"},
+            "source_collection": {"selector": derived_profile["collection_selector"], "visibility": "visible"},
+            "aggregation": "count", "comparison": "equals",
+        }
+        search_selector = derived_profile.get("search_selector")
+        source_text_selector = derived_profile.get("source_text_selector")
+        states = [
+            {"name": "baseline", "setup_action": {"type": "none"}, "derived_assertion": assertion},
+        ]
+        if search_selector:
+            states.extend([
+                {
+                    "name": "filtered",
+                    "setup_action": {
+                        "type": "filter_from_visible_row", "search_input_selector": search_selector,
+                        "source_text_selector": source_text_selector, "require_nonzero": True, "require_reduced": True,
+                    },
+                    "derived_assertion": assertion,
+                },
+                {
+                    "name": "restored", "setup_action": {"type": "clear_filter", "search_input_selector": search_selector},
+                    "derived_assertion": assertion,
+                },
+            ])
+        contract.update({
+            "semantic_target": deepcopy(semantic_scope.get("semantic_target") or {}),
+            "derived_value_assertion": assertion,
+            "verification_states": states,
+            "preserved_behaviors": _dedup([
+                item.strip() for item in str(goal or "").splitlines()
+                if any(term in item for term in ("保留", "保持", "不变", "preserve"))
+            ]),
+            "scope_authority": False,
+        })
     if is_search_clear:
         contract.update({
             "container_selector": ".founder-navigation-panel" if module == "Founder Sidebar / Navigation" else None,

@@ -1,7 +1,7 @@
 from app.founder_ai.standard_task_execution import (
     build_standard_task_contract, command_evidence_passed,
     evaluate_standard_verification_evidence, production_implementation_evidence_passed,
-    resume_visible_artifact_verification,
+    resume_visible_artifact_verification, standard_task_dispatch_admission,
 )
 from app.founder_ai.execution_loop import ExecutionSession
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
@@ -138,6 +138,60 @@ def test_read_only_local_health_check_does_not_require_implementation_patch():
     )
     assert contract["target_surface"] == "Local Development Environment"
     assert contract["implementation_required"] is False
+
+
+def test_unresolved_visible_ui_scope_is_blocked_before_codex_dispatch():
+    contract = build_standard_task_contract(
+        conversation_id="conv-unresolved-admission", goal="在标题旁显示当前可见数量",
+        founder_acceptance_criteria=["显示值等于当前可见条目数量"],
+    )
+    admission = standard_task_dispatch_admission(contract)
+    assert admission["status"] == "BLOCKED"
+    assert admission["codex_dispatch_allowed"] is False
+    assert contract["implementation_scope"] == []
+    assert "显示值等于当前可见条目数量" in contract["acceptance_criteria"]
+
+
+def test_resolved_derived_value_contract_is_admitted_with_bounded_scope_and_browser_contract():
+    contract = build_standard_task_contract(
+        conversation_id="conv-derived-admission",
+        goal="在左侧栏最近标题旁显示当前可见最近会话数量，并随搜索同步。",
+    )
+    assert standard_task_dispatch_admission(contract)["status"] == "PASS"
+    assert contract["implementation_scope"]
+    assert contract["visible_artifact_contract"]["required"] is True
+
+
+def test_dispatch_never_creates_task_or_execution_when_semantic_scope_is_unresolved(monkeypatch):
+    import app.founder_ai.standard_task_execution as execution
+
+    class State:
+        discovery = {"task_complexity_route": {
+            "classification": "STANDARD_TASK", "discussion_context": [],
+            "founder_acceptance_criteria": ["显示值等于当前可见条目数量"],
+        }}
+
+    class ReadSession:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def scalar(self, *_args, **_kwargs): return State()
+
+    monkeypatch.setattr(execution, "SessionLocal", ReadSession)
+    monkeypatch.setattr(execution, "_save_route", lambda _conversation_id, route: route)
+    monkeypatch.setattr(
+        execution, "create_task_asset",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("Task must not be created before admission")),
+    )
+    monkeypatch.setattr(
+        execution, "create_execution_session",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Codex execution must not be created")),
+    )
+    result = execution.dispatch_standard_task(
+        conversation_id="conv-pre-dispatch", goal="在标题旁显示当前可见数量",
+    )
+    assert result["dispatch_admission"]["status"] == "BLOCKED"
+    assert result["technical_blocker"]["type"] == "standard_task_pre_dispatch_admission"
+    assert "显示值等于当前可见条目数量" in result["standard_task_contract"]["acceptance_criteria"]
 
 
 def test_standard_task_contract_is_inspected_and_bounded():

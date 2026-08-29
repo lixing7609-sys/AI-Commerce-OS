@@ -292,7 +292,12 @@ def _capability_repository_search_contract(*, conversation_id: str, goal: str, t
     }
 
 
-def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: str | None = None, discussion_context: list[str] | None = None) -> dict:
+def build_standard_task_contract(
+    *, conversation_id: str, goal: str, task_id: str | None = None,
+    discussion_context: list[str] | None = None,
+    founder_acceptance_criteria: list[str] | None = None,
+    founder_constraints: list[str] | None = None,
+) -> dict:
     from app.founder_ai.semantic_scope import HIGH, resolve_task_scope
     from app.founder_ai.technical_resolution import is_local_health_check_goal
     if is_local_health_check_goal(goal):
@@ -360,7 +365,10 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
         existing_behavior = discover_existing_ui_controls(
             repo_root=REPO_ROOT, semantic_scope=resolution, acceptance_text=acceptance_text,
         )
-        founder_acceptance = extract_founder_acceptance_criteria(acceptance_text)
+        founder_acceptance = list(dict.fromkeys([
+            *[str(item) for item in founder_acceptance_criteria or []],
+            *extract_founder_acceptance_criteria(acceptance_text),
+        ]))
         target = resolution["allowed_modules"][0]
         contract = {
             "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
@@ -373,7 +381,10 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
                 "No denied module or unrelated UI surface changes.",
                 "Targeted tests, production build, git diff --check and real localhost UI verification pass.",
             ],
-            "constraints": ["semantic_module_only", "preserve_unrelated_founder_surfaces", "frontend_presentation_only"],
+            "constraints": list(dict.fromkeys([
+                *[str(item) for item in founder_constraints or []],
+                "semantic_module_only", "preserve_unrelated_founder_surfaces", "frontend_presentation_only",
+            ])),
             "implementation_scope": resolution["allowed_file_patterns"],
             "module_boundary": [],
             "prohibited_scope": resolution["denied_modules"],
@@ -398,6 +409,11 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
             existing_behavior_discovery=existing_behavior,
         )
         if base_visible_contract:
+            if base_visible_contract.get("interaction_type") == "derived_visible_count":
+                base_visible_contract["preserved_behaviors"] = list(dict.fromkeys([
+                    *list(base_visible_contract.get("preserved_behaviors") or []),
+                    *[item for item in founder_acceptance if any(term in item for term in ("保留", "保持", "不变", "preserve"))],
+                ]))
             contract["visible_artifact_contract"] = base_visible_contract
         from app.founder_ai.decision_retrieval import inject_decision_context
         contract = inject_decision_context(contract=contract, goal=goal, task_id=task_id, risk_level="low")
@@ -417,11 +433,21 @@ def build_standard_task_contract(*, conversation_id: str, goal: str, task_id: st
         if refined:
             contract["visible_artifact_contract"] = refined
         return contract
+    from app.founder_ai.ui_behavior_discovery import extract_founder_acceptance_criteria
+    acceptance_text = "\n".join([goal, *(discussion_context or [])])
+    preserved_acceptance = list(dict.fromkeys([
+        *[str(item) for item in founder_acceptance_criteria or []],
+        *extract_founder_acceptance_criteria(acceptance_text),
+    ]))
     return {
         "task_id": task_id or f"standard-task-{uuid4().hex[:20]}", "conversation_id": conversation_id,
         "task_type": "STANDARD_TASK", "target_surface": "Unresolved bounded task",
-        "objective": goal, "acceptance_criteria": ["Resolve the exact semantic target before modifying files."],
-        "constraints": ["read_only_inspection_until_scope_resolved"], "implementation_scope": [], "module_boundary": [],
+        "objective": goal, "acceptance_criteria": [
+            *preserved_acceptance, "Resolve the exact semantic target before modifying files.",
+        ],
+        "constraints": list(dict.fromkeys([
+            *[str(item) for item in founder_constraints or []], "read_only_inspection_until_scope_resolved",
+        ])), "implementation_scope": [], "module_boundary": [],
         "prohibited_scope": ["all_repository_writes_until_scope_resolved"],
         "founder_gate_reentry_conditions": ["credential", "incremental_cost", "external_side_effect", "production_impact", "architecture_boundary_change"],
         "scope_source": "approval_required", "scope_confidence": resolution["confidence"], "semantic_scope": resolution,
@@ -461,7 +487,12 @@ def begin_standard_task(*, conversation_id: str, goal: str, route: dict, source_
     result.update({"clarification_required": False, "founder_gate_required": False, "manual_continue_required": False,
                    "manual_continue_count": 0, "manual_codex_instruction_count": 0, "current_step": "inspect",
                    "execution_status": "inspecting", "progress_log": ["inspect"]})
-    result["standard_task_contract"] = build_standard_task_contract(conversation_id=conversation_id, goal=goal, discussion_context=list(route.get("discussion_context") or []))
+    result["standard_task_contract"] = build_standard_task_contract(
+        conversation_id=conversation_id, goal=goal,
+        discussion_context=list(route.get("discussion_context") or []),
+        founder_acceptance_criteria=list(route.get("founder_acceptance_criteria") or []),
+        founder_constraints=list(route.get("founder_constraints") or []),
+    )
     if source_message_id:
         from app.founder_ai.task_identity import build_task_identity
         result["task_identity"] = build_task_identity(source_message_id=source_message_id,
@@ -501,6 +532,26 @@ def project_scope_mismatch(*, conversation_id: str, execution_id: str, evidence:
     }, execution={"execution_session_id": execution_id, "dispatch_status": "blocked", "scope_verification": scope})
 
 
+def standard_task_dispatch_admission(contract: dict) -> dict:
+    """Stop unresolved writable work before a Task or Codex execution is created."""
+    implementation_required = contract.get("implementation_required", True) is not False
+    scope = list(contract.get("implementation_scope") or [])
+    confidence = str(contract.get("scope_confidence") or "")
+    if implementation_required and (confidence != "HIGH" or not scope):
+        return {
+            "status": "BLOCKED", "reason": "Semantic target and bounded write scope must resolve before Codex dispatch.",
+            "founder_gate_required": confidence not in {"LOW", "MEDIUM"}, "codex_dispatch_allowed": False,
+        }
+    semantic = dict(contract.get("semantic_scope") or {})
+    visible_ui = bool(semantic.get("interaction_type") or semantic.get("semantic_target"))
+    if implementation_required and visible_ui and not dict(contract.get("visible_artifact_contract") or {}).get("required"):
+        return {
+            "status": "BLOCKED", "reason": "Visible UI verification contract must exist before Codex dispatch.",
+            "founder_gate_required": False, "codex_dispatch_allowed": False,
+        }
+    return {"status": "PASS", "reason": None, "founder_gate_required": False, "codex_dispatch_allowed": True}
+
+
 def dispatch_standard_task(*, conversation_id: str, goal: str, source_message_id: str | None = None,
                            enqueue=enqueue_execution) -> dict:
     with SessionLocal() as db:
@@ -514,7 +565,21 @@ def dispatch_standard_task(*, conversation_id: str, goal: str, source_message_id
             return route
     existing_contract = dict(route.get("standard_task_contract") or {})
     discussion_context = list(route.get("discussion_context") or existing_contract.get("confirmed_conversation_context") or [])
-    contract = build_standard_task_contract(conversation_id=conversation_id, goal=goal, discussion_context=discussion_context)
+    contract = build_standard_task_contract(
+        conversation_id=conversation_id, goal=goal, discussion_context=discussion_context,
+        founder_acceptance_criteria=list(route.get("founder_acceptance_criteria") or []),
+        founder_constraints=list(route.get("founder_constraints") or []),
+    )
+    admission = standard_task_dispatch_admission(contract)
+    if admission["status"] != "PASS":
+        route["standard_task_contract"] = contract
+        route["dispatch_admission"] = admission
+        route["execution_status"] = "blocked"
+        route["technical_blocker"] = {
+            "type": "standard_task_pre_dispatch_admission", "terminal_status": "BLOCKED",
+            "reason": admission["reason"], "founder_gate_required": admission.get("founder_gate_required", False),
+        }
+        return _save_route(conversation_id, route)
     task = create_task_asset(title=goal[:200], description=goal, conversation_id=conversation_id,
         scope={"lane": "STANDARD_TASK", "target_surface": contract["target_surface"], "target_route": contract.get("target_route"), "target_component": contract.get("target_component")}, status="in_progress",
         approval_status="not_required", execution_status="inspecting", source_message_id=source_message_id,
@@ -522,7 +587,11 @@ def dispatch_standard_task(*, conversation_id: str, goal: str, source_message_id
     if getattr(task, "duplicate_reason", None):
         route["task_duplicate"] = {"duplicate_of_task_id": task.id, "duplicate_reason": task.duplicate_reason}
         return _save_route(conversation_id, route)
-    contract = build_standard_task_contract(conversation_id=conversation_id, goal=goal, task_id=task.id, discussion_context=discussion_context)
+    contract = build_standard_task_contract(
+        conversation_id=conversation_id, goal=goal, task_id=task.id, discussion_context=discussion_context,
+        founder_acceptance_criteria=list(route.get("founder_acceptance_criteria") or []),
+        founder_constraints=list(route.get("founder_constraints") or []),
+    )
     if discussion_context:
         contract["confirmed_conversation_context"] = discussion_context
     route["standard_task_contract"] = contract

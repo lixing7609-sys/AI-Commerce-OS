@@ -1,5 +1,5 @@
 import { chromium } from "playwright";
-import { effectiveVisibleControlCount, evaluateVisibleCardinality } from "./founder-ui-verifier-core.mjs";
+import { effectiveVisibleControlCount, evaluateDerivedCount, evaluateDerivedStates, evaluateVisibleCardinality } from "./founder-ui-verifier-core.mjs";
 
 const contract = JSON.parse(process.argv[2] || "{}");
 const artifactType = contract.artifact_type;
@@ -240,6 +240,58 @@ try {
     await searchInput.press("Escape");
     evidence.escape_clear_preserved = await searchInput.inputValue() === "";
     evidence.no_unrelated_sidebar_regression = await container.isVisible();
+  } else if (artifactType === "generic_visible_interaction" && contract.interaction_type === "derived_visible_count") {
+    const assertion = contract.derived_value_assertion || {};
+    const displaySelector = assertion.display_target?.selector;
+    const collectionSelector = assertion.source_collection?.selector;
+    const display = page.locator(displaySelector).first();
+    const collection = page.locator(collectionSelector);
+    const visibleCount = async () => collection.evaluateAll((nodes) => nodes.filter((node) => {
+      const style = getComputedStyle(node); const box = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
+    }).length);
+    const inspectState = async (name) => {
+      const displayed = await display.textContent().catch(() => null);
+      const count = await visibleCount();
+      const result = evaluateDerivedCount(displayed, count, assertion.aggregation, assertion.comparison);
+      return { name, displayed_value: displayed, visible_count: count, ...result, passed: result.matches };
+    };
+    await display.waitFor({ state: "visible" });
+    const baseline = await inspectState("baseline");
+    let filtered = { name: "filtered", passed: true, skipped: true };
+    let restored = { name: "restored", passed: true, skipped: true };
+    const filteredState = (contract.verification_states || []).find((item) => item.name === "filtered");
+    if (filteredState) {
+      const action = filteredState.setup_action || {};
+      const search = page.locator(action.search_input_selector).first();
+      const textNodes = collection.locator(action.source_text_selector || "b");
+      const texts = (await textNodes.allTextContents()).map((item) => item.trim()).filter(Boolean);
+      let selectedQuery = null;
+      for (const textValue of texts) {
+        for (const size of [4, 3, 2, 1]) {
+          const candidate = textValue.slice(0, Math.min(size, textValue.length));
+          if (!candidate || candidate === selectedQuery) continue;
+          await search.fill(candidate); await page.waitForTimeout(80);
+          const candidateCount = await visibleCount();
+          if (candidateCount > 0 && candidateCount < baseline.visible_count) { selectedQuery = candidate; break; }
+        }
+        if (selectedQuery) break;
+      }
+      filtered = selectedQuery
+        ? { ...(await inspectState("filtered")), query: selectedQuery, skipped: false }
+        : { name: "filtered", passed: false, skipped: false, failure_reason: "no safe reducing non-empty filter query" };
+      await search.fill(""); await page.waitForTimeout(80);
+      restored = { ...(await inspectState("restored")), skipped: false };
+    }
+    evidence.derived_value_states = { baseline, filtered, restored };
+    evidence.derived_state_result = evaluateDerivedStates([baseline, filtered, restored]);
+    evidence.display_target_visible = await display.isVisible();
+    evidence.display_value_integer = [baseline, filtered, restored].filter((item) => !item.skipped).every((item) => item.displayInteger === true);
+    evidence.derived_count_matches = evidence.derived_state_result.passed;
+    evidence.baseline_state_passed = baseline.passed === true;
+    evidence.filtered_state_passed = filtered.passed === true;
+    evidence.restored_state_passed = restored.passed === true && (restored.skipped || restored.visible_count === baseline.visible_count);
+    evidence.existing_behaviors_preserved = evidence.restored_state_passed && await page.locator(contract.target_route === "Founder Sidebar / Navigation" ? ".founder-navigation-panel" : "body").isVisible();
   } else if (artifactType === "founder_sidebar_heading_typography") {
     const projects = page.getByText("项目", { exact: true }).first();
     const conversations = page.getByText("会话", { exact: true }).first();

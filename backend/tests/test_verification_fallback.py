@@ -86,6 +86,18 @@ def test_generic_visible_adapter_counts_native_and_application_controls():
     assert "effectiveVisibleControlCount" in core and "evaluateVisibleCardinality" in core
 
 
+def test_generic_visible_adapter_supports_derived_count_across_baseline_filter_and_restore():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "frontend/scripts/founder-ui-verifier.mjs").read_text()
+    core = (root / "frontend/scripts/founder-ui-verifier-core.mjs").read_text()
+    assert 'contract.interaction_type === "derived_visible_count"' in script
+    assert "derived_value_assertion" in script and "verification_states" in script
+    assert 'inspectState("baseline")' in script and 'inspectState("filtered")' in script and 'inspectState("restored")' in script
+    assert "no safe reducing non-empty filter query" in script
+    assert "evaluateDerivedCount" in core and "evaluateDerivedStates" in core
+
+
 def test_conversation_narration_matches_terminal_verification_state():
     verified = execute_ui_verification_chain(preferred=None, system_browser=passed("system_chrome_playwright"), static_acceptance=unavailable("static"))
     blocked = execute_ui_verification_chain(preferred=None, system_browser=unavailable("chrome"), static_acceptance=unavailable("static"))
