@@ -200,7 +200,10 @@ describe("Founder sidebar information architecture", () => {
     />);
 
     const search = screen.getByPlaceholderText("搜索");
+    expect(search.getAttribute("data-native-search-cancel")).toBe("hidden");
+    expect(screen.queryByRole("button", { name: "清除搜索" })).toBeNull();
     fireEvent.change(search, { target: { value: "  Commerce  " } });
+    expect(screen.getByRole("button", { name: "清除搜索" })).toBeTruthy();
     expect(screen.getByText("AI Commerce OS")).toBeTruthy();
     expect(screen.queryByText("Sino Operator AI")).toBeNull();
     expect(screen.getByRole("button", { name: "新建项目" })).toBeTruthy();
@@ -213,10 +216,23 @@ describe("Founder sidebar information architecture", () => {
     fireEvent.click(document.querySelector('.sino-conversation-item__open[title="把图标改成 GPT 风格"]'));
     expect(onSelectConversation).toHaveBeenCalledWith("gpt");
 
+    fireEvent.click(screen.getByRole("button", { name: "清除搜索" }));
+    expect(search.value).toBe("");
+    expect(screen.queryByRole("button", { name: "清除搜索" })).toBeNull();
+    expect(screen.getByText("Sino Operator AI")).toBeTruthy();
+    expect(screen.getByText("广告平台解析")).toBeTruthy();
+
     fireEvent.change(search, { target: { value: "没有匹配" } });
     expect(screen.getByText("没有找到结果")).toBeTruthy();
     expect(screen.queryByText("最近")).toBeNull();
     expect(screen.getByRole("button", { name: "新建项目" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "清除搜索" }));
+    expect(search.value).toBe("");
+    expect(screen.queryByText("没有找到结果")).toBeNull();
+    expect(screen.getByText("Sino Operator AI")).toBeTruthy();
+    expect(screen.getByText("广告平台解析")).toBeTruthy();
+
+    fireEvent.change(search, { target: { value: "gpt" } });
     fireEvent.keyDown(search, { key: "Escape" });
     expect(search.value).toBe("");
     expect(screen.getByText("Sino Operator AI")).toBeTruthy();

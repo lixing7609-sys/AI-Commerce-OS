@@ -258,7 +258,7 @@ export function FounderNavigationPanel({ active, onNavigate, onCollapse, resizeH
       {onCollapse ? <button type="button" className="sino-sidebar-toggle" onClick={onCollapse} title="收起侧边栏" aria-label="收起侧边栏"><SidebarIcon /></button> : null}
       <button ref={newDiscussionTriggerRef} type="button" className="sino-new-conversation" onClick={() => setNewDiscussionOpen((open) => !open)} title="新建讨论" aria-label="新建讨论" aria-haspopup="dialog" aria-expanded={newDiscussionOpen}><ComposeIcon /></button>
     </div>
-    <label className="sino-sidebar-search"><SearchIcon /><input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setSearchQuery(""); } }} placeholder="搜索" aria-label="搜索项目和最近会话" /></label>
+    <div className="sino-sidebar-search"><SearchIcon /><input type="search" data-native-search-cancel="hidden" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setSearchQuery(""); } }} placeholder="搜索" aria-label="搜索项目和最近会话" />{searchQuery ? <button type="button" className="sino-sidebar-search__clear" onClick={() => setSearchQuery("")} title="清除搜索" aria-label="清除搜索">×</button> : null}</div>
     {normalizedSearch && !hasSearchResults ? <p className="sino-sidebar-search-empty" role="status">没有找到结果</p> : null}
     </div>
     <div className="sino-sidebar__navigation-scroll">
