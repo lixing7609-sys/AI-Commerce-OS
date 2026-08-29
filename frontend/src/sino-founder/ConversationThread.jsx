@@ -215,6 +215,7 @@ function ReuseSuggestions({ items, busy, onReuse, onDevelop }) {
 
 export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message, onMessage, onSend, busy, replyPending = false, streamingReply = null, mode, onModeChange, healthy, contextControls, onExitObjectDiscussion, onConfirmGoal, onReviseGoal, onAdvanceStage, onReviewPackage, onReviewConstitution, onReviewProjectOutcome, onReviewImplementationPlan, onContinueProjectAnalysis, onReviewFounderGate, onImageProbeDecision, onExternalProbeDecision, onArchitectureDecision, selectedConstitutionWorkItemId, onSelectConstitutionWorkItem, onContinueDiscussion, onViewAssets, onNewGoal, capabilityAction, capabilityAsset, capabilityError, onCapabilityAction, reuseSuggestions, onReuse, pendingAttachments = [], onAddImages, onRemoveImage }) {
   const logRef = useRef(null);
+  const composerDockRef = useRef(null);
   const conversationRef = useRef(null);
   const scrollAfterSendRef = useRef(false);
   const latestProjectionRef = useRef("");
@@ -283,6 +284,18 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
     return () => log.removeEventListener("scroll", trackReadingPosition);
   }, [conversationId]);
 
+  useLayoutEffect(() => {
+    const modeGroup = composerDockRef.current?.querySelector(".sino-council-mode");
+    if (!modeGroup) return;
+    modeGroup.setAttribute("role", "group");
+    const modeValues = ["sino", "council", "auto"];
+    modeGroup.querySelectorAll(":scope > button").forEach((button, index) => {
+      const modeValue = modeValues[index];
+      button.setAttribute("data-mode", modeValue);
+      button.setAttribute("aria-pressed", String(mode === modeValue));
+    });
+  }, [mode]);
+
   function submit(event) {
     const log = logRef.current;
     const threshold = log ? Math.max(96, log.clientHeight * 0.18) : 96;
@@ -337,7 +350,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
       return <div key={item.message_id} className="sino-message-group"><article data-role={isFounderMessage ? "founder" : item.role} className={`sino-message-stack sino-message-stack--${isFounderMessage ? "founder" : "assistant"}${longform ? " is-longform" : ""}`}>{isFounderMessage ? <><MessageAttachments attachments={item.attachment_refs} conversationId={conversationId} align="right" />{content ? <div className="sino-message-bubble sino-message-bubble--founder">{content}</div> : null}<MessageTimestamp value={item.created_at} /></> : <><strong>* Sino</strong><MessageAttachments attachments={item.attachment_refs} conversationId={conversationId} align="left" />{content}<MessageTimestamp value={item.created_at} /></>}</article>{draft ? <aside className="sino-cognitive-draft-ref" aria-label="本轮成果"><span>本轮成果</span><strong>{draft.title}</strong><small>{draft.draft_type === "system_definition" ? "System Definition Draft" : draft.draft_type} · {draft.status === "refining" ? "完善中" : draft.status}</small><button type="button" onClick={() => onOpenDraft?.(draft)}>查看草案</button></aside> : null}{run ? (item.message_type === "auto_deliberation" ? <AutoDeliberationConversation run={run} /> : <CouncilConversation run={run} />) : null}{item.message_id === constitutionSourceMessage?.message_id ? constitutionDerivedContent : null}</div>;
     }) : null}{constitutionDerivedContent && !constitutionSourceMessage ? constitutionDerivedContent : null}{!visibleMessages.some((item) => ["council", "auto_deliberation"].includes(item.message_type)) ? (snapshot?.council_runs || []).map((run) => run.discussion_mode === "auto_deliberation" ? <AutoDeliberationConversation key={run.council_run_id} run={run} /> : <CouncilConversation key={run.council_run_id} run={run} />) : null}{streamingReply?.content ? <div className="sino-message-group" data-streaming="true"><article data-role="assistant"><strong>* Sino</strong><MessageBody>{streamingReply.content}</MessageBody></article></div> : replyPending ? <div className="sino-thinking-indicator" role="status" aria-label="Sino 正在思考"><span aria-hidden="true">●</span><span>Sino 正在思考</span></div> : null}</div></div>
     {showReturnToLatest ? <div className="sino-return-latest"><button type="button" onClick={scrollToLatest}>↓ 最新</button></div> : null}
-    <div className="sino-conversation-composer-dock sino-conversation-composer-layout"><GlobalSecretaryComposer value={message} onChange={onMessage} onSubmit={submit} busy={busy} healthy={healthy} mode={mode} onModeChange={onModeChange} disabledModes={[]} toolbar={contextControls} toolbarIncludesStatus attachments={pendingAttachments} onAddImages={onAddImages} onRemoveImage={onRemoveImage} /></div>
+    <div ref={composerDockRef} className="sino-conversation-composer-dock sino-conversation-composer-layout"><GlobalSecretaryComposer value={message} onChange={onMessage} onSubmit={submit} busy={busy} healthy={healthy} mode={mode} onModeChange={onModeChange} disabledModes={[]} toolbar={contextControls} toolbarIncludesStatus attachments={pendingAttachments} onAddImages={onAddImages} onRemoveImage={onRemoveImage} /></div>
     <div className="sino-conversation-workspace-safe-area" aria-hidden="true" />
   </section>;
 }

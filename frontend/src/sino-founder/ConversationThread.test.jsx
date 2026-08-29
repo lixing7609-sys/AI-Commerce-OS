@@ -9,6 +9,39 @@ afterEach(() => cleanup());
 describe("ConversationThread layout", () => {
   // Legacy workspace-card assertions are intentionally skipped below where the
   // Conversation-first ownership contract removed those controls from center.
+  it("exposes exactly one selected discussion mode and keeps it aligned with mode changes", () => {
+    const onModeChange = vi.fn();
+    const value = snapshot("mode-selection", []);
+    const props = { snapshot: value, message: "", onMessage: vi.fn(), onSend: vi.fn(), busy: false, onModeChange };
+    const { rerender } = render(<ConversationThread {...props} mode="sino" />);
+    const selectedModes = () => screen.getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true");
+    const assertSelected = (name, modeValue) => {
+      expect(selectedModes()).toHaveLength(1);
+      const selected = screen.getByRole("button", { name });
+      expect(selected.getAttribute("aria-pressed")).toBe("true");
+      expect(selected.dataset.mode).toBe(modeValue);
+      expect(selected.classList.contains("is-active")).toBe(true);
+    };
+
+    expect(screen.getByRole("group", { name: "讨论模式" })).toBeTruthy();
+    assertSelected("Sino", "sino");
+
+    fireEvent.click(screen.getByRole("button", { name: "多模型讨论" }));
+    expect(onModeChange).toHaveBeenLastCalledWith("council");
+    rerender(<ConversationThread {...props} mode="council" />);
+    assertSelected("多模型讨论", "council");
+    expect(screen.getByRole("button", { name: "Sino" }).getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "自动多轮" }));
+    expect(onModeChange).toHaveBeenLastCalledWith("auto");
+    rerender(<ConversationThread {...props} mode="auto" />);
+    assertSelected("自动多轮", "auto");
+    expect(screen.getByRole("button", { name: "多模型讨论" }).getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sino" }));
+    expect(onModeChange).toHaveBeenLastCalledWith("sino");
+  });
+
   it("keeps an Architecture task in Conversation and leaves its action to the right rail", () => {
     const route = { classification: "STRATEGIC_TASK", task_type: "ARCHITECTURE_TASK", current_step: "decision_readiness", architecture_proposal: { proposal_id: "proposal-v1", proposal_version: 1, status: "ready_for_founder_decision", current_problem: "Boundary unclear", proposed_boundary: "Founder owns definitions; Studio consumes Ready references.", founder_responsibilities: ["Validate"], studio_responsibilities: ["Execute Ready"], capability_lifecycle: ["candidate", "ready"], binding_contract: { reference: "id + version", consumer_rule: "ready_only" }, learning_feedback: "Return evidence", migration_impact: ["Preserve IDs"], risks: ["Drift"], recommended_decision: "Approve boundary" } };
     const value = { ...snapshot("conv-architecture", [{ message_id: "m1", role: "founder", content: "重新设计 Founder 与 Studio Capability 供给关系" }]), sino_brain: { stage: "decision_ready", active_workspace_stage: "decision_readiness", source_message_refs: ["m1"], stage_workspaces: [{ stage_key: "decision_readiness", label: "Decision Readiness", status: "active", message_refs: ["m1"] }], discovery: { task_complexity_route: route }, current_action: { title: "等待 Founder 决策", primary_label: null } } };
