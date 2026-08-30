@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.artifact.model import ArtifactAssetDB
-from app.core.reusable_asset.model import ReusableAssetDB, ReuseEvidenceDB
+from app.core.reusable_asset.model import ReusableAssetDB, ReusableAssetLifecycleEventDB, ReuseEvidenceDB
 from app.database.base import Base
 from app.founder_ai.decision_strategy_extractor import extract_interaction_surface_decision
 from app.founder_ai.decision_retrieval import (
@@ -14,6 +14,7 @@ from app.founder_ai.decision_retrieval import (
 )
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 from app.founder_ai.reusable_asset_service import candidate_fingerprint, classify_learning_candidate, save_reusable_asset, serialize_reusable_asset
+from app.founder_ai.reusable_asset_lifecycle import invalidate_reusable_asset, supersede_reusable_asset
 from app.founder_ai.reuse_retrieval import lookup_reusable_assets
 from app.founder_ai.reuse_applicability import infer_applicability_profile, source_module_rank
 from app.founder_ai.task_package import TaskPackageBuilder
@@ -21,7 +22,7 @@ from app.founder_ai.task_package import TaskPackageBuilder
 
 def _factory():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[ArtifactAssetDB.__table__, ReusableAssetDB.__table__, ReuseEvidenceDB.__table__])
+    Base.metadata.create_all(engine, tables=[ArtifactAssetDB.__table__, ReusableAssetDB.__table__, ReuseEvidenceDB.__table__, ReusableAssetLifecycleEventDB.__table__])
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
@@ -249,10 +250,32 @@ def test_pattern_and_decision_retrieval_are_separate():
 
 def test_superseded_strategy_is_not_retrieved():
     factory, asset = _save()
-    with factory() as db:
-        record = db.get(ReusableAssetDB, asset.id); record.status = "superseded"; db.commit()
+    successor = save_reusable_asset(replace(
+        _candidate(task_id="task-successor", execution_id="execution-successor"),
+        decision_payload={**_candidate().decision_payload, "strategy_name": "anchored_overlay_choice_v2"},
+        strategy_name="anchored_overlay_choice_v2",
+    ), session_factory=factory)
+    supersede_reusable_asset(
+        asset.id, successor.id, reason="verified successor", actor="founder",
+        session_factory=factory,
+    )
     result = lookup_decision_strategies(goal="点击文件入口后显示一组操作", semantic_scope=_scope(), task_id="task-new", session_factory=factory)
-    assert result["decision_candidate_count"] == 0 and result["decision_applied"] is False
+    assert result["decision_candidate_count"] == 1 and result["decision_applied"] is True
+    assert result["decision_context"]["decision_asset_id"] == successor.id
+
+
+def test_formally_invalidated_strategy_is_not_retrieved():
+    factory, asset = _save()
+    invalidate_reusable_asset(
+        asset.id, reason="negative outcome reviewed", actor="founder",
+        evidence_ref="reuse-evidence-negative", session_factory=factory,
+    )
+    result = lookup_decision_strategies(
+        goal="点击文件入口后显示一组操作", semantic_scope=_scope(),
+        task_id="task-after-invalidation", session_factory=factory,
+    )
+    assert result["decision_candidate_count"] == 0
+    assert result["decision_applied"] is False
 
 
 def test_asset_center_projection_exposes_strategy_name_and_source_count():

@@ -1,3 +1,3 @@
-from core.reusable_asset.model import ReusableAssetDB, ReuseEvidenceDB
+from core.reusable_asset.model import ReusableAssetDB, ReusableAssetLifecycleEventDB, ReuseEvidenceDB
 
-__all__ = ["ReusableAssetDB", "ReuseEvidenceDB"]
+__all__ = ["ReusableAssetDB", "ReusableAssetLifecycleEventDB", "ReuseEvidenceDB"]

@@ -11,6 +11,7 @@ from app.founder_ai.reuse_applicability import (
     infer_applicability_profile, interaction_factors, profile_supports_scope,
     semantic_scope_fingerprint, source_module_rank,
 )
+from app.founder_ai.reusable_asset_lifecycle import SELECTABLE_REUSABLE_ASSET_STATUSES
 
 APPLICABLE, NOT_APPLICABLE, UNCERTAIN = "APPLICABLE", "NOT_APPLICABLE", "UNCERTAIN"
 FOUNDER_SYSTEM_KEY = "founder_ai"
@@ -52,7 +53,7 @@ def lookup_decision_strategies(*, goal: str, semantic_scope: dict, task_id: str,
     with session_factory() as db:
         assets = list(db.scalars(select(ReusableAssetDB).where(
             ReusableAssetDB.system_id == FOUNDER_SYSTEM_KEY,
-            ReusableAssetDB.status == "active",
+            ReusableAssetDB.status.in_(SELECTABLE_REUSABLE_ASSET_STATUSES),
             ReusableAssetDB.asset_kind == "decision_strategy",
             ReusableAssetDB.pattern_type == "interaction_surface_choice",
         )))

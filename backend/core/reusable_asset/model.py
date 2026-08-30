@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base
@@ -11,7 +11,13 @@ class ReusableAssetDB(Base):
     """Structured reuse index attached to the existing ArtifactAsset catalog."""
 
     __tablename__ = "reusable_assets"
-    __table_args__ = (UniqueConstraint("system_id", "fingerprint", name="uq_reusable_asset_fingerprint"),)
+    __table_args__ = (
+        UniqueConstraint("system_id", "fingerprint", name="uq_reusable_asset_fingerprint"),
+        CheckConstraint(
+            "status IN ('active', 'invalidated', 'superseded')",
+            name="ck_reusable_asset_lifecycle_status",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(48), primary_key=True, default=lambda: f"reuse-asset-{uuid4().hex[:20]}")
     system_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
@@ -58,3 +64,29 @@ class ReuseEvidenceDB(Base):
     injected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+
+class ReusableAssetLifecycleEventDB(Base):
+    """Append-only governance evidence for a ReusableAsset state transition."""
+
+    __tablename__ = "reusable_asset_lifecycle_events"
+    __table_args__ = (
+        UniqueConstraint("transition_key", name="uq_reusable_asset_lifecycle_transition"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(64), primary_key=True,
+        default=lambda: f"reuse-lifecycle-{uuid4().hex[:20]}",
+    )
+    transition_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reusable_asset_id: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    from_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    actor: Mapped[str] = mapped_column(String(120), nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    evidence_ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    successor_id: Mapped[str | None] = mapped_column(String(48), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"),
+    )

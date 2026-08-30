@@ -11,6 +11,7 @@ from app.founder_ai.reuse_applicability import (
     historical_source_files, infer_applicability_profile, interaction_factors,
     profile_supports_scope, semantic_scope_fingerprint, source_file_leakage, source_module_rank,
 )
+from app.founder_ai.reusable_asset_lifecycle import SELECTABLE_REUSABLE_ASSET_STATUSES
 
 FOUNDER_SYSTEM_KEY = "founder_ai"
 PASS, REJECT, UNCERTAIN = "PASS", "REJECT", "UNCERTAIN"
@@ -57,7 +58,7 @@ def lookup_reusable_assets(*, goal: str, semantic_scope: dict, task_id: str,
     with session_factory() as db:
         assets = list(db.scalars(select(ReusableAssetDB).where(
             ReusableAssetDB.system_id == FOUNDER_SYSTEM_KEY,
-            ReusableAssetDB.status == "active",
+            ReusableAssetDB.status.in_(SELECTABLE_REUSABLE_ASSET_STATUSES),
             ReusableAssetDB.asset_kind == "ui_interaction_pattern",
             ReusableAssetDB.pattern_type == "anchored_portal_popover",
         )))
