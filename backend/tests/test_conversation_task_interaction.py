@@ -609,3 +609,9 @@ def test_execution_intent_with_genuinely_missing_context_requires_clarification(
     ], pending)
     assert snapshot["context_sufficient"] is False
     assert snapshot["open_questions"]
+
+
+def test_direct_completion_is_explicit_execution_authority():
+    assert has_explicit_execution_intent(
+        "你自己判断最合适的实现方式并直接完成，完成后再告诉我结果。"
+    ) is True

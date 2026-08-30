@@ -7,6 +7,8 @@ from sqlalchemy.pool import StaticPool
 from app.database.base import Base
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
+from app.core.task_asset.model import TaskAssetDB
+from app.llm.exceptions import InsufficientQuotaError
 import app.founder_ai.conversation_core as core
 import app.core.conversation.service as conversation_service
 
@@ -76,6 +78,156 @@ def test_model_unavailable_fallback_never_executes(monkeypatch):
     assert "不会" in decision["response"]
 
 
+def _canonical_decision(**overrides):
+    result = {
+        "semantic_target": {"canonical_name": "Projects Heading Count"},
+        "semantic_module": "Founder Sidebar / Navigation",
+        "interaction_intent": "visible_derived_count", "semantic_confidence": "HIGH",
+        "allowed_modules": ["Founder Sidebar / Navigation"],
+        "allowed_production_files": ["frontend/src/sino-founder/FounderNavigationPanel.jsx"],
+        "allowed_test_files": ["frontend/src/sino-founder/FounderNavigationPanel.test.jsx"],
+        "allowed_shared_support_files": ["frontend/src/sino-founder/sino-founder-ai.css"],
+        "scope_fingerprint": "scope", "contract_fingerprint": "contract",
+        "browser_adapter": "system_chrome_playwright", "adapter_compatibility": "PASS",
+        "risk": "low", "approval_required": False, "clarification_required": False,
+        "dispatch_allowed": True, "blocked_reason": None, "decision_revision": "canonical-v1",
+        "intent_fingerprint": "intent", "decision_fingerprint": "decision",
+        "standard_task_contract": {
+            "task_type": "STANDARD_TASK", "constraints": ["preserve_existing_behavior"],
+            "acceptance_criteria": ["derived count matches the visible collection"],
+        },
+    }
+    result.update(overrides)
+    return result
+
+
+def test_provider_failure_uses_canonical_admission_for_supported_explicit_task(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    import app.founder_ai.standard_task_execution as execution
+    calls = []
+    monkeypatch.setattr(execution, "build_pre_dispatch_decision",
+                        lambda **kwargs: calls.append(kwargs) or _canonical_decision())
+    decision = core.reason_about_message(
+        "conv-llm", "请显示当前可见数量并直接完成。",
+        generator=lambda *_: (_ for _ in ()).throw(InsufficientQuotaError()),
+    )
+    assert len(calls) == 1
+    assert decision["semantic_intent"] == "execute_current_task"
+    assert decision["conversation_state"] == "deterministic_admission_ready"
+    assert decision["task_candidate"]["title"] == "Projects Heading Count"
+    assert decision["semantic_model_failure"]["attempts"][0]["error_type"] == "insufficient_quota"
+    assert decision["deterministic_fallback"]["admission"]["dispatch_allowed"] is True
+
+
+def test_provider_failure_with_unclear_task_stays_safely_blocked(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    import app.founder_ai.standard_task_execution as execution
+    monkeypatch.setattr(execution, "build_pre_dispatch_decision", lambda **_: _canonical_decision(
+        semantic_target=None, semantic_confidence="LOW", clarification_required=True,
+        dispatch_allowed=False, blocked_reason="Resolve the exact semantic target.",
+    ))
+    decision = core.reason_about_message(
+        "conv-llm", "把那个东西直接完成。",
+        generator=lambda *_: (_ for _ in ()).throw(InsufficientQuotaError()),
+    )
+    assert decision["semantic_intent"] == "conversation"
+    assert decision["task_candidate"] is None
+    assert decision["conversation_state"] == "deterministic_clarification_required"
+
+
+def test_provider_and_canonical_failure_remain_observable_and_do_not_dispatch(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    import app.founder_ai.standard_task_execution as execution
+    monkeypatch.setattr(execution, "build_pre_dispatch_decision",
+                        lambda **_: (_ for _ in ()).throw(ValueError("scope_unresolved")))
+    decision = core.reason_about_message(
+        "conv-llm", "把那个东西直接完成。",
+        generator=lambda *_: (_ for _ in ()).throw(InsufficientQuotaError()),
+    )
+    assert decision["semantic_intent"] == "conversation"
+    assert decision["task_candidate"] is None
+    assert decision["conversation_state"] == "deterministic_admission_unavailable"
+    assert decision["deterministic_fallback"]["failure"]["error_type"] == "ValueError"
+
+
+def test_provider_failure_does_not_turn_ordinary_conversation_into_a_task(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    import app.founder_ai.standard_task_execution as execution
+    monkeypatch.setattr(execution, "build_pre_dispatch_decision",
+                        lambda **_: (_ for _ in ()).throw(AssertionError("chat must not enter admission")))
+    decision = core.reason_about_message(
+        "conv-llm", "你觉得这个方向怎么样？",
+        generator=lambda *_: (_ for _ in ()).throw(InsufficientQuotaError()),
+    )
+    assert decision["semantic_intent"] == "conversation"
+    assert decision["task_candidate"] is None
+    assert decision["deterministic_fallback"]["attempted"] is False
+
+
+def test_provider_failure_never_bypasses_approval_or_high_risk_gate(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    import app.founder_ai.standard_task_execution as execution
+    monkeypatch.setattr(execution, "build_pre_dispatch_decision", lambda **_: _canonical_decision(
+        risk="high", approval_required=True, dispatch_allowed=False,
+        blocked_reason="Founder approval is required.",
+    ))
+    decision = core.reason_about_message(
+        "conv-llm", "直接完成这个高风险变更。",
+        generator=lambda *_: (_ for _ in ()).throw(InsufficientQuotaError()),
+    )
+    assert decision["semantic_intent"] == "conversation"
+    assert decision["task_candidate"] is None
+    assert decision["conversation_state"] == "deterministic_approval_required"
+    assert decision["deterministic_fallback"]["admission"]["approval_required"] is True
+
+
+def test_model_failure_and_deterministic_admission_are_both_persisted(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    import app.founder_ai.standard_task_execution as execution
+    monkeypatch.setattr(execution, "build_pre_dispatch_decision", lambda **_: _canonical_decision())
+    decision = core.reason_about_message(
+        "conv-llm", "请显示当前可见数量并直接完成。",
+        generator=lambda *_: (_ for _ in ()).throw(InsufficientQuotaError()),
+    )
+    core.persist_conversation_decision("conv-llm", decision)
+    with factory() as db:
+        persisted = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-llm").one().discovery["conversation_core"]
+    assert persisted["semantic_model_failure"]["attempts"][0]["error_type"] == "insufficient_quota"
+    assert persisted["deterministic_fallback"]["admission"]["semantic_confidence"] == "HIGH"
+
+
+def test_real_projects_heading_count_message_reaches_canonical_admission_without_dispatch(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    founder_message = """请在左侧栏“项目”标题旁显示当前可见的项目数量。
+
+搜索筛选项目时，
+数量要同步变化；清除搜索后恢复完整数量。
+
+请保留现有项目排序、打开项目、新建项目和项目操作方式。
+
+你自己判断最合适的实现方式并直接完成，完成真实代码修改、必要测试和真实页面验证以后再告诉我结果。"""
+    decision = core.reason_about_message(
+        "conv-llm", founder_message,
+        generator=lambda *_: (_ for _ in ()).throw(InsufficientQuotaError()),
+    )
+    admission = decision["deterministic_fallback"]["admission"]
+    assert decision["semantic_intent"] == "execute_current_task"
+    assert admission["semantic_target"]["canonical_name"] == "Projects Heading Count"
+    assert admission["semantic_confidence"] == "HIGH"
+    assert admission["interaction_intent"] == "visible_derived_count"
+    assert admission["allowed_production_files"] == ["frontend/src/sino-founder/FounderNavigationPanel.jsx"]
+    assert admission["contract_fingerprint"] == "7142c84d4bb6af267b07673904db49f386eac47c5aed6f95f7c51b5b3d61b1e3"
+    assert admission["browser_adapter"] == "system_chrome_playwright"
+    assert admission["adapter_compatibility"] == "PASS"
+    assert admission["risk"] == "low"
+    assert admission["clarification_required"] is False
+    assert admission["approval_required"] is False
+    assert admission["dispatch_allowed"] is True
+    assert decision["semantic_model_failure"]["attempts"][0]["error_type"] == "insufficient_quota"
+    with factory() as db:
+        assert db.query(TaskAssetDB).filter_by(conversation_id="conv-llm").count() == 0
+
+
 def test_clarification_action_is_structured_but_response_remains_model_authored(monkeypatch):
     factory = _factory(monkeypatch); _conversation(factory, messages=[])
     decision = core.reason_about_message("conv-llm", "开始吧", generator=lambda *_: {
@@ -137,6 +289,7 @@ def test_model_roles_resolve_from_configuration_without_provider_binding(monkeyp
         "code_execution": SimpleNamespace(provider_key="provider-c", model="execute-c"),
     }
     monkeypatch.setattr(core, "resolve_runtime_config", lambda role=None, **kwargs: calls.append((role, kwargs)) or configured.get(role))
+    monkeypatch.setattr(core, "resolve_runtime_chain", lambda _role: [])
     roles = core.configured_model_roles()
     assert roles["conversation"].model == "chat-a"
     assert roles["reasoning_strategy"].model == "reason-b"

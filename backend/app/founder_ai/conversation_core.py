@@ -302,6 +302,103 @@ def _validate_decision(payload: dict, *, current_message: str) -> dict:
     }
 
 
+def _semantic_failure_evidence(error: Exception, *, role: str, provider: str | None,
+                               model: str | None, phase: str = "semantic_decision") -> dict:
+    return {
+        "role": role, "provider": provider, "model": model, "phase": phase,
+        "error_type": str(getattr(error, "error_type", None) or type(error).__name__),
+    }
+
+
+def _deterministic_admission_after_model_failure(conversation_id: str, current_message: str, *,
+                                                  context: dict, failures: list[dict]) -> dict:
+    """Recover only explicitly authorized tasks through the canonical admission authority."""
+    base = {
+        "response": "Sino 当前暂时无法完成可靠的语义判断。你的消息已经保留，但我不会在判断恢复前创建或执行任务。",
+        "semantic_intent": "conversation", "conversation_state": "model_unavailable",
+        "task_candidate": None, "tool_intent": None, "founder_action_intent": None,
+        "context_updates": {}, "model_decision": False, "model_role": None,
+        "provider": None, "model": None, "context": context,
+        "semantic_model_failure": {"status": "failed", "attempts": failures},
+        "deterministic_fallback": {"attempted": False, "admission": None},
+    }
+    from app.founder_ai.conversation_task_interaction import has_explicit_execution_intent
+    if not has_explicit_execution_intent(current_message):
+        return base
+
+    from app.founder_ai.standard_task_execution import build_pre_dispatch_decision
+    try:
+        decision = build_pre_dispatch_decision(
+            conversation_id=conversation_id, goal=current_message,
+            discussion_context=[item.get("content") for item in context.get("conversation_history") or []
+                                if item.get("content")],
+        )
+    except Exception as error:
+        base["conversation_state"] = "deterministic_admission_unavailable"
+        base["response"] = "语义模型暂时不可用；确定性准入也未能形成可靠判断，因此我不会创建或执行任务。"
+        base["deterministic_fallback"] = {
+            "attempted": True, "admission": None,
+            "failure": _semantic_failure_evidence(
+                error, role="canonical_admission", provider=None, model=None, phase="pre_dispatch",
+            ),
+        }
+        return base
+    admission = {
+        key: decision.get(key) for key in (
+            "semantic_target", "semantic_module", "interaction_intent", "semantic_confidence",
+            "allowed_modules", "allowed_production_files", "allowed_test_files",
+            "allowed_shared_support_files", "scope_fingerprint", "contract_fingerprint",
+            "browser_adapter", "adapter_compatibility", "risk", "approval_required",
+            "clarification_required", "dispatch_allowed", "blocked_reason", "decision_revision",
+            "intent_fingerprint", "decision_fingerprint",
+        )
+    }
+    base["deterministic_fallback"] = {"attempted": True, "admission": admission}
+    safe_to_dispatch = (
+        decision.get("semantic_target")
+        and decision.get("semantic_confidence") == "HIGH"
+        and str(decision.get("risk") or "").lower() == "low"
+        and decision.get("approval_required") is False
+        and decision.get("clarification_required") is False
+        and decision.get("dispatch_allowed") is True
+        and decision.get("adapter_compatibility") == "PASS"
+    )
+    if not safe_to_dispatch:
+        if decision.get("clarification_required"):
+            base["conversation_state"] = "deterministic_clarification_required"
+            base["response"] = "语义模型暂时不可用；现有确定性判断仍需要补充关键信息，因此我不会创建或执行任务。"
+        elif decision.get("approval_required") or str(decision.get("risk") or "").lower() != "low":
+            base["conversation_state"] = "deterministic_approval_required"
+            base["response"] = "语义模型暂时不可用；现有确定性判断要求审批，因此我不会绕过审批创建或执行任务。"
+        else:
+            base["conversation_state"] = "deterministic_admission_blocked"
+            base["response"] = "语义模型暂时不可用；现有确定性准入也未通过，因此我不会创建或执行任务。"
+        return base
+
+    contract = dict(decision.get("standard_task_contract") or {})
+    target = dict(decision.get("semantic_target") or {})
+    candidate = _normalize_task_candidate({
+        "title": target.get("canonical_name") or current_message.strip()[:120],
+        "goal": current_message.strip(),
+        "task_type": contract.get("task_type") or "STANDARD_TASK",
+        "scope": list(decision.get("allowed_modules") or []) or list(decision.get("allowed_production_files") or []),
+        "constraints": list(contract.get("constraints") or []),
+        "acceptance_criteria": list(contract.get("acceptance_criteria") or []),
+        "confirmed_decisions": [], "dependencies": [], "risks": [],
+    })
+    if not task_candidate_is_complete(candidate):
+        base["conversation_state"] = "deterministic_candidate_incomplete"
+        base["response"] = "语义模型暂时不可用；确定性准入虽已识别目标，但任务结构仍不完整，因此我不会创建或执行任务。"
+        return base
+    base.update({
+        "response": "语义模型暂时不可用，但该请求已通过现有确定性准入，正在按正式任务边界继续处理。",
+        "semantic_intent": "execute_current_task",
+        "conversation_state": "deterministic_admission_ready",
+        "task_candidate": candidate,
+    })
+    return base
+
+
 def reason_about_message(conversation_id: str, current_message: str, *, interaction_context: dict | None = None,
                          generator: Callable | None = None) -> dict:
     context = build_conversation_context(conversation_id, current_message, interaction_context=interaction_context)
@@ -321,7 +418,7 @@ def reason_about_message(conversation_id: str, current_message: str, *, interact
 
 Discussion, exploration, correction and agreement are not tasks by default. Decide execution only when the current message semantically authorizes executing an already mature understanding in the preceding context; negation, hypotheticals, questions and deferred consent never authorize execution. If executing, task_candidate.goal/scope/constraints/acceptance_criteria must be derived from the preceding conversation rather than the confirmation phrase. Recent tasks are context only: never claim that a request is duplicate, queued already, or should reuse another task. Duplicate identity is decided exclusively by the backend from the persisted source_message_id. A task with the same title, project, conversation, module, or status is not proof of duplication. You may propose a Founder action only when Founder input is genuinely required. Return JSON with: response, semantic_intent, conversation_state, task_candidate, tool_intent, founder_action_intent, context_updates. semantic_intent is one of conversation, execute_current_task, stop_current_task, runtime_intervention, founder_decision, founder_authorization, founder_acceptance. The response is the exact Founder-visible natural answer."""
 
-    def invoke(runtime):
+    def invoke(runtime, role):
         if generator:
             return generator(context, runtime)
         request = LLMRequest(
@@ -342,10 +439,19 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
                 payload = json.loads(raw.strip().removeprefix("```json").removesuffix("```").strip())
                 payload["_model_fallback"] = request.metadata.get("model_fallback")
                 return payload
-            except Exception:
+            except Exception as stream_error:
                 # A provider stream may fail independently of ordinary completion. Reuse the
                 # same idempotent message round and publish only its complete fallback result.
-                response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
+                try:
+                    response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
+                except Exception as completion_error:
+                    completion_error.semantic_attempts = [
+                        _semantic_failure_evidence(stream_error, role=role, provider=runtime.provider_key,
+                                                   model=runtime.model, phase="stream"),
+                        _semantic_failure_evidence(completion_error, role=role, provider=runtime.provider_key,
+                                                   model=runtime.model, phase="completion"),
+                    ]
+                    raise
                 payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
                 if str(payload.get("response") or "").strip():
                     publisher(str(payload["response"]))
@@ -356,12 +462,13 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
         payload["_model_fallback"] = request.metadata.get("model_fallback")
         return payload
 
+    failures = []
     for role in ("conversation", "fallback"):
         runtime = roles.get(role)
         if runtime is None:
             continue
         try:
-            payload = invoke(runtime)
+            payload = invoke(runtime, role)
             fallback_event = payload.pop("_model_fallback", None) if isinstance(payload, dict) else None
             result = _validate_decision(payload, current_message=current_message)
             result["model_role"] = role; result["provider"] = fallback_event.get("provider") if fallback_event else runtime.provider_key; result["model"] = fallback_event.get("model") if fallback_event else runtime.model
@@ -393,15 +500,17 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
                                                 "duplicate_reason": "same_source_message_id"}
                     result["response"] = f"这条请求已经创建任务（{existing.id}），我继续跟踪原任务，不重复创建。"
             return result
-        except Exception:
+        except Exception as error:
+            failures.extend(getattr(error, "semantic_attempts", None) or [
+                _semantic_failure_evidence(error, role=role, provider=runtime.provider_key, model=runtime.model)
+            ])
             continue
-    return {
-        "response": "Sino 当前暂时无法完成可靠的语义判断。你的消息已经保留，但我不会在判断恢复前创建或执行任务。",
-        "semantic_intent": "conversation", "conversation_state": "model_unavailable",
-        "task_candidate": None, "tool_intent": None, "founder_action_intent": None,
-        "context_updates": {}, "model_decision": False, "model_role": None, "provider": None, "model": None,
-        "context": context,
-    }
+    if not failures:
+        failures.append({"role": "conversation", "provider": None, "model": None,
+                         "phase": "configuration", "error_type": "model_role_unavailable"})
+    return _deterministic_admission_after_model_failure(
+        conversation_id, current_message, context=context, failures=failures,
+    )
 
 
 def persist_conversation_decision(conversation_id: str, decision: dict) -> None:
@@ -416,6 +525,8 @@ def persist_conversation_decision(conversation_id: str, decision: dict) -> None:
             "tool_intent": decision.get("tool_intent"), "founder_action_intent": decision.get("founder_action_intent"),
             "context_updates": decision.get("context_updates") or {}, "model_role": decision.get("model_role"),
             "provider": decision.get("provider"), "model": decision.get("model"), "model_fallback": decision.get("model_fallback"), "updated_at": datetime.now(timezone.utc).isoformat(),
+            "semantic_model_failure": decision.get("semantic_model_failure"),
+            "deterministic_fallback": decision.get("deterministic_fallback"),
         }
         requested_action = _safe_mapping(decision.get("founder_action_intent"))
         queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]

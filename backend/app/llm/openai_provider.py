@@ -3,7 +3,7 @@ import logging
 import time
 import httpx
 
-from app.llm.exceptions import AuthenticationError, InvalidResponseError, LLMTimeoutError, NetworkError, ProviderUnavailableError, RateLimitedError
+from app.llm.exceptions import AuthenticationError, InsufficientQuotaError, InvalidResponseError, LLMTimeoutError, NetworkError, ProviderUnavailableError, RateLimitedError
 from app.llm.models import LLMRequest, LLMResponse, LLMUsage
 from app.llm.provider import LLMProvider
 
@@ -26,6 +26,7 @@ class OpenAIProvider(LLMProvider):
         except httpx.HTTPError as error: raise NetworkError() from error
         latency = (time.monotonic() - started) * 1000
         if response.status_code in (401, 403): raise AuthenticationError()
+        if response.status_code == 402: raise InsufficientQuotaError()
         if response.status_code == 429: raise RateLimitedError()
         if response.status_code >= 500: raise ProviderUnavailableError()
         if response.status_code != 200: raise InvalidResponseError()
@@ -44,6 +45,7 @@ class OpenAIProvider(LLMProvider):
         try:
             with httpx.stream("POST", f"{self._base_url}/chat/completions", json=payload, headers={"Authorization": f"Bearer {self._api_key}"}, timeout=self._timeout_seconds) as response:
                 if response.status_code in (401, 403): raise AuthenticationError()
+                if response.status_code == 402: raise InsufficientQuotaError()
                 if response.status_code == 429: raise RateLimitedError()
                 if response.status_code >= 500: raise ProviderUnavailableError()
                 if response.status_code != 200: raise InvalidResponseError()

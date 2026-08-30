@@ -79,6 +79,13 @@ def test_anthropic_billing_error_is_not_misclassified_as_invalid_response(monkey
         provider.generate(_make_request())
 
 
+def test_openai_compatible_http_402_is_preserved_as_insufficient_quota(monkeypatch):
+    provider = openai_module.OpenAIProvider("safe-test-key", "https://provider.example/v1", "model", 5)
+    monkeypatch.setattr(openai_module.httpx, "post", lambda *args, **kwargs: _FakeResponse(402))
+    with pytest.raises(InsufficientQuotaError):
+        provider.generate(_make_request())
+
+
 def _make_request():
     return LLMRequest(
         system_prompt="SYSTEM_PROMPT_MARKER_SECRET",

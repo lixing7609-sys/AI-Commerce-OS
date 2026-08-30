@@ -15,7 +15,7 @@ from app.database.db import SessionLocal
 from app.founder_ai.execution_registry import get_execution_session, save_execution_session
 
 
-EXECUTION_INTENT = re.compile(r"(?:^|[，。,.!！\s])(?:可以了[，,\s]*)?(?:直接执行|立即执行|立刻执行|确认执行|执行吧|开始执行|按(?:这个|此|上述)方案做|就这样做|可以[，,\s]*开始|下一步[，,\s]*做吧|执行)(?:[。.!！\s]|$)", re.I)
+EXECUTION_INTENT = re.compile(r"直接完成|(?:^|[，。,.!！\s])(?:可以了[，,\s]*)?(?:直接执行|立即执行|立刻执行|确认执行|执行吧|开始执行|按(?:这个|此|上述)方案做|就这样做|可以[，,\s]*开始|下一步[，,\s]*做吧|执行)(?:[。.!！\s]|$)", re.I)
 STOP_INTENT = re.compile(r"(?:停止任务|先停下来|不要继续了|停止执行|先停止)")
 NON_EXECUTION = ("这个思路不错", "我理解了", "有道理", "可以讨论", "这个方向可以", "我再想想", "先这样", "继续聊", "为什么")
 EXECUTE_CONTROLS = {"执行", "立即执行", "立刻执行", "确认执行", "开始执行", "执行吧"}
