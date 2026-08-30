@@ -99,6 +99,15 @@ class ExecutionQueue:
 
         def update():
             item = self._items[execution_id]
+            allowed = {
+                "queued": {"running", "failed"},
+                "running": {"testing", "completed", "failed"},
+                "testing": {"completed", "failed"},
+                "completed": set(),
+                "failed": set(),
+            }
+            if status != item.status and status not in allowed[item.status]:
+                raise ValueError(f"illegal queue transition: {item.status} -> {status}")
             item.status = status
             if status == "running" and item.started_at is None:
                 item.started_at = _now()

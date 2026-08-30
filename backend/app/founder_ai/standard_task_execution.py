@@ -15,7 +15,10 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.core.task_asset.model import TaskAssetDB
-from app.core.task_asset.service import create_task_asset
+from app.core.task_asset.service import (
+    create_task_asset, ensure_task_execution_approval,
+    invalidate_task_execution_approval, validate_task_execution_approval,
+)
 from app.database.db import SessionLocal
 from app.founder_ai.execution_registry import create_execution_session, get_execution_session, list_execution_sessions, save_execution_session
 from app.founder_ai.execution_worker import enqueue_execution
@@ -64,6 +67,14 @@ def stable_candidate_id(*, conversation_id: str, source_message_id: str | None,
     identity = source_message_id or intent_fingerprint
     digest = hashlib.sha256(f"{conversation_id}:{identity}".encode("utf-8")).hexdigest()[:20]
     return f"task-candidate-{digest}"
+
+
+def stable_execution_id(*, task_id: str, canonical_fingerprint: str) -> str:
+    """Identify one execution start for one durable Task authority version."""
+    digest = hashlib.sha256(
+        f"standard-execution:{task_id}:{canonical_fingerprint}".encode("utf-8")
+    ).hexdigest()[:20]
+    return f"execution-{digest}"
 
 
 def candidate_authority_snapshot(*, decision: dict, conversation_id: str,
@@ -824,6 +835,11 @@ def prepare_standard_task(*, conversation_id: str, goal: str,
             record.status = "draft"
             record.execution_status = "prepared"
             db.commit(); db.refresh(record); task = record
+    if authority.get("approval_required") or str(authority.get("risk") or "low").lower() != "low":
+        ensure_task_execution_approval(
+            task_id=task.id, candidate_id=authority["candidate_id"],
+            canonical_fingerprint=authority["canonical_fingerprint"],
+        )
     route["candidate_authority"] = authority
     route["standard_task_contract"] = deepcopy(authority["contract"])
     route["production_ready"] = {
@@ -849,8 +865,9 @@ def restore_production_ready_task(task_id: str) -> dict:
             raise ValueError("production_readiness_fingerprint_mismatch")
         if authority.get("clarification_required"):
             authorization = "blocked_clarification"
-        elif authority.get("approval_required") and task.approval_status != "approved":
-            authorization = "pending_approval"
+        elif authority.get("approval_required"):
+            approval = validate_task_execution_approval(task, authority)
+            authorization = "execution_authorized" if approval["authorized"] else approval["reason"]
         elif authority.get("dispatch_allowed") or authority.get("approval_required"):
             authorization = "execution_authorized"
         else:
@@ -870,7 +887,8 @@ def start_prepared_standard_task(*, conversation_id: str, enqueue=enqueue_execut
             SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
         route = dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
         ready = dict(route.get("production_ready") or {})
-        task = db.get(TaskAssetDB, ready.get("task_id")) if ready.get("task_id") else None
+        task = db.scalar(select(TaskAssetDB).where(
+            TaskAssetDB.id == ready.get("task_id")).with_for_update()) if ready.get("task_id") else None
         if task is None:
             return route
         authority = _authority_from_task(task)
@@ -882,10 +900,64 @@ def start_prepared_standard_task(*, conversation_id: str, enqueue=enqueue_execut
             task.execution_status = "blocked"; db.commit()
             route["execution_status"] = "blocked"
             return _save_route(conversation_id, route)
-        if authority.get("approval_required") and task.approval_status != "approved":
-            route["execution_status"] = "pending_approval"
+        approval = validate_task_execution_approval(task, authority)
+        if not approval["authorized"]:
+            if approval["reason"] == "blocked_stale_approval":
+                invalidate_task_execution_approval(task, reason="canonical_fingerprint_mismatch")
+                db.commit()
+            route["execution_status"] = (
+                "pending_approval" if approval["reason"] == "blocked_approval_missing"
+                else "blocked"
+            )
             route["founder_gate_required"] = True
+            route["execution_authorization"] = {
+                "status": "blocked", "reason": approval["reason"],
+                "approval_id": (approval.get("approval") or {}).get("approval_id"),
+            }
             return _save_route(conversation_id, route)
+        execution_id = stable_execution_id(
+            task_id=task.id, canonical_fingerprint=authority["canonical_fingerprint"],
+        )
+        task_scope = dict(task.scope or {})
+        prior_start = dict(task_scope.get("execution_start") or {})
+        if prior_start:
+            if (
+                prior_start.get("execution_id") != execution_id
+                or prior_start.get("canonical_fingerprint") != authority["canonical_fingerprint"]
+            ):
+                raise ValueError("execution_start_authority_mismatch")
+            route["execution_status"] = prior_start.get("status") or task.execution_status
+            route["autonomous_execution"] = {
+                **dict(route.get("autonomous_execution") or {}),
+                "task_id": task.id, "execution_session_id": execution_id,
+                "dispatch_status": prior_start.get("status") or task.execution_status,
+                "duplicate_start_reused": True,
+            }
+            return _save_route(conversation_id, route)
+        started_at = _now()
+        task_scope["execution_start"] = {
+            "schema_version": "execution-start-v1", "execution_id": execution_id,
+            "task_id": task.id, "candidate_id": authority["candidate_id"],
+            "canonical_fingerprint": authority["canonical_fingerprint"],
+            "status": "starting", "started_at": started_at,
+        }
+        task.scope = task_scope
+        task.status = "in_progress"
+        task.execution_status = "starting"
+        task_id, task_title = task.id, task.title
+        task_description = task.description or task.title
+        db.commit()
+        route["execution_status"] = "starting"
+        route["execution_authorization"] = {
+            "status": "authorized", "reason": approval["reason"],
+            "approval_id": (approval.get("approval") or {}).get("approval_id"),
+        }
+        route["autonomous_execution"] = {
+            **dict(route.get("autonomous_execution") or {}),
+            "task_id": task_id, "execution_session_id": execution_id,
+            "dispatch_status": "starting", "started_at": started_at,
+        }
+        _save_route(conversation_id, route)
     contract = deepcopy(authority["contract"])
     reuse = deepcopy(authority.get("reuse") or {})
     if reuse.get("attempted"):
@@ -898,7 +970,7 @@ def start_prepared_standard_task(*, conversation_id: str, enqueue=enqueue_execut
     if reuse.get("context"):
         contract["reuse_context"] = reuse["context"]
     draft = TaskAssetDraft(
-        title=task.title, description=task.description or task.title, conversation_id=conversation_id,
+        title=task_title, description=task_description, conversation_id=conversation_id,
         scope={"goal_type": "development", "context": {"candidate_authority": authority,
             "standard_task_contract": contract,
             "relevant_files": [{"path": path, "reason": "Frozen Candidate authority scope"}
@@ -910,28 +982,79 @@ def start_prepared_standard_task(*, conversation_id: str, enqueue=enqueue_execut
     )
     verification = [*contract["acceptance_criteria"], "targeted frontend tests", "frontend build", "git diff --check"]
     if contract.get("visible_artifact_contract"):
-        verification.append(f"Write real browser evidence to .founder-execution/visible-artifact-{task.id}.json only after every required DOM assertion passes")
+        verification.append(f"Write real browser evidence to .founder-execution/visible-artifact-{task_id}.json only after every required DOM assertion passes")
     package = ExecutionPackage(
         goal=contract["objective"], context=dict(draft.scope["context"]), task_asset=draft,
         constraints=list(draft.constraints), verification=verification,
         commit_requirement="Use exact-file Autonomous Checkpoint; do not push.",
         approval_required=draft.approval_required, execution_allowed=True,
     )
-    execution = create_execution_session(task.id, package)
-    execution.status = "queued"; execution.queued_at = _now()
-    execution.handoff_id = f"standard-handoff-{uuid4().hex[:20]}"
-    execution.readiness_contract_id = f"standard-readiness-{uuid4().hex[:20]}"
+    try:
+        execution = create_execution_session(task_id, package, execution_id=execution_id)
+    except TypeError as error:
+        # Preserve compatibility with injected legacy test factories; Production accepts execution_id.
+        if "execution_id" not in str(error):
+            raise
+        execution = create_execution_session(task_id, package)
+    execution.status = "approved"
+    execution.approved_at = getattr(execution, "approved_at", None) or _now()
+    execution.scope_fingerprint = authority["canonical_fingerprint"]
+    execution.handoff_id = execution.handoff_id or f"standard-handoff-{uuid4().hex[:20]}"
+    execution.readiness_contract_id = execution.readiness_contract_id or f"standard-readiness-{uuid4().hex[:20]}"
     save_execution_session(execution, package)
-    route = _project(conversation_id, step="execution", execution={
-        "task_id": task.id, "execution_package_id": execution.execution_package_id,
+    try:
+        enqueue(execution.id)
+    except Exception as error:
+        failed_at = _now()
+        failure_reason = f"EXECUTION_ENQUEUE_FAILED: {type(error).__name__}: {error}"
+        execution.status = "failed"
+        execution.failure_reason = failure_reason
+        execution.error_message = str(error)
+        execution.completed_at = failed_at
+        execution.result = {"failure_type": "enqueue_failure", "failure_reason": failure_reason,
+                            "failed_at": failed_at, "execution_id": execution.id, "task_id": task_id}
+        append_event(execution, "failed", status="failed", message=failure_reason,
+                     timestamp=failed_at, metadata={"failure_type": "enqueue_failure"})
+        save_execution_session(execution, package)
+        with SessionLocal() as db:
+            record = db.scalar(select(TaskAssetDB).where(TaskAssetDB.id == task_id).with_for_update())
+            scope = dict(record.scope or {}); start = dict(scope.get("execution_start") or {})
+            start.update({"status": "failed", "failed_at": failed_at, "failure_reason": failure_reason})
+            scope["execution_start"] = start; record.scope = scope
+            record.status = "failed"; record.execution_status = "failed"
+            record.result = deepcopy(execution.result); db.commit()
+        route["execution_status"] = "failed"
+        route["technical_blocker"] = {
+            "type": "execution_enqueue_failed", "terminal_status": "FAILED",
+            "reason": failure_reason, "execution_id": execution.id,
+        }
+        route["autonomous_execution"] = {
+            **dict(route.get("autonomous_execution") or {}),
+            "task_id": task_id, "execution_package_id": execution.execution_package_id,
+            "execution_session_id": execution.id, "dispatch_status": "failed",
+            "failure_reason": failure_reason, "failed_at": failed_at,
+        }
+        return _save_route(conversation_id, route)
+    queued_at = execution.queued_at or _now()
+    execution.status = "queued"; execution.queued_at = queued_at
+    save_execution_session(execution, package)
+    with SessionLocal() as db:
+        record = db.scalar(select(TaskAssetDB).where(TaskAssetDB.id == task_id).with_for_update())
+        scope = dict(record.scope or {}); start = dict(scope.get("execution_start") or {})
+        start.update({"status": "queued", "queued_at": queued_at})
+        scope["execution_start"] = start; record.scope = scope
+        record.status = "in_progress"; record.execution_status = "queued"; db.commit()
+    route["execution_status"] = "queued"
+    route.pop("technical_blocker", None)
+    route["autonomous_execution"] = {
+        **dict(route.get("autonomous_execution") or {}),
+        "task_id": task_id, "execution_package_id": execution.execution_package_id,
         "readiness_contract_id": execution.readiness_contract_id, "handoff_id": execution.handoff_id,
         "execution_session_id": execution.id, "executor": "codex", "dispatch_status": "queued",
-        "dispatched_at": _now(), "manual_codex_instruction_count": 0,
-    })
-    with SessionLocal() as db:
-        record = db.get(TaskAssetDB, task.id); record.status = "in_progress"; record.execution_status = "queued"; db.commit()
-    enqueue(execution.id)
-    Thread(target=_monitor, args=(conversation_id, task.id, execution.id), daemon=True,
+        "dispatched_at": queued_at, "manual_codex_instruction_count": 0,
+    }
+    route = _save_route(conversation_id, route)
+    Thread(target=_monitor, args=(conversation_id, task_id, execution.id), daemon=True,
            name=f"standard-{execution.id}").start()
     return route
 

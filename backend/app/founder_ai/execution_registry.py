@@ -91,13 +91,28 @@ def save_execution_session(session: ExecutionSession, package: ExecutionPackage 
             _persist(session.id)
 
 
-def create_execution_session(task_asset_id: str, package: ExecutionPackage) -> ExecutionSession:
+def create_execution_session(
+    task_asset_id: str, package: ExecutionPackage, *, execution_id: str | None = None,
+) -> ExecutionSession:
     execution = resolve_execution_capability()
     engine_id = execution.get("execution_engine_id")
     if not engine_id:
         raise RuntimeError("execution_engine_not_available")
+    with _lock:
+        existing = _sessions.get(execution_id) if execution_id else None
+        if existing is not None:
+            existing_package = _packages.get(existing.id)
+            existing_authority = dict((existing_package.context if existing_package else {}).get("candidate_authority") or {})
+            requested_authority = dict(package.context.get("candidate_authority") or {})
+            if (
+                existing.task_asset_id != task_asset_id
+                or existing_authority.get("canonical_fingerprint")
+                != requested_authority.get("canonical_fingerprint")
+            ):
+                raise ValueError("execution_start_authority_mismatch")
+            return existing
     session = ExecutionSession(
-        id=f"execution-{uuid4().hex[:16]}",
+        id=execution_id or f"execution-{uuid4().hex[:16]}",
         task_asset_id=task_asset_id,
         execution_package_id=f"package-{uuid4().hex[:16]}",
         executor=engine_id,
