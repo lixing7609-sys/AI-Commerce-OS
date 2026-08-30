@@ -29,32 +29,59 @@ http_ok() { curl --silent --fail --max-time 3 "$1" >/dev/null 2>&1; }
 listener_pids() { lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | sort -u; }
 port_listening() { [ -n "$(listener_pids "$1" || true)" ]; }
 
-pid_parent() { ps -o ppid= -p "$1" 2>/dev/null | tr -d ' '; }
+pid_parent() {
+  local parent
+  parent="$(ps -o ppid= -p "$1" 2>/dev/null)" || return 2
+  parent="${parent//[[:space:]]/}"
+  [[ "$parent" =~ ^[0-9]+$ ]] || return 2
+  printf '%s\n' "$parent"
+}
 pid_command() { ps -o command= -p "$1" 2>/dev/null; }
 
-is_descendant_pid() {
+pid_ancestry_state() {
   local child="$1" ancestor="$2" parent steps=0
-  [[ "$child" =~ ^[0-9]+$ && "$ancestor" =~ ^[0-9]+$ ]] || return 1
+  if ! [[ "$child" =~ ^[0-9]+$ && "$ancestor" =~ ^[0-9]+$ ]]; then
+    echo PROBE_UNAVAILABLE
+    return
+  fi
   while [ "$child" -gt 1 ] && [ "$steps" -lt 64 ]; do
-    [ "$child" = "$ancestor" ] && return 0
-    parent="$(pid_parent "$child")"
-    [[ "$parent" =~ ^[0-9]+$ ]] || return 1
-    [ "$parent" = "$child" ] && return 1
+    if [ "$child" = "$ancestor" ]; then echo MATCH; return; fi
+    if ! parent="$(pid_parent "$child")"; then echo PROBE_UNAVAILABLE; return; fi
+    if ! [[ "$parent" =~ ^[0-9]+$ ]] || [ "$parent" = "$child" ]; then
+      echo PROBE_UNAVAILABLE
+      return
+    fi
     child="$parent"
     steps=$((steps + 1))
   done
-  [ "$child" = "$ancestor" ]
+  if [ "$child" = "$ancestor" ]; then echo MATCH; else echo FOREIGN; fi
 }
 
-listener_owner_matches_tree() {
-  local port="$1" root_pid="$2" pid found=0
-  [[ "$root_pid" =~ ^[0-9]+$ ]] || return 1
+is_descendant_pid() {
+  [ "$(pid_ancestry_state "$1" "$2")" = MATCH ]
+}
+
+listener_ownership_state() {
+  local port="$1" root_pid="$2" pid state found=0 unavailable=0
+  if ! [[ "$root_pid" =~ ^[0-9]+$ ]]; then echo PROBE_UNAVAILABLE; return; fi
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
     found=1
-    is_descendant_pid "$pid" "$root_pid" || return 1
+    state="$(pid_ancestry_state "$pid" "$root_pid")"
+    case "$state" in
+      MATCH) ;;
+      FOREIGN) echo FOREIGN; return ;;
+      *) unavailable=1 ;;
+    esac
   done < <(listener_pids "$port")
-  [ "$found" -eq 1 ]
+  if [ "$found" -eq 0 ]; then echo NO_LISTENER
+  elif [ "$unavailable" -eq 1 ]; then echo PROBE_UNAVAILABLE
+  else echo MATCH
+  fi
+}
+
+listener_owner_matches_tree() {
+  [ "$(listener_ownership_state "$1" "$2")" = MATCH ]
 }
 
 tree_has_command() {
@@ -107,40 +134,85 @@ health_components_ready() {
 }
 
 frontend_process_ready() {
-  local root_pid
+  local root_pid ownership
   job_loaded "$AICOS_DEV_FRONTEND_LABEL" && job_running "$AICOS_DEV_FRONTEND_LABEL" || return 1
   root_pid="$(job_pid "$AICOS_DEV_FRONTEND_LABEL")"
-  listener_owner_matches_tree 5173 "$root_pid" || return 1
+  ownership="$(listener_ownership_state 5173 "$root_pid")"
+  [ "$ownership" = PROBE_UNAVAILABLE ] && return 2
+  [ "$ownership" = MATCH ] || return 1
   tree_has_command "$root_pid" '(^|/)vite( |$)|node .*/vite' || return 1
 }
 
 backend_process_ready() {
-  local root_pid
+  local root_pid ownership
   job_loaded "$AICOS_DEV_BACKEND_LABEL" && job_running "$AICOS_DEV_BACKEND_LABEL" || return 1
   root_pid="$(job_pid "$AICOS_DEV_BACKEND_LABEL")"
-  listener_owner_matches_tree 8000 "$root_pid" || return 1
+  ownership="$(listener_ownership_state 8000 "$root_pid")"
+  [ "$ownership" = PROBE_UNAVAILABLE ] && return 2
+  [ "$ownership" = MATCH ] || return 1
   tree_has_command "$root_pid" 'multiprocessing\.spawn|spawn_main' || return 1
 }
 
 process_health_state() {
-  local label="$1" port="$2" url="$3" root_pid
+  local label="$1" port="$2" url="$3" root_pid ownership
   if ! job_loaded "$label" || ! job_running "$label"; then
     if port_listening "$port"; then echo CONFLICT; else echo STOPPED; fi
     return
   fi
   root_pid="$(job_pid "$label")"
-  if ! listener_owner_matches_tree "$port" "$root_pid"; then echo CONFLICT; return; fi
+  ownership="$(listener_ownership_state "$port" "$root_pid")"
+  case "$ownership" in
+    FOREIGN) echo CONFLICT; return ;;
+    PROBE_UNAVAILABLE) echo DEGRADED; return ;;
+    NO_LISTENER) echo STOPPED; return ;;
+  esac
   if ! http_ok "$url"; then echo DEGRADED; return; fi
   echo RUNNING
 }
 
+project_runtime_truth() {
+  local backend_state="$1" health_state="$2" runtime_json="$3"
+  AICOS_DATABASE_STATE=Unavailable
+  AICOS_LIFECYCLE_STATE=Unavailable
+  AICOS_HEARTBEAT_STATE=Unavailable
+  AICOS_BUSINESS_RUNTIME_STATE=Unavailable
+
+  if [ "$health_state" = HEALTHY ]; then
+    AICOS_DATABASE_STATE=Healthy
+    AICOS_LIFECYCLE_STATE="Backend-hosted / available"
+  elif [ "$backend_state" = DEGRADED ]; then
+    AICOS_DATABASE_STATE="Probe unavailable"
+    AICOS_LIFECYCLE_STATE="Backend-hosted / probe unavailable"
+  fi
+
+  if [ -n "$runtime_json" ]; then
+    AICOS_BUSINESS_RUNTIME_STATE="$(json_field "$runtime_json" actual_state || echo Unavailable)"
+    if heartbeat_fresh "$runtime_json"; then
+      AICOS_HEARTBEAT_STATE="Fresh (<=${AICOS_HEARTBEAT_FRESH_SECONDS}s)"
+    else
+      AICOS_HEARTBEAT_STATE=Stale
+      [ "$backend_state" = RUNNING ] && AICOS_PROJECTED_BACKEND_STATE=DEGRADED
+    fi
+  fi
+}
+
 readiness_sample() {
-  local runtime_json
+  local runtime_json ready_status
   AICOS_LAST_READINESS_REASON=""
   if legacy_supervisor_conflict; then AICOS_LAST_READINESS_REASON="SUPERVISOR_CONFLICT: ${AICOS_CONFLICT_DETAIL}"; return 1; fi
-  if ! frontend_process_ready; then AICOS_LAST_READINESS_REASON="FRONTEND_PORT_OWNERSHIP_MISMATCH"; return 1; fi
+  if frontend_process_ready; then :; else
+    ready_status=$?
+    if [ "$ready_status" -eq 2 ]; then AICOS_LAST_READINESS_REASON="PROCESS_OWNERSHIP_PROBE_UNAVAILABLE: frontend"
+    else AICOS_LAST_READINESS_REASON="FRONTEND_PORT_OWNERSHIP_MISMATCH"; fi
+    return 1
+  fi
   if ! http_ok "$AICOS_FRONTEND_URL"; then AICOS_LAST_READINESS_REASON="FRONTEND_HEALTH_UNAVAILABLE"; return 1; fi
-  if ! backend_process_ready; then AICOS_LAST_READINESS_REASON="BACKEND_PORT_OWNERSHIP_MISMATCH"; return 1; fi
+  if backend_process_ready; then :; else
+    ready_status=$?
+    if [ "$ready_status" -eq 2 ]; then AICOS_LAST_READINESS_REASON="PROCESS_OWNERSHIP_PROBE_UNAVAILABLE: backend"
+    else AICOS_LAST_READINESS_REASON="BACKEND_PORT_OWNERSHIP_MISMATCH"; fi
+    return 1
+  fi
   if ! http_ok "$AICOS_BACKEND_URL"; then AICOS_LAST_READINESS_REASON="BACKEND_HEALTH_UNAVAILABLE"; return 1; fi
   if ! health_components_ready; then AICOS_LAST_READINESS_REASON="DATABASE_NOT_READY"; return 1; fi
   runtime_json="$(runtime_status_json)" || { AICOS_LAST_READINESS_REASON="BACKEND_HEALTH_UNAVAILABLE"; return 1; }

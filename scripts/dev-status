@@ -10,33 +10,20 @@ frontend_state="$(process_health_state "$AICOS_DEV_FRONTEND_LABEL" 5173 "$AICOS_
 backend_state="$(process_health_state "$AICOS_DEV_BACKEND_LABEL" 8000 "$AICOS_BACKEND_URL")"
 runtime_json="$(runtime_status_json 2>/dev/null || true)"
 
-database_state=Unavailable
-lifecycle_state=Unavailable
+health_state=UNAVAILABLE
 if health_components_ready; then
-  database_state=Healthy
-  lifecycle_state="Backend-hosted / available"
-elif [ "$backend_state" = DEGRADED ]; then
-  database_state="Probe unavailable"
-  lifecycle_state="Backend-hosted / probe unavailable"
+  health_state=HEALTHY
 fi
 
-heartbeat_state=Unavailable
-business_runtime=Unavailable
-if [ -n "$runtime_json" ]; then
-  business_runtime="$(json_field "$runtime_json" actual_state || echo Unavailable)"
-  if heartbeat_fresh "$runtime_json"; then
-    heartbeat_state="Fresh (<=${AICOS_HEARTBEAT_FRESH_SECONDS}s)"
-  else
-    heartbeat_state=Stale
-    [ "$backend_state" = RUNNING ] && backend_state=DEGRADED
-  fi
-fi
+AICOS_PROJECTED_BACKEND_STATE="$backend_state"
+project_runtime_truth "$backend_state" "$health_state" "$runtime_json"
+backend_state="$AICOS_PROJECTED_BACKEND_STATE"
 
 printf '%-20s %s\n' "Supervisor:" "$supervisor_state"
 printf '%-20s %s\n' "Frontend Process:" "$frontend_state"
 printf '%-20s %s\n' "Backend Process:" "$backend_state"
-printf '%-20s %s\n' "Database:" "$database_state"
-printf '%-20s %s\n' "Backend Heartbeat:" "$heartbeat_state"
-printf '%-20s %s\n' "Business Runtime:" "$business_runtime"
-printf '%-20s %s\n' "Lifecycle:" "$lifecycle_state"
+printf '%-20s %s\n' "Database:" "$AICOS_DATABASE_STATE"
+printf '%-20s %s\n' "Backend Heartbeat:" "$AICOS_HEARTBEAT_STATE"
+printf '%-20s %s\n' "Business Runtime:" "$AICOS_BUSINESS_RUNTIME_STATE"
+printf '%-20s %s\n' "Lifecycle:" "$AICOS_LIFECYCLE_STATE"
 printf '%-20s %s\n' "Mode:" "$(cat "${AICOS_RUNTIME}/mode" 2>/dev/null || echo resident-or-stopped)"
