@@ -2,15 +2,41 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/runtime-common.sh"
-status_line() { if http_ok "$2"; then printf '%-10s ✓ Running\n' "$1"; else printf '%-10s ✕ Stopped\n' "$1"; fi; }
-status_line Frontend "${AICOS_FRONTEND_URL}"
-status_line Backend "${AICOS_BACKEND_URL}"
-if http_ok "${AICOS_BACKEND_URL}"; then
-  printf '%-10s ✓ Running\n' Database
-  printf '%-10s ✓ Healthy\n' Lifecycle
-else
-  printf '%-10s ✕ Unavailable\n' Database
-  printf '%-10s ✕ Unavailable\n' Lifecycle
-  echo "建议操作：./scripts/dev-restart"
+
+supervisor_state=Healthy
+if legacy_supervisor_conflict; then supervisor_state="Conflict (${AICOS_CONFLICT_DETAIL})"; fi
+
+frontend_state="$(process_health_state "$AICOS_DEV_FRONTEND_LABEL" 5173 "$AICOS_FRONTEND_URL")"
+backend_state="$(process_health_state "$AICOS_DEV_BACKEND_LABEL" 8000 "$AICOS_BACKEND_URL")"
+runtime_json="$(runtime_status_json 2>/dev/null || true)"
+
+database_state=Unavailable
+lifecycle_state=Unavailable
+if health_components_ready; then
+  database_state=Healthy
+  lifecycle_state="Backend-hosted / available"
+elif [ "$backend_state" = DEGRADED ]; then
+  database_state="Probe unavailable"
+  lifecycle_state="Backend-hosted / probe unavailable"
 fi
-echo "Mode:      $(cat "${AICOS_RUNTIME}/mode" 2>/dev/null || echo resident-or-stopped)"
+
+heartbeat_state=Unavailable
+business_runtime=Unavailable
+if [ -n "$runtime_json" ]; then
+  business_runtime="$(json_field "$runtime_json" actual_state || echo Unavailable)"
+  if heartbeat_fresh "$runtime_json"; then
+    heartbeat_state="Fresh (<=${AICOS_HEARTBEAT_FRESH_SECONDS}s)"
+  else
+    heartbeat_state=Stale
+    [ "$backend_state" = RUNNING ] && backend_state=DEGRADED
+  fi
+fi
+
+printf '%-20s %s\n' "Supervisor:" "$supervisor_state"
+printf '%-20s %s\n' "Frontend Process:" "$frontend_state"
+printf '%-20s %s\n' "Backend Process:" "$backend_state"
+printf '%-20s %s\n' "Database:" "$database_state"
+printf '%-20s %s\n' "Backend Heartbeat:" "$heartbeat_state"
+printf '%-20s %s\n' "Business Runtime:" "$business_runtime"
+printf '%-20s %s\n' "Lifecycle:" "$lifecycle_state"
+printf '%-20s %s\n' "Mode:" "$(cat "${AICOS_RUNTIME}/mode" 2>/dev/null || echo resident-or-stopped)"
