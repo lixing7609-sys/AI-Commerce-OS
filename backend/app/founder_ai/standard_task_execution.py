@@ -26,6 +26,7 @@ from core.conversation_first.model import ConversationMessageDB, SinoBrainSessio
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STEPS = ("inspect", "plan", "execution", "verification", "checkpoint", "learning", "closure", "complete")
 PRE_DISPATCH_DECISION_REVISION = "canonical-pre-dispatch-v1"
+CANDIDATE_AUTHORITY_SCHEMA_VERSION = "candidate-authority-v1"
 SUPPORTED_BROWSER_ADAPTERS = {
     ("generic_visible_interaction", "search_clear"): "system_chrome_playwright",
     ("generic_visible_interaction", "derived_visible_count"): "system_chrome_playwright",
@@ -55,6 +56,52 @@ def pre_dispatch_intent_fingerprint(*, goal: str, founder_constraints=None,
         "acceptance_criteria": _normalized_values(founder_acceptance_criteria),
         "current_route": str(current_route or ""),
     })
+
+
+def stable_candidate_id(*, conversation_id: str, source_message_id: str | None,
+                        intent_fingerprint: str) -> str:
+    """Return one stable Candidate identity for retries of the same Founder intent."""
+    identity = source_message_id or intent_fingerprint
+    digest = hashlib.sha256(f"{conversation_id}:{identity}".encode("utf-8")).hexdigest()[:20]
+    return f"task-candidate-{digest}"
+
+
+def candidate_authority_snapshot(*, decision: dict, conversation_id: str,
+                                 source_message_id: str | None,
+                                 candidate_id: str | None = None) -> dict:
+    """Freeze the canonical Candidate decision used by every Production transition."""
+    candidate_id = candidate_id or stable_candidate_id(
+        conversation_id=conversation_id, source_message_id=source_message_id,
+        intent_fingerprint=decision["intent_fingerprint"],
+    )
+    return {
+        "schema_version": CANDIDATE_AUTHORITY_SCHEMA_VERSION,
+        "candidate_id": candidate_id,
+        "conversation_id": conversation_id,
+        "source_message_id": source_message_id,
+        "canonical_fingerprint": decision["decision_fingerprint"],
+        "intent_fingerprint": decision["intent_fingerprint"],
+        "scope_fingerprint": decision["scope_fingerprint"],
+        "contract_fingerprint": decision["contract_fingerprint"],
+        "semantic_target": deepcopy(decision.get("semantic_target")),
+        "confidence": decision.get("semantic_confidence"),
+        "interaction_intent": decision.get("interaction_intent"),
+        "production_scope": list(decision.get("allowed_production_files") or []),
+        "test_scope": list(decision.get("allowed_test_files") or []),
+        "shared_support_scope": list(decision.get("allowed_shared_support_files") or []),
+        "contract": deepcopy(decision.get("standard_task_contract") or {}),
+        "interaction_contract": deepcopy(decision.get("visible_artifact_contract")),
+        "adapter": decision.get("browser_adapter"),
+        "adapter_compatibility": decision.get("adapter_compatibility"),
+        "risk": decision.get("risk"),
+        "clarification_required": bool(decision.get("clarification_required")),
+        "approval_required": bool(decision.get("approval_required")),
+        "dispatch_allowed": bool(decision.get("dispatch_allowed")),
+        "blocked_reason": decision.get("blocked_reason"),
+        "reuse": {"attempted": False, "matched": False, "reason": "pending_production_identity"},
+        "execution_constraints": list((decision.get("standard_task_contract") or {}).get("prohibited_scope") or []),
+        "created_at": decision.get("created_at") or _now(),
+    }
 
 
 def _classify_scope_files(paths: list[str]) -> dict:
@@ -92,7 +139,9 @@ def _contract_fingerprint(contract: dict) -> str:
 def build_pre_dispatch_decision(*, conversation_id: str, goal: str, discussion_context=None,
                                 founder_acceptance_criteria=None, founder_constraints=None,
                                 task_id: str | None = None, current_route: str | None = None,
-                                runtime_available: bool = True) -> dict:
+                                runtime_available: bool = True, risk: str | None = None,
+                                approval_required: bool | None = None,
+                                clarification_required: bool | None = None) -> dict:
     """One canonical builder shared by candidate audits and production dispatch."""
     acceptance = list(founder_acceptance_criteria or [])
     constraints = list(founder_constraints or [])
@@ -126,6 +175,21 @@ def build_pre_dispatch_decision(*, conversation_id: str, goal: str, discussion_c
         SUPPORTED_BROWSER_ADAPTERS.get((artifact_type, interaction_type))
         or ("system_chrome_playwright" if visible.get("required") and artifact_type != "generic_visible_interaction" else None)
     )
+    authoritative_risk = str(risk or contract.get("risk") or "low").lower()
+    authoritative_approval = bool(
+        approval_required if approval_required is not None
+        else contract.get("approval_required") or authoritative_risk != "low"
+    )
+    authoritative_clarification = bool(
+        clarification_required if clarification_required is not None
+        else contract.get("scope_confidence") != "HIGH"
+    )
+    if authoritative_clarification:
+        admission = {"status": "BLOCKED", "reason": "Founder clarification is required before Production readiness.",
+                     "founder_gate_required": True, "codex_dispatch_allowed": False}
+    elif authoritative_approval:
+        admission = {"status": "PENDING_APPROVAL", "reason": "Founder approval is required before execution authorization.",
+                     "founder_gate_required": True, "codex_dispatch_allowed": False}
     decision = {
         "semantic_target": semantic_target or None,
         "semantic_module": next(iter(scope.get("allowed_modules") or []), None),
@@ -139,8 +203,8 @@ def build_pre_dispatch_decision(*, conversation_id: str, goal: str, discussion_c
         "verification_requirement": deepcopy(visible.get("verification_requirements") or {}),
         "browser_adapter": browser_adapter,
         "adapter_compatibility": "PASS" if browser_adapter or not visible.get("required") else "BLOCKED",
-        "risk": "low", "approval_required": False,
-        "clarification_required": contract.get("scope_confidence") != "HIGH",
+        "risk": authoritative_risk, "approval_required": authoritative_approval,
+        "clarification_required": authoritative_clarification,
         "dispatch_allowed": admission.get("codex_dispatch_allowed") is True,
         "blocked_reason": admission.get("reason"),
         "decision_revision": PRE_DISPATCH_DECISION_REVISION,
@@ -156,6 +220,11 @@ def build_pre_dispatch_decision(*, conversation_id: str, goal: str, discussion_c
         "intent_fingerprint": decision["intent_fingerprint"],
         "scope_fingerprint": scope_fingerprint,
         "contract_fingerprint": contract_fingerprint,
+        "browser_adapter": decision["browser_adapter"],
+        "adapter_compatibility": decision["adapter_compatibility"],
+        "risk": decision["risk"],
+        "approval_required": decision["approval_required"],
+        "clarification_required": decision["clarification_required"],
         "dispatch_allowed": decision["dispatch_allowed"],
         "decision_revision": PRE_DISPATCH_DECISION_REVISION,
     })
@@ -622,15 +691,35 @@ def begin_standard_task(*, conversation_id: str, goal: str, route: dict, source_
     result.update({"clarification_required": False, "founder_gate_required": False, "manual_continue_required": False,
                    "manual_continue_count": 0, "manual_codex_instruction_count": 0, "current_step": "inspect",
                    "execution_status": "inspecting", "progress_log": ["inspect"]})
-    decision = build_pre_dispatch_decision(
-        conversation_id=conversation_id, goal=goal,
-        discussion_context=list(route.get("discussion_context") or []),
+    decision = deepcopy(route.get("canonical_pre_dispatch_decision") or {})
+    expected_intent = pre_dispatch_intent_fingerprint(
+        goal=goal, founder_constraints=list(route.get("founder_constraints") or []),
         founder_acceptance_criteria=list(route.get("founder_acceptance_criteria") or []),
-        founder_constraints=list(route.get("founder_constraints") or []),
+    )
+    if decision and decision.get("intent_fingerprint") != expected_intent:
+        raise ValueError("candidate_authority_intent_mismatch")
+    if not decision:
+        decision = build_pre_dispatch_decision(
+            conversation_id=conversation_id, goal=goal,
+            discussion_context=list(route.get("discussion_context") or []),
+            founder_acceptance_criteria=list(route.get("founder_acceptance_criteria") or []),
+            founder_constraints=list(route.get("founder_constraints") or []),
+            risk=route.get("risk"), approval_required=route.get("approval_required"),
+            clarification_required=route.get("clarification_required"),
+        )
+    candidate_id = str((route.get("candidate_authority") or {}).get("candidate_id") or "") or None
+    authority = candidate_authority_snapshot(
+        decision=decision, conversation_id=conversation_id, source_message_id=source_message_id,
+        candidate_id=candidate_id,
     )
     result["canonical_pre_dispatch_decision"] = decision
+    result["candidate_authority"] = authority
     result["standard_task_contract"] = decision["standard_task_contract"]
     result["dispatch_admission"] = decision["dispatch_admission"]
+    result["clarification_required"] = authority["clarification_required"]
+    result["founder_gate_required"] = bool(
+        authority["clarification_required"] or authority["approval_required"]
+    )
     if source_message_id:
         from app.founder_ai.task_identity import build_task_identity
         result["task_identity"] = build_task_identity(source_message_id=source_message_id,
@@ -640,6 +729,211 @@ def begin_standard_task(*, conversation_id: str, goal: str, route: dict, source_
     if route.get("discussion_context"):
         result["standard_task_contract"]["confirmed_conversation_context"] = list(route["discussion_context"])
     return _save_route(conversation_id, result)
+
+
+def _authority_from_task(task: TaskAssetDB) -> dict:
+    authority = deepcopy(dict(task.scope or {}).get("candidate_authority") or {})
+    required = {
+        "candidate_id", "conversation_id", "canonical_fingerprint", "intent_fingerprint",
+        "scope_fingerprint", "contract_fingerprint", "contract", "risk",
+        "clarification_required", "approval_required", "dispatch_allowed",
+    }
+    if not required.issubset(authority):
+        raise ValueError("task_candidate_authority_incomplete")
+    return authority
+
+
+def prepare_standard_task(*, conversation_id: str, goal: str,
+                          source_message_id: str | None = None) -> dict:
+    """Persist a Production-ready TaskAsset without creating or enqueueing an Execution."""
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        route = dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
+    if route.get("classification") != "STANDARD_TASK":
+        return route
+    authority = deepcopy(route.get("candidate_authority") or {})
+    decision = deepcopy(route.get("canonical_pre_dispatch_decision") or {})
+    if not authority and not decision:
+        route = begin_standard_task(
+            conversation_id=conversation_id, goal=goal, route=route,
+            source_message_id=source_message_id,
+        )
+        authority = deepcopy(route.get("candidate_authority") or {})
+        decision = deepcopy(route.get("canonical_pre_dispatch_decision") or {})
+    if not authority or authority.get("canonical_fingerprint") != decision.get("decision_fingerprint"):
+        route["execution_status"] = "blocked"
+        route["technical_blocker"] = {"type": "candidate_authority_missing_or_mismatched",
+                                      "terminal_status": "BLOCKED",
+                                      "reason": "A matching persisted Candidate authority is required."}
+        return _save_route(conversation_id, route)
+    if authority.get("clarification_required"):
+        route["dispatch_admission"] = deepcopy(decision.get("dispatch_admission") or {})
+        route["standard_task_contract"] = deepcopy(authority.get("contract") or {})
+        route["execution_status"] = "blocked"
+        route["technical_blocker"] = {"type": "standard_task_pre_dispatch_admission", "terminal_status": "BLOCKED",
+                                      "reason": authority.get("blocked_reason") or "Founder clarification is required before Production readiness."}
+        return _save_route(conversation_id, route)
+    if not authority.get("dispatch_allowed") and not authority.get("approval_required"):
+        route["dispatch_admission"] = deepcopy(decision.get("dispatch_admission") or {})
+        route["standard_task_contract"] = deepcopy(authority.get("contract") or {})
+        route["execution_status"] = "blocked"
+        route["technical_blocker"] = {"type": "standard_task_pre_dispatch_admission", "terminal_status": "BLOCKED",
+                                      "reason": authority.get("blocked_reason") or "Candidate admission is blocked."}
+        return _save_route(conversation_id, route)
+    contract = deepcopy(authority["contract"])
+    task_scope = {
+        "lane": "STANDARD_TASK", "target_surface": contract["target_surface"],
+        "target_route": contract.get("target_route"), "target_component": contract.get("target_component"),
+        "candidate_authority": authority,
+        "production_readiness": {"status": "preparing", "prepared_at": _now()},
+    }
+    approval_status = "pending" if authority.get("approval_required") else "not_required"
+    task = create_task_asset(
+        title=goal[:200], description=goal, conversation_id=conversation_id, scope=task_scope,
+        status="draft", approval_status=approval_status, execution_status="prepared",
+        source_message_id=source_message_id, target_module=contract.get("target_surface"),
+        target_object=contract.get("target_component"),
+    )
+    if getattr(task, "duplicate_reason", None):
+        authority = _authority_from_task(task)
+    else:
+        from app.founder_ai.reuse_retrieval import inject_reuse_context
+        enriched_contract = inject_reuse_context(
+            contract=contract, goal=goal, task_id=task.id, session_factory=SessionLocal,
+        )
+        reuse_lookup = deepcopy(enriched_contract.get("reuse_lookup") or {})
+        authority["reuse"] = {
+            "attempted": bool(reuse_lookup),
+            "matched": bool(reuse_lookup.get("reuse_applied")),
+            "reference": reuse_lookup.get("reuse_evidence_id"),
+            "candidate_count": reuse_lookup.get("reuse_candidate_count", 0),
+            "compatibility": reuse_lookup.get("reuse_compatibility"),
+            "reason": None if reuse_lookup.get("reuse_applied") else "no_compatible_reuse_asset",
+            "context": deepcopy(enriched_contract.get("reuse_context") or {}),
+        }
+        with SessionLocal() as db:
+            record = db.get(TaskAssetDB, task.id)
+            updated_scope = dict(record.scope or {})
+            updated_scope["candidate_authority"] = authority
+            updated_scope["production_readiness"] = {
+                "status": "pending_approval" if authority.get("approval_required") else "ready",
+                "prepared_at": _now(), "canonical_fingerprint": authority["canonical_fingerprint"],
+            }
+            record.scope = updated_scope
+            record.status = "draft"
+            record.execution_status = "prepared"
+            db.commit(); db.refresh(record); task = record
+    route["candidate_authority"] = authority
+    route["standard_task_contract"] = deepcopy(authority["contract"])
+    route["production_ready"] = {
+        "status": "pending_approval" if authority.get("approval_required") else "ready",
+        "task_id": task.id, "candidate_id": authority["candidate_id"],
+        "canonical_fingerprint": authority["canonical_fingerprint"],
+        "prepared_at": _now(),
+    }
+    route["execution_status"] = "prepared"
+    route.pop("technical_blocker", None)
+    return _save_route(conversation_id, route)
+
+
+def restore_production_ready_task(task_id: str) -> dict:
+    """Restore Production readiness solely from the durable TaskAsset boundary."""
+    with SessionLocal() as db:
+        task = db.get(TaskAssetDB, task_id)
+        if task is None:
+            raise LookupError("production_ready_task_not_found")
+        authority = _authority_from_task(task)
+        readiness = deepcopy(dict(task.scope or {}).get("production_readiness") or {})
+        if readiness.get("canonical_fingerprint") != authority["canonical_fingerprint"]:
+            raise ValueError("production_readiness_fingerprint_mismatch")
+        if authority.get("clarification_required"):
+            authorization = "blocked_clarification"
+        elif authority.get("approval_required") and task.approval_status != "approved":
+            authorization = "pending_approval"
+        elif authority.get("dispatch_allowed") or authority.get("approval_required"):
+            authorization = "execution_authorized"
+        else:
+            authorization = "blocked"
+        return {
+            "task_id": task.id, "conversation_id": task.conversation_id,
+            "source_message_id": authority.get("source_message_id"),
+            "candidate_authority": authority, "production_readiness": readiness,
+            "authorization": authorization, "execution_status": task.execution_status,
+        }
+
+
+def start_prepared_standard_task(*, conversation_id: str, enqueue=enqueue_execution) -> dict:
+    """Authorize a persisted Production-ready TaskAsset, then create and enqueue Execution."""
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        route = dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
+        ready = dict(route.get("production_ready") or {})
+        task = db.get(TaskAssetDB, ready.get("task_id")) if ready.get("task_id") else None
+        if task is None:
+            return route
+        authority = _authority_from_task(task)
+        if authority["canonical_fingerprint"] != ready.get("canonical_fingerprint"):
+            raise ValueError("production_authority_fingerprint_mismatch")
+        if authority.get("clarification_required") or (
+            not authority.get("dispatch_allowed") and not authority.get("approval_required")
+        ):
+            task.execution_status = "blocked"; db.commit()
+            route["execution_status"] = "blocked"
+            return _save_route(conversation_id, route)
+        if authority.get("approval_required") and task.approval_status != "approved":
+            route["execution_status"] = "pending_approval"
+            route["founder_gate_required"] = True
+            return _save_route(conversation_id, route)
+    contract = deepcopy(authority["contract"])
+    reuse = deepcopy(authority.get("reuse") or {})
+    if reuse.get("attempted"):
+        contract["reuse_lookup"] = {
+            "reuse_evidence_id": reuse.get("reference"),
+            "reuse_candidate_count": reuse.get("candidate_count", 0),
+            "reuse_compatibility": reuse.get("compatibility"),
+            "reuse_applied": bool(reuse.get("matched")),
+        }
+    if reuse.get("context"):
+        contract["reuse_context"] = reuse["context"]
+    draft = TaskAssetDraft(
+        title=task.title, description=task.description or task.title, conversation_id=conversation_id,
+        scope={"goal_type": "development", "context": {"candidate_authority": authority,
+            "standard_task_contract": contract,
+            "relevant_files": [{"path": path, "reason": "Frozen Candidate authority scope"}
+                               for path in contract["implementation_scope"]]}},
+        constraints=[f"Only modify {contract['implementation_scope']}",
+                     f"Never perform {contract['prohibited_scope']}",
+                     "Do not enter Strategy Meeting or request technical approval."],
+        risk=str(authority["risk"]), approval_required=bool(authority["approval_required"]),
+    )
+    verification = [*contract["acceptance_criteria"], "targeted frontend tests", "frontend build", "git diff --check"]
+    if contract.get("visible_artifact_contract"):
+        verification.append(f"Write real browser evidence to .founder-execution/visible-artifact-{task.id}.json only after every required DOM assertion passes")
+    package = ExecutionPackage(
+        goal=contract["objective"], context=dict(draft.scope["context"]), task_asset=draft,
+        constraints=list(draft.constraints), verification=verification,
+        commit_requirement="Use exact-file Autonomous Checkpoint; do not push.",
+        approval_required=draft.approval_required, execution_allowed=True,
+    )
+    execution = create_execution_session(task.id, package)
+    execution.status = "queued"; execution.queued_at = _now()
+    execution.handoff_id = f"standard-handoff-{uuid4().hex[:20]}"
+    execution.readiness_contract_id = f"standard-readiness-{uuid4().hex[:20]}"
+    save_execution_session(execution, package)
+    route = _project(conversation_id, step="execution", execution={
+        "task_id": task.id, "execution_package_id": execution.execution_package_id,
+        "readiness_contract_id": execution.readiness_contract_id, "handoff_id": execution.handoff_id,
+        "execution_session_id": execution.id, "executor": "codex", "dispatch_status": "queued",
+        "dispatched_at": _now(), "manual_codex_instruction_count": 0,
+    })
+    with SessionLocal() as db:
+        record = db.get(TaskAssetDB, task.id); record.status = "in_progress"; record.execution_status = "queued"; db.commit()
+    enqueue(execution.id)
+    Thread(target=_monitor, args=(conversation_id, task.id, execution.id), daemon=True,
+           name=f"standard-{execution.id}").start()
+    return route
 
 
 def _project(conversation_id: str, *, step: str, execution: dict | None = None, blocker: dict | None = None) -> dict:
@@ -720,78 +1014,12 @@ def standard_task_dispatch_admission(contract: dict) -> dict:
 
 def dispatch_standard_task(*, conversation_id: str, goal: str, source_message_id: str | None = None,
                            enqueue=enqueue_execution) -> dict:
-    with SessionLocal() as db:
-        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
-        route = dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
-        if route.get("classification") != "STANDARD_TASK" or route.get("clarification_required") or route.get("founder_gate_required"):
-            return route
-        route_identity = dict(route.get("task_identity") or {})
-        if ((route.get("autonomous_execution") or {}).get("execution_session_id")
-                and (not source_message_id or route_identity.get("source_message_id") == source_message_id)):
-            return route
-    existing_contract = dict(route.get("standard_task_contract") or {})
-    discussion_context = list(route.get("discussion_context") or existing_contract.get("confirmed_conversation_context") or [])
-    acceptance = list(route.get("founder_acceptance_criteria") or [])
-    constraints = list(route.get("founder_constraints") or [])
-    expected_intent = pre_dispatch_intent_fingerprint(
-        goal=goal, founder_constraints=constraints, founder_acceptance_criteria=acceptance,
+    route = prepare_standard_task(
+        conversation_id=conversation_id, goal=goal, source_message_id=source_message_id,
     )
-    decision = deepcopy(route.get("canonical_pre_dispatch_decision") or {})
-    if decision.get("intent_fingerprint") != expected_intent:
-        decision = build_pre_dispatch_decision(
-            conversation_id=conversation_id, goal=goal, discussion_context=discussion_context,
-            founder_acceptance_criteria=acceptance, founder_constraints=constraints,
-        )
-        decision["snapshot_status"] = "AUDIT_SNAPSHOT_STALE" if route.get("canonical_pre_dispatch_decision") else "CREATED"
-    else:
-        decision["snapshot_status"] = "REUSED"
-    contract = deepcopy(decision["standard_task_contract"])
-    admission = dict(decision["dispatch_admission"])
-    route["canonical_pre_dispatch_decision"] = decision
-    if admission["status"] != "PASS":
-        route["standard_task_contract"] = contract
-        route["dispatch_admission"] = admission
-        route["execution_status"] = "blocked"
-        route["technical_blocker"] = {
-            "type": "standard_task_pre_dispatch_admission", "terminal_status": "BLOCKED",
-            "reason": admission["reason"], "founder_gate_required": admission.get("founder_gate_required", False),
-        }
-        return _save_route(conversation_id, route)
-    task = create_task_asset(title=goal[:200], description=goal, conversation_id=conversation_id,
-        scope={"lane": "STANDARD_TASK", "target_surface": contract["target_surface"], "target_route": contract.get("target_route"), "target_component": contract.get("target_component")}, status="in_progress",
-        approval_status="not_required", execution_status="inspecting", source_message_id=source_message_id,
-        target_module=contract.get("target_surface"), target_object=contract.get("target_component"))
-    if getattr(task, "duplicate_reason", None):
-        route["task_duplicate"] = {"duplicate_of_task_id": task.id, "duplicate_reason": task.duplicate_reason}
-        return _save_route(conversation_id, route)
-    contract["task_id"] = task.id
-    if discussion_context:
-        contract["confirmed_conversation_context"] = discussion_context
-    route["standard_task_contract"] = contract
-    _save_route(conversation_id, route)
-    draft = TaskAssetDraft(title=goal[:200], description=goal, conversation_id=conversation_id,
-        scope={"goal_type": "development", "context": {"standard_task_contract": contract,
-            "relevant_files": [{"path": path, "reason": "Bounded Standard Task scope"} for path in contract["implementation_scope"]]}},
-        constraints=[f"Only modify {contract['implementation_scope']}", f"Never perform {contract['prohibited_scope']}", "Do not enter Strategy Meeting or request technical approval."],
-        risk="low", approval_required=False)
-    verification = list(contract["acceptance_criteria"])
-    verification.extend(["targeted frontend tests", "frontend build", "git diff --check"])
-    if contract.get("visible_artifact_contract"):
-        verification.append(f"Write real browser evidence to .founder-execution/visible-artifact-{task.id}.json only after every required DOM assertion passes")
-    package = ExecutionPackage(goal=contract["objective"], context=dict(draft.scope["context"]), task_asset=draft,
-        constraints=list(draft.constraints), verification=verification,
-        commit_requirement="Use exact-file Autonomous Checkpoint; do not push.", approval_required=False, execution_allowed=True)
-    execution = create_execution_session(task.id, package); package = replace(package, execution_allowed=True)
-    execution.status = "queued"; execution.queued_at = _now(); execution.handoff_id = f"standard-handoff-{uuid4().hex[:20]}"; execution.readiness_contract_id = f"standard-readiness-{uuid4().hex[:20]}"
-    save_execution_session(execution, package)
-    route = _project(conversation_id, step="execution", execution={"task_id": task.id, "execution_package_id": execution.execution_package_id,
-        "readiness_contract_id": execution.readiness_contract_id, "handoff_id": execution.handoff_id, "execution_session_id": execution.id,
-        "executor": "codex", "dispatch_status": "queued", "dispatched_at": _now(), "manual_codex_instruction_count": 0})
-    with SessionLocal() as db:
-        record = db.get(TaskAssetDB, task.id); record.execution_status = "queued"; db.commit()
-    enqueue(execution.id)
-    Thread(target=_monitor, args=(conversation_id, task.id, execution.id), daemon=True, name=f"standard-{execution.id}").start()
-    return route
+    if route.get("execution_status") != "prepared":
+        return route
+    return start_prepared_standard_task(conversation_id=conversation_id, enqueue=enqueue)
 
 
 def reconcile_standard_task_target_and_resume(*, conversation_id: str, enqueue=enqueue_execution) -> dict:

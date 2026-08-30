@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -168,7 +169,21 @@ def persist_task_candidate(conversation_id: str, candidate: dict, *, source_mess
     goal = str(candidate.get("goal") or "").strip()
     if not goal:
         raise ValueError("task_candidate_goal_required")
+    from app.founder_ai.standard_task_execution import (
+        build_pre_dispatch_decision, candidate_authority_snapshot, stable_candidate_id,
+    )
     now = datetime.now(timezone.utc)
+    canonical = build_pre_dispatch_decision(
+        conversation_id=conversation_id, goal=goal,
+        founder_acceptance_criteria=list(candidate.get("acceptance_criteria") or []),
+        founder_constraints=list(candidate.get("constraints") or []),
+        risk=candidate.get("risk"), approval_required=candidate.get("approval_required"),
+        clarification_required=candidate.get("clarification_required"),
+    )
+    stable_id = stable_candidate_id(
+        conversation_id=conversation_id, source_message_id=source_message_id,
+        intent_fingerprint=canonical["intent_fingerprint"],
+    )
     with SessionLocal() as db:
         state = db.scalar(select(SinoBrainSessionDB).where(
             SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
@@ -181,14 +196,18 @@ def persist_task_candidate(conversation_id: str, candidate: dict, *, source_mess
             candidates.append(existing)
         matching = next((item for item in candidates
                          if item.get("status") in {"pending_founder_confirmation", "needs_revision", "discussion_continues"}
-                         and item.get("goal") == goal), None)
+                         and (item.get("candidate_id") == stable_id or item.get("goal") == goal)), None)
         if matching:
             existing = matching
             candidate_id = existing["candidate_id"]
             created_at = existing.get("created_at") or now.isoformat()
         else:
-            candidate_id = f"task-candidate-{uuid4().hex[:20]}"
+            candidate_id = stable_id
             created_at = now.isoformat()
+        authority = candidate_authority_snapshot(
+            decision=canonical, conversation_id=conversation_id,
+            source_message_id=source_message_id, candidate_id=candidate_id,
+        )
         record = {
             "candidate_id": candidate_id, "conversation_id": conversation_id,
             "title": str(candidate.get("title") or goal[:120]).strip(), "goal": goal,
@@ -198,6 +217,8 @@ def persist_task_candidate(conversation_id: str, candidate: dict, *, source_mess
             "dependencies": list(candidate.get("dependencies") or []), "risks": list(candidate.get("risks") or []),
             "task_type": candidate.get("task_type"), "source_message_id": source_message_id,
             "derivation": dict(candidate.get("derivation") or {}),
+            "canonical_pre_dispatch_decision": canonical,
+            "candidate_authority": authority,
             "created_at": created_at, "updated_at": now.isoformat(), "status": "pending_founder_confirmation",
             "task_id": existing.get("task_id"), "execution_id": existing.get("execution_id"),
             "execution_package_id": existing.get("execution_package_id"),
@@ -345,6 +366,11 @@ def decide_task_candidate(conversation_id: str, candidate_id: str, action: str, 
             route["founder_acceptance_criteria"] = list(candidate.get("acceptance_criteria") or [])
             route["founder_constraints"] = list(candidate.get("constraints") or [])
             route["confirmed_decisions"] = list(candidate.get("confirmed_decisions") or [])
+            route["canonical_pre_dispatch_decision"] = deepcopy(candidate.get("canonical_pre_dispatch_decision") or {})
+            route["candidate_authority"] = deepcopy(candidate.get("candidate_authority") or {})
+            route["risk"] = (candidate.get("candidate_authority") or {}).get("risk")
+            route["approval_required"] = (candidate.get("candidate_authority") or {}).get("approval_required")
+            route["clarification_required"] = (candidate.get("candidate_authority") or {}).get("clarification_required")
             source_message_id = candidate.get("source_message_id")
             if route.get("classification") == "QUICK_FIX":
                 from app.founder_ai.quick_fix_progression import begin_quick_fix
