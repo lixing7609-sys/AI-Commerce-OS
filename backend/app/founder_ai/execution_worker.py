@@ -12,12 +12,18 @@ from typing import Callable
 
 from app.core.artifact.service import create_artifact
 from app.founder_ai.codex_adapter import SubprocessCodexAdapter
-from app.founder_ai.execution_loop import ExecutionPausedForDelta, ExecutionScopeBlocked, FounderExecutionLoop
+from app.founder_ai.execution_loop import (
+    ArtifactAssetDraft,
+    ExecutionPausedForDelta,
+    ExecutionScopeBlocked,
+    FounderExecutionLoop,
+)
 from app.founder_ai.execution_events import append_event
 from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions, save_execution_session
 from app.founder_ai.sino_memory import SinoMemoryRepository
 
 logger = logging.getLogger(__name__)
+TERMINAL_EXECUTION_STATES = {"completed", "failed", "blocked", "cancelled", "canceled"}
 
 
 def _now() -> datetime:
@@ -124,6 +130,19 @@ class ExecutionQueue:
         with self._condition:
             return self._items.get(execution_id)
 
+    def reconcile_terminal(self, execution_id: str, status: str) -> ExecutionQueueItem | None:
+        """Mirror immutable durable terminal truth without replaying lifecycle transitions."""
+        if status not in TERMINAL_EXECUTION_STATES:
+            raise ValueError(f"not a terminal execution status: {status}")
+        with self._condition:
+            item = self._items.get(execution_id)
+            if item is None:
+                return None
+            item.status = "completed" if status == "completed" else "failed"
+            item.completed_at = item.completed_at or _now()
+            self._pending = deque(value for value in self._pending if value != execution_id)
+            return item
+
     def clear(self) -> int:
         with self._condition:
             count = len(self._items)
@@ -172,12 +191,203 @@ class ExecutionWorker:
             if item is not None:
                 self.run_item(item.execution_id)
 
+    @staticmethod
+    def _recoverable_post_execution(session) -> bool:
+        verification = dict((session.result or {}).get("post_implementation_verification") or {})
+        return (
+            session.status in {"testing", "blocked"}
+            and verification.get("status") == "VERIFIED"
+            and session.result is not None
+        )
+
+    @staticmethod
+    def _restore_post_execution_drafts(session):
+        """Rebuild deterministic persistence drafts from the durable verified result."""
+        from app.founder_ai.orchestrator import build_memory_asset_draft
+
+        result = dict(session.result or {})
+        artifact = ArtifactAssetDraft(
+            execution_id=session.id,
+            commit_hash=session.commit_hash,
+            changed_files=list(result.get("changed_files") or []),
+            result_summary=str(result.get("stdout") or "Execution completed")[-2000:],
+        )
+        memory = build_memory_asset_draft(
+            decision="Founder approved execution",
+            artifact=", ".join(artifact.changed_files) or None,
+            commit=session.commit_hash,
+            learning="Execution completed through the approved Codex adapter",
+        )
+        return artifact, memory
+
+    def _persist_post_execution_outputs(self, session, package, artifact_draft, memory_draft) -> None:
+        """Persist only post-execution outputs; stable identities make this restart-safe."""
+        execution_id = session.id
+        artifact = self.artifact_writer(
+            artifact_type="execution_result",
+            title=f"Execution {execution_id}",
+            description=artifact_draft.result_summary,
+            content_ref=json.dumps({"execution_id": execution_id, "commit_hash": artifact_draft.commit_hash, "files": artifact_draft.changed_files, "package_version": package.package_version, "execution_deltas": package.execution_deltas}, ensure_ascii=False),
+            task_asset_id=session.task_asset_id,
+            idempotency_key=f"execution:{execution_id}:execution_result",
+        )
+        if not session.artifact:
+            session.artifact = {
+                "id": artifact.id, "execution_id": artifact_draft.execution_id,
+                "commit_hash": artifact_draft.commit_hash, "files": artifact_draft.changed_files,
+                "summary": artifact_draft.result_summary,
+            }
+            append_event(
+                session, "artifact_saved", status="testing",
+                message=f"Execution artifact saved: {artifact.id}",
+                metadata={"artifact_id": artifact.id},
+            )
+            save_execution_session(session, package)
+        decision = self.memory_repository.save_decision(
+            title=f"Execution decision {execution_id}",
+            decision={"decision": memory_draft.decision, "execution_id": execution_id},
+            task_asset_id=session.task_asset_id, source_execution_id=execution_id,
+        )
+        learning = self.memory_repository.save_learning(
+            title=f"Execution learning {execution_id}",
+            learning={"learning": memory_draft.learning, "execution_id": execution_id},
+            task_asset_id=session.task_asset_id, source_execution_id=execution_id,
+        )
+        execution_memory = self.memory_repository.save_execution_result(
+            title=f"Execution result {execution_id}",
+            result={**(session.result or {}), "commit_hash": session.commit_hash,
+                    "package_version": package.package_version, "execution_deltas": package.execution_deltas},
+            task_asset_id=session.task_asset_id, artifact_id=artifact.id,
+            source_execution_id=execution_id,
+        )
+        session.memory = {"decision": decision.id, "learning": learning.id,
+                          "execution_result": execution_memory.id}
+        if not any(event.get("event_name") == "memory_saved" for event in session.events):
+            append_event(
+                session, "memory_saved", status="testing",
+                message="Decision, learning and execution memories saved",
+                metadata={"memory_ids": dict(session.memory)},
+            )
+        save_execution_session(session, package)
+
+    def _mark_post_execution_interrupted(self, session, package, error: Exception) -> None:
+        session.status = "testing"
+        session.recoverable = True
+        session.pause_reason = "Post-execution persistence interrupted"
+        session.error_message = str(error)
+        session.failure_reason = "POST_EXECUTION_PERSISTENCE_INTERRUPTED"
+        append_event(
+            session, "stall_detected", status="testing",
+            message="Post-execution persistence interrupted; restart-safe retry required",
+            metadata={"failure_reason": str(error), "recovery_phase": "post_execution"},
+        )
+        save_execution_session(session, package)
+
+    def _resume_post_execution(self, session, package):
+        artifact_draft, memory_draft = self._restore_post_execution_drafts(session)
+        try:
+            self._persist_post_execution_outputs(session, package, artifact_draft, memory_draft)
+        except Exception as error:
+            self._mark_post_execution_interrupted(session, package, error)
+            try:
+                self.queue.transition(session.id, "failed")
+            except (KeyError, ValueError):
+                pass
+            logger.warning("Post-execution recovery remains retryable execution_id=%s", session.id, exc_info=True)
+            return session
+        return self._finalize_verified_post_execution(session, package)
+
+    def _complete_execution(self, session, package):
+        execution_id = session.id
+        session.completed_at = _now().isoformat()
+        session.status = "completed"
+        session.recoverable = False
+        session.pause_reason = session.error_message = session.failure_reason = None
+        if not any(event.get("event_name") == "completed" for event in session.events):
+            append_event(session, "completed", status="completed", message="Artifact and memory persistence completed", timestamp=session.completed_at)
+        save_execution_session(session, package)
+        try:
+            self.queue.transition(execution_id, "completed")
+        except (KeyError, ValueError):
+            self.queue.reconcile_terminal(execution_id, "completed")
+        return session
+
+    def _reconcile_verified_completion(self, session, package) -> None:
+        conversation_id = package.task_asset.conversation_id
+        if not conversation_id:
+            return
+        from app.founder_ai.technical_resolution import resolve_false_stall_after_progress
+        resolve_false_stall_after_progress(conversation_id=conversation_id, execution_id=session.id)
+        if package.context.get("quick_fix_contract"):
+            from app.founder_ai.quick_fix_execution import reconcile_quick_fix_execution
+            reconcile_quick_fix_execution(
+                conversation_id=conversation_id, task_id=session.task_asset_id,
+                execution_id=session.id, repo_root=self.project_root,
+            )
+        else:
+            from app.founder_ai.standard_task_execution import reconcile_standard_task_execution
+            reconcile_standard_task_execution(
+                conversation_id=conversation_id, task_id=session.task_asset_id,
+                execution_id=session.id, repo_root=self.project_root,
+            )
+        _project_runtime_truth(conversation_id)
+
+    @staticmethod
+    def _extract_verified_reusable_learning(session) -> None:
+        from app.founder_ai.reusable_asset_bootstrap import (
+            extract_historical_anchored_popover_asset,
+            extract_historical_interaction_surface_decision,
+        )
+        for extractor in (
+            extract_historical_anchored_popover_asset,
+            extract_historical_interaction_surface_decision,
+        ):
+            try:
+                extractor(
+                    task_id=session.task_asset_id, execution_id=session.id,
+                    source_commit_sha=session.commit_hash,
+                )
+            except (LookupError, ValueError):
+                # A verified execution may be ineligible for a particular reusable family.
+                pass
+
+    def _finalize_verified_post_execution(self, session, package):
+        """Share required completion reconciliation and learning across normal/restart paths."""
+        try:
+            # Reconciliation contracts inspect the live registry object as completed. Keep that
+            # projection provisional and in-memory until every required continuation succeeds.
+            # The last durable write remains testing, so a crash safely resumes this phase.
+            session.status = "completed"
+            session.completed_at = session.completed_at or _now().isoformat()
+            self._reconcile_verified_completion(session, package)
+            self._extract_verified_reusable_learning(session)
+        except Exception as error:
+            self._mark_post_execution_interrupted(session, package, error)
+            try:
+                self.queue.transition(session.id, "failed")
+            except (KeyError, ValueError):
+                self.queue.reconcile_terminal(session.id, "failed")
+            logger.warning("Verified post-execution finalization remains retryable execution_id=%s",
+                           session.id, exc_info=True)
+            return session
+        self._complete_execution(session, package)
+        logger.info("Execution completed execution_id=%s", session.id)
+        return session
+
     def run_item(self, execution_id: str):
         record = get_execution_session(execution_id)
         if record is None:
             self.queue.transition(execution_id, "failed")
             return
         session, package = record
+        if self._recoverable_post_execution(session):
+            logger.info("Resuming post-execution persistence execution_id=%s", execution_id)
+            return self._resume_post_execution(session, package)
+        if session.status in TERMINAL_EXECUTION_STATES:
+            self.queue.reconcile_terminal(execution_id, session.status)
+            logger.info("Ignoring duplicate terminal execution callback execution_id=%s status=%s",
+                        execution_id, session.status)
+            return session
         try:
             session.worker_id = "sino-execution-worker"
             from app.founder_ai.execution_state import runtime_revision
@@ -200,92 +410,23 @@ class ExecutionWorker:
             if session.status in {"cancelling", "cancelled", "canceled"}:
                 logger.info("Ignoring completion callback after Founder cancellation execution_id=%s", execution_id)
                 return
-            # Do not expose completion until callback assets and memories are durable.
-            artifact = self.artifact_writer(
-                artifact_type="execution_result",
-                title=f"Execution {execution_id}",
-                description=artifact_draft.result_summary,
-                content_ref=json.dumps({"execution_id": execution_id, "commit_hash": artifact_draft.commit_hash, "files": artifact_draft.changed_files, "package_version": package.package_version, "execution_deltas": package.execution_deltas}, ensure_ascii=False),
-                task_asset_id=session.task_asset_id,
-            )
-            append_event(
-                session,
-                "artifact_saved",
-                status="testing",
-                message=f"Execution artifact saved: {artifact.id}",
-                metadata={"artifact_id": artifact.id},
-            )
-            save_execution_session(session, package)
-            decision = self.memory_repository.save_decision(title=f"Execution decision {execution_id}", decision={"decision": memory_draft.decision, "execution_id": execution_id})
-            learning = self.memory_repository.save_learning(title=f"Execution learning {execution_id}", learning={"learning": memory_draft.learning, "execution_id": execution_id}, task_asset_id=session.task_asset_id)
-            execution_memory = self.memory_repository.save_execution_result(title=f"Execution result {execution_id}", result={**(session.result or {}), "commit_hash": session.commit_hash, "package_version": package.package_version, "execution_deltas": package.execution_deltas}, task_asset_id=session.task_asset_id, artifact_id=artifact.id)
-            session.artifact = {
-                "id": artifact.id,
-                "execution_id": artifact_draft.execution_id,
-                "commit_hash": artifact_draft.commit_hash,
-                "files": artifact_draft.changed_files,
-                "summary": artifact_draft.result_summary,
-            }
-            session.memory = {"decision": decision.id, "learning": learning.id, "execution_result": execution_memory.id}
-            append_event(
-                session,
-                "memory_saved",
-                status="testing",
-                message="Decision, learning and execution memories saved",
-                metadata={"memory_ids": dict(session.memory)},
-            )
-            save_execution_session(session, package)
-            session.completed_at = _now().isoformat()
-            session.status = "completed"
-            append_event(session, "completed", status="completed", message="Artifact and memory persistence completed", timestamp=session.completed_at)
-            save_execution_session(session, package)
-            from app.founder_ai.technical_resolution import resolve_false_stall_after_progress
-            conversation_id = package.task_asset.conversation_id
-            if conversation_id:
-                resolve_false_stall_after_progress(conversation_id=conversation_id, execution_id=execution_id)
-            self.queue.transition(execution_id, "completed")
-            if conversation_id:
+            # Retry one partial post-execution write safely. Stable persistence identities ensure
+            # already-durable Artifact/Memory records are reused, never duplicated.
+            for persistence_attempt in (1, 2):
                 try:
-                    if package.context.get("quick_fix_contract"):
-                        from app.founder_ai.quick_fix_execution import reconcile_quick_fix_execution
-                        reconcile_quick_fix_execution(
-                            conversation_id=conversation_id, task_id=session.task_asset_id,
-                            execution_id=execution_id, repo_root=self.project_root,
-                        )
-                    else:
-                        from app.founder_ai.standard_task_execution import reconcile_standard_task_execution
-                        reconcile_standard_task_execution(
-                            conversation_id=conversation_id, task_id=session.task_asset_id,
-                            execution_id=execution_id, repo_root=self.project_root,
-                        )
-                except Exception:
-                    logger.exception("Task completion reconciliation failed execution_id=%s", execution_id)
-                _project_runtime_truth(conversation_id)
-            try:
-                from app.founder_ai.reusable_asset_bootstrap import extract_historical_anchored_popover_asset
-                extract_historical_anchored_popover_asset(
-                    task_id=session.task_asset_id, execution_id=execution_id,
-                    source_commit_sha=session.commit_hash,
-                )
-            except (LookupError, ValueError):
-                # A completed execution remains valid when it is not reusable.
-                pass
-            except Exception:
-                # Post-completion learning is advisory and must never regress V1 completion.
-                logger.exception("Post-completion reusable learning failed execution_id=%s", execution_id)
-            try:
-                from app.founder_ai.reusable_asset_bootstrap import extract_historical_interaction_surface_decision
-                extract_historical_interaction_surface_decision(
-                    task_id=session.task_asset_id, execution_id=execution_id,
-                    source_commit_sha=session.commit_hash,
-                )
-            except (LookupError, ValueError):
-                # Most completed tasks contain no explicit reusable decision evidence.
-                pass
-            except Exception:
-                # Decision learning is advisory and cannot regress a completed execution.
-                logger.exception("Post-completion decision learning failed execution_id=%s", execution_id)
-            logger.info("Execution completed execution_id=%s", execution_id)
+                    self._persist_post_execution_outputs(session, package, artifact_draft, memory_draft)
+                    break
+                except Exception as error:
+                    if persistence_attempt == 2:
+                        self._mark_post_execution_interrupted(session, package, error)
+                        try:
+                            self.queue.transition(execution_id, "failed")
+                        except (KeyError, ValueError):
+                            pass
+                        return session
+                    logger.warning("Retrying idempotent post-execution persistence execution_id=%s",
+                                   execution_id, exc_info=True)
+            return self._finalize_verified_post_execution(session, package)
         except ExecutionPausedForDelta:
             save_execution_session(session, package)
             logger.info("Execution paused for delta execution_id=%s", execution_id)
@@ -306,6 +447,11 @@ class ExecutionWorker:
                 _project_runtime_truth(conversation_id)
             logger.warning("Founder execution blocked by scope mismatch execution_id=%s", execution_id)
         except Exception as error:
+            if session.status in {"completed", "blocked", "cancelled", "canceled"}:
+                self.queue.reconcile_terminal(execution_id, session.status)
+                logger.warning("Ignoring late failure after terminal execution execution_id=%s status=%s error=%s",
+                               execution_id, session.status, error)
+                return session
             previous_event = session.events[-1] if session.events else None
             result = session.result or {}
             session.status = "failed"
@@ -385,6 +531,9 @@ class ExecutionWorker:
         if record is None:
             return
         session, package = record
+        if session.status in TERMINAL_EXECUTION_STATES:
+            self.queue.reconcile_terminal(execution_id, session.status)
+            return
         if status == "testing":
             self.queue.transition(execution_id, "testing")
         if status in {"executing", "testing"}:
@@ -436,18 +585,19 @@ class ExecutionWorker:
                 save_execution_session(session, package)
             elif session.status in {"executing", "testing"}:
                 interrupted_status = session.status
-                session.recoverable = not any((session.result, session.artifact, session.memory))
-                session.status = "queued" if session.recoverable else "blocked"
-                session.pause_reason = None if session.recoverable else "Backend restarted with partial durable results"
+                post_execution_recovery = self._recoverable_post_execution(session)
+                session.recoverable = post_execution_recovery or not any((session.result, session.artifact, session.memory))
+                session.status = "testing" if post_execution_recovery else ("queued" if session.recoverable else "blocked")
+                session.pause_reason = "Post-execution persistence recovery" if post_execution_recovery else (None if session.recoverable else "Backend restarted with partial durable results")
                 session.error_message = None
-                session.failure_reason = None if session.recoverable else "PIPELINE_STALLED"
+                session.failure_reason = "POST_EXECUTION_PERSISTENCE_INTERRUPTED" if post_execution_recovery else (None if session.recoverable else "PIPELINE_STALLED")
                 session.completed_at = None
                 append_event(
                     session,
                     "backend_restarted",
                     status=session.status,
-                    message="Backend restarted; same execution automatically restored" if session.recoverable else "Backend restarted with partial durable results; execution blocked",
-                    metadata={"interrupted_status": interrupted_status, "recoverable": session.recoverable},
+                    message="Backend restarted; post-execution persistence will resume" if post_execution_recovery else ("Backend restarted; same execution automatically restored" if session.recoverable else "Backend restarted with partial durable results; execution blocked"),
+                    metadata={"interrupted_status": interrupted_status, "recoverable": session.recoverable, "recovery_phase": "post_execution" if post_execution_recovery else None},
                 )
                 if session.recoverable:
                     self.queue.requeue(session.id)

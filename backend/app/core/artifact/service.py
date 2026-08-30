@@ -1,4 +1,7 @@
+import hashlib
+
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.artifact.model import ArtifactAssetDB
 from app.core.conversation.model import ConversationDB
@@ -11,6 +14,11 @@ FOUNDER_SYSTEM_KEY = "founder_ai"
 
 class ArtifactBoundaryError(ValueError):
     """Raised when an ArtifactAsset crosses the Founder application boundary."""
+
+
+def stable_artifact_id(idempotency_key: str) -> str:
+    digest = hashlib.sha256(f"artifact:{idempotency_key}".encode("utf-8")).hexdigest()[:20]
+    return f"artifact-{digest}"
 
 
 def _validate_reference(session, model, identifier: str | None, label: str) -> None:
@@ -33,12 +41,20 @@ def create_artifact(
     task_asset_id: str | None = None,
     conversation_id: str | None = None,
     decision_id: str | None = None,
+    idempotency_key: str | None = None,
 ) -> ArtifactAssetDB:
     with SessionLocal() as session:
         _validate_reference(session, TaskAssetDB, task_asset_id, "task asset")
         _validate_reference(session, ConversationDB, conversation_id, "conversation")
         _validate_reference(session, DecisionAssetDB, decision_id, "decision")
+        artifact_id = stable_artifact_id(idempotency_key) if idempotency_key else None
+        existing = session.get(ArtifactAssetDB, artifact_id) if artifact_id else None
+        if existing is not None:
+            if existing.task_asset_id != task_asset_id or existing.artifact_type != artifact_type:
+                raise ArtifactBoundaryError("artifact idempotency identity conflicts with existing lineage")
+            return existing
         record = ArtifactAssetDB(
+            **({"id": artifact_id} if artifact_id else {}),
             system_id=FOUNDER_SYSTEM_KEY,
             task_asset_id=task_asset_id,
             conversation_id=conversation_id,
@@ -52,7 +68,16 @@ def create_artifact(
             status=status,
         )
         session.add(record)
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            if not artifact_id:
+                raise
+            record = session.get(ArtifactAssetDB, artifact_id)
+            if record is None or record.task_asset_id != task_asset_id or record.artifact_type != artifact_type:
+                raise
+            return record
         session.refresh(record)
         return record
 

@@ -265,10 +265,14 @@ def test_artifact_writer_failure_cannot_complete(monkeypatch, tmp_path: Path):
 
     session, _ = _run_failed_worker(monkeypatch, tmp_path, artifact_writer=fail_artifact)
 
-    assert session.status == "failed"
+    assert session.status == "testing"
+    assert session.recoverable is True
+    assert session.failure_reason == "POST_EXECUTION_PERSISTENCE_INTERRUPTED"
     assert "artifact_saved" not in [event["event_name"] for event in session.events]
     assert "completed" not in [event["event_name"] for event in session.events]
-    assert session.events[-1]["metadata"]["current_stage"] == "testing_finished"
+    assert session.events[-1]["event_name"] == "stall_detected"
+    assert session.events[-1]["metadata"]["recovery_phase"] == "post_execution"
+    assert session.events[-1]["metadata"]["failure_reason"] == "artifact storage unavailable"
 
 
 def test_memory_writer_failure_cannot_complete(monkeypatch, tmp_path: Path):
@@ -279,10 +283,13 @@ def test_memory_writer_failure_cannot_complete(monkeypatch, tmp_path: Path):
     session, _ = _run_failed_worker(monkeypatch, tmp_path, memory_repository=FailedMemory())
     names = [event["event_name"] for event in session.events]
 
-    assert session.status == "failed"
+    assert session.status == "testing"
+    assert session.recoverable is True
+    assert session.failure_reason == "POST_EXECUTION_PERSISTENCE_INTERRUPTED"
     assert "artifact_saved" in names
     assert "memory_saved" not in names
     assert "completed" not in names
+    assert names[-1] == "stall_detected"
 
 
 def test_backend_restart_restores_inflight_session_to_same_queue(monkeypatch, tmp_path: Path):

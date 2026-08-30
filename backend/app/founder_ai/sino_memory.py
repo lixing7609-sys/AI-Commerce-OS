@@ -24,6 +24,7 @@ class SinoMemory:
     decision_id: str | None = None
     task_asset_id: str | None = None
     artifact_id: str | None = None
+    source_execution_id: str | None = None
 
 
 class SinoMemoryRepository:
@@ -39,16 +40,28 @@ class SinoMemoryRepository:
             decision_id=memory.decision_id,
             task_asset_id=memory.task_asset_id,
             artifact_id=memory.artifact_id,
+            idempotency_key=(
+                f"execution:{memory.source_execution_id}:{memory.memory_type.value}"
+                if memory.source_execution_id else None
+            ),
         )
 
-    def save_decision(self, *, title: str, decision: Mapping[str, Any], conversation_id: str | None = None) -> MemoryAssetDB:
-        return self.save(SinoMemory(SinoMemoryType.DECISION, title, decision, conversation_id=conversation_id))
+    def save_decision(self, *, title: str, decision: Mapping[str, Any], conversation_id: str | None = None,
+                      task_asset_id: str | None = None, source_execution_id: str | None = None) -> MemoryAssetDB:
+        return self.save(SinoMemory(SinoMemoryType.DECISION, title, decision,
+            conversation_id=conversation_id, task_asset_id=task_asset_id,
+            source_execution_id=source_execution_id))
 
-    def save_learning(self, *, title: str, learning: Mapping[str, Any], task_asset_id: str | None = None) -> MemoryAssetDB:
-        return self.save(SinoMemory(SinoMemoryType.LEARNING, title, learning, task_asset_id=task_asset_id))
+    def save_learning(self, *, title: str, learning: Mapping[str, Any], task_asset_id: str | None = None,
+                      source_execution_id: str | None = None) -> MemoryAssetDB:
+        return self.save(SinoMemory(SinoMemoryType.LEARNING, title, learning,
+            task_asset_id=task_asset_id, source_execution_id=source_execution_id))
 
     def save_project_state(self, *, title: str, project_state: Mapping[str, Any], conversation_id: str | None = None) -> MemoryAssetDB:
         return self.save(SinoMemory(SinoMemoryType.PROJECT_STATE, title, project_state, conversation_id=conversation_id))
 
-    def save_execution_result(self, *, title: str, result: Mapping[str, Any], task_asset_id: str | None = None, artifact_id: str | None = None) -> MemoryAssetDB:
-        return self.save(SinoMemory(SinoMemoryType.EXECUTION_RESULT, title, result, task_asset_id=task_asset_id, artifact_id=artifact_id))
+    def save_execution_result(self, *, title: str, result: Mapping[str, Any], task_asset_id: str | None = None,
+                              artifact_id: str | None = None, source_execution_id: str | None = None) -> MemoryAssetDB:
+        return self.save(SinoMemory(SinoMemoryType.EXECUTION_RESULT, title, result,
+            task_asset_id=task_asset_id, artifact_id=artifact_id,
+            source_execution_id=source_execution_id))
