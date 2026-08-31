@@ -229,19 +229,25 @@ describe("Founder sidebar information architecture", () => {
     />);
 
     const search = screen.getByPlaceholderText("搜索");
+    const visibleProjectCount = () => document.querySelector(".sino-project-heading .sino-sidebar__collection-count").textContent;
     const visibleConversationCount = () => screen.getByLabelText(/当前可见会话/).textContent;
     expect(search.getAttribute("data-native-search-cancel")).toBe("hidden");
+    expect(visibleProjectCount()).toBe("3");
+    expect(document.querySelectorAll(".sino-project-item")).toHaveLength(3);
     expect(visibleConversationCount()).toBe("2");
     expect(screen.queryByRole("button", { name: "清除搜索" })).toBeNull();
     fireEvent.change(search, { target: { value: "  Commerce  " } });
     expect(screen.getByRole("button", { name: "清除搜索" })).toBeTruthy();
     expect(screen.getByText("AI Commerce OS")).toBeTruthy();
     expect(screen.queryByText("Sino Operator AI")).toBeNull();
+    expect(visibleProjectCount()).toBe("1");
+    expect(document.querySelectorAll(".sino-project-item")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "新建项目" })).toBeTruthy();
     fireEvent.click(document.querySelector('.sino-project-item__open[title="AI Commerce OS"]'));
     expect(onSelectProject).toHaveBeenCalledWith("commerce");
 
     fireEvent.change(search, { target: { value: "gpt" } });
+    expect(visibleProjectCount()).toBe("0");
     expect(visibleConversationCount()).toBe("1");
     expect(screen.getByText("把图标改成 GPT 风格")).toBeTruthy();
     expect(screen.queryByText("广告平台解析")).toBeNull();
@@ -249,6 +255,8 @@ describe("Founder sidebar information architecture", () => {
     expect(onSelectConversation).toHaveBeenCalledWith("gpt");
 
     fireEvent.click(screen.getByRole("button", { name: "清除搜索" }));
+    expect(visibleProjectCount()).toBe("3");
+    expect(document.querySelectorAll(".sino-project-item")).toHaveLength(3);
     expect(visibleConversationCount()).toBe("2");
     expect(search.value).toBe("");
     expect(screen.queryByRole("button", { name: "清除搜索" })).toBeNull();

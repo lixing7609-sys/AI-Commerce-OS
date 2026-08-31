@@ -1686,7 +1686,8 @@ html:has(.sino-app)::-webkit-scrollbar, body:has(.sino-app)::-webkit-scrollbar, 
 .founder-navigation-panel .sino-sidebar-toggle svg { flex: none; width: var(--workspace-icon-size); height: var(--workspace-icon-size); fill: none; stroke: currentColor; stroke-width: var(--workspace-icon-stroke); }
 .founder-navigation-panel .sino-sidebar-section { margin-top: 12px; }
 .founder-navigation-panel .sino-project-workspace { display: block; height: auto; min-height: 0; padding: 0; }
-.founder-navigation-panel .sino-project-heading { display: block; }
+.founder-navigation-panel .sino-project-heading { display: flex; align-items: center; gap: 6px; }
+.founder-navigation-panel .sino-sidebar__collection-count { color: var(--workspace-text-secondary); font-size: var(--workspace-meta-size); font-weight: 400; }
 .founder-navigation-panel .sino-project-create-entry { color: var(--workspace-text-secondary); }
 .founder-navigation-panel .sino-project-create-entry > svg { flex: 0 0 var(--workspace-icon-size); color: var(--workspace-text-secondary); }
 .founder-navigation-panel .sino-project-expand { border: 0; background: transparent; color: var(--workspace-text-secondary); cursor: pointer; }
