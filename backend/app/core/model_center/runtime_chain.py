@@ -17,10 +17,91 @@ CONVERSATION_TEXT_CAPABILITIES = {
     "conversation", "chat", "text", "text reasoning", "text_reasoning",
     "semantic reasoning", "semantic_reasoning", "reasoning", "general", "fast_task",
 }
+CONSUMER_TYPE_SINO_AI = "SINO_AI"
+CONSUMER_TYPE_SYSTEM_EXECUTOR = "SYSTEM_EXECUTOR"
+CONSUMER_TYPE_HEALTH_PROBE = "HEALTH_PROBE"
+CONSUMER_TYPE_LEGACY_UNKNOWN = "LEGACY_UNKNOWN"
+CONSUMER_TYPES = {
+    CONSUMER_TYPE_SINO_AI,
+    CONSUMER_TYPE_SYSTEM_EXECUTOR,
+    CONSUMER_TYPE_HEALTH_PROBE,
+    CONSUMER_TYPE_LEGACY_UNKNOWN,
+}
+CONSUMER_ROLE_SINO_CONVERSATION = "SINO_CONVERSATION"
+CONSUMER_ROLE_DISCUSSION = "DISCUSSION"
+CONSUMER_ROLE_REASONING = "REASONING"
+CONSUMER_ROLE_CLARIFICATION = "CLARIFICATION"
+CONSUMER_ROLE_CANDIDATE_DERIVATION = "CANDIDATE_DERIVATION"
+CONSUMER_ROLE_VISION = "VISION"
+CONSUMER_ROLE_EXECUTION_SUMMARY = "EXECUTION_SUMMARY"
+CONSUMER_ROLE_EXECUTION_MODEL = "EXECUTION_MODEL"
+CONSUMER_ROLE_CODE_EXECUTION = "CODE_EXECUTION"
+CONSUMER_ROLE_VERIFICATION = "VERIFICATION"
+CONSUMER_ROLE_MODEL_HEALTH_PROBE = "MODEL_HEALTH_PROBE"
+CONSUMER_ROLE_TASK_NAVIGATION = "TASK_NAVIGATION"
+CONSUMER_ROLE_LEGACY_UNKNOWN = "LEGACY_UNKNOWN"
+CONSUMER_ROLES = {
+    CONSUMER_ROLE_SINO_CONVERSATION,
+    CONSUMER_ROLE_DISCUSSION,
+    CONSUMER_ROLE_REASONING,
+    CONSUMER_ROLE_CLARIFICATION,
+    CONSUMER_ROLE_CANDIDATE_DERIVATION,
+    CONSUMER_ROLE_VISION,
+    CONSUMER_ROLE_EXECUTION_SUMMARY,
+    CONSUMER_ROLE_EXECUTION_MODEL,
+    CONSUMER_ROLE_CODE_EXECUTION,
+    CONSUMER_ROLE_VERIFICATION,
+    CONSUMER_ROLE_MODEL_HEALTH_PROBE,
+    CONSUMER_ROLE_TASK_NAVIGATION,
+    CONSUMER_ROLE_LEGACY_UNKNOWN,
+}
 
 
 def identity(provider_id: str, model_id: str) -> str:
     return f"{provider_id}::{model_id}"
+
+
+def canonical_model_resource_identity(provider_id: str | None, model_id: str | None) -> str | None:
+    if not provider_id or not model_id:
+        return None
+    return identity(provider_id, model_id)
+
+
+def canonical_execution_resource_identity(execution_engine_id: str | None) -> str | None:
+    if not execution_engine_id:
+        return None
+    return f"executor::{execution_engine_id}"
+
+
+def _normalize_consumer_type(value: str | None) -> str | None:
+    return value if value in CONSUMER_TYPES else None
+
+
+def _normalize_consumer_role(value: str | None) -> str | None:
+    return value if value in CONSUMER_ROLES else None
+
+
+def _infer_consumer_attribution(metadata: dict) -> tuple[str | None, str | None]:
+    explicit_type = _normalize_consumer_type(metadata.get("consumer_type"))
+    explicit_role = _normalize_consumer_role(metadata.get("consumer_role"))
+    if explicit_type or explicit_role:
+        return explicit_type, explicit_role
+
+    source = metadata.get("invocation_source")
+    assignment_role = metadata.get("runtime_role") or metadata.get("assignment_role")
+    if source == "model_health_probe" or assignment_role == "model_health":
+        return CONSUMER_TYPE_HEALTH_PROBE, CONSUMER_ROLE_MODEL_HEALTH_PROBE
+    if source == "founder_intent" or assignment_role == "founder_intent_engine":
+        return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_CANDIDATE_DERIVATION
+    if source in {"council_participant", "council_synthesis"} or assignment_role == "multi_model_discussion":
+        return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_DISCUSSION
+    if source == "vision" or assignment_role == "vision":
+        return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_VISION
+    if source == "task_navigation":
+        return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_TASK_NAVIGATION
+    if source == "founder_conversation" or assignment_role == "sino_conversation":
+        return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_SINO_CONVERSATION
+    return None, None
 
 
 MODEL_HEALTH_ERRORS = {
@@ -364,8 +445,13 @@ def record_model_invocation(*, provider_id: str, model_id: str, status: str, met
         if rule and input_tokens is not None and output_tokens is not None:
             cost = (Decimal(input_tokens) * Decimal(rule.input_price_per_1m_tokens) + Decimal(output_tokens) * Decimal(rule.output_price_per_1m_tokens)) / Decimal(1_000_000)
         invocation_id = f"inv-{uuid4().hex[:24]}"
+        consumer_type, consumer_role = _infer_consumer_attribution(metadata)
         session.add(ModelInvocationDB(
             invocation_id=invocation_id, timestamp=now, provider_id=provider_id, model_id=model_id,
+            resource_identity=canonical_model_resource_identity(provider_id, model_id),
+            consumer_type=consumer_type, consumer_role=consumer_role,
+            task_id=metadata.get("task_id"), execution_id=metadata.get("execution_id"),
+            execution_resource_identity=metadata.get("execution_resource_identity"),
             conversation_id=metadata.get("conversation_id"), council_id=metadata.get("council_id"),
             council_model_run_id=metadata.get("council_model_run_id"), assignment_role=metadata.get("runtime_role") or metadata.get("assignment_role"),
             invocation_source=metadata.get("invocation_source") or "runtime", runtime_mode="fallback" if fallback_from else metadata.get("runtime_mode") or "default",
@@ -373,6 +459,36 @@ def record_model_invocation(*, provider_id: str, model_id: str, status: str, met
             status=status, error_code=error_code, input_tokens=input_tokens, output_tokens=output_tokens,
             total_tokens=total_tokens, latency_ms=latency_ms, pricing_rule_id=rule.id if rule else None,
             estimated_cost=cost, currency=rule.currency if rule else None,
+        ))
+        session.commit()
+        return invocation_id
+
+
+def record_execution_resource_invocation(*, execution_resource_identity: str, status: str,
+                                         metadata: dict | None = None, usage=None,
+                                         latency_ms: float | None = None,
+                                         error_code: str | None = None) -> str:
+    metadata = metadata or {}
+    now = datetime.now(timezone.utc)
+    input_tokens = getattr(usage, "input_tokens", None) if usage is not None else None
+    output_tokens = getattr(usage, "output_tokens", None) if usage is not None else None
+    total_tokens = getattr(usage, "total_tokens", None) if usage is not None else None
+    consumer_type = _normalize_consumer_type(metadata.get("consumer_type")) or CONSUMER_TYPE_SYSTEM_EXECUTOR
+    consumer_role = _normalize_consumer_role(metadata.get("consumer_role")) or CONSUMER_ROLE_CODE_EXECUTION
+    invocation_id = f"inv-{uuid4().hex[:24]}"
+    with _session_factory()() as session:
+        session.add(ModelInvocationDB(
+            invocation_id=invocation_id, timestamp=now, provider_id=None, model_id=None,
+            resource_identity=None, execution_resource_identity=execution_resource_identity,
+            consumer_type=consumer_type, consumer_role=consumer_role,
+            conversation_id=metadata.get("conversation_id"), task_id=metadata.get("task_id"),
+            execution_id=metadata.get("execution_id"), council_id=metadata.get("council_id"),
+            council_model_run_id=metadata.get("council_model_run_id"), assignment_role=metadata.get("assignment_role"),
+            invocation_source=metadata.get("invocation_source") or "execution_resource",
+            runtime_mode=metadata.get("runtime_mode") or "default",
+            status=status, error_code=error_code, input_tokens=input_tokens,
+            output_tokens=output_tokens, total_tokens=total_tokens, latency_ms=latency_ms,
+            pricing_rule_id=None, estimated_cost=None, currency=None,
         ))
         session.commit()
         return invocation_id
@@ -393,6 +509,9 @@ def invocation_economics(session=None) -> dict:
             func.sum(ModelInvocationDB.input_tokens), func.sum(ModelInvocationDB.output_tokens), func.sum(ModelInvocationDB.total_tokens),
             func.avg(case((ModelInvocationDB.status == "completed", ModelInvocationDB.latency_ms))),
             func.sum(ModelInvocationDB.estimated_cost), func.count(ModelInvocationDB.total_tokens), func.count(ModelInvocationDB.pricing_rule_id),
+        ).where(
+            ModelInvocationDB.provider_id.is_not(None),
+            ModelInvocationDB.model_id.is_not(None),
         ).group_by(ModelInvocationDB.provider_id, ModelInvocationDB.model_id)).all()
         usage = {identity(row[0], row[1]): row for row in invocation_rows}
         rows = []

@@ -7,7 +7,28 @@ from sqlalchemy.pool import StaticPool
 from app.database.base import Base
 import app.core.model_center.service as model_center
 from app.core.model_center.model import ModelPricingRuleDB
-from app.core.model_center.runtime_chain import MODEL_HEALTH_FRESHNESS_WINDOW, connected_model_registry, conversation_model_eligibility, eligible_models, invocation_economics, model_runtime_preflight, record_model_invocation, resolve_model_resource_health, sino_assigned_models
+from app.core.model_center.runtime_chain import (
+    CONSUMER_ROLE_CODE_EXECUTION,
+    CONSUMER_ROLE_DISCUSSION,
+    CONSUMER_ROLE_EXECUTION_MODEL,
+    CONSUMER_ROLE_MODEL_HEALTH_PROBE,
+    CONSUMER_ROLE_SINO_CONVERSATION,
+    CONSUMER_TYPE_HEALTH_PROBE,
+    CONSUMER_TYPE_SINO_AI,
+    CONSUMER_TYPE_SYSTEM_EXECUTOR,
+    MODEL_HEALTH_FRESHNESS_WINDOW,
+    canonical_execution_resource_identity,
+    canonical_model_resource_identity,
+    connected_model_registry,
+    conversation_model_eligibility,
+    eligible_models,
+    invocation_economics,
+    model_runtime_preflight,
+    record_execution_resource_invocation,
+    record_model_invocation,
+    resolve_model_resource_health,
+    sino_assigned_models,
+)
 from app.llm.models import LLMUsage
 
 
@@ -381,3 +402,158 @@ def test_model_center_get_is_read_only_even_for_legacy_discussion_data(monkeypat
     assert flushes == []
     with factory() as session:
         assert session.get(model_center.AICapabilityConfigDB, "multi_model_discussion").configuration == legacy
+
+
+def test_invocation_writer_populates_resource_identity_and_consumer_lineage(monkeypatch):
+    _, factory = _database(monkeypatch)
+    with factory() as session:
+        session.add(_provider(selected=["chat-a"]))
+        session.add(model_center.ModelRegistryDB(provider_id="provider-a", model_id="chat-a", display_name="Chat A"))
+        session.add(model_center.AICapabilityConfigDB(capability_key="sino_conversation", configuration={"provider_key": "provider-a", "model": "chat-a", "fallbacks": []}))
+        session.commit()
+
+    invocation_id = record_model_invocation(
+        provider_id="provider-a",
+        model_id="chat-a",
+        status="completed",
+        metadata={
+            "conversation_id": "conv-1",
+            "task_id": "task-asset-1",
+            "execution_id": "execution-1",
+            "runtime_role": "sino_conversation",
+            "invocation_source": "founder_conversation",
+            "runtime_mode": "override",
+        },
+        usage=LLMUsage(input_tokens=3, output_tokens=4, total_tokens=7),
+        latency_ms=12,
+    )
+
+    with factory() as session:
+        row = session.get(model_center.ModelInvocationDB, invocation_id)
+        assert row.resource_identity == canonical_model_resource_identity("provider-a", "chat-a")
+        assert row.consumer_type == CONSUMER_TYPE_SINO_AI
+        assert row.consumer_role == CONSUMER_ROLE_SINO_CONVERSATION
+        assert (row.conversation_id, row.task_id, row.execution_id) == ("conv-1", "task-asset-1", "execution-1")
+        assert row.execution_resource_identity is None
+        assert row.total_tokens == 7
+
+
+def test_health_probe_ledger_is_not_business_invocation(monkeypatch):
+    _, factory = _database(monkeypatch)
+    with factory() as session:
+        session.add(_provider(selected=["chat-a"]))
+        session.add(model_center.ModelRegistryDB(provider_id="provider-a", model_id="chat-a", display_name="Chat A"))
+        session.commit()
+
+    invocation_id = record_model_invocation(
+        provider_id="provider-a",
+        model_id="chat-a",
+        status="completed",
+        metadata={"runtime_role": "model_health", "invocation_source": "model_health_probe", "runtime_mode": "probe"},
+        latency_ms=10,
+    )
+
+    with factory() as session:
+        row = session.get(model_center.ModelInvocationDB, invocation_id)
+        assert row.resource_identity == "provider-a::chat-a"
+        assert row.consumer_type == CONSUMER_TYPE_HEALTH_PROBE
+        assert row.consumer_role == CONSUMER_ROLE_MODEL_HEALTH_PROBE
+        assert row.conversation_id is None
+        assert row.task_id is None
+        assert row.execution_id is None
+
+
+def test_system_model_and_codex_executor_invocations_share_execution_without_identity_collision(monkeypatch):
+    _, factory = _database(monkeypatch)
+    with factory() as session:
+        session.add(_provider(selected=["chat-a"]))
+        session.add(model_center.ModelRegistryDB(provider_id="provider-a", model_id="chat-a", display_name="Chat A"))
+        session.add(model_center.AICapabilityConfigDB(capability_key="sino_conversation", configuration={"provider_key": "provider-a", "model": "chat-a", "fallbacks": []}))
+        session.commit()
+
+    system_model_id = record_model_invocation(
+        provider_id="provider-a",
+        model_id="chat-a",
+        status="completed",
+        metadata={
+            "consumer_type": CONSUMER_TYPE_SYSTEM_EXECUTOR,
+            "consumer_role": CONSUMER_ROLE_EXECUTION_MODEL,
+            "task_id": "task-asset-1",
+            "execution_id": "execution-1",
+            "invocation_source": "execution_model",
+        },
+        usage=LLMUsage(input_tokens=5, output_tokens=6, total_tokens=11),
+        latency_ms=20,
+    )
+    codex_id = record_execution_resource_invocation(
+        execution_resource_identity=canonical_execution_resource_identity("codex"),
+        status="completed",
+        metadata={
+            "consumer_type": CONSUMER_TYPE_SYSTEM_EXECUTOR,
+            "consumer_role": CONSUMER_ROLE_CODE_EXECUTION,
+            "task_id": "task-asset-1",
+            "execution_id": "execution-1",
+            "conversation_id": "conv-1",
+            "invocation_source": "execution_loop.codex",
+        },
+        latency_ms=30,
+    )
+
+    with factory() as session:
+        system_model = session.get(model_center.ModelInvocationDB, system_model_id)
+        codex = session.get(model_center.ModelInvocationDB, codex_id)
+        assert system_model.resource_identity == "provider-a::chat-a"
+        assert system_model.execution_resource_identity is None
+        assert system_model.consumer_type == codex.consumer_type == CONSUMER_TYPE_SYSTEM_EXECUTOR
+        assert system_model.consumer_role == CONSUMER_ROLE_EXECUTION_MODEL
+        assert codex.consumer_role == CONSUMER_ROLE_CODE_EXECUTION
+        assert codex.provider_id is None
+        assert codex.model_id is None
+        assert codex.resource_identity is None
+        assert codex.execution_resource_identity == "executor::codex"
+        assert codex.total_tokens is None
+        assert codex.estimated_cost is None
+        assert system_model.execution_id == codex.execution_id == "execution-1"
+
+    rows = {row["identity"]: row for row in invocation_economics()["models"]}
+    assert rows["provider-a::chat-a"]["request_count"] == 1
+    assert resolve_model_resource_health(factory(), "provider-a", "chat-a")["health_status"] == "healthy"
+
+
+def test_fallback_invocations_keep_consumer_attribution_and_distinct_resources(monkeypatch):
+    _, factory = _database(monkeypatch)
+    with factory() as session:
+        session.add(_provider(selected=["primary", "fallback"]))
+        session.add_all([
+            model_center.ModelRegistryDB(provider_id="provider-a", model_id="primary", display_name="Primary"),
+            model_center.ModelRegistryDB(provider_id="provider-a", model_id="fallback", display_name="Fallback"),
+        ])
+        session.commit()
+
+    primary_id = record_model_invocation(
+        provider_id="provider-a",
+        model_id="primary",
+        status="failed",
+        metadata={"runtime_role": "multi_model_discussion", "invocation_source": "council_participant"},
+        error_code="provider_unavailable",
+        latency_ms=10,
+    )
+    fallback_id = record_model_invocation(
+        provider_id="provider-a",
+        model_id="fallback",
+        status="completed",
+        metadata={"runtime_role": "multi_model_discussion", "invocation_source": "council_participant"},
+        fallback_from={"provider": "provider-a", "model": "primary"},
+        usage=LLMUsage(input_tokens=1, output_tokens=2, total_tokens=3),
+        latency_ms=12,
+    )
+
+    with factory() as session:
+        primary = session.get(model_center.ModelInvocationDB, primary_id)
+        fallback = session.get(model_center.ModelInvocationDB, fallback_id)
+        assert primary.consumer_type == fallback.consumer_type == CONSUMER_TYPE_SINO_AI
+        assert primary.consumer_role == fallback.consumer_role == CONSUMER_ROLE_DISCUSSION
+        assert primary.resource_identity == "provider-a::primary"
+        assert fallback.resource_identity == "provider-a::fallback"
+        assert fallback.runtime_mode == "fallback"
+        assert (fallback.fallback_from_provider, fallback.fallback_from_model) == ("provider-a", "primary")

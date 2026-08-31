@@ -45,7 +45,7 @@ from app.core.draft.model import FounderDraftDB
 from app.core.reference.model import IntelligenceReferenceDB
 from app.core.reusable_asset.model import ReusableAssetDB, ReuseEvidenceDB
 from app.core.council.model import CouncilModelRunDB, CouncilRunDB
-from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
+from app.core.model_center.model import AICapabilityConfigDB, ApplicationCapabilityAssignmentDB, ModelInvocationDB, ModelPricingRuleDB, ModelProviderConfigDB, ModelRegistryDB, ModelRoleAssignmentDB
 from core.founder_object.model import ConversationObjectContextDB, FounderObjectDB, FounderObjectRevisionDB
 from core.founder_intent.model import ConversationCandidateContextDB, FounderIntentRunDB, FounderObjectCandidateDB
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB

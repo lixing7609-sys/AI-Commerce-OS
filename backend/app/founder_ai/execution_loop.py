@@ -2,7 +2,9 @@
 
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
+import time
 from typing import Any, Protocol
 
 from .codex_adapter import CodexExecutionResult, SubprocessCodexAdapter
@@ -11,6 +13,7 @@ from .orchestrator import ExecutionPackage, MemoryAssetDraft, build_memory_asset
 
 
 EXECUTION_STATES = {"created", "draft", "approved", "queued", "executing", "testing", "paused", "blocked", "completed", "failed"}
+logger = logging.getLogger("app.founder_ai.execution_loop")
 
 
 @dataclass
@@ -120,6 +123,45 @@ def _result_attribution(result: CodexExecutionResult) -> dict[str, Any]:
     return attribution
 
 
+def _record_codex_executor_invocation(
+    session: ExecutionSession,
+    package: ExecutionPackage,
+    *,
+    status: str,
+    latency_ms: float | None = None,
+    error_code: str | None = None,
+) -> None:
+    """Record Codex as an executor resource, not as a provider/model resource."""
+    try:
+        from app.core.model_center.runtime_chain import (
+            CONSUMER_ROLE_CODE_EXECUTION,
+            CONSUMER_TYPE_SYSTEM_EXECUTOR,
+            canonical_execution_resource_identity,
+            record_execution_resource_invocation,
+        )
+
+        execution_resource_identity = canonical_execution_resource_identity(session.executor)
+        if not execution_resource_identity:
+            return
+        record_execution_resource_invocation(
+            execution_resource_identity=execution_resource_identity,
+            status=status,
+            latency_ms=latency_ms,
+            error_code=error_code,
+            metadata={
+                "consumer_type": CONSUMER_TYPE_SYSTEM_EXECUTOR,
+                "consumer_role": CONSUMER_ROLE_CODE_EXECUTION,
+                "task_id": session.task_asset_id,
+                "execution_id": session.id,
+                "conversation_id": package.task_asset.conversation_id,
+                "invocation_source": "execution_loop.codex",
+                "runtime_mode": "default",
+            },
+        )
+    except Exception:
+        logger.exception("codex executor invocation ledger write failed execution_id=%s", session.id)
+
+
 class FounderExecutionLoop:
     def __init__(self, adapter: CodexAdapter, on_status=None):
         self.adapter = adapter
@@ -148,7 +190,25 @@ class FounderExecutionLoop:
         append_event(session, "codex_started", status="executing", message="Codex subprocess started", timestamp=session.started_at)
         self.on_status("executing")
         try:
-            result = self.adapter.execute(package, cwd=cwd)
+            codex_started = time.monotonic()
+            try:
+                result = self.adapter.execute(package, cwd=cwd)
+            except Exception as error:
+                _record_codex_executor_invocation(
+                    session,
+                    package,
+                    status="failed",
+                    latency_ms=(time.monotonic() - codex_started) * 1000,
+                    error_code=error.__class__.__name__,
+                )
+                raise
+            _record_codex_executor_invocation(
+                session,
+                package,
+                status="completed" if result.exit_code == 0 else "failed",
+                latency_ms=(time.monotonic() - codex_started) * 1000,
+                error_code=None if result.exit_code == 0 else "codex_exit_nonzero",
+            )
             session.subprocess_exit_status = result.exit_code
             session.expected_long_running_operation = None
             session.expected_operation_started_at = None
