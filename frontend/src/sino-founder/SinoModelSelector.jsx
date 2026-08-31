@@ -17,6 +17,9 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
+  const liveRef = useRef(true);
+  const savingRef = useRef(false);
+  const refreshRequestRef = useRef(0);
   const [center, setCenter] = useState(null);
   const [assigned, setAssigned] = useState(null);
   const [loadState, setLoadState] = useState("LOADING");
@@ -25,19 +28,27 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
   const [saving, setSaving] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ top: 0, left: 0, arrowLeft: 0 });
 
-  useEffect(() => {
-    let live = true;
-    Promise.all([getModelCenter(), getSinoAssignedModels()]).then(([value, candidates]) => {
-      if (live) {
-        setCenter(value); setAssigned(candidates);
-        setLoadState((candidates?.models || []).length ? "LOADED_AVAILABLE" : "LOADED_EMPTY");
-      }
-    }).catch(() => {
+  async function refreshCandidates() {
+    const requestId = ++refreshRequestRef.current;
+    setLoadState("LOADING");
+    try {
+      const [value, candidates] = await Promise.all([getModelCenter(), getSinoAssignedModels()]);
+      if (!liveRef.current || requestId !== refreshRequestRef.current) return false;
+      setCenter(value); setAssigned(candidates);
+      setLoadState((candidates?.models || []).length ? "LOADED_AVAILABLE" : "LOADED_EMPTY");
+      return true;
+    } catch {
       // Transport failure is not authoritative empty data. Retain any previous
       // model/binding projection and expose a retryable load failure instead.
-      if (live) setLoadState("LOAD_FAILED");
-    });
-    return () => { live = false; };
+      if (liveRef.current && requestId === refreshRequestRef.current) setLoadState("LOAD_FAILED");
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    liveRef.current = true;
+    Promise.resolve().then(refreshCandidates);
+    return () => { liveRef.current = false; };
   }, []);
   useEffect(() => {
     if (!open) return undefined;
@@ -77,7 +88,8 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
     : "Sino AI";
 
   async function selectModel(option) {
-    if (!option.available || option.key === selectedKey || saving) { setOpen(false); return; }
+    if (!option.available || option.key === selectedKey || savingRef.current) { setOpen(false); return; }
+    savingRef.current = true;
     setSaving(true); setError("");
     try {
       if (conversation?.id && !String(conversation.id).startsWith("pending-")) {
@@ -87,12 +99,21 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
         onPreselect?.(option);
       }
       setOpen(false);
-    } catch {
-      setError("模型切换失败，已保持原模型。");
-    } finally { setSaving(false); }
+    } catch (switchError) {
+      if (switchError?.status === 422 && /Conversation model is unavailable/i.test(switchError.message || "")) {
+        await refreshCandidates();
+        setError("该模型当前已不可用于此会话，候选列表已刷新，原模型保持不变。");
+      } else {
+        setError("模型切换失败，已保持原模型。");
+      }
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }
 
-  function toggleMenu() {
+  async function toggleMenu() {
+    if (open) { setOpen(false); return; }
     if (!open) {
       const bounds = triggerRef.current?.getBoundingClientRect();
       if (bounds) {
@@ -102,7 +123,8 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
         setPopoverPosition({ top: bounds.bottom + 12, left: menuLeft, arrowLeft: anchorCenter - menuLeft });
       }
     }
-    setOpen((value) => !value);
+    await refreshCandidates();
+    if (liveRef.current) setOpen(true);
   }
 
   return <div className="sino-model-selector" ref={rootRef}>

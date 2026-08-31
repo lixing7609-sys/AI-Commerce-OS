@@ -35,7 +35,7 @@ describe("Sino AI Conversation Model selector", () => {
     render(<SinoModelSelector conversation={null} />);
     fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
     await screen.findByRole("menuitemradio", { name: /GPT 5 Pro/ });
-    expect(getSinoAssignedModels).toHaveBeenCalledTimes(1);
+    expect(getSinoAssignedModels).toHaveBeenCalledTimes(2);
     expect(screen.getByText("DeepSeek Chat")).toBeTruthy();
     expect(screen.queryByText("Claude Sonnet")).toBeNull();
   });
@@ -116,5 +116,105 @@ describe("Sino AI Conversation Model selector", () => {
     fireEvent.click(await screen.findByRole("menuitemradio", { name: /GPT 5 Pro/ }));
     await screen.findByText("模型切换失败，已保持原模型。");
     expect(screen.queryByText(/raw secret/)).toBeNull();
+  });
+
+  it("refreshes the authorized candidates every time the selector opens", async () => {
+    const refreshed = { models: [
+      assigned.models[0],
+      { identity: "claude::claude-sonnet", provider_id: "claude", provider_name: "Claude", model_id: "claude-sonnet", display_name: "Claude Sonnet", health_status: "healthy", availability: "available", roles: ["Sino 主对话"] },
+    ] };
+    getModelCenter.mockResolvedValue(center);
+    getSinoAssignedModels.mockResolvedValueOnce(assigned).mockResolvedValueOnce(refreshed);
+    render(<SinoModelSelector conversation={{ id: "conv-1", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro" }} />);
+    await waitFor(() => expect(getSinoAssignedModels).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
+    expect(await screen.findByText("Claude Sonnet")).toBeTruthy();
+    expect(screen.queryByText("DeepSeek Chat")).toBeNull();
+    expect(getSinoAssignedModels).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("menuitemradio", { name: /GPT 5 Pro/ }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("does not let a slower initial response overwrite the newer open refresh", async () => {
+    let resolveInitial;
+    const initial = new Promise((resolve) => { resolveInitial = resolve; });
+    const refreshed = { models: [assigned.models[0], assigned.models[1]] };
+    getModelCenter.mockResolvedValue(center);
+    getSinoAssignedModels.mockReturnValueOnce(initial).mockResolvedValueOnce(refreshed);
+    render(<SinoModelSelector conversation={{ id: "conv-race", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro" }} />);
+    await waitFor(() => expect(getSinoAssignedModels).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
+    expect(await screen.findByText("DeepSeek Chat")).toBeTruthy();
+    resolveInitial({ models: [assigned.models[0]] });
+    await Promise.resolve();
+    expect(screen.getByText("DeepSeek Chat")).toBeTruthy();
+  });
+
+  it("refreshes once after a stale 422 without retrying or changing the persisted selection", async () => {
+    const current = assigned.models[0];
+    const stale = { identity: "claude::claude-sonnet", provider_id: "claude", provider_name: "Claude", model_id: "claude-sonnet", display_name: "Claude Sonnet", health_status: "healthy", availability: "available", roles: ["Sino 主对话"] };
+    const replacement = assigned.models[1];
+    getModelCenter.mockResolvedValue(center);
+    getSinoAssignedModels
+      .mockResolvedValueOnce({ models: [current, stale] })
+      .mockResolvedValueOnce({ models: [current, stale] })
+      .mockResolvedValueOnce({ models: [current, replacement] });
+    const unavailable = new Error("切换 Conversation Model 失败：Conversation model is unavailable");
+    unavailable.status = 422;
+    setFounderConversationModel.mockRejectedValue(unavailable);
+    const changed = vi.fn();
+    render(<SinoModelSelector conversation={{ id: "conv-stale", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro" }} onConversationChanged={changed} />);
+    fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /Claude Sonnet/ }));
+    expect(await screen.findByText("该模型当前已不可用于此会话，候选列表已刷新，原模型保持不变。")).toBeTruthy();
+    expect(screen.queryByText("Claude Sonnet")).toBeNull();
+    expect(screen.getByText("DeepSeek Chat")).toBeTruthy();
+    expect(screen.getByRole("menuitemradio", { name: /GPT 5 Pro/ }).getAttribute("aria-checked")).toBe("true");
+    expect(setFounderConversationModel).toHaveBeenCalledTimes(1);
+    expect(getSinoAssignedModels).toHaveBeenCalledTimes(3);
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it("switches an unavailable current model to an eligible candidate only after backend success", async () => {
+    getModelCenter.mockResolvedValue(center);
+    getSinoAssignedModels.mockResolvedValue(assigned);
+    setFounderConversationModel.mockResolvedValue({ id: "conv-switch", conversation_model_provider: "deepseek", conversation_model: "deepseek-chat" });
+    const changed = vi.fn();
+    const { rerender } = render(<SinoModelSelector conversation={{ id: "conv-switch", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro", model_unavailable: true }} onConversationChanged={changed} />);
+    fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /DeepSeek Chat/ }));
+    await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+    expect(setFounderConversationModel).toHaveBeenCalledWith("conv-switch", "deepseek", "deepseek-chat");
+    rerender(<SinoModelSelector conversation={{ id: "conv-switch", conversation_model_provider: "deepseek", conversation_model: "deepseek-chat" }} onConversationChanged={changed} />);
+    fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
+    expect((await screen.findByRole("menuitemradio", { name: /DeepSeek Chat/ })).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("blocks duplicate switch requests while the first request is pending", async () => {
+    getModelCenter.mockResolvedValue(center);
+    getSinoAssignedModels.mockResolvedValue(assigned);
+    let resolveSwitch;
+    setFounderConversationModel.mockReturnValue(new Promise((resolve) => { resolveSwitch = resolve; }));
+    render(<SinoModelSelector conversation={{ id: "conv-duplicate", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro" }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
+    const target = await screen.findByRole("menuitemradio", { name: /DeepSeek Chat/ });
+    fireEvent.click(target);
+    fireEvent.click(target);
+    expect(setFounderConversationModel).toHaveBeenCalledTimes(1);
+    resolveSwitch({ id: "conv-duplicate", conversation_model_provider: "deepseek", conversation_model: "deepseek-chat" });
+    await waitFor(() => expect(screen.queryByRole("menu", { name: "Conversation Models" })).toBeNull());
+  });
+
+  it("keeps model switching isolated to the active Conversation id", async () => {
+    getModelCenter.mockResolvedValue(center);
+    getSinoAssignedModels.mockResolvedValue(assigned);
+    setFounderConversationModel.mockResolvedValue({ id: "conv-a", conversation_model_provider: "deepseek", conversation_model: "deepseek-chat" });
+    const changedA = vi.fn();
+    const changedB = vi.fn();
+    render(<><SinoModelSelector conversation={{ id: "conv-a", title: "Conversation A", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro" }} onConversationChanged={changedA} /><SinoModelSelector conversation={{ id: "conv-b", title: "Conversation B", conversation_model_provider: "deepseek", conversation_model: "deepseek-chat" }} onConversationChanged={changedB} /></>);
+    fireEvent.click(screen.getByRole("button", { name: /Conversation A/ }));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /DeepSeek Chat/ }));
+    await waitFor(() => expect(changedA).toHaveBeenCalledTimes(1));
+    expect(setFounderConversationModel).toHaveBeenCalledWith("conv-a", "deepseek", "deepseek-chat");
+    expect(changedB).not.toHaveBeenCalled();
   });
 });
