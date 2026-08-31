@@ -404,7 +404,9 @@ def test_conversation_model_override_persists_and_rejects_unavailable_models(mon
     import app.core.model_center.runtime_chain as runtime_chain
     selected = SimpleNamespace(provider_key="provider-b", model="chat-b")
     monkeypatch.setattr(model_center_service, "resolve_runtime_config", lambda provider_key=None, model=None, **_: selected if (provider_key, model) == ("provider-b", "chat-b") else None)
-    monkeypatch.setattr(runtime_chain, "sino_assigned_models", lambda **_: [{"identity": "provider-b::chat-b"}])
+    monkeypatch.setattr(runtime_chain, "conversation_model_eligibility", lambda provider_key, model, **_: {
+        "conversation_eligible": (provider_key, model) == ("provider-b", "chat-b"),
+    })
     updated = conversation_service.set_conversation_model("conv-preference", "provider-b", "chat-b")
     assert (updated.conversation_model_provider, updated.conversation_model) == ("provider-b", "chat-b")
     with factory() as db:

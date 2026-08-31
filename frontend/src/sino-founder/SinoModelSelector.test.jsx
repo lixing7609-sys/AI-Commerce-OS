@@ -15,8 +15,8 @@ const center = {
   ],
 };
 const assigned = { models: [
-  { identity: "gpt::gpt-5-pro", provider_id: "gpt", provider_name: "GPT", model_id: "gpt-5-pro", display_name: "GPT 5 Pro", health_status: "healthy", availability: "available", roles: ["Sino 主对话"] },
-  { identity: "deepseek::deepseek-chat", provider_id: "deepseek", provider_name: "DeepSeek", model_id: "deepseek-chat", display_name: "DeepSeek Chat", health_status: "healthy", availability: "available", roles: ["讨论模型 1"] },
+  { identity: "gpt::gpt-5-pro", provider_id: "gpt", provider_name: "GPT", model_id: "gpt-5-pro", display_name: "GPT 5 Pro", health_status: "healthy", availability: "available", conversation_eligible: true, selectable: true, roles: ["Sino 主对话"] },
+  { identity: "deepseek::deepseek-chat", provider_id: "deepseek", provider_name: "DeepSeek", model_id: "deepseek-chat", display_name: "DeepSeek Chat", health_status: "healthy", availability: "available", conversation_eligible: true, selectable: true, roles: ["讨论模型 1"] },
 ] };
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -121,7 +121,7 @@ describe("Sino AI Conversation Model selector", () => {
   it("refreshes the authorized candidates every time the selector opens", async () => {
     const refreshed = { models: [
       assigned.models[0],
-      { identity: "claude::claude-sonnet", provider_id: "claude", provider_name: "Claude", model_id: "claude-sonnet", display_name: "Claude Sonnet", health_status: "healthy", availability: "available", roles: ["Sino 主对话"] },
+      { identity: "claude::claude-sonnet", provider_id: "claude", provider_name: "Claude", model_id: "claude-sonnet", display_name: "Claude Sonnet", health_status: "healthy", availability: "available", conversation_eligible: true, selectable: true, roles: ["Sino 主对话"] },
     ] };
     getModelCenter.mockResolvedValue(center);
     getSinoAssignedModels.mockResolvedValueOnce(assigned).mockResolvedValueOnce(refreshed);
@@ -151,7 +151,7 @@ describe("Sino AI Conversation Model selector", () => {
 
   it("refreshes once after a stale 422 without retrying or changing the persisted selection", async () => {
     const current = assigned.models[0];
-    const stale = { identity: "claude::claude-sonnet", provider_id: "claude", provider_name: "Claude", model_id: "claude-sonnet", display_name: "Claude Sonnet", health_status: "healthy", availability: "available", roles: ["Sino 主对话"] };
+    const stale = { identity: "claude::claude-sonnet", provider_id: "claude", provider_name: "Claude", model_id: "claude-sonnet", display_name: "Claude Sonnet", health_status: "healthy", availability: "available", conversation_eligible: true, selectable: true, roles: ["Sino 主对话"] };
     const replacement = assigned.models[1];
     getModelCenter.mockResolvedValue(center);
     getSinoAssignedModels
@@ -216,5 +216,33 @@ describe("Sino AI Conversation Model selector", () => {
     await waitFor(() => expect(changedA).toHaveBeenCalledTimes(1));
     expect(setFounderConversationModel).toHaveBeenCalledWith("conv-a", "deepseek", "deepseek-chat");
     expect(changedB).not.toHaveBeenCalled();
+  });
+
+  it("retains a selected unavailable model without treating it as a switchable healthy candidate", async () => {
+    const selectedUnavailable = {
+      identity: "gpt::gpt-5-pro", provider_id: "gpt", provider_name: "GPT", model_id: "gpt-5-pro",
+      display_name: "GPT 5 Pro", health_status: "unhealthy", availability: "unavailable",
+      conversation_eligible: false, selectable: false, conversation_selected: true,
+      eligibility_reason: "fresh_healthy", roles: ["讨论模型 1"],
+    };
+    getModelCenter.mockResolvedValue(center);
+    getSinoAssignedModels.mockResolvedValue({ models: [selectedUnavailable, assigned.models[1]] });
+    render(<SinoModelSelector conversation={{ id: "conv-unavailable", conversation_model_provider: "gpt", conversation_model: "gpt-5-pro" }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Sino AI/ }));
+    const selected = await screen.findByRole("menuitemradio", { name: /GPT 5 Pro/ });
+    expect(selected.getAttribute("aria-checked")).toBe("true");
+    expect(selected.disabled).toBe(true);
+    expect(screen.getByText("当前不可用")).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /DeepSeek Chat/ }));
+    await waitFor(() => expect(setFounderConversationModel).toHaveBeenCalledWith("conv-unavailable", "deepseek", "deepseek-chat"));
+  });
+
+  it("deduplicates resources by provider and model identity while preserving cross-provider models", () => {
+    const models = configuredConversationModels({ models: [
+      assigned.models[0],
+      { ...assigned.models[0], roles: ["讨论模型 1"] },
+      { ...assigned.models[0], identity: "proxy::gpt-5-pro", provider_id: "proxy", provider_name: "Proxy" },
+    ] });
+    expect(models.map((item) => item.key)).toEqual(["gpt::gpt-5-pro", "proxy::gpt-5-pro"]);
   });
 });

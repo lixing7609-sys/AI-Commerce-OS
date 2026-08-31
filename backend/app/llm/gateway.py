@@ -49,13 +49,13 @@ class LLMGateway:
             provider_type = center_config.provider_type
             timeout_seconds = get_llm_timeout_seconds()
             if provider_type == "deepseek":
-                return DeepSeekProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds)
+                return self._tag_provider(DeepSeekProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds), center_config.provider_key, center_config.model)
             if provider_type in {"openai", "ofoxai", "openrouter", "siliconflow", "azure_openai", "openai_compatible", "qwen", "kimi", "doubao", "local", "custom"}:
-                return OpenAIProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds)
+                return self._tag_provider(OpenAIProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds), center_config.provider_key, center_config.model)
             if provider_type == "anthropic":
-                return AnthropicProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds)
+                return self._tag_provider(AnthropicProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds), center_config.provider_key, center_config.model)
             if provider_type == "gemini":
-                return GeminiProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds)
+                return self._tag_provider(GeminiProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds), center_config.provider_key, center_config.model)
 
         provider_name = requested_name or get_llm_provider()
         timeout_seconds = get_llm_timeout_seconds()
@@ -71,12 +71,12 @@ class LLMGateway:
                 logger.error("llm configuration invalid: provider=deepseek reason=api_key_missing")
                 raise ConfigurationError("api_key_missing")
 
-            return DeepSeekProvider(
+            return self._tag_provider(DeepSeekProvider(
                 api_key=config.api_key,
                 base_url=config.base_url,
                 model=config.model,
                 timeout_seconds=timeout_seconds,
-            )
+            ), provider_name, config.model)
 
         if provider_name == "ollama":
             config = get_ollama_llm_config()
@@ -85,36 +85,35 @@ class LLMGateway:
                 logger.error("llm configuration invalid: provider=ollama reason=model_missing")
                 raise ConfigurationError("model_missing")
 
-            return OllamaProvider(
+            return self._tag_provider(OllamaProvider(
                 base_url=config.base_url,
                 model=config.model,
                 timeout_seconds=timeout_seconds,
-            )
+            ), provider_name, config.model)
 
         if provider_name in {"gpt", "openai"}:
             config = get_openai_llm_config()
             if config is None:
                 logger.error("llm configuration invalid: provider=openai reason=api_key_or_model_missing")
                 raise ConfigurationError("api_key_or_model_missing")
-            return OpenAIProvider(api_key=config.api_key, base_url=config.base_url, model=config.model, timeout_seconds=timeout_seconds)
+            return self._tag_provider(OpenAIProvider(api_key=config.api_key, base_url=config.base_url, model=config.model, timeout_seconds=timeout_seconds), provider_name, config.model)
 
         if provider_name in {"claude", "anthropic"}:
             config = get_anthropic_llm_config()
             if config is None:
                 logger.error("llm configuration invalid: provider=anthropic reason=api_key_or_model_missing")
                 raise ConfigurationError("api_key_or_model_missing")
-            return AnthropicProvider(api_key=config.api_key, base_url=config.base_url, model=config.model, timeout_seconds=timeout_seconds)
+            return self._tag_provider(AnthropicProvider(api_key=config.api_key, base_url=config.base_url, model=config.model, timeout_seconds=timeout_seconds), provider_name, config.model)
 
         logger.error("llm configuration invalid: reason=provider_invalid provider=%s", provider_name)
         raise ConfigurationError("provider_invalid")
 
     def generate(self, request: LLMRequest) -> LLMResponse:
         provider = self._resolve_provider()
-
-        return self._generate(provider, request)
+        return self._generate_and_record(provider, request)
 
     def generate_for(self, provider_name: str, request: LLMRequest) -> LLMResponse:
-        return self._generate(self._resolve_provider(provider_name), request)
+        return self._generate_and_record(self._resolve_provider(provider_name), request)
 
     def generate_for_model(self, provider_name: str, model: str, request: LLMRequest) -> LLMResponse:
         """Generate with an explicit model and a bounded configured Runtime fallback chain."""
@@ -143,6 +142,7 @@ class LLMGateway:
             started = time.monotonic()
             fallback_from = {"provider": candidates[0].provider_key, "model": candidates[0].model} if index else None
             try:
+                self._enforce_model_preflight(candidate.provider_key, candidate.model, request)
                 response = self._generate(self._provider_from_runtime(candidate), request)
                 invocation_id = self._record_invocation(candidate.provider_key, candidate.model, "completed", request,
                                                         response=response, latency_ms=response.latency_ms, fallback_from=fallback_from)
@@ -176,9 +176,14 @@ class LLMGateway:
         logger.info("llm stream requested: provider=%s", type(provider).__name__)
         started = time.monotonic()
         try:
+            self._enforce_model_preflight(center_config.provider_key, center_config.model, request)
             yield from provider.stream(request)
             request.metadata["model_invocation_id"] = self._record_invocation(
                 center_config.provider_key, center_config.model, "completed", request,
+                response=LLMResponse(
+                    content="", provider=provider.__class__.__name__, model=center_config.model,
+                    usage=request.metadata.get("_stream_usage"), latency_ms=(time.monotonic() - started) * 1000,
+                ),
                 latency_ms=(time.monotonic() - started) * 1000,
             )
         except LLMGatewayError as error:
@@ -187,6 +192,29 @@ class LLMGateway:
                 latency_ms=(time.monotonic() - started) * 1000, error_code=error.error_type,
             )
             raise
+
+    @staticmethod
+    def _enforce_model_preflight(provider_id, model_id, request):
+        if request.metadata.get("force_model_health_probe"):
+            request.metadata["model_health_preflight"] = {"provider": provider_id, "model": model_id, "action": "forced_probe"}
+            return
+        from app.core.model_center.runtime_chain import model_runtime_preflight
+        decision = model_runtime_preflight(provider_id, model_id)
+        request.metadata["model_health_preflight"] = {
+            "provider": provider_id, "model": model_id,
+            "action": decision["preflight_action"], "health_source": decision["health_source"],
+            "last_checked_at": decision["last_checked_at"], "fresh_until": decision["fresh_until"],
+        }
+        if decision["preflight_action"] != "reject":
+            return
+        from app.llm.exceptions import AuthenticationError, InsufficientQuotaError, LLMTimeoutError, ProviderUnavailableError, RateLimitedError
+        errors = {
+            "QUOTA_EXCEEDED": InsufficientQuotaError,
+            "RATE_LIMITED": RateLimitedError,
+            "TIMEOUT": LLMTimeoutError,
+            "CONFIG_ERROR": AuthenticationError,
+        }
+        raise errors.get(decision["health_classification"], ProviderUnavailableError)()
 
     @staticmethod
     def _record_invocation(provider_id, model_id, status, request, *, response=None, latency_ms=None, error_code=None, fallback_from=None):
@@ -203,14 +231,40 @@ class LLMGateway:
     def _provider_from_runtime(center_config) -> LLMProvider:
         timeout_seconds = get_llm_timeout_seconds()
         if center_config.provider_type == "deepseek":
-            return DeepSeekProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds)
+            return LLMGateway._tag_provider(DeepSeekProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds), center_config.provider_key, center_config.model)
         if center_config.provider_type in {"openai", "ofoxai", "openrouter", "siliconflow", "azure_openai", "openai_compatible", "qwen", "kimi", "doubao", "local", "custom"}:
-            return OpenAIProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds)
+            return LLMGateway._tag_provider(OpenAIProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds), center_config.provider_key, center_config.model)
         if center_config.provider_type == "anthropic":
-            return AnthropicProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds)
+            return LLMGateway._tag_provider(AnthropicProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds), center_config.provider_key, center_config.model)
         if center_config.provider_type == "gemini":
-            return GeminiProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds)
+            return LLMGateway._tag_provider(GeminiProvider(api_key=center_config.api_key, base_url=center_config.base_url, model=center_config.model, timeout_seconds=timeout_seconds), center_config.provider_key, center_config.model)
         raise ConfigurationError("provider_invalid")
+
+    @staticmethod
+    def _tag_provider(provider: LLMProvider, provider_id: str | None, model_id: str | None) -> LLMProvider:
+        setattr(provider, "_model_center_provider_id", provider_id)
+        setattr(provider, "_model_center_model_id", model_id)
+        return provider
+
+    def _generate_and_record(self, provider: LLMProvider, request: LLMRequest) -> LLMResponse:
+        provider_id = getattr(provider, "_model_center_provider_id", None)
+        model_id = getattr(provider, "_model_center_model_id", None)
+        started = time.monotonic()
+        try:
+            response = self._generate(provider, request)
+            if provider_id and model_id:
+                request.metadata["model_invocation_id"] = self._record_invocation(
+                    provider_id, model_id, "completed", request,
+                    response=response, latency_ms=response.latency_ms,
+                )
+            return response
+        except LLMGatewayError as error:
+            if provider_id and model_id:
+                request.metadata["model_invocation_id"] = self._record_invocation(
+                    provider_id, model_id, "failed", request,
+                    latency_ms=(time.monotonic() - started) * 1000, error_code=error.error_type,
+                )
+            raise
 
     @staticmethod
     def _generate(provider: LLMProvider, request: LLMRequest) -> LLMResponse:

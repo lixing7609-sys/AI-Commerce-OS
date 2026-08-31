@@ -58,9 +58,9 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
             conversation_model = defaults[0]["model"]
     if conversation_model_provider and explicit_model_selection:
         from app.core.model_center.service import resolve_runtime_config
-        from app.core.model_center.runtime_chain import identity, sino_assigned_models
-        eligible = {item["identity"] for item in sino_assigned_models()}
-        if identity(conversation_model_provider, conversation_model) not in eligible or resolve_runtime_config(provider_key=conversation_model_provider, model=conversation_model) is None:
+        from app.core.model_center.runtime_chain import conversation_model_eligibility
+        eligible = conversation_model_eligibility(conversation_model_provider, conversation_model)
+        if not eligible["conversation_eligible"] or resolve_runtime_config(provider_key=conversation_model_provider, model=conversation_model) is None:
             raise ConversationBoundaryError("Conversation model is unavailable")
     hidden = conversation_type in {"SYSTEM_RUN", "VERIFICATION_RUN", "TEMPORARY_CONVERSATION"}
     with SessionLocal() as session:
@@ -92,9 +92,9 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
 
 def set_conversation_model(conversation_id: str, provider_key: str, model: str) -> ConversationDB:
     from app.core.model_center.service import resolve_runtime_config
-    from app.core.model_center.runtime_chain import identity, sino_assigned_models
-    eligible = {item["identity"] for item in sino_assigned_models()}
-    if identity(provider_key, model) not in eligible or resolve_runtime_config(provider_key=provider_key, model=model) is None:
+    from app.core.model_center.runtime_chain import conversation_model_eligibility
+    eligible = conversation_model_eligibility(provider_key, model)
+    if not eligible["conversation_eligible"] or resolve_runtime_config(provider_key=provider_key, model=model) is None:
         raise ConversationBoundaryError("Conversation model is unavailable")
     with SessionLocal() as session:
         record = session.get(ConversationDB, conversation_id)

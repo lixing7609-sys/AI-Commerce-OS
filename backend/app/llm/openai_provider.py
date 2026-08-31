@@ -40,7 +40,7 @@ class OpenAIProvider(LLMProvider):
     def stream(self, request: LLMRequest):
         images = list(request.metadata.get("images") or [])
         user_content = [{"type": "text", "text": request.user_prompt}, *[{"type": "image_url", "image_url": {"url": item["data_url"]}} for item in images]] if images else request.user_prompt
-        payload = {"model": self._model, "messages": [{"role": "system", "content": request.system_prompt}, {"role": "user", "content": user_content}], "temperature": request.temperature, "max_tokens": request.max_tokens, "stream": True}
+        payload = {"model": self._model, "messages": [{"role": "system", "content": request.system_prompt}, {"role": "user", "content": user_content}], "temperature": request.temperature, "max_tokens": request.max_tokens, "stream": True, "stream_options": {"include_usage": True}}
         if request.response_format == "json": payload["response_format"] = {"type": "json_object"}
         try:
             with httpx.stream("POST", f"{self._base_url}/chat/completions", json=payload, headers={"Authorization": f"Bearer {self._api_key}"}, timeout=self._timeout_seconds) as response:
@@ -51,7 +51,12 @@ class OpenAIProvider(LLMProvider):
                 if response.status_code != 200: raise InvalidResponseError()
                 for line in response.iter_lines():
                     if not line.startswith("data: ") or line == "data: [DONE]": continue
-                    try: chunk = (json.loads(line[6:]).get("choices") or [{}])[0].get("delta", {}).get("content")
+                    try:
+                        body = json.loads(line[6:])
+                        usage_raw = body.get("usage") or {}
+                        if usage_raw:
+                            request.metadata["_stream_usage"] = LLMUsage(usage_raw.get("prompt_tokens"), usage_raw.get("completion_tokens"), usage_raw.get("total_tokens"))
+                        chunk = (body.get("choices") or [{}])[0].get("delta", {}).get("content")
                     except (ValueError, TypeError, IndexError): chunk = None
                     if chunk: yield chunk
         except httpx.TimeoutException as error: raise LLMTimeoutError() from error

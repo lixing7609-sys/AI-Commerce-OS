@@ -309,8 +309,9 @@ export function getEligibleModels(role, capability) {
   return request(`/founder-ai/model-center/eligible-models?${query}`, undefined, "获取可用模型失败");
 }
 
-export function getSinoAssignedModels() {
-  return request("/founder-ai/model-center/sino-assigned-models", undefined, "获取 Sino AI 已分配模型失败");
+export function getSinoAssignedModels(conversationId = null) {
+  const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : "";
+  return request(`/founder-ai/model-center/sino-assigned-models${query}`, undefined, "获取 Sino AI 已分配模型失败");
 }
 
 export function getRuntimeEnvironmentRegistry() {
@@ -323,6 +324,12 @@ export function saveModelProvider(providerKey, payload) {
 
 export function checkModelProvider(providerKey) {
   return request(`/founder-ai/model-center/providers/${encodeURIComponent(providerKey)}/health`, { method: "POST" }, "模型健康检查失败");
+}
+
+export function checkModelResource(providerKey, modelId) {
+  return request(`/founder-ai/model-center/providers/${encodeURIComponent(providerKey)}/models/health`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model_id: modelId }),
+  }, "模型资源健康检查失败");
 }
 
 export function saveModelRoles(assignments) {

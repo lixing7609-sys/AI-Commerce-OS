@@ -9,7 +9,9 @@ function configuredConversationModels(assigned) {
     providerName: model.provider_name,
     model: model.model_id,
     displayName: model.display_name,
-    available: model.health_status !== "unhealthy" && model.availability !== "unavailable",
+    available: Boolean(model.selectable ?? model.conversation_eligible),
+    selected: Boolean(model.conversation_selected),
+    unavailableReason: model.eligibility_reason || model.health_classification || "unavailable",
   }])).values()];
 }
 
@@ -32,7 +34,8 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
     const requestId = ++refreshRequestRef.current;
     setLoadState("LOADING");
     try {
-      const [value, candidates] = await Promise.all([getModelCenter(), getSinoAssignedModels()]);
+      const activeConversationId = conversation?.id && !String(conversation.id).startsWith("pending-") ? conversation.id : null;
+      const [value, candidates] = await Promise.all([getModelCenter(), getSinoAssignedModels(activeConversationId)]);
       if (!liveRef.current || requestId !== refreshRequestRef.current) return false;
       setCenter(value); setAssigned(candidates);
       setLoadState((candidates?.models || []).length ? "LOADED_AVAILABLE" : "LOADED_EMPTY");
@@ -49,7 +52,7 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
     liveRef.current = true;
     Promise.resolve().then(refreshCandidates);
     return () => { liveRef.current = false; };
-  }, []);
+  }, [conversation?.id]);
   useEffect(() => {
     if (!open) return undefined;
     const position = () => {
@@ -135,7 +138,7 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
       <span className="sino-model-selector__arrow" data-popover-arrow aria-hidden="true" />
       {models.map((option) => <button type="button" role="menuitemradio" aria-checked={option.key === selectedKey} key={option.key} disabled={!option.available || saving} onClick={() => selectModel(option)}>
         <span><strong>{option.displayName}</strong><small>Provider：{option.providerName} · {option.model}</small></span>
-        <i>{option.key === selectedKey ? "✓" : option.available ? "" : "不可用"}</i>
+        <i>{option.key === selectedKey ? option.available ? "✓" : "当前不可用" : option.available ? "" : "不可用"}</i>
       </button>)}
       {loadState === "LOADING" ? <p role="status">正在加载 Conversation Model…</p> : null}
       {loadState === "LOADED_EMPTY" ? <p>暂无可用 Conversation Model</p> : null}

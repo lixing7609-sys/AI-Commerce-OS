@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
+import { checkModelProvider, checkModelResource, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
 
 const empty = { provider_catalog: [], providers: [], roles: [], agents: [], health_cost: [], execution_engines: [] };
 const modelId = (value) => typeof value === "string" ? value : value?.model_id;
@@ -100,7 +100,19 @@ export function buildAssignedModelEconomics({ roles = [], options = [], registry
   return [...rows.entries()].map(([key, row]) => {
     const usage = usageByModel.get(key);
     const usageAvailable = Boolean(usage || row.discussion_tracked);
-    return { ...row, request_count: usage ? Number(usage.request_count || 0) : usageAvailable ? 0 : null, completed_request_count: usage ? Number(usage.completed_request_count || 0) : usageAvailable ? 0 : null, input_tokens: usage?.input_tokens ?? null, output_tokens: usage?.output_tokens ?? null, total_tokens: usage?.total_tokens ?? null, cost: usage?.cost ?? null, average_latency_ms: usage?.average_latency_ms ?? null, usage_status: usage ? "recorded" : usageAvailable ? "available_zero" : "not_integrated" };
+    return {
+      ...row,
+      request_count: usage ? Number(usage.request_count || 0) : usageAvailable ? 0 : null,
+      completed_request_count: usage ? Number(usage.completed_request_count || 0) : usageAvailable ? 0 : null,
+      input_tokens: usage?.input_tokens ?? null,
+      output_tokens: usage?.output_tokens ?? null,
+      total_tokens: usage?.total_tokens ?? null,
+      token_status: usage?.token_status || (usage ? "unavailable" : "enabled_no_records"),
+      pricing_status: usage?.pricing_status || "not_configured",
+      cost: usage?.cost ?? null,
+      average_latency_ms: usage?.average_latency_ms ?? null,
+      usage_status: usage ? "recorded" : usageAvailable ? "available_zero" : "not_integrated",
+    };
   });
 }
 
@@ -122,11 +134,21 @@ export function ModelCenter({ onHome }) {
   const providerTriggerRef = useRef(null);
   const featureDialogRef = useRef(null);
   const featureTriggerRef = useRef(null);
+  const revalidatedModelsRef = useRef(new Set());
   const installed = useMemo(() => center.providers.filter((item) => item.installed), [center.providers]);
 
-  async function reload() { const value = await getModelCenter(); setCenter(value); return value; }
+  async function revalidateStaleModels(value) {
+    const stale = (value.connected_models || []).filter((item) => item.is_stale && !revalidatedModelsRef.current.has(item.identity));
+    if (!stale.length) return value;
+    for (const item of stale) {
+      revalidatedModelsRef.current.add(item.identity);
+      await checkModelResource(item.provider_id, item.model_id).catch(() => null);
+    }
+    return getModelCenter();
+  }
+  async function reload({ revalidate = false } = {}) { let value = await getModelCenter(); setCenter(value); if (revalidate) { value = await revalidateStaleModels(value); setCenter(value); } return value; }
   useEffect(() => {
-    reload().catch((error) => setMessage(error.message));
+    reload({ revalidate: true }).catch((error) => setMessage(error.message));
     getRuntimeEnvironmentRegistry().then(setRuntimeRegistry).catch((error) => setMessage(error.message));
   }, []);
 
@@ -160,7 +182,7 @@ export function ModelCenter({ onHome }) {
     catch (error) { if (editing) { const updated = await restoreProvider(editing).catch(() => null); updateProviderState(editing, { error: failureLabel(updated?.health_error), successMessage: "" }); } else setMessage(actionFailure("连接")); }
     finally { if (editing) updateProviderState(editing, { isConnecting: false }); setBusy(""); }
   }
-  async function refresh(provider) { const key = provider.provider_key; updateProviderState(key, { isRefreshingModels: true, error: "", successMessage: "正在刷新模型…" }); try { const result = await discoverProviderModels(key); mergeProvider(result); updateProviderState(key, { successMessage: `模型已刷新，共 ${result.available_models?.length || 0} 个`, error: "" }); } catch (error) { updateProviderState(key, { error: failureLabel(provider.health_error), successMessage: "" }); } finally { updateProviderState(key, { isRefreshingModels: false }); } }
+  async function refresh(provider) { const key = provider.provider_key; updateProviderState(key, { isRefreshingModels: true, error: "", successMessage: "正在刷新模型与真实状态…" }); try { const result = await discoverProviderModels(key); mergeProvider(result); for (const model of result.selected_models || []) { await checkModelResource(key, model).catch(() => null); revalidatedModelsRef.current.add(`${key}::${model}`); } await reload(); updateProviderState(key, { successMessage: `模型已刷新，共 ${result.available_models?.length || 0} 个`, error: "" }); } catch (error) { updateProviderState(key, { error: failureLabel(provider.health_error), successMessage: "" }); } finally { updateProviderState(key, { isRefreshingModels: false }); } }
   async function choose(provider, model, checked) { const key = provider.provider_key; const id = modelId(model); const next = checked ? [...provider.selected_models, id] : provider.selected_models.filter((item) => item !== id); updateProviderState(key, { isSaving: true, error: "", successMessage: "正在保存…" }); try { const result = await selectProviderModels(key, next); mergeProvider(result); updateProviderState(key, { successMessage: "模型选择已保存" }); } catch (error) { updateProviderState(key, { error: "模型选择保存失败", successMessage: "" }); } finally { updateProviderState(key, { isSaving: false }); } }
   async function removeModel() {
     if (!removalTarget || removalTarget.dependencies.length) return;
@@ -174,6 +196,7 @@ export function ModelCenter({ onHome }) {
     finally { setBusy(""); }
   }
   async function health(provider) { const key = provider.provider_key; updateProviderState(key, { isCheckingHealth: true, error: "", successMessage: "正在检查…" }); try { const result = await checkModelProvider(key); mergeProvider(result.configuration); const feedback = result.status === "healthy" ? "连接正常" : failureLabel(result.configuration?.health_error); updateProviderState(key, { successMessage: result.status === "healthy" ? feedback : "", error: result.status === "healthy" ? "" : feedback }); } catch (error) { updateProviderState(key, { error: failureLabel(provider.health_error), successMessage: "" }); } finally { updateProviderState(key, { isCheckingHealth: false }); } }
+  async function healthModel(provider, model) { const key = provider.provider_key; updateProviderState(key, { isCheckingModelHealth: true, error: "", successMessage: "正在检查具体模型…" }); try { const result = await checkModelResource(key, modelId(model)); revalidatedModelsRef.current.add(`${key}::${modelId(model)}`); await reload(); const feedback = result.status === "healthy" ? "模型当前可用" : failureLabel(result.error_code); updateProviderState(key, { successMessage: result.status === "healthy" ? feedback : "", error: result.status === "healthy" ? "" : feedback }); } catch (error) { updateProviderState(key, { error: "模型资源检查失败", successMessage: "" }); } finally { updateProviderState(key, { isCheckingModelHealth: false }); } }
   function selectModel(provider, model, trigger) { providerTriggerRef.current = trigger; setAdding(false); setFeatureModal(null); setEditing(provider.provider_key); setSelectedModel(model); }
   function closeProviderModal() { setEditing(null); setSelectedModel(null); requestAnimationFrame(() => providerTriggerRef.current?.focus()); }
   function openFeatureModal(name, trigger) { featureTriggerRef.current = trigger; setAdding(false); setEditing(null); setSelectedModel(null); setFeatureModal(name); }
@@ -198,8 +221,8 @@ export function ModelCenter({ onHome }) {
   const selectedModelMeta = selectedProvider?.available_models.find((model) => modelId(model) === selectedModel) || (selectedModel ? { model_id: selectedModel, display_name: selectedModel } : null);
   const modelRows = installed.flatMap((provider) => provider.selected_models.map((selected) => {
     const meta = provider.available_models.find((item) => modelId(item) === selected) || { model_id: selected, display_name: selected };
-    const metrics = center.health_cost.find((item) => item.provider_key === provider.provider_key && (!item.model || item.model === selected || item.selected_models?.includes(selected))) || {};
-    return { provider, selected, meta, health: metrics.health_status || provider.health_status, usage: metrics.usage || {} };
+    const resource = (center.connected_models || []).find((item) => item.provider_id === provider.provider_key && item.model_id === selected) || {};
+    return { provider, selected, meta, resource, health: resource.health_status || "unknown" };
   }));
   function modelDuties(providerKey, model) {
     const duties = [];
@@ -247,7 +270,7 @@ export function ModelCenter({ onHome }) {
     <div className="sino-settings-content">
     {message && <p className="sino-model-center-message" role="status">{message}</p>}
     <section className="sino-capability-section sino-settings-page sino-settings-page--models" aria-label="模型">
-      <section className="sino-model-list-pane"><div className="sino-model-list-heading"><h3>模型</h3><div><span aria-label="模型摘要">{modelRows.length} 个模型 <span aria-hidden="true" className="sino-model-summary-healthy-dot">·</span> {modelRows.filter((row) => row.health === "healthy").length} 正常 · {modelRows.filter((row) => row.health === "unhealthy").length} 异常 · {installed.length} Provider</span></div></div><div className="sino-model-card-grid" role="list" aria-label="已接入模型列表">{modelRows.map(({ provider, selected, meta, health: healthState }) => { const active = editing === provider.provider_key && selectedModel === selected; const duties = modelDuties(provider.provider_key, selected); return <article role="listitem" key={`${provider.provider_key}-${selected}`}><button type="button" className={`sino-model-card-button${active ? " is-selected" : ""}`} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} onClick={(event) => selectModel(provider, selected, event.currentTarget)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span className="sino-model-health-status" data-health={healthState}><span className="sino-model-health-dot" aria-hidden="true">●</span><span>{healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "未测试"}</span></span><small>{duties.length ? duties.join(" · ") : "未分配"}</small></button><button type="button" className="sino-model-remove-button" aria-label={`移除 ${meta.display_name}`} onClick={(event) => { event.stopPropagation(); setRemovalTarget({ provider, model: meta, dependencies: modelDependencies(provider.provider_key, selected) }); }}>×</button></article>; })}<article role="listitem"><button type="button" className="sino-add-model-card" onClick={() => { setFeatureModal(null); setEditing(null); setSelectedModel(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></article></div></section>
+      <section className="sino-model-list-pane"><div className="sino-model-list-heading"><h3>模型</h3><div><span aria-label="模型摘要">{modelRows.length} 个模型 <span aria-hidden="true" className="sino-model-summary-healthy-dot">·</span> {modelRows.filter((row) => row.health === "healthy").length} 正常 · {modelRows.filter((row) => row.health === "unhealthy").length} 异常 · {modelRows.filter((row) => row.health === "unknown").length} 待验证 · {installed.length} Provider</span></div></div><div className="sino-model-card-grid" role="list" aria-label="已接入模型列表">{modelRows.map(({ provider, selected, meta, resource, health: healthState }) => { const active = editing === provider.provider_key && selectedModel === selected; const duties = modelDuties(provider.provider_key, selected); const detail = resource.last_error_code ? `最近调用失败：${failureLabel(resource.last_error_code)}` : resource.last_status === "completed" ? "最近调用成功" : "尚无具体模型证据"; return <article role="listitem" key={`${provider.provider_key}-${selected}`}><button type="button" className={`sino-model-card-button${active ? " is-selected" : ""}`} aria-label={`${meta.display_name} ${provider.display_name}`} aria-pressed={active} onClick={(event) => selectModel(provider, selected, event.currentTarget)}><strong>{meta.display_name}</strong><span>{provider.display_name}</span><span className="sino-model-health-status" data-health={healthState}><span className="sino-model-health-dot" aria-hidden="true">●</span><span>{healthState === "healthy" ? "正常" : healthState === "unhealthy" ? "异常" : "待验证"}</span></span><small>{detail}{resource.last_checked_at ? ` · ${formatRuntimeTimestamp(resource.last_checked_at)}` : ""} · {resource.health_source || "none"}</small><small>{duties.length ? duties.join(" · ") : "未分配"}</small></button><button type="button" className="sino-model-remove-button" aria-label={`移除 ${meta.display_name}`} onClick={(event) => { event.stopPropagation(); setRemovalTarget({ provider, model: meta, dependencies: modelDependencies(provider.provider_key, selected) }); }}>×</button></article>; })}<article role="listitem"><button type="button" className="sino-add-model-card" onClick={() => { setFeatureModal(null); setEditing(null); setSelectedModel(null); setInstallStep(1); setAdding(true); }}>＋ 添加模型</button></article></div></section>
       <div className="sino-settings-control-grid">
         <SettingsFeatureEntry title="Sino AI" description="模型职责分配、Primary / Fallback 与多模型讨论" summary={`${conversationRole?.model || "主对话未配置"} · ${configuredRoles} 个职责`} onClick={(event) => openFeatureModal("sino-ai", event.currentTarget)} />
         <SettingsFeatureEntry title="系统" description="Executor、Runtime 与 System Health" summary={`${activeEngine?.display_name || "Codex"} · ${localRuntime?.status || "LOCAL"}`} onClick={(event) => openFeatureModal("system", event.currentTarget)} />
@@ -257,7 +280,7 @@ export function ModelCenter({ onHome }) {
 
     {adding && <AddModelModal step={installStep} center={center} install={install} editing={editing} busy={busy} providerKey={installProviderKey} onSelectProvider={beginProviderConnection} onInstallChange={setInstall} onConnect={addProvider} onChoose={choose} onClose={() => { setAdding(false); setInstallStep(1); setInstallProviderKey(null); }} />}
 
-    {selectedProvider && selectedModelMeta ? <ProviderConfigModal dialogRef={providerDialogRef} provider={selectedProvider} model={selectedModelMeta} action={providerState(selectedProvider.provider_key)} onCredentialSave={(values) => updateCredentials(selectedProvider, values)} onRefresh={() => refresh(selectedProvider)} onHealth={() => health(selectedProvider)} onChoose={(model, checked) => choose(selectedProvider, model, checked)} onClose={closeProviderModal} /> : null}
+    {selectedProvider && selectedModelMeta ? <ProviderConfigModal dialogRef={providerDialogRef} provider={selectedProvider} model={selectedModelMeta} action={providerState(selectedProvider.provider_key)} onCredentialSave={(values) => updateCredentials(selectedProvider, values)} onRefresh={() => refresh(selectedProvider)} onHealth={() => health(selectedProvider)} onModelHealth={() => healthModel(selectedProvider, selectedModelMeta)} onChoose={(model, checked) => choose(selectedProvider, model, checked)} onClose={closeProviderModal} /> : null}
     {featureModal === "sino-ai" ? <SettingsFeatureModal title="Sino AI" description="模型职责分配、Fallback 与多模型讨论，Primary 失败时有限切换至 Fallback。" inlineDescription dialogRef={featureDialogRef} onClose={closeFeatureModal}><ModelAssignments roles={center.roles || []} options={modelOptions} eligible={eligibleOptions} registry={center.model_capability_registry} busy={busy} onAssign={assignCapability} onVisionAssign={savePreferred} onCouncilSave={saveCouncil} /></SettingsFeatureModal> : null}
     {featureModal === "system" ? <SettingsFeatureModal title="系统" description="Executor、Runtime 与系统健康。" dialogRef={featureDialogRef} onClose={closeFeatureModal}><div className="sino-settings-domain-grid sino-settings-domain-grid--execution"><ExecutorSettings roles={center.roles || []} engines={center.execution_engines || []} /><RuntimeEnvironmentSettings registry={runtimeRegistry} /></div></SettingsFeatureModal> : null}
     {removalTarget ? <ModelRemovalDialog target={removalTarget} busy={busy.startsWith("remove:")} onCancel={() => setRemovalTarget(null)} onRemove={removeModel} onOpenAssignments={() => { setRemovalTarget(null); openFeatureModal("sino-ai", null); }} /> : null}
@@ -316,7 +339,14 @@ function ModelEconomics({ economics, getAssignmentRoles }) {
   const orphanCount = economics.orphan_reference_count || 0;
   const coverage = economics.telemetry_coverage || {};
   const coverageText = (value) => value ? `${value.covered} / ${value.total}` : "统计未接入";
-  return <section className="sino-usage-cost" aria-label="用量与成本"><div className="sino-settings-domain-heading"><h3>用量与成本</h3><span aria-label="已分配模型摘要">{rows.length} 个有效已分配模型{orphanCount ? ` · ${orphanCount} 个失效引用` : ""}</span></div><dl><div><dt>Connected Models</dt><dd>{economics.connected_model_count ?? "统计未接入"}</dd></div><div><dt>有效已分配模型</dt><dd>{rows.length}</dd></div><div><dt>失效引用</dt><dd>{orphanCount}</dd></div><div><dt>Invocation 覆盖</dt><dd>{coverageText(coverage.invocation)}</dd></div><div><dt>Token 覆盖</dt><dd>{coverageText(coverage.token)}</dd></div><div><dt>Pricing 覆盖</dt><dd>{coverageText(coverage.pricing)}</dd></div></dl><div className="sino-model-economics-table" role="table" aria-label="已分配模型经济账"><div className="sino-model-economics-row sino-model-economics-row--header" role="row"><span role="columnheader">模型</span><span role="columnheader">职责</span><span role="columnheader">连接 / 健康</span><span role="columnheader">调用</span><span role="columnheader">Token</span><span role="columnheader">成本</span><span role="columnheader">平均延迟</span></div>{rows.map((row) => <div className="sino-model-economics-row" role="row" key={`${row.provider_id}::${row.model_id}`}><span role="cell"><strong>{row.display_name}</strong><small>{row.provider_name}</small></span><span role="cell">{formatStableAssignmentRoles(getAssignmentRoles(row.provider_id, row.model_id)).join(" · ")}</span><span role="cell">已连接 · {row.health_status === "healthy" ? "正常" : row.health_status === "unhealthy" ? "异常" : "未测试"}<small>{row.telemetry_status === "recorded" ? "调用统计已记录" : "调用统计已接入 · 无记录"}</small></span><span role="cell">{row.request_count}</span><span role="cell">{row.token_status === "recorded" ? row.total_tokens : row.token_status === "unavailable" ? "Token 不可用" : "0"}</span><span role="cell">{row.cost !== null ? row.cost : row.pricing_status === "not_configured" ? "成本规则未配置" : "无法计算"}</span><span role="cell">{row.average_latency_ms === null ? "—" : `${Math.round(row.average_latency_ms)} ms`}</span></div>)}{economics.orphan_references?.map((item) => <div className="sino-model-economics-row sino-model-economics-row--orphan" role="row" key={`orphan:${item.provider_id}::${item.model_id}`}><span role="cell"><strong>{item.model_id}</strong></span><span role="cell">{formatStableAssignmentRoles(item.roles).join(" · ")}</span><span role="cell">配置错误 / 失效引用</span><span role="cell">—</span><span role="cell">—</span><span role="cell">—</span><span role="cell">—</span></div>)}</div></section>;
+  const tokenText = (row) => row.token_status === "recorded" ? row.total_tokens : row.token_status === "enabled_no_records" ? "无调用记录" : "Token 不可用";
+  const costText = (row) => {
+    if (row.cost !== null && row.cost !== undefined) return row.cost;
+    if (row.pricing_status === "not_configured") return "成本规则未配置";
+    if (row.pricing_status === "configured_no_usage") return "无调用成本";
+    return "无法计算";
+  };
+  return <section className="sino-usage-cost" aria-label="用量与成本"><div className="sino-settings-domain-heading"><h3>用量与成本</h3><span aria-label="已分配模型摘要">{rows.length} 个有效已分配模型{orphanCount ? ` · ${orphanCount} 个失效引用` : ""}</span></div><dl><div><dt>Connected Models</dt><dd>{economics.connected_model_count ?? "统计未接入"}</dd></div><div><dt>有效已分配模型</dt><dd>{rows.length}</dd></div><div><dt>失效引用</dt><dd>{orphanCount}</dd></div><div><dt>Invocation 覆盖</dt><dd>{coverageText(coverage.invocation)}</dd></div><div><dt>Token 覆盖</dt><dd>{coverageText(coverage.token)}</dd></div><div><dt>Pricing 覆盖</dt><dd>{coverageText(coverage.pricing)}</dd></div></dl><div className="sino-model-economics-table" role="table" aria-label="已分配模型经济账"><div className="sino-model-economics-row sino-model-economics-row--header" role="row"><span role="columnheader">模型</span><span role="columnheader">职责</span><span role="columnheader">连接 / 健康</span><span role="columnheader">调用</span><span role="columnheader">Token</span><span role="columnheader">成本</span><span role="columnheader">平均延迟</span></div>{rows.map((row) => <div className="sino-model-economics-row" role="row" key={`${row.provider_id}::${row.model_id}`}><span role="cell"><strong>{row.display_name}</strong><small>{row.provider_name}</small></span><span role="cell">{formatStableAssignmentRoles(getAssignmentRoles(row.provider_id, row.model_id)).join(" · ")}</span><span role="cell">已连接 · {row.health_status === "healthy" ? "正常" : row.health_status === "unhealthy" ? "异常" : "未测试"}<small>{row.telemetry_status === "recorded" ? "调用统计已记录" : "调用统计已接入 · 无记录"}</small></span><span role="cell">{row.request_count}</span><span role="cell">{tokenText(row)}</span><span role="cell">{costText(row)}</span><span role="cell">{row.average_latency_ms === null ? "—" : `${Math.round(row.average_latency_ms)} ms`}</span></div>)}{economics.orphan_references?.map((item) => <div className="sino-model-economics-row sino-model-economics-row--orphan" role="row" key={`orphan:${item.provider_id}::${item.model_id}`}><span role="cell"><strong>{item.model_id}</strong></span><span role="cell">{formatStableAssignmentRoles(item.roles).join(" · ")}</span><span role="cell">配置错误 / 失效引用</span><span role="cell">—</span><span role="cell">—</span><span role="cell">—</span><span role="cell">—</span></div>)}</div></section>;
 }
 
 function RuntimeEnvironmentSettings({ registry }) {
@@ -334,19 +364,19 @@ export function formatRuntimeTimestamp(value) {
   return Number.isNaN(parsed.getTime()) ? "—" : parsed.toISOString().slice(0, 16).replace("T", " ");
 }
 
-export function ProviderConfigModal({ provider, model, action, onCredentialSave, onRefresh, onHealth, onChoose, onClose, dialogRef }) {
+export function ProviderConfigModal({ provider, model, action, onCredentialSave, onRefresh, onHealth, onModelHealth, onChoose, onClose, dialogRef }) {
   if (!provider || !model) return null;
-  return <div className="sino-add-model-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose?.(); }}><section ref={dialogRef} className="sino-add-model-modal sino-provider-config-modal" role="dialog" aria-modal="true" aria-labelledby="provider-config-title" tabIndex={-1}><header><div><h2 id="provider-config-title">Provider 技术配置</h2><p>连接、模型启用与健康检查。</p></div><button type="button" onClick={onClose} aria-label="关闭 Provider 技术配置">×</button></header><article><ProviderConfigContent provider={provider} model={model} action={action} onCredentialSave={onCredentialSave} onRefresh={onRefresh} onHealth={onHealth} onChoose={onChoose} /></article></section></div>;
+  return <div className="sino-add-model-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose?.(); }}><section ref={dialogRef} className="sino-add-model-modal sino-provider-config-modal" role="dialog" aria-modal="true" aria-labelledby="provider-config-title" tabIndex={-1}><header><div><h2 id="provider-config-title">Provider 技术配置</h2><p>连接、模型启用与健康检查。</p></div><button type="button" onClick={onClose} aria-label="关闭 Provider 技术配置">×</button></header><article><ProviderConfigContent provider={provider} model={model} action={action} onCredentialSave={onCredentialSave} onRefresh={onRefresh} onHealth={onHealth} onModelHealth={onModelHealth} onChoose={onChoose} /></article></section></div>;
 }
 
-function ProviderConfigContent({ provider, model, action = {}, onCredentialSave, onRefresh, onHealth, onChoose }) {
+function ProviderConfigContent({ provider, model, action = {}, onCredentialSave, onRefresh, onHealth, onModelHealth, onChoose }) {
   const [editingKey, setEditingKey] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [showAllModels, setShowAllModels] = useState(false);
   const [transientFeedback, setTransientFeedback] = useState(null);
   const lastFeedback = useRef(action.error || action.successMessage);
   useEffect(() => { setEditingKey(false); setApiKey(""); setShowAllModels(false); setTransientFeedback(null); lastFeedback.current = action.error || action.successMessage; }, [provider.provider_key, modelId(model)]);
-  const busy = Boolean(action.isConnecting || action.isRefreshingModels || action.isCheckingHealth || action.isSaving);
+  const busy = Boolean(action.isConnecting || action.isRefreshingModels || action.isCheckingHealth || action.isCheckingModelHealth || action.isSaving);
   useEffect(() => {
     const message = action.error || action.successMessage;
     if (!message || message === lastFeedback.current || busy) return undefined;
@@ -365,7 +395,7 @@ function ProviderConfigContent({ provider, model, action = {}, onCredentialSave,
       <h3 id="provider-connection-control-title">概览与连接控制</h3>
       <div className="sino-provider-summary">
         <div className="sino-provider-summary-row sino-provider-summary-row--identity"><span className="sino-provider-summary-label">当前模型</span><strong>{model?.display_name || modelId(model)}</strong><span className="sino-provider-summary-label">Provider</span><span>{provider.display_name} / {provider.provider_type}</span>{provider.base_url ? <span className="sino-provider-endpoint-summary"><span className="sino-provider-summary-label">Base URL</span><span>{provider.base_url}</span></span> : null}</div>
-        <div className={`sino-provider-summary-row sino-provider-summary-row--actions${showsApiKey ? "" : " has-no-key"}`}>{showsApiKey ? editingKey ? <><span>API Key</span><form className="sino-settings-key-editor" onSubmit={saveKey}><input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="输入新的 API Key" aria-label="新的 API Key" /><span><button type="submit" disabled={!apiKey || busy}>保存</button><button type="button" onClick={() => { setEditingKey(false); setApiKey(""); }}>取消</button></span></form></> : <><span>API Key</span><span className="sino-provider-key-mask">{provider.api_key_mask || "未配置"}</span><button type="button" onClick={() => setEditingKey(true)}>更新 API Key</button></> : null}<button type="button" onClick={onHealth} disabled={busy}>{action.isCheckingHealth ? "测试中…" : "测试连接"}</button></div>
+        <div className={`sino-provider-summary-row sino-provider-summary-row--actions${showsApiKey ? "" : " has-no-key"}`}>{showsApiKey ? editingKey ? <><span>API Key</span><form className="sino-settings-key-editor" onSubmit={saveKey}><input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="输入新的 API Key" aria-label="新的 API Key" /><span><button type="submit" disabled={!apiKey || busy}>保存</button><button type="button" onClick={() => { setEditingKey(false); setApiKey(""); }}>取消</button></span></form></> : <><span>API Key</span><span className="sino-provider-key-mask">{provider.api_key_mask || "未配置"}</span><button type="button" onClick={() => setEditingKey(true)}>更新 API Key</button></> : null}<button type="button" onClick={onHealth} disabled={busy}>{action.isCheckingHealth ? "测试中…" : "测试连接"}</button><button type="button" onClick={onModelHealth} disabled={busy}>{action.isCheckingModelHealth ? "检查中…" : "检查当前模型"}</button></div>
       </div>
     </section>
     <section className="sino-provider-model-management" aria-labelledby="provider-model-management-title"><div className="sino-provider-section-heading"><h3 id="provider-model-management-title">模型管理</h3><button type="button" onClick={onRefresh} disabled={busy}>{action.isRefreshingModels ? "正在刷新…" : "刷新模型"}</button></div><ModelChoices models={visibleModels} provider={provider} onChoose={(_, item, checked) => onChoose?.(item, checked)} busy={busy} catalogGrid />{availableModels.length > 3 ? <button type="button" className="sino-settings-models-toggle" aria-expanded={showAllModels} onClick={() => setShowAllModels((value) => !value)}>{showAllModels ? "收起" : `查看全部 ${availableModels.length} 个模型`}<ChevronRight aria-hidden="true" /></button> : null}</section>

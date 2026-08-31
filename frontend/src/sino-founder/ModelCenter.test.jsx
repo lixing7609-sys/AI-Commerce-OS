@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { checkModelProvider, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
+import { checkModelProvider, checkModelResource, discoverProviderModels, getModelCenter, getRuntimeEnvironmentRegistry, installModelProvider, saveCapabilityAssignment, saveModelRoutingPreferred, saveMultiModelAssignment, selectProviderModels, updateModelProviderCredentials } from "../services/founderAiApi.js";
 import { MODEL_ASSIGNMENT_STATUS, ModelCenter, ProviderConfigModal, buildAssignedModelEconomics, formatRuntimeTimestamp, formatStableAssignmentRoles, resolveAssignmentStatus, resolveModelAssignmentStatus } from "./ModelCenter.jsx";
 import "./sino-founder-ai.css";
 
-vi.mock("../services/founderAiApi.js", () => ({ checkModelProvider: vi.fn(), discoverProviderModels: vi.fn(), getModelCenter: vi.fn(), getRuntimeEnvironmentRegistry: vi.fn(), installModelProvider: vi.fn(), saveCapabilityAssignment: vi.fn(), saveModelRoutingPreferred: vi.fn(), saveMultiModelAssignment: vi.fn(), selectProviderModels: vi.fn(), updateModelProviderCredentials: vi.fn() }));
+vi.mock("../services/founderAiApi.js", () => ({ checkModelProvider: vi.fn(), checkModelResource: vi.fn(), discoverProviderModels: vi.fn(), getModelCenter: vi.fn(), getRuntimeEnvironmentRegistry: vi.fn(), installModelProvider: vi.fn(), saveCapabilityAssignment: vi.fn(), saveModelRoutingPreferred: vi.fn(), saveMultiModelAssignment: vi.fn(), selectProviderModels: vi.fn(), updateModelProviderCredentials: vi.fn() }));
 
 const deepseek = { provider_key: "deepseek", provider_type: "deepseek", display_name: "DeepSeek", installed: true, configured: true, api_key_mask: "****1234", enabled: true, health_status: "healthy", model: "deepseek-chat", available_models: [{ model_id: "deepseek-chat", display_name: "DeepSeek Chat", recommendation_score: 90 }, { model_id: "deepseek-reasoner", display_name: "DeepSeek Reasoner", recommendation_score: 90 }], selected_models: ["deepseek-chat"] };
 const claude = { provider_key: "claude", provider_type: "anthropic", display_name: "Claude", installed: true, configured: true, enabled: true, health_status: "unhealthy", health_error: "insufficient_quota", model: "claude-sonnet-5", available_models: [{ model_id: "claude-sonnet-5", display_name: "Claude Sonnet 5", recommendation_score: 90 }], selected_models: ["claude-sonnet-5"] };
@@ -46,7 +46,7 @@ describe("Founder Settings", () => {
   it("formats only stable assignment responsibilities in their fixed order", () => {
     expect(formatStableAssignmentRoles(["Conversation Override · conv-1", "讨论模型 4", "founder_ai · Sino 主对话", "Coding", "Sino 主对话", "Coding", "Vision Fallback"])).toEqual(["Sino 主对话", "Vision", "Coding", "讨论模型 4"]);
   });
-  beforeEach(() => { vi.clearAllMocks(); getModelCenter.mockResolvedValue(center); getRuntimeEnvironmentRegistry.mockResolvedValue(runtimeRegistry); });
+  beforeEach(() => { vi.clearAllMocks(); getModelCenter.mockResolvedValue(center); getRuntimeEnvironmentRegistry.mockResolvedValue(runtimeRegistry); checkModelResource.mockResolvedValue({ status: "healthy" }); });
   afterEach(() => { cleanup(); vi.useRealTimers(); });
 
   it("resolves every model and assignment state through the four-state truth matrix", () => {
@@ -99,6 +99,28 @@ describe("Founder Settings", () => {
     expect(claudeEconomics.request_count).toBeNull();
     expect(claudeEconomics.assignment_status).toBe(MODEL_ASSIGNMENT_STATUS.ERROR);
     expect(result.some((item) => item.model_id === "missing-model")).toBe(false);
+  });
+
+  it("keeps unknown tokens and unknown cost distinct from zero", async () => {
+    getModelCenter.mockResolvedValue({
+      ...center,
+      model_economics: {
+        ...economics,
+        models: [
+          { ...connected[0], roles: ["Sino 主对话"], request_count: 0, completed_request_count: 0, total_tokens: null, average_latency_ms: null, cost: null, telemetry_status: "enabled_no_records", token_status: "enabled_no_records", pricing_status: "configured_no_usage" },
+          { provider_id: "claude", model_id: "claude-sonnet-5", display_name: "Claude Sonnet 5", provider_name: "Claude", roles: ["Coding"], request_count: 1, completed_request_count: 0, total_tokens: null, average_latency_ms: null, cost: null, health_status: "unhealthy", telemetry_status: "recorded", token_status: "unavailable", pricing_status: "token_unavailable" },
+          { provider_id: "gpt", model_id: "gpt-5", display_name: "GPT 5", provider_name: "GPT", roles: ["讨论模型 1"], request_count: 1, completed_request_count: 1, total_tokens: 42, average_latency_ms: 88, cost: null, health_status: "healthy", telemetry_status: "recorded", token_status: "recorded", pricing_status: "not_configured" },
+        ],
+      },
+    });
+    render(<ModelCenter />);
+    await screen.findByRole("heading", { name: "设置" });
+    const table = screen.getByRole("table", { name: "已分配模型经济账" });
+    expect(table.textContent).toContain("无调用记录");
+    expect(table.textContent).toContain("无调用成本");
+    expect(table.textContent).toContain("Token 不可用");
+    expect(table.textContent).toContain("成本规则未配置");
+    expect(table.textContent).not.toContain(">0<");
   });
 
   it("excludes orphan discussion assignments while preserving Provider plus model identity", () => {
@@ -275,6 +297,27 @@ describe("Founder Settings", () => {
     expect(screen.getByRole("dialog", { name: "系统" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "执行器" })).toBeTruthy();
     expect(await screen.findByRole("region", { name: "运行环境" })).toBeTruthy();
+  });
+
+  it("revalidates each stale exact resource once on entry and renders the fresh result", async () => {
+    const staleModel = { ...connected[0], health_status: "unknown", availability: "unknown", is_stale: true, health_source: "invocation" };
+    const freshModel = { ...connected[0], health_status: "healthy", availability: "available", is_stale: false, health_source: "model_probe", last_status: "completed", last_checked_at: "2026-08-31T05:00:00Z" };
+    getModelCenter.mockResolvedValueOnce({ ...center, connected_models: [staleModel] }).mockResolvedValue({ ...center, connected_models: [freshModel] });
+    render(<ModelCenter />);
+    await waitFor(() => expect(checkModelResource).toHaveBeenCalledTimes(1));
+    expect(checkModelResource).toHaveBeenCalledWith("deepseek", "deepseek-chat");
+    await waitFor(() => expect(screen.getByLabelText("模型摘要").textContent).toContain("1 正常"));
+    expect(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }).textContent).toContain("model_probe");
+  });
+
+  it("does not probe fresh evidence automatically and supports a forced exact-model check", async () => {
+    render(<ModelCenter />);
+    await screen.findByRole("heading", { name: "设置" });
+    expect(checkModelResource).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "DeepSeek Chat DeepSeek" }));
+    fireEvent.click(await screen.findByRole("button", { name: "检查当前模型" }));
+    await waitFor(() => expect(checkModelResource).toHaveBeenCalledTimes(1));
+    expect(checkModelResource).toHaveBeenCalledWith("deepseek", "deepseek-chat");
   });
 
   it("constrains Vision assignments to verified models and persists its chain", async () => {

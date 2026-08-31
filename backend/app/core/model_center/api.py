@@ -50,6 +50,11 @@ class ProviderEnabledIn(BaseModel):
     enabled: bool
 
 
+class ModelHealthProbeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model_id: str = Field(min_length=1, max_length=160)
+
+
 class ApplicationAssignmentsIn(BaseModel):
     assignments: dict[str, dict | None]
 
@@ -106,8 +111,8 @@ def read_eligible_models(role: str | None = None, capability: str | None = None)
 
 
 @router.get("/sino-assigned-models")
-def read_sino_assigned_models():
-    return {"models": sino_assigned_models()}
+def read_sino_assigned_models(conversation_id: str | None = None):
+    return {"models": sino_assigned_models(conversation_id=conversation_id)}
 
 
 @router.get("/economics")
@@ -229,6 +234,28 @@ def probe_provider(provider_key: str):
     except LookupError:
         raise HTTPException(status_code=404, detail="provider_not_configured")
     return {"status": "unhealthy", "provider": provider_key, "model": configuration.get("model"), "configuration": configuration}
+
+
+@router.post("/providers/{provider_key}/models/health")
+def probe_model_resource(provider_key: str, request: ModelHealthProbeIn):
+    """Probe one exact model resource without changing Provider health."""
+    probe = LLMRequest(
+        system_prompt="You are a model resource health probe.", user_prompt="Reply with OK.",
+        temperature=0, max_tokens=8,
+        metadata={"runtime_role": "model_health", "invocation_source": "model_health_probe", "runtime_mode": "probe",
+                  "force_model_health_probe": True},
+    )
+    try:
+        LLMGateway().generate_for_model(provider_key, request.model_id, probe)
+        return {"status": "healthy", "provider": provider_key, "model": request.model_id,
+                "invocation_id": probe.metadata.get("model_invocation_id")}
+    except ConfigurationError as error:
+        detail = error.error_type
+    except AuthenticationError:
+        detail = "authentication_failed"
+    except LLMGatewayError as error:
+        detail = error.error_type
+    return {"status": "unhealthy", "provider": provider_key, "model": request.model_id, "error_code": detail}
 
 
 @router.put("/roles")

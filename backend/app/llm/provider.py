@@ -17,4 +17,8 @@ class LLMProvider(ABC):
 
     def stream(self, request: LLMRequest) -> Iterator[str]:
         """Provider-independent fallback for providers without native streaming."""
-        yield self.generate(request).content
+        response = self.generate(request)
+        request.metadata["_stream_usage"] = response.usage
+        request.metadata["_stream_provider"] = response.provider
+        request.metadata["_stream_model"] = response.model
+        yield response.content

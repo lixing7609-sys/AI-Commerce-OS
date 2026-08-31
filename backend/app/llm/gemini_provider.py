@@ -41,7 +41,12 @@ class GeminiProvider(LLMProvider):
                 if response.status_code != 200: raise InvalidResponseError()
                 for line in response.iter_lines():
                     if not line.startswith("data: "): continue
-                    try: chunk = json.loads(line[6:])["candidates"][0]["content"]["parts"][0]["text"]
+                    try:
+                        body = json.loads(line[6:])
+                        usage = body.get("usageMetadata") or {}
+                        if usage:
+                            request.metadata["_stream_usage"] = LLMUsage(usage.get("promptTokenCount"), usage.get("candidatesTokenCount"), usage.get("totalTokenCount"))
+                        chunk = body["candidates"][0]["content"]["parts"][0]["text"]
                     except (ValueError, KeyError, IndexError, TypeError): chunk = None
                     if chunk: yield chunk
         except httpx.TimeoutException as error: raise LLMTimeoutError() from error

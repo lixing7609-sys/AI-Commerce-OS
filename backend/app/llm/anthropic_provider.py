@@ -52,10 +52,19 @@ class AnthropicProvider(LLMProvider):
                 if response.status_code == 429: raise RateLimitedError()
                 if response.status_code >= 500: raise ProviderUnavailableError()
                 if response.status_code != 200: raise InvalidResponseError()
+                input_tokens = output_tokens = None
                 for line in response.iter_lines():
                     if not line.startswith("data: "): continue
                     try:
                         event = json.loads(line[6:]); delta = event.get("delta") or {}
+                        if event.get("type") == "message_start":
+                            usage = event.get("message", {}).get("usage") or {}
+                            input_tokens = usage.get("input_tokens")
+                        if event.get("type") == "message_delta":
+                            usage = event.get("usage") or {}
+                            output_tokens = usage.get("output_tokens")
+                            total = input_tokens + output_tokens if isinstance(input_tokens, int) and isinstance(output_tokens, int) else None
+                            request.metadata["_stream_usage"] = LLMUsage(input_tokens, output_tokens, total)
                         chunk = delta.get("text") if event.get("type") == "content_block_delta" else None
                     except (ValueError, TypeError): chunk = None
                     if chunk: yield chunk

@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -122,6 +123,28 @@ def test_unconfigured_health_is_business_state_without_external_probe(monkeypatc
     result = model_center_api.probe_provider("gpt")
     assert result["status"] == "not_configured"
     assert result["configuration"] is configuration
+
+
+def test_exact_model_health_probe_uses_requested_resource_without_changing_provider_health(monkeypatch, tmp_path):
+    factory = _database(monkeypatch, tmp_path)
+    saved = model_center.save_provider("gpt", base_url="https://provider.example/v1", model="default-model", api_key="secret-key", enabled=True)
+    with factory() as session:
+        row = session.get(model_center.ModelProviderConfigDB, "gpt")
+        row.selected_models = ["default-model", "exact-model"]
+        row.available_models = ["default-model", "exact-model"]
+        row.health_status = "healthy"
+        session.commit()
+    calls = []
+    def generate(_gateway, provider, model, request):
+        calls.append((provider, model, request.metadata.copy()))
+        request.metadata["model_invocation_id"] = "inv-probe"
+        return SimpleNamespace()
+    monkeypatch.setattr(model_center_api.LLMGateway, "generate_for_model", generate)
+    result = model_center_api.probe_model_resource("gpt", model_center_api.ModelHealthProbeIn(model_id="exact-model"))
+    assert result == {"status": "healthy", "provider": "gpt", "model": "exact-model", "invocation_id": "inv-probe"}
+    assert calls == [("gpt", "exact-model", {"runtime_role": "model_health", "invocation_source": "model_health_probe", "runtime_mode": "probe", "force_model_health_probe": True})]
+    with factory() as session:
+        assert session.get(model_center.ModelProviderConfigDB, "gpt").health_status == "healthy"
 
 
 def test_executor_is_fixed_codex(monkeypatch, tmp_path):

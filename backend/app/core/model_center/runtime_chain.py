@@ -1,7 +1,7 @@
 """Single read model for connected models, eligibility, invocation and economics."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -12,10 +12,102 @@ ROLE_CAPABILITY = {
     "vision": "VISION_UNDERSTANDING",
     "VISION_UNDERSTANDING": "VISION_UNDERSTANDING",
 }
+CONVERSATION_TEXT_CAPABILITIES = {
+    "对话", "项目分析", "通用", "快速任务", "深度思考", "方案评审",
+    "conversation", "chat", "text", "text reasoning", "text_reasoning",
+    "semantic reasoning", "semantic_reasoning", "reasoning", "general", "fast_task",
+}
 
 
 def identity(provider_id: str, model_id: str) -> str:
     return f"{provider_id}::{model_id}"
+
+
+MODEL_HEALTH_ERRORS = {
+    "configuration_error": "CONFIG_ERROR",
+    "explicit_model_not_available": "CONFIG_ERROR",
+    "authentication_failed": "CONFIG_ERROR",
+    "insufficient_quota": "QUOTA_EXCEEDED",
+    "rate_limited": "RATE_LIMITED",
+    "timeout": "TIMEOUT",
+    "provider_unavailable": "UNAVAILABLE",
+    "network_error": "PROVIDER_ERROR",
+    "invalid_response": "PROVIDER_ERROR",
+}
+
+# Availability can change quickly because of quota, rate limits, deployment or
+# provider routing.  Fifteen minutes keeps a successful signal useful within one
+# working session while preventing yesterday's evidence from appearing current.
+MODEL_HEALTH_FRESHNESS_WINDOW = timedelta(minutes=15)
+
+
+def resolve_model_resource_health(session, provider_id: str, model_id: str) -> dict:
+    """Project the latest evidence for one exact Provider/Model resource.
+
+    Provider connectivity is intentionally not model-health evidence.  Runtime and
+    explicit model probes share the invocation ledger, so the newest exact-resource
+    observation wins without introducing a second health store.
+    """
+    latest = session.scalar(select(ModelInvocationDB).where(
+        ModelInvocationDB.provider_id == provider_id,
+        ModelInvocationDB.model_id == model_id,
+    ).order_by(ModelInvocationDB.timestamp.desc(), ModelInvocationDB.invocation_id.desc()))
+    now = datetime.now(timezone.utc)
+    if latest is None:
+        return {
+            "health_status": "unknown", "availability": "unknown",
+            "health_classification": "UNKNOWN", "health_source": "none",
+            "last_status": None, "last_error_code": None, "last_error_summary": None,
+            "last_checked_at": None, "last_success_at": None, "last_failure_at": None,
+            "last_latency_ms": None, "last_token_usage": None,
+            "fresh_until": None, "is_stale": True,
+        }
+    timestamp = latest.timestamp
+    if timestamp and timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    fresh_until = timestamp + MODEL_HEALTH_FRESHNESS_WINDOW if timestamp else None
+    stale = not fresh_until or fresh_until <= now
+    successful = latest.status == "completed"
+    healthy = successful and not stale
+    classification = "UNKNOWN" if stale else "HEALTHY" if successful else MODEL_HEALTH_ERRORS.get(latest.error_code or "", "PROVIDER_ERROR")
+    source = "model_probe" if latest.invocation_source == "model_health_probe" else "invocation"
+    return {
+        "health_status": "healthy" if healthy else "unknown" if stale else "unhealthy",
+        "availability": "available" if healthy else "unknown" if stale else "unavailable",
+        "health_classification": classification, "health_source": source,
+        "last_status": latest.status, "last_error_code": latest.error_code,
+        "last_error_summary": latest.error_code,
+        "last_checked_at": timestamp.isoformat() if timestamp else None,
+        "last_success_at": timestamp.isoformat() if successful and timestamp else None,
+        "last_failure_at": timestamp.isoformat() if not successful and timestamp else None,
+        "last_latency_ms": latest.latency_ms,
+        "last_token_usage": {"input": latest.input_tokens, "output": latest.output_tokens, "total": latest.total_tokens},
+        "fresh_until": fresh_until.isoformat() if fresh_until else None, "is_stale": stale,
+    }
+
+
+def model_runtime_preflight(provider_id: str, model_id: str, session=None) -> dict:
+    """Return the bounded preflight action for any runtime role.
+
+    Fresh success avoids a redundant probe. Stale/unknown evidence is verified by
+    the intended invocation itself, allowing that response to do useful work.
+    Fresh failure is rejected until its short window expires or a forced exact
+    model probe supplies newer evidence.
+    """
+    owns = session is None
+    session = session or _session_factory()()
+    try:
+        health = resolve_model_resource_health(session, provider_id, model_id)
+        if health["health_status"] == "healthy":
+            action = "ready"
+        elif health["health_status"] == "unhealthy":
+            action = "reject"
+        else:
+            action = "verify_on_invoke"
+        return {**health, "preflight_action": action}
+    finally:
+        if owns:
+            session.close()
 
 
 def _session_factory():
@@ -41,6 +133,7 @@ def connected_model_registry(session=None) -> list[dict]:
             }
             for model_id in provider.selected_models or []:
                 model = registry.get((provider.provider_key, model_id))
+                resource_health = resolve_model_resource_health(session, provider.provider_key, model_id)
                 result.append({
                     "provider_id": provider.provider_key,
                     "model_id": model_id,
@@ -49,8 +142,9 @@ def connected_model_registry(session=None) -> list[dict]:
                     "provider_name": provider.display_name,
                     "connected": True,
                     "enabled": True,
-                    "health_status": "healthy" if provider.health_status == "healthy" else "unhealthy" if provider.health_status == "unhealthy" else "unknown",
-                    "availability": "available" if provider.health_status == "healthy" else "unavailable" if provider.health_status == "unhealthy" else "unknown",
+                    **resource_health,
+                    "provider_health_status": provider.health_status,
+                    "provider_health_checked_at": provider.health_checked_at.isoformat() if provider.health_checked_at else None,
                     "capability": list(model.capability or []) if model else [],
                     "supports_reasoning": bool(model and model.supports_reasoning),
                     "supports_vision": bool(model and model.supports_vision),
@@ -84,64 +178,134 @@ def eligible_models(role: str | None = None, capability: str | None = None, *, i
     return result
 
 
-def sino_assigned_models(session=None) -> list[dict]:
-    """Return authorized Conversation resources, not every model used by Sino."""
+def _ref_identity(ref: dict | None) -> str | None:
+    if not ref:
+        return None
+    provider = ref.get("provider_key", ref.get("provider_id"))
+    model = ref.get("model", ref.get("model_id"))
+    return identity(provider, model) if provider and model else None
+
+
+def _conversation_authorized_references(session) -> dict[str, list[str]]:
+    """Conversation selector authorization comes from Conversation-capable Sino bindings."""
+    configs = {item.capability_key: dict(item.configuration or {}) for item in session.scalars(select(AICapabilityConfigDB))}
+    references: list[tuple[dict, str]] = []
+
+    def add_pair(primary: dict | None, fallback: dict | None, label: str) -> None:
+        primary_key, fallback_key = _ref_identity(primary), _ref_identity(fallback)
+        if primary_key and primary_key == fallback_key:
+            return
+        if primary_key:
+            references.append((primary, label))
+        if fallback_key:
+            references.append((fallback, f"{label} Fallback"))
+
+    conversation = configs.get("sino_conversation") or {}
+    add_pair(conversation, next(iter(conversation.get("fallbacks") or []), None), "Sino 主对话")
+
+    from app.core.model_center.service import _discussion_slots
+    seen_discussion_primaries: set[str] = set()
+    for index, slot in enumerate(_discussion_slots(configs.get("multi_model_discussion")), 1):
+        primary_key = _ref_identity(slot.get("primary"))
+        if primary_key and primary_key in seen_discussion_primaries:
+            continue
+        if primary_key:
+            seen_discussion_primaries.add(primary_key)
+        add_pair(slot.get("primary"), slot.get("fallback"), f"讨论模型 {index}")
+
+    roles: dict[str, list[str]] = {}
+    for ref, label in references:
+        key = _ref_identity(ref)
+        if key:
+            roles.setdefault(key, []).append(label)
+    return roles
+
+
+def has_conversation_capability(model: dict | None) -> bool:
+    capabilities = {str(item).strip().casefold() for item in (model or {}).get("capability") or []}
+    return bool(capabilities & {item.casefold() for item in CONVERSATION_TEXT_CAPABILITIES})
+
+
+def conversation_model_eligibility(provider_id: str, model_id: str, *, session=None) -> dict:
+    """Single backend authority for Conversation selector and PATCH validation."""
     owns = session is None
     session = session or _session_factory()()
     try:
+        key = identity(provider_id, model_id)
         connected = {item["identity"]: item for item in connected_model_registry(session=session)}
-        configs = {item.capability_key: dict(item.configuration or {}) for item in session.scalars(select(AICapabilityConfigDB))}
-        references: list[tuple[dict, str]] = []
+        model = connected.get(key)
+        roles = _conversation_authorized_references(session).get(key, [])
+        checks = {
+            "configured": model is not None and model.get("metadata_present") is True,
+            "enabled": bool(model and model.get("enabled") and model.get("connected")),
+            "fresh_healthy": bool(model and model.get("health_status") == "healthy" and model.get("availability") == "available"),
+            "sino_authorized": bool(roles),
+            "conversation_capable": has_conversation_capability(model),
+            "identity_resolvable": bool(model),
+        }
+        eligible = all(checks.values())
+        reason = None
+        if not eligible:
+            reason = next((name for name, passed in checks.items() if not passed), "not_eligible")
+        return {
+            "identity": key,
+            "provider_id": provider_id,
+            "model_id": model_id,
+            "roles": sorted(set(roles), key=_role_sort_key),
+            "conversation_eligible": eligible,
+            "selectable": eligible,
+            "eligibility_reason": reason,
+            "eligibility_checks": checks,
+            "role_label_authority": False,
+            "authorization_source": "sino_conversation_or_multi_model_discussion_assignment",
+            **(model or {}),
+        }
+    finally:
+        if owns:
+            session.close()
 
-        def ref_identity(ref: dict | None) -> str | None:
-            if not ref:
-                return None
-            provider = ref.get("provider_key", ref.get("provider_id"))
-            model = ref.get("model", ref.get("model_id"))
-            return identity(provider, model) if provider and model else None
 
-        def add_pair(primary: dict | None, fallback: dict | None, label: str) -> None:
-            primary_key, fallback_key = ref_identity(primary), ref_identity(fallback)
-            if primary_key and primary_key == fallback_key:
-                return
-            if primary_key:
-                references.append((primary, label))
-            if fallback_key:
-                references.append((fallback, f"{label} Fallback"))
-
-        conversation = configs.get("sino_conversation") or {}
-        add_pair(conversation, next(iter(conversation.get("fallbacks") or []), None), "Sino 主对话")
-
-        from app.core.model_center.service import _discussion_slots
-        seen_discussion_primaries: set[str] = set()
-        for index, slot in enumerate(_discussion_slots(configs.get("multi_model_discussion")), 1):
-            primary_key = ref_identity(slot.get("primary"))
-            if primary_key and primary_key in seen_discussion_primaries:
-                continue
-            if primary_key:
-                seen_discussion_primaries.add(primary_key)
-            add_pair(slot.get("primary"), slot.get("fallback"), f"讨论模型 {index}")
-
-        roles_by_identity: dict[str, list[str]] = {}
-        for ref, label in references:
-            key = ref_identity(ref)
-            model = connected.get(key)
-            capabilities = {str(item).strip().casefold() for item in (model or {}).get("capability") or []}
-            conversation_capable = bool(capabilities & {
-                "对话", "conversation", "text reasoning", "text_reasoning", "semantic reasoning", "semantic_reasoning",
-            })
-            if model and model["health_status"] == "healthy" and conversation_capable:
-                roles_by_identity.setdefault(key, []).append(label)
-
-        role_order = {label: index for index, label in enumerate([
+def _role_sort_key(item: str) -> int:
+    role_order = {
+        label: index for index, label in enumerate([
             "Sino 主对话", "Sino 主对话 Fallback",
             *[label for index in range(1, 6) for label in (f"讨论模型 {index}", f"讨论模型 {index} Fallback")],
-        ])}
+        ])
+    }
+    return role_order.get(item, 999)
+
+
+def sino_assigned_models(session=None, conversation_id: str | None = None) -> list[dict]:
+    """Return authorized healthy Conversation resources plus current selection state."""
+    owns = session is None
+    session = session or _session_factory()()
+    try:
+        authorized = _conversation_authorized_references(session)
         rows = []
-        for key, roles in roles_by_identity.items():
-            model = connected[key]
-            rows.append({**model, "roles": sorted(set(roles), key=lambda item: role_order.get(item, 999)), "assignment_valid": True})
-        return sorted(rows, key=lambda item: (min(role_order.get(role, 999) for role in item["roles"]), item["display_name"]))
+        for key in authorized:
+            provider_id, model_id = key.split("::", 1)
+            row = conversation_model_eligibility(provider_id, model_id, session=session)
+            if row["conversation_eligible"]:
+                rows.append({**row, "assignment_valid": True, "conversation_selected": False})
+
+        selected_key = None
+        if conversation_id:
+            from app.core.conversation.model import ConversationDB
+            conversation = session.get(ConversationDB, conversation_id)
+            if conversation and conversation.conversation_model_provider and conversation.conversation_model:
+                selected_key = identity(conversation.conversation_model_provider, conversation.conversation_model)
+                selected = conversation_model_eligibility(
+                    conversation.conversation_model_provider,
+                    conversation.conversation_model,
+                    session=session,
+                )
+                if selected_key not in {item["identity"] for item in rows}:
+                    rows.append({**selected, "assignment_valid": selected["conversation_eligible"], "conversation_selected": True})
+
+        result = []
+        for row in rows:
+            result.append({**row, "conversation_selected": row.get("conversation_selected") or row["identity"] == selected_key})
+        return sorted(result, key=lambda item: (min((_role_sort_key(role) for role in item.get("roles") or []), default=999), item["display_name"]))
     finally:
         if owns:
             session.close()
@@ -245,10 +409,13 @@ def invocation_economics(session=None) -> dict:
                 "output_tokens": int(row[5]) if row and row[5] is not None else None,
                 "total_tokens": int(row[6]) if row and row[6] is not None else None,
                 "average_latency_ms": round(float(row[7]), 1) if row and row[7] is not None else None,
-                "cost": float(row[8]) if row and row[8] is not None else 0.0 if not row and rule else None,
+                "cost": float(row[8]) if row and row[8] is not None else None,
                 "telemetry_status": "recorded" if row else "enabled_no_records",
                 "token_status": "recorded" if token_count else "unavailable" if row else "enabled_no_records",
-                "pricing_status": "recorded" if priced_count else "token_unavailable" if row and rule else "configured" if rule else "not_configured"})
+                "pricing_status": "recorded" if priced_count else "token_unavailable" if row and rule else "configured_no_usage" if rule else "not_configured",
+                "pricing_rule_id": rule.id if rule else None,
+                "pricing_source": rule.pricing_source if rule else None,
+                "currency": rule.currency if rule else None})
         orphan_items = [{"provider_id": key.split("::", 1)[0], "model_id": key.split("::", 1)[1], "roles": roles, "reason": "not_connected"} for key, roles in orphans.items()]
         total = len(rows)
         coverage = {
