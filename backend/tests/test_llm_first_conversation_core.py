@@ -164,6 +164,86 @@ def test_provider_failure_does_not_turn_ordinary_conversation_into_a_task(monkey
     assert decision["deterministic_fallback"]["attempted"] is False
 
 
+def test_discussion_uses_configured_reasoning_strategy_before_semantic_fail_closed(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    primary = SimpleNamespace(provider_key="primary-provider", model="conversation-model")
+    reasoning = SimpleNamespace(provider_key="reasoning-provider", model="deep-thinking-model")
+    monkeypatch.setattr(core, "configured_model_roles", lambda: {
+        "conversation": primary, "fallback": None, "reasoning_strategy": reasoning,
+    })
+    calls = []
+    founder_message = "讨论下‘如何构建一个 AI Commerce Mini Operator？就先把 Sino Operator AI 做一个小版本出来’"
+
+    def decide(_context, runtime):
+        calls.append((runtime.provider_key, runtime.model))
+        if runtime is primary:
+            raise InsufficientQuotaError()
+        return {
+            "response": "可以先把产品边界收紧为一个最小运营闭环，再讨论首版 Agent 与能力分层。",
+            "semantic_intent": "conversation", "conversation_state": "discussion",
+            "task_candidate": None, "founder_action_intent": None,
+        }
+
+    decision = core.reason_about_message("conv-llm", founder_message, generator=decide)
+    assert calls == [("primary-provider", "conversation-model"), ("reasoning-provider", "deep-thinking-model")]
+    assert decision["semantic_intent"] == "conversation"
+    assert decision["conversation_state"] == "discussion"
+    assert decision["task_candidate"] is None
+    assert decision["model_role"] == "reasoning_strategy"
+    assert "最小运营闭环" in decision["response"]
+    assert "无法完成可靠的语义判断" not in decision["response"]
+
+
+def test_discussion_reasoning_strategy_preserves_multi_turn_context(monkeypatch):
+    factory = _factory(monkeypatch)
+    _conversation(factory, messages=[
+        ("founder", "讨论下如何构建一个 AI Commerce Mini Operator"),
+        ("assistant", "先收紧最小运营闭环和产品边界。"),
+        ("founder", "第一阶段只支持一个商品、一个广告平台、一个广告账户。"),
+        ("assistant", "这个约束适合作为首版边界。"),
+    ])
+    primary = SimpleNamespace(provider_key="primary-provider", model="conversation-model")
+    reasoning = SimpleNamespace(provider_key="reasoning-provider", model="deep-thinking-model")
+    monkeypatch.setattr(core, "configured_model_roles", lambda: {
+        "conversation": primary, "fallback": None, "reasoning_strategy": reasoning,
+    })
+    observed = {}
+
+    def decide(context, runtime):
+        if runtime is primary:
+            raise ValueError("malformed provider response")
+        observed["history"] = [item["content"] for item in context["conversation_history"]]
+        return {
+            "response": "第一版可以从运营协调、广告执行和状态观察三个 Agent 角色讨论。",
+            "semantic_intent": "conversation", "conversation_state": "discussion",
+            "task_candidate": None,
+        }
+
+    decision = core.reason_about_message("conv-llm", "那第一版需要哪些 Agent？", generator=decide)
+    assert observed["history"][-2:] == ["第一阶段只支持一个商品、一个广告平台、一个广告账户。", "这个约束适合作为首版边界。"]
+    assert decision["semantic_intent"] == "conversation"
+    assert "Agent" in decision["response"]
+
+
+def test_all_semantic_roles_malformed_still_fail_closed(monkeypatch):
+    factory = _factory(monkeypatch); _conversation(factory, messages=[])
+    roles = {
+        "conversation": SimpleNamespace(provider_key="p1", model="m1"),
+        "fallback": SimpleNamespace(provider_key="p2", model="m2"),
+        "reasoning_strategy": SimpleNamespace(provider_key="p3", model="m3"),
+    }
+    monkeypatch.setattr(core, "configured_model_roles", lambda: roles)
+    decision = core.reason_about_message(
+        "conv-llm", "你觉得这个方向怎么样？",
+        generator=lambda *_: (_ for _ in ()).throw(ValueError("malformed semantic response")),
+    )
+    assert decision["conversation_state"] == "model_unavailable"
+    assert decision["semantic_intent"] == "conversation"
+    assert decision["task_candidate"] is None
+    assert len(decision["semantic_model_failure"]["attempts"]) == 3
+    assert "无法完成可靠的语义判断" in decision["response"]
+
+
 def test_provider_failure_never_bypasses_approval_or_high_risk_gate(monkeypatch):
     factory = _factory(monkeypatch); _conversation(factory, messages=[])
     import app.founder_ai.standard_task_execution as execution

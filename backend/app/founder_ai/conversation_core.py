@@ -463,10 +463,15 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
         return payload
 
     failures = []
-    for role in ("conversation", "fallback"):
+    attempted_runtimes = set()
+    for role in ("conversation", "fallback", "reasoning_strategy"):
         runtime = roles.get(role)
         if runtime is None:
             continue
+        runtime_identity = (runtime.provider_key, runtime.model)
+        if runtime_identity in attempted_runtimes:
+            continue
+        attempted_runtimes.add(runtime_identity)
         try:
             payload = invoke(runtime, role)
             fallback_event = payload.pop("_model_fallback", None) if isinstance(payload, dict) else None

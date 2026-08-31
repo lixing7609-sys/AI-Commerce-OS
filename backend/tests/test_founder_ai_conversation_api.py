@@ -634,3 +634,44 @@ def test_conversation_entry_discussion_and_clarification_controls(monkeypatch, t
         state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-entry-clarification").one()
         task = db.query(clarification.task_model).filter_by(conversation_id="conv-entry-clarification").one()
         assert task.scope["candidate_authority"]["canonical_fingerprint"] == state.discovery["task_candidate"]["candidate_authority"]["canonical_fingerprint"]
+
+
+def test_production_mini_operator_discussion_uses_real_conversation_entry(monkeypatch, tmp_path):
+    from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
+    import app.founder_ai.conversation_core as conversation_core
+
+    original_reason = conversation_core.reason_about_message
+    original_persist = conversation_core.persist_conversation_decision
+    runtime = _conversation_entry_runtime(monkeypatch, tmp_path, conversation_id="conv-mini-operator", candidate={})
+    monkeypatch.setattr(conversation_core, "reason_about_message", original_reason)
+    monkeypatch.setattr(conversation_core, "persist_conversation_decision", original_persist)
+    primary = SimpleNamespace(provider_key="primary-provider", model="conversation-model")
+    reasoning = SimpleNamespace(provider_key="reasoning-provider", model="deep-thinking-model")
+    monkeypatch.setattr(conversation_core, "configured_model_roles", lambda: {
+        "conversation": primary, "fallback": None, "reasoning_strategy": reasoning,
+    })
+
+    def generate(provider_key, model, _request):
+        if provider_key == "primary-provider":
+            raise ValueError("malformed primary semantic response")
+        return SimpleNamespace(content='{"response":"建议先定义 Mini Operator 的产品边界，以单商品、单平台、单账户形成最小可运行闭环，再讨论首版 Agent 和能力分层。","semantic_intent":"conversation","conversation_state":"discussion","task_candidate":null,"founder_action_intent":null}')
+
+    monkeypatch.setattr(conversation_core.llm_gateway, "generate_for_model", generate)
+    founder_message = "讨论下‘如何构建一个 AI Commerce Mini Operator？就先把 Sino Operator AI 做一个小版本出来’"
+    api.discuss_with_sino("conv-mini-operator", api.DiscussionMessageIn(content=founder_message))
+    assert runtime.counters == {"persist_candidate": 0, "bind_authority": 0, "begin_task": 0,
+                                "enqueue": 0, "executor": 0, "completion_projection": 0}
+    assert runtime.registry.list_execution_sessions() == []
+    with runtime.factory() as db:
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-mini-operator").all()
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-mini-operator").one()
+        founder_messages = [item for item in messages if item.role == "founder"]
+        assistant_messages = [item for item in messages if item.role == "assistant"]
+        assert any(item.content == founder_message for item in founder_messages)
+        assert len(assistant_messages) == 1
+        assert "最小可运行闭环" in assistant_messages[0].content
+        assert "无法完成可靠的语义判断" not in assistant_messages[0].content
+        assert "是否执行" not in assistant_messages[0].content
+        assert not state.discovery.get("task_candidate")
+        assert not [item for item in state.discovery.get("founder_action_queue") or []
+                    if item.get("type") in {"TASK_CONFIRMATION", "EXECUTION_APPROVAL"}]
