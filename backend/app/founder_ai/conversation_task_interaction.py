@@ -161,8 +161,26 @@ def pending_task_understanding(conversation_id: str) -> dict | None:
         return dict((state.discovery or {}).get("pending_task_understanding") or {}) or None
 
 
-def persist_task_candidate(conversation_id: str, candidate: dict, *, source_message_id: str | None = None) -> dict:
-    """Persist a mature discussion outcome and its Founder confirmation action atomically."""
+def should_autonomously_dispatch_candidate(candidate: dict) -> bool:
+    """Authorize continuation only from the persisted canonical Candidate authority."""
+    authority = dict(candidate.get("candidate_authority") or {})
+    contract = dict(authority.get("contract") or {})
+    return bool(
+        candidate.get("status") in {"ready_to_execute", "confirming", "confirmed"}
+        and authority.get("canonical_fingerprint")
+        and str(authority.get("risk") or "").lower() == "low"
+        and authority.get("approval_required") is False
+        and authority.get("clarification_required") is False
+        and authority.get("dispatch_allowed") is True
+        and contract
+        and contract.get("objective")
+        and contract.get("implementation_scope")
+    )
+
+
+def persist_task_candidate(conversation_id: str, candidate: dict, *, source_message_id: str | None = None,
+                           confirmation_required: bool = True) -> dict:
+    """Persist a mature Candidate and only create a confirmation action when policy requires it."""
     from app.founder_ai.conversation_core import task_candidate_is_complete
     if not task_candidate_is_complete(candidate):
         raise ValueError("task_candidate_incomplete")
@@ -219,19 +237,21 @@ def persist_task_candidate(conversation_id: str, candidate: dict, *, source_mess
             "derivation": dict(candidate.get("derivation") or {}),
             "canonical_pre_dispatch_decision": canonical,
             "candidate_authority": authority,
-            "created_at": created_at, "updated_at": now.isoformat(), "status": "pending_founder_confirmation",
+            "created_at": created_at, "updated_at": now.isoformat(),
+            "status": "pending_founder_confirmation" if confirmation_required else "ready_to_execute",
             "task_id": existing.get("task_id"), "execution_id": existing.get("execution_id"),
             "execution_package_id": existing.get("execution_package_id"),
         }
         action_id = f"task-confirmation:{candidate_id}"
         queue = [dict(item) for item in discovery.get("founder_action_queue") or []
                  if not (item.get("type") == "TASK_CONFIRMATION" and item.get("candidate_id") == candidate_id)]
-        queue.append({
-            "action_id": action_id, "conversation_id": conversation_id, "task_id": None,
-            "candidate_id": candidate_id, "type": "TASK_CONFIRMATION", "status": "pending",
-            "title": record["title"], "summary": record["goal"], "required_input": "CONFIRM_TASK_CANDIDATE",
-            "task_candidate": record, "created_at": created_at, "resolved_at": None, "resolution": None,
-        })
+        if confirmation_required:
+            queue.append({
+                "action_id": action_id, "conversation_id": conversation_id, "task_id": None,
+                "candidate_id": candidate_id, "type": "TASK_CONFIRMATION", "status": "pending",
+                "title": record["title"], "summary": record["goal"], "required_input": "CONFIRM_TASK_CANDIDATE",
+                "task_candidate": record, "created_at": created_at, "resolved_at": None, "resolution": None,
+            })
         discovery["task_candidate"] = record
         discovery["task_candidates"] = [item for item in candidates if item.get("candidate_id") != candidate_id] + [record]
         if record["derivation"].get("source") == "conversation_llm":
@@ -240,11 +260,11 @@ def persist_task_candidate(conversation_id: str, candidate: dict, *, source_mess
                 "derivation_version": record["derivation"].get("derivation_version"),
                 "completed_at": now.isoformat(),
             }
-        discovery["task_projection"] = {"status": "pending_founder_confirmation", "candidate_id": candidate_id,
-                                         "title": record["title"], "founder_action_required": True}
+        discovery["task_projection"] = {"status": record["status"], "candidate_id": candidate_id,
+                                         "title": record["title"], "founder_action_required": confirmation_required}
         discovery["founder_action_queue"] = queue
         discovery["focused_task_id"] = f"candidate:{candidate_id}"
-        discovery["founder_action_required"] = True
+        discovery["founder_action_required"] = confirmation_required
         state.discovery = discovery; state.updated_at = now; db.commit()
         return record
 

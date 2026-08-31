@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from app.core.task_asset.model import TaskAssetDB
 from app.core.task_asset.service import (
-    create_task_asset, ensure_task_execution_approval,
+    create_task_asset, decide_task_execution_approval, ensure_task_execution_approval,
     invalidate_task_execution_approval, validate_task_execution_approval,
 )
 from app.database.db import SessionLocal
@@ -39,6 +39,43 @@ SUPPORTED_BROWSER_ADAPTERS = {
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _sync_execution_approval_action(*, conversation_id: str, task_id: str, authority: dict,
+                                    approval: dict, status: str = "pending") -> dict:
+    """Project canonical TaskAsset approval into the durable Founder Action Queue."""
+    now = _now()
+    action_id = f"execution-approval:{approval['approval_id']}"
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {})
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or []]
+        action = next((item for item in queue if item.get("action_id") == action_id), None)
+        values = {
+            "action_id": action_id, "conversation_id": conversation_id, "task_id": task_id,
+            "candidate_id": authority["candidate_id"],
+            "canonical_fingerprint": authority["canonical_fingerprint"],
+            "approval_id": approval["approval_id"], "risk": authority["risk"],
+            "type": "EXECUTION_APPROVAL", "status": status,
+            "title": "执行审批", "summary": "当前任务需要 Founder 审批后才能执行。",
+            "required_input": "DECIDE_EXECUTION_APPROVAL", "reason": "risk_or_policy_requires_approval",
+            "created_at": (action or {}).get("created_at") or now,
+            "resolved_at": now if status != "pending" else None,
+            "resolution": approval.get("decision") if status != "pending" else None,
+        }
+        if action is None:
+            queue.append(values)
+        else:
+            action.update(values)
+        discovery["founder_action_queue"] = queue
+        discovery["founder_action_required"] = any(item.get("status") == "pending" for item in queue)
+        state.discovery = discovery
+        state.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return values
 
 
 def _canonical_hash(value) -> str:
@@ -85,6 +122,7 @@ def candidate_authority_snapshot(*, decision: dict, conversation_id: str,
         conversation_id=conversation_id, source_message_id=source_message_id,
         intent_fingerprint=decision["intent_fingerprint"],
     )
+    contract = deepcopy(decision.get("standard_task_contract") or {})
     return {
         "schema_version": CANDIDATE_AUTHORITY_SCHEMA_VERSION,
         "candidate_id": candidate_id,
@@ -100,7 +138,9 @@ def candidate_authority_snapshot(*, decision: dict, conversation_id: str,
         "production_scope": list(decision.get("allowed_production_files") or []),
         "test_scope": list(decision.get("allowed_test_files") or []),
         "shared_support_scope": list(decision.get("allowed_shared_support_files") or []),
-        "contract": deepcopy(decision.get("standard_task_contract") or {}),
+        "contract": contract,
+        "founder_constraints": list(contract.get("constraints") or []),
+        "founder_acceptance_criteria": list(contract.get("acceptance_criteria") or []),
         "interaction_contract": deepcopy(decision.get("visible_artifact_contract")),
         "adapter": decision.get("browser_adapter"),
         "adapter_compatibility": decision.get("adapter_compatibility"),
@@ -113,6 +153,52 @@ def candidate_authority_snapshot(*, decision: dict, conversation_id: str,
         "execution_constraints": list((decision.get("standard_task_contract") or {}).get("prohibited_scope") or []),
         "created_at": decision.get("created_at") or _now(),
     }
+
+
+def bind_persisted_candidate_authority(*, route: dict, candidate: dict,
+                                       conversation_id: str,
+                                       source_message_id: str | None = None) -> dict:
+    """Project one persisted Candidate authority onto a non-authoritative route.
+
+    Routing may add operational hints, but it must not reinterpret the Candidate's
+    risk, admission, scope, contract, constraints, or canonical fingerprint.
+    """
+    result = dict(route)
+    decision = deepcopy(candidate.get("canonical_pre_dispatch_decision") or {})
+    authority = deepcopy(candidate.get("candidate_authority") or {})
+    candidate_id = str(candidate.get("candidate_id") or "")
+    if not decision or not authority or not candidate_id:
+        raise ValueError("persisted_candidate_authority_incomplete")
+    if authority.get("candidate_id") != candidate_id:
+        raise ValueError("persisted_candidate_identity_mismatch")
+    if authority.get("conversation_id") != conversation_id:
+        raise ValueError("persisted_candidate_conversation_mismatch")
+    if source_message_id and authority.get("source_message_id") != source_message_id:
+        raise ValueError("persisted_candidate_source_message_mismatch")
+    if authority.get("canonical_fingerprint") != decision.get("decision_fingerprint"):
+        raise ValueError("persisted_candidate_authority_fingerprint_mismatch")
+    constraints = list(candidate.get("constraints") or [])
+    acceptance = list(candidate.get("acceptance_criteria") or [])
+    expected_intent = pre_dispatch_intent_fingerprint(
+        goal=str(candidate.get("goal") or ""), founder_constraints=constraints,
+        founder_acceptance_criteria=acceptance,
+    )
+    if decision.get("intent_fingerprint") != expected_intent:
+        raise ValueError("persisted_candidate_authority_intent_mismatch")
+    result["canonical_pre_dispatch_decision"] = decision
+    result["candidate_authority"] = authority
+    result["standard_task_contract"] = deepcopy(authority.get("contract") or {})
+    result["dispatch_admission"] = deepcopy(decision.get("dispatch_admission") or {})
+    result["founder_constraints"] = constraints
+    result["founder_acceptance_criteria"] = acceptance
+    result["confirmed_decisions"] = list(candidate.get("confirmed_decisions") or [])
+    result["risk"] = authority.get("risk")
+    result["approval_required"] = bool(authority.get("approval_required"))
+    result["clarification_required"] = bool(authority.get("clarification_required"))
+    result["founder_gate_required"] = bool(
+        authority.get("clarification_required") or authority.get("approval_required")
+    )
+    return result
 
 
 def _classify_scope_files(paths: list[str]) -> dict:
@@ -718,11 +804,19 @@ def begin_standard_task(*, conversation_id: str, goal: str, route: dict, source_
             risk=route.get("risk"), approval_required=route.get("approval_required"),
             clarification_required=route.get("clarification_required"),
         )
-    candidate_id = str((route.get("candidate_authority") or {}).get("candidate_id") or "") or None
-    authority = candidate_authority_snapshot(
-        decision=decision, conversation_id=conversation_id, source_message_id=source_message_id,
-        candidate_id=candidate_id,
-    )
+    persisted_authority = deepcopy(route.get("candidate_authority") or {})
+    if persisted_authority:
+        if persisted_authority.get("canonical_fingerprint") != decision.get("decision_fingerprint"):
+            raise ValueError("candidate_authority_fingerprint_mismatch")
+        if persisted_authority.get("conversation_id") != conversation_id:
+            raise ValueError("candidate_authority_conversation_mismatch")
+        if source_message_id and persisted_authority.get("source_message_id") != source_message_id:
+            raise ValueError("candidate_authority_source_message_mismatch")
+        authority = persisted_authority
+    else:
+        authority = candidate_authority_snapshot(
+            decision=decision, conversation_id=conversation_id, source_message_id=source_message_id,
+        )
     result["canonical_pre_dispatch_decision"] = decision
     result["candidate_authority"] = authority
     result["standard_task_contract"] = decision["standard_task_contract"]
@@ -752,6 +846,13 @@ def _authority_from_task(task: TaskAssetDB) -> dict:
     if not required.issubset(authority):
         raise ValueError("task_candidate_authority_incomplete")
     return authority
+
+
+def _load_route(conversation_id: str) -> dict:
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id))
+        return dict((state.discovery or {}).get("task_complexity_route") or {}) if state else {}
 
 
 def prepare_standard_task(*, conversation_id: str, goal: str,
@@ -836,9 +937,13 @@ def prepare_standard_task(*, conversation_id: str, goal: str,
             record.execution_status = "prepared"
             db.commit(); db.refresh(record); task = record
     if authority.get("approval_required") or str(authority.get("risk") or "low").lower() != "low":
-        ensure_task_execution_approval(
+        pending_approval = ensure_task_execution_approval(
             task_id=task.id, candidate_id=authority["candidate_id"],
             canonical_fingerprint=authority["canonical_fingerprint"],
+        )
+        _sync_execution_approval_action(
+            conversation_id=conversation_id, task_id=task.id,
+            authority=authority, approval=pending_approval,
         )
     route["candidate_authority"] = authority
     route["standard_task_contract"] = deepcopy(authority["contract"])
@@ -1057,6 +1162,57 @@ def start_prepared_standard_task(*, conversation_id: str, enqueue=enqueue_execut
     Thread(target=_monitor, args=(conversation_id, task_id, execution.id), daemon=True,
            name=f"standard-{execution.id}").start()
     return route
+
+
+def decide_and_resume_standard_task(*, conversation_id: str, task_id: str, candidate_id: str,
+                                    canonical_fingerprint: str, decision: str,
+                                    actor: str = "founder", enqueue=enqueue_execution) -> dict:
+    """Resolve canonical approval and continue through the one execution-start authority."""
+    with SessionLocal() as db:
+        task = db.get(TaskAssetDB, task_id)
+        if task is None or task.conversation_id != conversation_id:
+            raise LookupError("task_asset_not_found")
+        authority = _authority_from_task(task)
+        if (authority.get("candidate_id") != candidate_id
+                or authority.get("canonical_fingerprint") != canonical_fingerprint):
+            raise ValueError("stale_execution_approval")
+    approval = decide_task_execution_approval(
+        task_id=task_id, decision=decision, canonical_fingerprint=canonical_fingerprint,
+        candidate_id=candidate_id, actor=actor,
+    )
+    _sync_execution_approval_action(
+        conversation_id=conversation_id, task_id=task_id, authority=authority,
+        approval=approval, status="resolved",
+    )
+    if decision == "rejected":
+        with SessionLocal() as db:
+            task = db.get(TaskAssetDB, task_id)
+            task.status = "rejected"
+            task.execution_status = "rejected"
+            source_event_id = f"execution-approval-rejected:{approval['approval_id']}"
+            existing = db.scalars(select(ConversationMessageDB).where(
+                ConversationMessageDB.conversation_id == conversation_id,
+                ConversationMessageDB.message_type == "execution_update",
+            )).all()
+            if not any((item.grounding or {}).get("source_event_id") == source_event_id for item in existing):
+                db.add(ConversationMessageDB(
+                    conversation_id=conversation_id, role="assistant",
+                    message_type="execution_update", intent="approval_rejected",
+                    content="Founder 已拒绝执行审批；任务未执行。",
+                    grounding={"visibility": "founder", "source_event_id": source_event_id,
+                               "task_id": task_id, "approval_id": approval["approval_id"]},
+                ))
+            db.commit()
+        route = _load_route(conversation_id)
+        route["execution_status"] = "rejected"
+        route["execution_authorization"] = {
+            "status": "blocked", "reason": "blocked_approval_rejected",
+            "approval_id": approval["approval_id"],
+        }
+        return {"approval": approval, "route": _save_route(conversation_id, route), "resumed": False}
+    route = start_prepared_standard_task(conversation_id=conversation_id, enqueue=enqueue)
+    return {"approval": approval, "route": route,
+            "resumed": bool((route.get("autonomous_execution") or {}).get("execution_session_id"))}
 
 
 def _project(conversation_id: str, *, step: str, execution: dict | None = None, blocker: dict | None = None) -> dict:

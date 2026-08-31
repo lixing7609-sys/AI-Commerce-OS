@@ -96,6 +96,13 @@ class DraftSyncIn(BaseModel):
     cognitive_outcome_ref: str
 
 
+class TaskExecutionApprovalDecisionIn(BaseModel):
+    task_id: str
+    candidate_id: str
+    canonical_fingerprint: str
+    decision: str
+
+
 def _lifecycle_conflict(error: ValueError) -> HTTPException:
     return HTTPException(status_code=409, detail=error.detail if isinstance(error, LifecycleConflict) else {"code": "capability_lifecycle_conflict", "message": str(error)})
 
@@ -620,12 +627,7 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
             }
         else:
             decision = reason_about_message(conversation_id, request.content, interaction_context=interaction_context)
-            if decision["semantic_intent"] == "execute_current_task" and not has_explicit_execution_intent(request.content):
-                decision["semantic_intent"] = "conversation"
-                decision["conversation_state"] = "task_proposal"
-                if any(marker in decision["response"] for marker in ("开始执行", "立即执行", "正在执行", "进入执行")):
-                    decision["response"] = "我理解了这个调整。当前仍在讨论阶段；确认后告诉我“执行”。"
-            elif has_explicit_execution_intent(request.content) and task_candidate_is_complete(decision.get("task_candidate")):
+            if has_explicit_execution_intent(request.content) and task_candidate_is_complete(decision.get("task_candidate")):
                 decision["semantic_intent"] = "execute_current_task"
                 decision["conversation_state"] = "execution_requested"
         persist_conversation_decision(conversation_id, decision)
@@ -644,16 +646,46 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
             route["confirmed_decisions"] = list(task_candidate.get("confirmed_decisions") or [])
         else:
             route = dict(current_route)
-        candidate_ready = bool(task_candidate and not explicit_execution and task_candidate_is_complete(task_candidate))
-        if candidate_ready:
+        candidate_ready = bool(task_candidate and task_candidate_is_complete(task_candidate))
+        persisted_candidate = None
+        persisted_control_candidate = bool(
+            control["intent"] in {"EXECUTE_CURRENT_TASK", "CONTINUE_CURRENT_TASK"}
+            and control.get("candidate")
+        )
+        if candidate_ready and not persisted_control_candidate:
             try:
-                persist_task_candidate(conversation_id, task_candidate, source_message_id=founder_message_id)
+                persisted_candidate = persist_task_candidate(
+                    conversation_id, task_candidate, source_message_id=founder_message_id,
+                    confirmation_required=not explicit_execution,
+                )
+                from app.founder_ai.standard_task_execution import bind_persisted_candidate_authority
+                route = bind_persisted_candidate_authority(
+                    route=route, candidate=persisted_candidate,
+                    conversation_id=conversation_id, source_message_id=founder_message_id,
+                )
+                if explicit_execution:
+                    from app.founder_ai.conversation_task_interaction import should_autonomously_dispatch_candidate
+                    authority = dict(persisted_candidate.get("candidate_authority") or {})
+                    canonical_continuation = bool(
+                        authority.get("canonical_fingerprint")
+                        and authority.get("contract")
+                        and (should_autonomously_dispatch_candidate(persisted_candidate)
+                             or authority.get("approval_required") is True
+                             or authority.get("clarification_required") is True)
+                    )
+                    explicit_execution = canonical_continuation
+                    semantic_intent = "execute_current_task" if explicit_execution else "conversation"
             except ValueError:
                 decision["response"] = "当前讨论成果还没有可靠固化为待确认任务；讨论内容已经保留，我不会在任务结构完整前开始执行。"
         awaiting_clarification = bool(explicit_execution and decision.get("founder_action_intent") and
                                       (decision.get("founder_action_intent") or {}).get("type") == "CLARIFICATION")
         is_strategic_architecture = route.get("classification") == "STRATEGIC_TASK" and not route.get("clarification_required")
-        is_standard_development = route.get("classification") == "STANDARD_TASK" and route.get("task_type") != "CAPABILITY_BUILD_TASK" and not route.get("clarification_required") and not route.get("founder_gate_required")
+        is_standard_development = (
+            route.get("classification") == "STANDARD_TASK"
+            and route.get("task_type") != "CAPABILITY_BUILD_TASK"
+            and not route.get("clarification_required")
+            and (not route.get("founder_gate_required") or route.get("approval_required"))
+        )
         if reuse_current_execution:
             route = dict(control.get("route") or current_route)
             brain_turn = {"handled": True, "intent": "execution_control", "message_type": "execution_update",
@@ -818,6 +850,20 @@ def decide_conversation_task_candidate(conversation_id: str, request: TaskConfir
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     return {**result, "sino_brain": brain_runtime.snapshot(conversation_id)}
+
+
+@router.post("/conversations/{conversation_id}/execution-approval/decision", response_model=dict[str, Any])
+def decide_conversation_execution_approval(conversation_id: str, request: TaskExecutionApprovalDecisionIn):
+    conversation_id = resolve_conversation_id(conversation_id)
+    from app.founder_ai.standard_task_execution import decide_and_resume_standard_task
+    try:
+        return decide_and_resume_standard_task(
+            conversation_id=conversation_id, task_id=request.task_id,
+            candidate_id=request.candidate_id, canonical_fingerprint=request.canonical_fingerprint,
+            decision=request.decision,
+        )
+    except (LookupError, ValueError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @router.post("/conversations/{conversation_id}/tasks/focus", response_model=dict[str, Any])

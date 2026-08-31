@@ -72,6 +72,84 @@ def _execution_factory(created, saved):
     return create
 
 
+def test_persisted_high_risk_candidate_is_the_only_continuation_authority(monkeypatch):
+    execution, _service, factory = _runtime(monkeypatch)
+    import app.founder_ai.conversation_task_interaction as interaction
+    candidate = {
+        "title": "Projects Heading Count", "goal": GOAL, "task_type": "STANDARD_TASK",
+        "scope": ["Founder Conversation"],
+        "constraints": ["保留现有项目排序", "保留打开项目方式", "保留新建项目方式"],
+        "acceptance_criteria": ["搜索时数量同步变化", "清除搜索后恢复完整数量"],
+        "confirmed_decisions": [], "risk": "high", "approval_required": True,
+        "clarification_required": False,
+    }
+    persisted = interaction.persist_task_candidate(
+        "conv-r3-start", candidate, source_message_id="message-canonical-high",
+        confirmation_required=False,
+    )
+    route = execution.bind_persisted_candidate_authority(
+        route={"classification": "STANDARD_TASK", "risk": "low", "approval_required": False},
+        candidate=persisted, conversation_id="conv-r3-start",
+        source_message_id="message-canonical-high",
+    )
+    canonical = persisted["candidate_authority"]
+    assert route["risk"] == "high" and route["approval_required"] is True
+    assert route["candidate_authority"] == canonical
+    assert route["founder_constraints"] == candidate["constraints"]
+    assert route["founder_acceptance_criteria"] == candidate["acceptance_criteria"]
+    monkeypatch.setattr(
+        execution, "build_pre_dispatch_decision",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not rebuild persisted authority")),
+    )
+    begun = execution.begin_standard_task(
+        conversation_id="conv-r3-start", goal=GOAL, route=route,
+        source_message_id="message-canonical-high",
+    )
+    assert begun["candidate_authority"] == canonical
+    assert begun["candidate_authority"]["canonical_fingerprint"] == canonical["canonical_fingerprint"]
+    prepared = execution.prepare_standard_task(
+        conversation_id="conv-r3-start", goal=GOAL,
+        source_message_id="message-canonical-high",
+    )
+    assert prepared["production_ready"]["canonical_fingerprint"] == canonical["canonical_fingerprint"]
+    assert prepared["production_ready"]["status"] == "pending_approval"
+    with factory() as db:
+        task = db.get(TaskAssetDB, prepared["production_ready"]["task_id"])
+        task_authority = task.scope["candidate_authority"]
+        assert task_authority["candidate_id"] == persisted["candidate_id"]
+        assert task_authority["risk"] == "high"
+        assert task_authority["approval_required"] is True
+        assert task_authority["canonical_fingerprint"] == canonical["canonical_fingerprint"]
+        assert task_authority["founder_constraints"] == canonical["founder_constraints"]
+        assert task_authority["founder_acceptance_criteria"] == canonical["founder_acceptance_criteria"]
+
+
+def test_persisted_candidate_binding_rejects_cross_conversation_authority(monkeypatch):
+    execution, _service, _factory = _runtime(monkeypatch)
+    decision = execution.build_pre_dispatch_decision(
+        conversation_id="other-conversation", goal=GOAL,
+        founder_constraints=["保留现有项目行为"],
+        founder_acceptance_criteria=["数量随筛选同步"],
+        risk="low", approval_required=False, clarification_required=False,
+    )
+    authority = execution.candidate_authority_snapshot(
+        decision=decision, conversation_id="other-conversation",
+        source_message_id="message-cross", candidate_id="candidate-cross",
+    )
+    with pytest.raises(ValueError, match="persisted_candidate_conversation_mismatch"):
+        execution.bind_persisted_candidate_authority(
+            route={"classification": "STANDARD_TASK"},
+            candidate={
+                "candidate_id": "candidate-cross", "goal": GOAL,
+                "constraints": ["保留现有项目行为"],
+                "acceptance_criteria": ["数量随筛选同步"],
+                "canonical_pre_dispatch_decision": decision,
+                "candidate_authority": authority,
+            },
+            conversation_id="conv-r3-start", source_message_id="message-cross",
+        )
+
+
 def test_duplicate_start_and_restore_reuse_one_execution_and_enqueue(monkeypatch):
     execution, _service, factory = _runtime(monkeypatch)
     prepared = _prepare(execution)
@@ -169,7 +247,56 @@ def test_formal_approval_binds_task_candidate_and_fingerprint_and_restores(monke
     )
     assert started["execution_authorization"]["reason"] == "authorized"
     assert created[0][1].task_asset.risk == "high"
+    assert created[0][0].scope_fingerprint == fingerprint
     assert len(enqueued) == 1
+
+
+def test_canonical_approval_decision_auto_resumes_once_and_resolves_action(monkeypatch):
+    execution, _service, factory = _runtime(monkeypatch)
+    prepared = _prepare(execution, risk="high", approval_required=True)
+    ready = prepared["production_ready"]
+    created, saved, enqueued = [], [], []
+    monkeypatch.setattr(execution, "create_execution_session", _execution_factory(created, saved))
+    monkeypatch.setattr(execution, "save_execution_session", lambda session, package=None: saved.append((session, package)))
+    first = execution.decide_and_resume_standard_task(
+        conversation_id="conv-r3-start", task_id=ready["task_id"],
+        candidate_id=ready["candidate_id"], canonical_fingerprint=ready["canonical_fingerprint"],
+        decision="approved", enqueue=lambda value: enqueued.append(value),
+    )
+    second = execution.decide_and_resume_standard_task(
+        conversation_id="conv-r3-start", task_id=ready["task_id"],
+        candidate_id=ready["candidate_id"], canonical_fingerprint=ready["canonical_fingerprint"],
+        decision="approved", enqueue=lambda value: enqueued.append(value),
+    )
+    assert first["resumed"] is True and second["resumed"] is True
+    assert len(created) == 1 and len(enqueued) == 1
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-r3-start").one()
+        actions = [item for item in state.discovery["founder_action_queue"]
+                   if item["type"] == "EXECUTION_APPROVAL"]
+        assert len(actions) == 1 and actions[0]["status"] == "resolved"
+        assert actions[0]["task_id"] == ready["task_id"]
+        assert actions[0]["canonical_fingerprint"] == ready["canonical_fingerprint"]
+
+
+def test_canonical_approval_rejection_never_resumes(monkeypatch):
+    execution, _service, factory = _runtime(monkeypatch)
+    prepared = _prepare(execution, risk="high", approval_required=True)
+    ready = prepared["production_ready"]
+    result = execution.decide_and_resume_standard_task(
+        conversation_id="conv-r3-start", task_id=ready["task_id"],
+        candidate_id=ready["candidate_id"], canonical_fingerprint=ready["canonical_fingerprint"],
+        decision="rejected", enqueue=lambda _value: (_ for _ in ()).throw(AssertionError("must not enqueue")),
+    )
+    assert result["resumed"] is False
+    assert result["route"]["execution_status"] == "rejected"
+    with factory() as db:
+        task = db.get(TaskAssetDB, ready["task_id"])
+        assert task.approval_status == "rejected" and task.execution_status == "rejected"
+        from app.core.conversation_first.model import ConversationMessageDB
+        messages = db.query(ConversationMessageDB).filter_by(
+            conversation_id="conv-r3-start", message_type="execution_update").all()
+        assert len(messages) == 1 and "任务未执行" in messages[0].content
 
 
 def test_rejected_and_stale_approval_never_start(monkeypatch):

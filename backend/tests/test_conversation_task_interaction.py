@@ -91,6 +91,44 @@ def test_mature_discussion_persists_task_candidate_and_confirmation_action(monke
         assert len(actions) == 1
 
 
+def test_clear_low_risk_candidate_is_ready_without_task_confirmation(monkeypatch):
+    interaction, factory = _candidate_factory(monkeypatch)
+    clear = _mature_candidate()
+    clear.update({
+        "title": "Projects Heading Count",
+        "goal": "请在左侧栏项目标题旁显示当前可见的项目数量，搜索筛选时同步变化，清除后恢复完整数量。",
+        "scope": ["FounderNavigationPanel"], "risks": [],
+    })
+    candidate = interaction.persist_task_candidate(
+        "conv-candidate", clear, source_message_id="message-autonomous",
+        confirmation_required=False,
+    )
+    assert candidate["status"] == "ready_to_execute"
+    assert interaction.should_autonomously_dispatch_candidate(candidate) is True
+    with factory() as db:
+        from app.core.conversation_first.model import SinoBrainSessionDB
+        discovery = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-candidate").one().discovery
+        assert not [item for item in discovery["founder_action_queue"]
+                    if item["type"] == "TASK_CONFIRMATION"]
+        assert discovery["founder_action_required"] is False
+
+
+def test_autonomous_candidate_still_honors_canonical_safety_gates(monkeypatch):
+    interaction, _factory = _candidate_factory(monkeypatch)
+    clear = _mature_candidate()
+    clear.update({"title": "Projects Heading Count",
+                  "goal": "请在左侧栏项目标题旁显示当前可见的项目数量，搜索筛选时同步变化，清除后恢复完整数量。",
+                  "scope": ["FounderNavigationPanel"], "risks": []})
+    candidate = interaction.persist_task_candidate(
+        "conv-candidate", clear, confirmation_required=False,
+    )
+    unsafe = dict(candidate)
+    unsafe["candidate_authority"] = {**candidate["candidate_authority"], "approval_required": True}
+    assert interaction.should_autonomously_dispatch_candidate(unsafe) is False
+    unsafe["candidate_authority"] = {**candidate["candidate_authority"], "clarification_required": True}
+    assert interaction.should_autonomously_dispatch_candidate(unsafe) is False
+
+
 def test_task_confirmation_creates_one_task_package_and_is_idempotent(monkeypatch):
     interaction, _factory = _candidate_factory(monkeypatch)
     candidate = interaction.persist_task_candidate("conv-candidate", _mature_candidate())
