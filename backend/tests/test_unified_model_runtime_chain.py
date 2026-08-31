@@ -69,9 +69,9 @@ def test_sino_assigned_models_returns_only_valid_healthy_assignments_and_dedupli
     with factory() as session:
         session.add(_provider(selected=["chat-a", "vision-a", "catalog-only"]))
         session.add_all([
-            model_center.ModelRegistryDB(provider_id="provider-a", model_id="chat-a", display_name="Chat A"),
-            model_center.ModelRegistryDB(provider_id="provider-a", model_id="vision-a", display_name="Vision A", supports_vision=True),
-            model_center.ModelRegistryDB(provider_id="provider-a", model_id="catalog-only", display_name="Catalog Only"),
+            model_center.ModelRegistryDB(provider_id="provider-a", model_id="chat-a", display_name="Chat A", capability=["对话"]),
+            model_center.ModelRegistryDB(provider_id="provider-a", model_id="vision-a", display_name="Vision A", supports_vision=True, capability=["对话", "视觉"]),
+            model_center.ModelRegistryDB(provider_id="provider-a", model_id="catalog-only", display_name="Catalog Only", capability=["对话"]),
             model_center.AICapabilityConfigDB(capability_key="sino_conversation", configuration={"provider_key": "provider-a", "model": "chat-a", "fallbacks": [{"provider_key": "provider-a", "model": "vision-a"}]}),
             model_center.AICapabilityConfigDB(capability_key="deep_thinking", configuration={"provider_key": "provider-a", "model": "chat-a", "fallbacks": []}),
             model_center.AICapabilityConfigDB(capability_key="code_execution", configuration={"provider_key": "removed", "model": "removed-model", "fallbacks": []}),
@@ -83,18 +83,21 @@ def test_sino_assigned_models_returns_only_valid_healthy_assignments_and_dedupli
         session.commit()
     rows = sino_assigned_models()
     assert [row["identity"] for row in rows] == ["provider-a::chat-a", "provider-a::vision-a"]
-    assert rows[0]["roles"] == ["Sino 主对话", "深度推理", "讨论模型 1"]
+    assert rows[0]["roles"] == ["Sino 主对话", "讨论模型 1"]
     assert rows[1]["roles"] == ["Sino 主对话 Fallback"]
     assert all(row["assignment_valid"] and row["health_status"] == "healthy" for row in rows)
 
     with factory() as session:
         session.get(model_center.AICapabilityConfigDB, "deep_thinking").configuration = {"provider_key": "provider-a", "model": "catalog-only", "fallbacks": []}
         session.commit()
-    assert "provider-a::catalog-only" in {row["identity"] for row in sino_assigned_models()}
+    assert "provider-a::catalog-only" not in {row["identity"] for row in sino_assigned_models()}
     with factory() as session:
         session.get(model_center.AICapabilityConfigDB, "deep_thinking").configuration = {}
+        session.get(model_center.AICapabilityConfigDB, "multi_model_discussion").configuration = {"slots": [
+            {"primary": {"provider_key": "provider-a", "model": "catalog-only"}, "fallback": None},
+        ]}
         session.commit()
-    assert "provider-a::catalog-only" not in {row["identity"] for row in sino_assigned_models()}
+    assert "provider-a::catalog-only" in {row["identity"] for row in sino_assigned_models()}
 
     with factory() as session:
         session.get(model_center.ModelProviderConfigDB, "provider-a").health_status = "unhealthy"

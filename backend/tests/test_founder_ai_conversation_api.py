@@ -646,9 +646,9 @@ def test_production_mini_operator_discussion_uses_real_conversation_entry(monkey
     monkeypatch.setattr(conversation_core, "reason_about_message", original_reason)
     monkeypatch.setattr(conversation_core, "persist_conversation_decision", original_persist)
     primary = SimpleNamespace(provider_key="primary-provider", model="conversation-model")
-    reasoning = SimpleNamespace(provider_key="reasoning-provider", model="deep-thinking-model")
-    monkeypatch.setattr(conversation_core, "configured_model_roles", lambda: {
-        "conversation": primary, "fallback": None, "reasoning_strategy": reasoning,
+    fallback = SimpleNamespace(provider_key="fallback-provider", model="fallback-model")
+    monkeypatch.setattr(conversation_core, "resolve_conversation_model_authority", lambda *_args, **_kwargs: {
+        "primary": primary, "fallbacks": [fallback], "explicit_override": True,
     })
 
     def generate(provider_key, model, _request):

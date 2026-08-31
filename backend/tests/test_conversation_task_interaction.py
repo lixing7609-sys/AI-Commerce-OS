@@ -40,6 +40,9 @@ def test_discussion_candidate_is_derived_from_conversation_model_before_persiste
     monkeypatch.setattr(conversation_core, "SessionLocal", factory)
     runtime = type("Runtime", (), {"provider_key": "configured-provider", "model": "configured-model"})()
     monkeypatch.setattr(conversation_core, "configured_model_roles", lambda: {"conversation": runtime, "fallback": None})
+    monkeypatch.setattr(conversation_core, "resolve_conversation_model_authority", lambda *_args, **_kwargs: {
+        "primary": runtime, "fallbacks": [], "explicit_override": True,
+    })
     with factory() as db:
         db.add(ConversationMessageDB(conversation_id="conv-candidate", role="founder", content="讨论中的真实目标"))
         db.add(ConversationMessageDB(conversation_id="conv-candidate", role="assistant", content="讨论形成的真实范围和验收标准"))
@@ -64,6 +67,9 @@ def test_mature_legacy_llm_decision_reconciles_without_founder_resubmission(monk
     monkeypatch.setattr(conversation_core, "SessionLocal", factory)
     runtime = type("Runtime", (), {"provider_key": "configured-provider", "model": "configured-model"})()
     monkeypatch.setattr(conversation_core, "configured_model_roles", lambda: {"conversation": runtime, "fallback": None})
+    monkeypatch.setattr(conversation_core, "resolve_conversation_model_authority", lambda *_args, **_kwargs: {
+        "primary": runtime, "fallbacks": [], "explicit_override": True,
+    })
     with factory() as db:
         from app.core.conversation_first.model import SinoBrainSessionDB
         state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-candidate").one()

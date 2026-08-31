@@ -27,6 +27,10 @@ def _database(monkeypatch):
     monkeypatch.setattr(conversation_service, "SessionLocal", factory)
     monkeypatch.setattr(secretary_service, "SessionLocal", factory)
     monkeypatch.setattr(conversation_core, "SessionLocal", factory)
+    runtime = SimpleNamespace(provider_key="configured-provider", model="configured-conversation-model")
+    monkeypatch.setattr(conversation_core, "resolve_conversation_model_authority", lambda *_args, **_kwargs: {
+        "primary": runtime, "fallbacks": [], "explicit_override": True,
+    })
     monkeypatch.setattr(attachments, "SessionLocal", factory)
     return factory
 

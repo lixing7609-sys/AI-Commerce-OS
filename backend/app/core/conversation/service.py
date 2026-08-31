@@ -25,6 +25,17 @@ class ConversationBoundaryError(ValueError):
     """Raised when a conversation crosses the Founder application boundary."""
 
 
+def _conversation_model_references(session) -> list[dict]:
+    from app.core.model_center.model import AICapabilityConfigDB
+    config = session.get(AICapabilityConfigDB, "sino_conversation")
+    data = dict(config.configuration or {}) if config else {}
+    references = []
+    if data.get("provider_key") and data.get("model"):
+        references.append({"provider_key": data["provider_key"], "model": data["model"]})
+    references.extend(data.get("fallbacks") or [])
+    return references[:3]
+
+
 def create_conversation(*, title: str | None = None, project_id: str | None = None, topic_key: str | None = None, conversation_type: str = "USER_CONVERSATION", created_by: str = "FOUNDER", conversation_model_provider: str | None = None, conversation_model: str | None = None) -> ConversationDB:
     if project_id and get_project(project_id) is None:
         raise ConversationBoundaryError("Founder project not found")
@@ -33,9 +44,19 @@ def create_conversation(*, title: str | None = None, project_id: str | None = No
     if conversation_type not in CONVERSATION_TYPES: raise ConversationBoundaryError("Unsupported conversation type")
     if created_by not in CREATORS: raise ConversationBoundaryError("Unsupported conversation creator")
     if project_id and conversation_type == "USER_CONVERSATION": conversation_type = "PROJECT_CONVERSATION"
+    explicit_model_selection = bool(conversation_model_provider and conversation_model)
     if bool(conversation_model_provider) != bool(conversation_model):
         raise ConversationBoundaryError("Conversation model provider and model must be selected together")
-    if conversation_model_provider:
+    if not conversation_model_provider:
+        from app.core.model_center.model import ModelProviderConfigDB
+        with SessionLocal() as session:
+            defaults = _conversation_model_references(session)
+            provider = session.get(ModelProviderConfigDB, defaults[0]["provider_key"]) if defaults else None
+        if (defaults and provider and provider.enabled and provider.health_status != "unhealthy"
+                and defaults[0]["model"] in (provider.selected_models or [])):
+            conversation_model_provider = defaults[0]["provider_key"]
+            conversation_model = defaults[0]["model"]
+    if conversation_model_provider and explicit_model_selection:
         from app.core.model_center.service import resolve_runtime_config
         from app.core.model_center.runtime_chain import identity, sino_assigned_models
         eligible = {item["identity"] for item in sino_assigned_models()}
@@ -83,6 +104,84 @@ def set_conversation_model(conversation_id: str, provider_key: str, model: str) 
         record.conversation_model = model
         session.commit(); session.refresh(record)
         return record
+
+
+def resolve_conversation_model_authority(
+    conversation_id: str,
+    *,
+    materialize: bool = True,
+    session_factory=None,
+    runtime_resolver=None,
+    chain_resolver=None,
+) -> dict:
+    """Resolve one persisted semantic-model authority for a Conversation.
+
+    A legacy null selection is materialized once from the current global
+    Conversation primary. Explicit global fallbacks remain bounded request
+    fallbacks; unrelated capability roles never become Conversation authority.
+    Injectable resolvers keep isolated runtime tests on their own database.
+    """
+    from app.core.model_center.service import resolve_runtime_config
+    from app.core.model_center.runtime_chain import identity
+
+    session_factory = session_factory or SessionLocal
+    runtime_resolver = runtime_resolver or resolve_runtime_config
+    with session_factory() as session:
+        if chain_resolver:
+            global_chain = list(chain_resolver("sino_conversation") or [])
+        else:
+            global_chain = [runtime for ref in _conversation_model_references(session)
+                            if (runtime := runtime_resolver(provider_key=ref.get("provider_key"), model=ref.get("model")))]
+        record = session.scalar(select(ConversationDB).where(
+            ConversationDB.id == conversation_id,
+            ConversationDB.system_id == FOUNDER_SYSTEM_KEY,
+        ).with_for_update())
+        if record is None:
+            raise LookupError("Founder AI conversation not found")
+        was_unbound = not (record.conversation_model_provider and record.conversation_model)
+        if was_unbound and global_chain:
+            primary = global_chain[0]
+            if materialize:
+                record.conversation_model_provider = primary.provider_key
+                record.conversation_model = primary.model
+                session.commit()
+        elif was_unbound:
+            primary = None
+        else:
+            primary = runtime_resolver(
+                provider_key=record.conversation_model_provider,
+                model=record.conversation_model,
+            )
+        provider_id = primary.provider_key if primary else record.conversation_model_provider
+        model_id = primary.model if primary else record.conversation_model
+        registry = None
+        if provider_id and model_id:
+            from app.core.model_center.model import ModelRegistryDB
+            registry = session.scalar(select(ModelRegistryDB).where(
+                ModelRegistryDB.provider_id == provider_id,
+                ModelRegistryDB.model_id == model_id,
+            ))
+        primary_identity = identity(provider_id, model_id) if provider_id and model_id else None
+        fallbacks = []
+        for candidate in global_chain[1:3]:
+            if identity(candidate.provider_key, candidate.model) != primary_identity:
+                fallbacks.append(candidate)
+        return {
+            "conversation_id": conversation_id,
+            "provider_id": provider_id,
+            "model_id": model_id,
+            "resource_identity": primary_identity,
+            "display_name": registry.display_name if registry else model_id,
+            "source": "materialized_system_default" if was_unbound and primary else "persisted_conversation_selection",
+            "explicit_override": not was_unbound,
+            "primary": primary,
+            "fallbacks": fallbacks,
+            "fallback_policy": {
+                "source": "explicit_global_conversation_fallback",
+                "bounded": True,
+                "models": [identity(item.provider_key, item.model) for item in fallbacks],
+            },
+        }
 
 
 def ensure_conversation_runtime_state(conversation_id: str) -> dict:
@@ -281,6 +380,10 @@ def merge_project_conversations(*, project_id: str, conversation_ids: list[str],
 
 
 def get_conversation(conversation_id: str) -> ConversationDB | None:
+    try:
+        resolve_conversation_model_authority(conversation_id)
+    except LookupError:
+        return None
     with SessionLocal() as session:
         return session.scalar(
             select(ConversationDB).where(
@@ -301,10 +404,16 @@ def resolve_conversation_id(conversation_id: str) -> str:
                 ConversationDB.id == current_id,
                 ConversationDB.system_id == FOUNDER_SYSTEM_KEY,
             ))
-            if record is None or record.status != "merged" or not record.merged_into_conversation_id:
+            if record is None:
                 return current_id
+            if record.status != "merged" or not record.merged_into_conversation_id:
+                resolved_id = current_id
+                break
             current_id = record.merged_into_conversation_id
-        raise ConversationBoundaryError("Conversation merge cycle detected")
+        else:
+            raise ConversationBoundaryError("Conversation merge cycle detected")
+    resolve_conversation_model_authority(resolved_id)
+    return resolved_id
 
 
 def bind_conversation_project(conversation_id: str, project_id: str | None) -> ConversationDB:

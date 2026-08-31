@@ -112,7 +112,7 @@ export function SinoModelSelector({ conversation, preselected, onPreselect, onCo
     {open && typeof document !== "undefined" ? createPortal(<div ref={menuRef} className="sino-model-selector__menu sino-model-selector__menu--floating" role="menu" aria-label="Conversation Models" style={{ top: `${popoverPosition.top}px`, left: `${popoverPosition.left}px`, "--popover-arrow-left": `${popoverPosition.arrowLeft}px` }}>
       <span className="sino-model-selector__arrow" data-popover-arrow aria-hidden="true" />
       {models.map((option) => <button type="button" role="menuitemradio" aria-checked={option.key === selectedKey} key={option.key} disabled={!option.available || saving} onClick={() => selectModel(option)}>
-        <span><strong>{option.displayName}</strong><small>{option.providerName} · {option.model}</small></span>
+        <span><strong>{option.displayName}</strong><small>Provider：{option.providerName} · {option.model}</small></span>
         <i>{option.key === selectedKey ? "✓" : option.available ? "" : "不可用"}</i>
       </button>)}
       {loadState === "LOADING" ? <p role="status">正在加载 Conversation Model…</p> : null}

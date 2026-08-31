@@ -8,6 +8,7 @@ from app.database.base import Base
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
 from app.core.task_asset.model import TaskAssetDB
+from app.core.model_center.model import AICapabilityConfigDB, ModelProviderConfigDB, ModelRegistryDB
 from app.llm.exceptions import InsufficientQuotaError
 import app.founder_ai.conversation_core as core
 import app.core.conversation.service as conversation_service
@@ -19,6 +20,9 @@ def _factory(monkeypatch):
     monkeypatch.setattr(core, "SessionLocal", factory)
     runtime = SimpleNamespace(provider_key="configured-provider", model="configured-conversation-model")
     monkeypatch.setattr(core, "configured_model_roles", lambda: {"conversation": runtime, "fallback": None})
+    monkeypatch.setattr(core, "resolve_conversation_model_authority", lambda *_args, **_kwargs: {
+        "primary": runtime, "fallbacks": [], "explicit_override": True,
+    })
     return factory
 
 
@@ -164,37 +168,30 @@ def test_provider_failure_does_not_turn_ordinary_conversation_into_a_task(monkey
     assert decision["deterministic_fallback"]["attempted"] is False
 
 
-def test_discussion_uses_configured_reasoning_strategy_before_semantic_fail_closed(monkeypatch):
+def test_discussion_does_not_use_reasoning_strategy_as_hidden_fallback(monkeypatch):
     factory = _factory(monkeypatch); _conversation(factory, messages=[])
     primary = SimpleNamespace(provider_key="primary-provider", model="conversation-model")
     reasoning = SimpleNamespace(provider_key="reasoning-provider", model="deep-thinking-model")
-    monkeypatch.setattr(core, "configured_model_roles", lambda: {
-        "conversation": primary, "fallback": None, "reasoning_strategy": reasoning,
+    monkeypatch.setattr(core, "resolve_conversation_model_authority", lambda *_args, **_kwargs: {
+        "primary": primary, "fallbacks": [], "explicit_override": True,
     })
     calls = []
     founder_message = "讨论下‘如何构建一个 AI Commerce Mini Operator？就先把 Sino Operator AI 做一个小版本出来’"
 
     def decide(_context, runtime):
         calls.append((runtime.provider_key, runtime.model))
-        if runtime is primary:
-            raise InsufficientQuotaError()
-        return {
-            "response": "可以先把产品边界收紧为一个最小运营闭环，再讨论首版 Agent 与能力分层。",
-            "semantic_intent": "conversation", "conversation_state": "discussion",
-            "task_candidate": None, "founder_action_intent": None,
-        }
+        raise InsufficientQuotaError()
 
     decision = core.reason_about_message("conv-llm", founder_message, generator=decide)
-    assert calls == [("primary-provider", "conversation-model"), ("reasoning-provider", "deep-thinking-model")]
+    assert calls == [("primary-provider", "conversation-model")]
     assert decision["semantic_intent"] == "conversation"
-    assert decision["conversation_state"] == "discussion"
+    assert decision["conversation_state"] == "conversation_model_unavailable"
     assert decision["task_candidate"] is None
-    assert decision["model_role"] == "reasoning_strategy"
-    assert "最小运营闭环" in decision["response"]
-    assert "无法完成可靠的语义判断" not in decision["response"]
+    assert decision["semantic_model_failure"]["reason"] == "MODEL_UNAVAILABLE"
+    assert "当前会话模型暂时不可用" in decision["response"]
 
 
-def test_discussion_reasoning_strategy_preserves_multi_turn_context(monkeypatch):
+def test_explicit_conversation_fallback_preserves_multi_turn_context(monkeypatch):
     factory = _factory(monkeypatch)
     _conversation(factory, messages=[
         ("founder", "讨论下如何构建一个 AI Commerce Mini Operator"),
@@ -203,9 +200,9 @@ def test_discussion_reasoning_strategy_preserves_multi_turn_context(monkeypatch)
         ("assistant", "这个约束适合作为首版边界。"),
     ])
     primary = SimpleNamespace(provider_key="primary-provider", model="conversation-model")
-    reasoning = SimpleNamespace(provider_key="reasoning-provider", model="deep-thinking-model")
-    monkeypatch.setattr(core, "configured_model_roles", lambda: {
-        "conversation": primary, "fallback": None, "reasoning_strategy": reasoning,
+    fallback = SimpleNamespace(provider_key="fallback-provider", model="fallback-model")
+    monkeypatch.setattr(core, "resolve_conversation_model_authority", lambda *_args, **_kwargs: {
+        "primary": primary, "fallbacks": [fallback], "explicit_override": True,
     })
     observed = {}
 
@@ -232,7 +229,9 @@ def test_all_semantic_roles_malformed_still_fail_closed(monkeypatch):
         "fallback": SimpleNamespace(provider_key="p2", model="m2"),
         "reasoning_strategy": SimpleNamespace(provider_key="p3", model="m3"),
     }
-    monkeypatch.setattr(core, "configured_model_roles", lambda: roles)
+    monkeypatch.setattr(core, "resolve_conversation_model_authority", lambda *_args, **_kwargs: {
+        "primary": roles["conversation"], "fallbacks": [roles["fallback"]], "explicit_override": True,
+    })
     decision = core.reason_about_message(
         "conv-llm", "你觉得这个方向怎么样？",
         generator=lambda *_: (_ for _ in ()).throw(ValueError("malformed semantic response")),
@@ -240,7 +239,7 @@ def test_all_semantic_roles_malformed_still_fail_closed(monkeypatch):
     assert decision["conversation_state"] == "model_unavailable"
     assert decision["semantic_intent"] == "conversation"
     assert decision["task_candidate"] is None
-    assert len(decision["semantic_model_failure"]["attempts"]) == 3
+    assert len(decision["semantic_model_failure"]["attempts"]) == 2
     assert "无法完成可靠的语义判断" in decision["response"]
 
 
@@ -386,6 +385,7 @@ def test_conversation_model_override_drives_the_same_streaming_reasoning_path(mo
         db.commit()
     override = SimpleNamespace(provider_key="provider-b", model="chat-b")
     monkeypatch.setattr(core, "resolve_runtime_config", lambda provider_key=None, model=None, **_: override if (provider_key, model) == ("provider-b", "chat-b") else None)
+    monkeypatch.setattr(core, "resolve_conversation_model_authority", conversation_service.resolve_conversation_model_authority)
     decision = core.reason_about_message("conv-override", "继续讨论", generator=lambda _context, runtime: {
         "response": f"由 {runtime.model} 回复", "semantic_intent": "conversation", "conversation_state": "discussion",
     })
@@ -416,6 +416,82 @@ def test_conversation_model_override_persists_and_rejects_unavailable_models(mon
         assert "unavailable" in str(error)
     else:
         raise AssertionError("disabled model must be rejected")
+
+
+def test_new_conversation_persists_the_current_default_model(monkeypatch):
+    factory = _factory(monkeypatch)
+    monkeypatch.setattr(conversation_service, "SessionLocal", factory)
+    with factory() as db:
+        db.add(ModelProviderConfigDB(
+            provider_key="provider-default", provider_type="openai", display_name="Provider Default",
+            base_url="https://provider.test/v1", model="chat-default", available_models=[],
+            selected_models=["chat-default"], encrypted_api_key="encrypted", enabled=True,
+            health_status="healthy",
+        ))
+        db.add(AICapabilityConfigDB(capability_key="sino_conversation", configuration={
+            "provider_key": "provider-default", "model": "chat-default", "fallbacks": [],
+        }))
+        db.commit()
+    created = conversation_service.create_conversation(title="Persisted default")
+    assert (created.conversation_model_provider, created.conversation_model) == ("provider-default", "chat-default")
+
+
+def test_legacy_conversation_default_materializes_once_and_survives_global_change(monkeypatch):
+    factory = _factory(monkeypatch)
+    monkeypatch.setattr(conversation_service, "SessionLocal", factory)
+    first = SimpleNamespace(provider_key="provider-a", model="chat-a")
+    second = SimpleNamespace(provider_key="provider-b", model="chat-b")
+    runtimes = {("provider-a", "chat-a"): first, ("provider-b", "chat-b"): second}
+    with factory() as db:
+        db.add(ConversationDB(id="conv-legacy", system_id="founder_ai", title="Legacy"))
+        db.add(AICapabilityConfigDB(capability_key="sino_conversation", configuration={
+            "provider_key": "provider-a", "model": "chat-a", "fallbacks": [],
+        }))
+        db.commit()
+    resolve = lambda **kwargs: runtimes.get((kwargs.get("provider_key"), kwargs.get("model")))
+    first_authority = conversation_service.resolve_conversation_model_authority(
+        "conv-legacy", session_factory=factory, runtime_resolver=resolve,
+    )
+    assert first_authority["resource_identity"] == "provider-a::chat-a"
+    assert first_authority["source"] == "materialized_system_default"
+    with factory() as db:
+        db.get(AICapabilityConfigDB, "sino_conversation").configuration = {
+            "provider_key": "provider-b", "model": "chat-b", "fallbacks": [],
+        }
+        db.commit()
+    second_authority = conversation_service.resolve_conversation_model_authority(
+        "conv-legacy", session_factory=factory, runtime_resolver=resolve,
+    )
+    assert second_authority["resource_identity"] == "provider-a::chat-a"
+    with factory() as db:
+        persisted = db.get(ConversationDB, "conv-legacy")
+        assert (persisted.conversation_model_provider, persisted.conversation_model) == ("provider-a", "chat-a")
+
+
+def test_candidate_derivation_and_execution_summary_share_conversation_authority(monkeypatch):
+    factory = _factory(monkeypatch)
+    selected = SimpleNamespace(provider_key="selected-provider", model="selected-model")
+    with factory() as db:
+        db.add(ConversationDB(id="conv-authority", system_id="founder_ai", title="Authority",
+                              conversation_model_provider="selected-provider", conversation_model="selected-model"))
+        db.add(SinoBrainSessionDB(conversation_id="conv-authority", discovery={}))
+        db.add(ConversationMessageDB(conversation_id="conv-authority", role="founder", content="按确定边界形成任务"))
+        db.commit()
+    monkeypatch.setattr(core, "resolve_conversation_model_authority", conversation_service.resolve_conversation_model_authority)
+    monkeypatch.setattr(core, "resolve_runtime_config", lambda provider_key=None, model=None, **_: selected if (provider_key, model) == ("selected-provider", "selected-model") else None)
+    seen = []
+    candidate = core.derive_task_candidate_from_conversation("conv-authority", generator=lambda _context, runtime: seen.append(runtime.model) or {
+        "task_readiness": "sufficient", "task_candidate": {
+            "title": "Selected task", "goal": "按确定边界形成任务", "scope": ["Conversation"],
+            "constraints": [], "acceptance_criteria": ["uses selected model"],
+            "confirmed_decisions": [], "dependencies": [], "risks": [], "task_type": "STANDARD_TASK",
+        },
+    })
+    summary = core.summarize_execution_events("conv-authority", [{"event_name": "queued"}],
+        generator=lambda _context, _events, runtime: seen.append(runtime.model) or {"summary": "已进入队列。"})
+    assert candidate["derivation"]["provider"] == "selected-provider"
+    assert summary == "已进入队列。"
+    assert seen == ["selected-model", "selected-model"]
 
 
 def test_execution_event_batch_gets_one_model_authored_summary(monkeypatch):

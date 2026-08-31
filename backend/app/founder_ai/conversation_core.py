@@ -8,6 +8,7 @@ from typing import Callable
 from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
+from app.core.conversation.service import resolve_conversation_model_authority
 from app.core.conversation_first.model import ConversationAttachmentDB, ConversationMessageDB, SecretaryDigestDB, SinoBrainSessionDB
 from app.core.decision.model import DecisionAssetDB
 from app.core.memory.model import MemoryAssetDB
@@ -104,6 +105,24 @@ def configured_model_roles() -> dict:
             roles["fallback"] = resolve_runtime_config(provider_key=fallback["provider_id"], model=fallback["model_id"])
     except Exception:
         pass
+    return roles
+
+
+def conversation_model_authority(conversation_id: str) -> dict:
+    """Return the single persisted semantic-model authority for a Conversation."""
+    return resolve_conversation_model_authority(
+        conversation_id,
+        session_factory=SessionLocal,
+        runtime_resolver=resolve_runtime_config,
+    )
+
+
+def _authority_model_roles(conversation_id: str) -> list[tuple[str, object]]:
+    authority = conversation_model_authority(conversation_id)
+    roles = []
+    if authority.get("primary") is not None:
+        roles.append(("conversation", authority["primary"]))
+    roles.extend(("fallback", runtime) for runtime in authority.get("fallbacks") or [])
     return roles
 
 
@@ -211,7 +230,7 @@ def task_candidate_is_complete(candidate: dict | None) -> bool:
 
 def derive_task_candidate_from_conversation(conversation_id: str, *, generator: Callable | None = None) -> dict:
     """Ask the configured Conversation Model to structure the existing discussion, without inventing business content."""
-    roles = configured_model_roles()
+    authority_roles = _authority_model_roles(conversation_id)
     # Use a dedicated bounded read path. The general Conversation context also
     # assembles capability/runtime inventories, which are irrelevant here and
     # can starve a live polling reconciliation before model resolution.
@@ -243,18 +262,22 @@ def derive_task_candidate_from_conversation(conversation_id: str, *, generator: 
     }
     prompt = """Using only the supplied Sino Conversation evidence, decide whether the discussion has reached a mature task candidate. Do not invent missing business decisions. Return JSON with task_readiness (sufficient or insufficient), missing_information, and task_candidate. When sufficient, task_candidate must contain title, goal, scope, constraints, acceptance_criteria, confirmed_decisions, dependencies, risks, and task_type. Preserve the meaning of the Founder and Sino discussion; this output is backend structure and is not a Founder-visible response."""
     failures = []
-    for role in ("conversation", "fallback"):
-        runtime = roles.get(role)
-        if runtime is None:
+    attempted_runtimes = set()
+    for role, runtime in authority_roles:
+        runtime_identity = (runtime.provider_key, runtime.model)
+        if runtime_identity in attempted_runtimes:
             continue
+        attempted_runtimes.add(runtime_identity)
+        request = None
         try:
             if generator:
                 payload = generator(context, runtime)
             else:
-                response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, LLMRequest(
+                request = LLMRequest(
                     system_prompt=prompt, user_prompt=json.dumps(context, ensure_ascii=False), temperature=.2,
                     max_tokens=1500, response_format="json",
-                    metadata={"runtime_role": "sino_conversation", "purpose": "task_candidate_derivation"}))
+                    metadata={"runtime_role": "sino_conversation", "purpose": "task_candidate_derivation"})
+                response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
                 payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
             raw_candidate = _safe_mapping(_safe_mapping(payload).get("task_candidate"))
             for field in ("constraints", "acceptance_criteria", "confirmed_decisions", "dependencies", "risks"):
@@ -272,6 +295,8 @@ def derive_task_candidate_from_conversation(conversation_id: str, *, generator: 
                        if field not in candidate or candidate.get(field) in (None, "", [])]
             failures.append(f"{role}:schema_not_ready:{readiness or 'missing'}:{','.join(missing) or 'unknown'}")
         except Exception as error:
+            for failed in (request.metadata.get("model_fallback_failures") or []) if request else []:
+                attempted_runtimes.add((failed.get("provider"), failed.get("model")))
             failures.append(f"{role}:{type(error).__name__}")
             continue
     raise ValueError("conversation_task_candidate_not_ready:" + ",".join(failures or ["no_configured_model"]))
@@ -322,6 +347,17 @@ def _deterministic_admission_after_model_failure(conversation_id: str, current_m
         "semantic_model_failure": {"status": "failed", "attempts": failures},
         "deterministic_fallback": {"attempted": False, "admission": None},
     }
+    unavailable_types = {
+        "configuration_error", "authentication_failed", "rate_limited", "insufficient_quota",
+        "provider_unavailable", "network_error", "timeout",
+    }
+    attempted_errors = {str(item.get("error_type") or "") for item in failures}
+    if attempted_errors and attempted_errors.issubset(unavailable_types):
+        base["response"] = "当前会话模型暂时不可用。你的消息已经保留；在模型恢复或你明确切换模型前，我不会创建或执行任务。"
+        base["conversation_state"] = "conversation_model_unavailable"
+        base["semantic_model_failure"]["reason"] = "MODEL_UNAVAILABLE"
+    else:
+        base["semantic_model_failure"]["reason"] = "SEMANTIC_UNCERTAIN"
     from app.founder_ai.conversation_task_interaction import has_explicit_execution_intent
     if not has_explicit_execution_intent(current_message):
         return base
@@ -402,18 +438,12 @@ def _deterministic_admission_after_model_failure(conversation_id: str, current_m
 def reason_about_message(conversation_id: str, current_message: str, *, interaction_context: dict | None = None,
                          generator: Callable | None = None) -> dict:
     context = build_conversation_context(conversation_id, current_message, interaction_context=interaction_context)
-    roles = configured_model_roles()
-    runtime_mode = "default"
-    with SessionLocal() as db:
-        conversation = db.get(ConversationDB, conversation_id)
-        if conversation and conversation.conversation_model_provider and conversation.conversation_model:
-            try:
-                override = resolve_runtime_config(provider_key=conversation.conversation_model_provider, model=conversation.conversation_model)
-            except Exception:
-                override = None
-            if override is not None:
-                roles["conversation"] = override
-                runtime_mode = "override"
+    authority = conversation_model_authority(conversation_id)
+    authority_roles = []
+    if authority.get("primary") is not None:
+        authority_roles.append(("conversation", authority["primary"]))
+    authority_roles.extend(("fallback", runtime) for runtime in authority.get("fallbacks") or [])
+    runtime_mode = "override" if authority.get("explicit_override") else "materialized_default"
     prompt = """You are the conversation intelligence of Sino Founder AI and the Founder's long-term AI partner. Use the supplied relevant evidence to understand the Founder's real purpose, reason with judgment, surface overlooked implications, and offer a better direction or respectful disagreement when useful. Calibrate depth to the question. Respond naturally; do not follow a fixed structure, mechanically restate the request, or turn every answer into a report. Preserve useful Markdown chosen naturally by the model.
 
 Discussion, exploration, correction and agreement are not tasks by default. Decide execution only when the current message semantically authorizes executing an already mature understanding in the preceding context; negation, hypotheticals, questions and deferred consent never authorize execution. If executing, task_candidate.goal/scope/constraints/acceptance_criteria must be derived from the preceding conversation rather than the confirmation phrase. Recent tasks are context only: never claim that a request is duplicate, queued already, or should reuse another task. Duplicate identity is decided exclusively by the backend from the persisted source_message_id. A task with the same title, project, conversation, module, or status is not proof of duplication. You may propose a Founder action only when Founder input is genuinely required. Return JSON with: response, semantic_intent, conversation_state, task_candidate, tool_intent, founder_action_intent, context_updates. semantic_intent is one of conversation, execute_current_task, stop_current_task, runtime_intervention, founder_decision, founder_authorization, founder_acceptance. The response is the exact Founder-visible natural answer."""
@@ -425,6 +455,21 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
             system_prompt=prompt, user_prompt=json.dumps(context, ensure_ascii=False), temperature=.45,
             max_tokens=1800, response_format="json", metadata={"runtime_role": "sino_conversation", "conversation_core": "llm_first", "answer_grounding": True,
                 "conversation_id": conversation_id, "invocation_source": "founder_conversation", "runtime_mode": runtime_mode})
+
+        def attach_gateway_attempts(error):
+            failures = list(request.metadata.get("model_fallback_failures") or [])
+            if failures:
+                error.attempted_model_identities = [
+                    (item.get("provider"), item.get("model")) for item in failures
+                    if item.get("provider") and item.get("model")
+                ]
+                error.semantic_attempts = [
+                    {"role": "conversation" if index == 0 else "fallback",
+                     "provider": item.get("provider"), "model": item.get("model"),
+                     "phase": "semantic_decision", "error_type": item.get("error_type")}
+                    for index, item in enumerate(failures)
+                ]
+            return error
         from app.founder_ai.conversation_streaming import partial_json_string, publisher_for
         publisher = publisher_for((interaction_context or {}).get("client_message_id"))
         if publisher:
@@ -445,11 +490,14 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
                 try:
                     response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
                 except Exception as completion_error:
+                    attach_gateway_attempts(completion_error)
                     completion_error.semantic_attempts = [
                         _semantic_failure_evidence(stream_error, role=role, provider=runtime.provider_key,
                                                    model=runtime.model, phase="stream"),
-                        _semantic_failure_evidence(completion_error, role=role, provider=runtime.provider_key,
-                                                   model=runtime.model, phase="completion"),
+                        *(getattr(completion_error, "semantic_attempts", None) or [
+                            _semantic_failure_evidence(completion_error, role=role, provider=runtime.provider_key,
+                                                       model=runtime.model, phase="completion")
+                        ]),
                     ]
                     raise
                 payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
@@ -457,17 +505,17 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
                     publisher(str(payload["response"]))
                 payload["_model_fallback"] = request.metadata.get("model_fallback")
                 return payload
-        response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
+        try:
+            response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
+        except Exception as error:
+            raise attach_gateway_attempts(error)
         payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
         payload["_model_fallback"] = request.metadata.get("model_fallback")
         return payload
 
     failures = []
     attempted_runtimes = set()
-    for role in ("conversation", "fallback", "reasoning_strategy"):
-        runtime = roles.get(role)
-        if runtime is None:
-            continue
+    for role, runtime in authority_roles:
         runtime_identity = (runtime.provider_key, runtime.model)
         if runtime_identity in attempted_runtimes:
             continue
@@ -506,6 +554,8 @@ Discussion, exploration, correction and agreement are not tasks by default. Deci
                     result["response"] = f"这条请求已经创建任务（{existing.id}），我继续跟踪原任务，不重复创建。"
             return result
         except Exception as error:
+            for failed in getattr(error, "attempted_model_identities", None) or []:
+                attempted_runtimes.add(tuple(failed))
             failures.extend(getattr(error, "semantic_attempts", None) or [
                 _semantic_failure_evidence(error, role=role, provider=runtime.provider_key, model=runtime.model)
             ])
@@ -556,25 +606,31 @@ def summarize_execution_events(conversation_id: str, events: list[dict], *, gene
     """Let the Conversation Model express a causal event batch without exposing raw logs."""
     if not events:
         return None
-    roles = configured_model_roles()
+    authority_roles = _authority_model_roles(conversation_id)
     context = build_conversation_context(conversation_id, "", interaction_context={"meaningful_execution_events": events})
     prompt = """You are Sino Founder AI reporting a small batch of causally related execution events. Write at most one concise, natural Founder-facing update. Merge duplicate start/progress facts, preserve causal order, omit raw commands and internal IDs, and do not claim success beyond the evidence. Return JSON {\"summary\": string}."""
-    for role in ("conversation", "fallback"):
-        runtime = roles.get(role)
-        if runtime is None:
+    attempted_runtimes = set()
+    for role, runtime in authority_roles:
+        runtime_identity = (runtime.provider_key, runtime.model)
+        if runtime_identity in attempted_runtimes:
             continue
+        attempted_runtimes.add(runtime_identity)
+        request = None
         try:
             if generator:
                 payload = generator(context, events, runtime)
             else:
-                response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, LLMRequest(
+                request = LLMRequest(
                     system_prompt=prompt, user_prompt=json.dumps({"conversation_context": context, "events": events}, ensure_ascii=False),
                     temperature=.35, max_tokens=320, response_format="json",
-                    metadata={"runtime_role": "sino_conversation", "purpose": "meaningful_execution_update"}))
+                    metadata={"runtime_role": "sino_conversation", "purpose": "meaningful_execution_update"})
+                response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
                 payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
             summary = str(payload.get("summary") or "").strip()
             if summary:
                 return summary
         except Exception:
+            for failed in (request.metadata.get("model_fallback_failures") or []) if request else []:
+                attempted_runtimes.add((failed.get("provider"), failed.get("model")))
             continue
     return None

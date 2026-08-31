@@ -85,17 +85,13 @@ def eligible_models(role: str | None = None, capability: str | None = None, *, i
 
 
 def sino_assigned_models(session=None) -> list[dict]:
-    """Return the healthy, eligible models referenced by active Sino AI assignments."""
+    """Return authorized Conversation resources, not every model used by Sino."""
     owns = session is None
     session = session or _session_factory()()
     try:
         connected = {item["identity"]: item for item in connected_model_registry(session=session)}
-        eligible_by_role = {
-            role: {item["identity"] for item in eligible_models(role=role, include_unhealthy=False, session=session)}
-            for role in ("sino_conversation", "deep_thinking", "vision", "code_execution", "multi_model_discussion")
-        }
         configs = {item.capability_key: dict(item.configuration or {}) for item in session.scalars(select(AICapabilityConfigDB))}
-        references: list[tuple[dict, str, str]] = []
+        references: list[tuple[dict, str]] = []
 
         def ref_identity(ref: dict | None) -> str | None:
             if not ref:
@@ -104,25 +100,17 @@ def sino_assigned_models(session=None) -> list[dict]:
             model = ref.get("model", ref.get("model_id"))
             return identity(provider, model) if provider and model else None
 
-        def add_pair(primary: dict | None, fallback: dict | None, label: str, role: str) -> None:
+        def add_pair(primary: dict | None, fallback: dict | None, label: str) -> None:
             primary_key, fallback_key = ref_identity(primary), ref_identity(fallback)
             if primary_key and primary_key == fallback_key:
                 return
             if primary_key:
-                references.append((primary, label, role))
+                references.append((primary, label))
             if fallback_key:
-                references.append((fallback, f"{label} Fallback", role))
+                references.append((fallback, f"{label} Fallback"))
 
-        for capability, label, role in (
-            ("sino_conversation", "Sino 主对话", "sino_conversation"),
-            ("deep_thinking", "深度推理", "deep_thinking"),
-            ("code_execution", "Coding", "code_execution"),
-        ):
-            data = configs.get(capability) or {}
-            add_pair(data, next(iter(data.get("fallbacks") or []), None), label, role)
-
-        routing = (configs.get("model_routing_policy_v1") or {}).get("VISION_UNDERSTANDING") or {}
-        add_pair(routing.get("preferred_primary") or routing.get("active_primary"), routing.get("preferred_fallback"), "Vision", "vision")
+        conversation = configs.get("sino_conversation") or {}
+        add_pair(conversation, next(iter(conversation.get("fallbacks") or []), None), "Sino 主对话")
 
         from app.core.model_center.service import _discussion_slots
         seen_discussion_primaries: set[str] = set()
@@ -132,17 +120,21 @@ def sino_assigned_models(session=None) -> list[dict]:
                 continue
             if primary_key:
                 seen_discussion_primaries.add(primary_key)
-            add_pair(slot.get("primary"), slot.get("fallback"), f"讨论模型 {index}", "multi_model_discussion")
+            add_pair(slot.get("primary"), slot.get("fallback"), f"讨论模型 {index}")
 
         roles_by_identity: dict[str, list[str]] = {}
-        for ref, label, role in references:
+        for ref, label in references:
             key = ref_identity(ref)
-            if key in connected and key in eligible_by_role[role]:
+            model = connected.get(key)
+            capabilities = {str(item).strip().casefold() for item in (model or {}).get("capability") or []}
+            conversation_capable = bool(capabilities & {
+                "对话", "conversation", "text reasoning", "text_reasoning", "semantic reasoning", "semantic_reasoning",
+            })
+            if model and model["health_status"] == "healthy" and conversation_capable:
                 roles_by_identity.setdefault(key, []).append(label)
 
         role_order = {label: index for index, label in enumerate([
-            "Sino 主对话", "Sino 主对话 Fallback", "深度推理", "深度推理 Fallback",
-            "Vision", "Vision Fallback", "Coding", "Coding Fallback",
+            "Sino 主对话", "Sino 主对话 Fallback",
             *[label for index in range(1, 6) for label in (f"讨论模型 {index}", f"讨论模型 {index} Fallback")],
         ])}
         rows = []
