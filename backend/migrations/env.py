@@ -1,6 +1,7 @@
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
+from app.database.config import resolve_database_runtime_config
 from sqlalchemy import pool
 
 from alembic import context
@@ -50,6 +51,12 @@ from core.founder_intent.model import ConversationCandidateContextDB, FounderInt
 from app.core.conversation_first.model import CandidateGoalDB, ConversationMessageDB, ExecutionDeltaDB, GoalAssetDB, PendingQuestionDB, SecretaryDigestDB
 
 config = context.config
+
+# Repository test entry points set AI_COMMERCE_TESTING before invoking
+# Alembic. Use the same guarded authority as the application instead of the
+# production URL stored in alembic.ini.
+if resolve_database_runtime_config().testing:
+    config.set_main_option("sqlalchemy.url", resolve_database_runtime_config().url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_sqlalchemy_echo
+from app.database.config import resolve_database_runtime_config
 from app.database.base import Base
 from app.models.deliverable_db import DeliverableDB, DeliverableVersionDB
 from app.models.inventory_db import InventoryDB
@@ -45,10 +46,8 @@ from core.founder_object.model import ConversationObjectContextDB, FounderObject
 from core.founder_intent.model import ConversationCandidateContextDB, FounderIntentRunDB, FounderObjectCandidateDB
 
 
-DATABASE_URL = (
-    "postgresql+psycopg://"
-    "n8n:password123@localhost:5432/ai_commerce_os"
-)
+DATABASE_RUNTIME_CONFIG = resolve_database_runtime_config()
+DATABASE_URL = DATABASE_RUNTIME_CONFIG.url
 
 
 engine = create_engine(
