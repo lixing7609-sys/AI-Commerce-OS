@@ -66,6 +66,13 @@ describe("SinoBrainContext", () => {
     await waitFor(() => expect(startTaskExecution).toHaveBeenCalledWith("task-1"));
   });
 
+  it("displays high-risk operational requests without exposing start execution", () => {
+    render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{ action_id: "high-risk-operational:message-1", action_type: "HIGH_RISK_OPERATIONAL_TASK", type: "HIGH_RISK_OPERATIONAL_TASK", status: "pending", title: "高风险本地操作需要确认", summary: "把当前分支直接 push 到远程", risk_level: "HIGH", source_type: "conversation_message", source_id: "message-1", conversation_id: "conv-1" }] } }} />);
+    expect(screen.getByRole("article", { name: "High Risk Operational Action" }).textContent).toContain("高风险操作");
+    expect(screen.getByText("把当前分支直接 push 到远程")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "开始执行" })).toBeNull();
+  });
+
   it("keeps Candidate Confirm and Create Task out of the Founder Action Queue", () => {
     render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [
       { action_id: "candidate:candidate-1", action_type: "CANDIDATE_CONFIRM", type: "CANDIDATE_CONFIRM", status: "pending", title: "确认候选" },
