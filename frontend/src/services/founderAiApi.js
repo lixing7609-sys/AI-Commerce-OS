@@ -93,6 +93,22 @@ export async function clearFounderObjectDiscussion(conversationId) {
 }
 export function approveFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/approve`, { method: "POST" }, "批准 Founder Object 失败"); }
 export function createTaskFromFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/create-task`, { method: "POST" }, "从 Founder Object 创建任务失败"); }
+
+export function decideTaskAssetExecutionApproval(taskId, decision) {
+  return request(`/founder-ai/task-assets/${encodeURIComponent(taskId)}/execution-approval`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision }),
+  }, "处理任务执行审批失败");
+}
+
+export function approveTaskForExecution(taskId) {
+  return decideTaskAssetExecutionApproval(taskId, "approve");
+}
+
+export function rejectTaskForExecution(taskId) {
+  return decideTaskAssetExecutionApproval(taskId, "reject");
+}
 export function archiveFounderObject(objectId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/archive`, { method: "POST" }, "归档 Founder Object 失败"); }
 export function reviewFounderCandidate(candidateId, action) { return request(`/founder-ai/candidates/${encodeURIComponent(candidateId)}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }, "审核候选变更失败"); }
 export function continueFounderCandidateDiscussion(candidateId, conversationId) { return request(`/founder-ai/candidates/${encodeURIComponent(candidateId)}/continue-discussion`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversation_id: conversationId }) }, "继续讨论候选变更失败"); }

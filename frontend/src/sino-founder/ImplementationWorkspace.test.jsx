@@ -57,9 +57,74 @@ describe("ImplementationWorkspace", () => {
     expect(within(detail).getAllByText("已桥接任务对象").length).toBeGreaterThan(0);
     expect(within(detail).getByText("草稿")).toBeTruthy();
     expect(within(detail).getByText("待审批")).toBeTruthy();
-    expect(within(detail).getByText("待开发")).toBeTruthy();
+    expect(within(detail).getByText("未开始")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "创建任务" })).toBeNull();
     expect(screen.queryByText(/执行中|已启动|Codex 正在执行|任务已批准执行/)).toBeNull();
+  });
+
+  it("shows execution approval actions for pending not-started TaskAssets", () => {
+    const linked = { object_id: "object-approval", object_type: "task", name: "待审批任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-pending", title: "待审批任务", status: "draft", approval_status: "pending", execution_status: "not_started" } };
+    render(<ImplementationWorkspace objects={[linked]} onApproveTaskExecution={vi.fn()} onRejectTaskExecution={vi.fn()} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /待审批任务/ }));
+    expect(screen.getByRole("button", { name: "批准执行" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "拒绝" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "继续讨论" })).toBeTruthy();
+    expect(screen.queryByText(/执行中|已进入执行/)).toBeNull();
+  });
+
+  it("approves TaskAsset execution through the approval-only callback and keeps execution not started", async () => {
+    const linked = { object_id: "object-approve-execution", object_type: "task", name: "批准执行任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-approve", title: "批准执行任务", status: "draft", approval_status: "pending", execution_status: "not_started" } };
+    const approve = vi.fn().mockResolvedValue({ task_id: "task-approve", status: "draft", approval_status: "approved", execution_status: "not_started" });
+    render(<ImplementationWorkspace objects={[linked]} onApproveTaskExecution={approve} onRejectTaskExecution={vi.fn()} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /批准执行任务/ }));
+    fireEvent.click(screen.getByRole("button", { name: "批准执行" }));
+    await vi.waitFor(() => expect(approve).toHaveBeenCalledWith("task-approve"));
+    const detail = screen.getByLabelText("对象操作");
+    await vi.waitFor(() => expect(screen.getByText("已批准执行 · 等待开始执行")).toBeTruthy());
+    expect(within(detail).getAllByText("已批准").length).toBeGreaterThan(0);
+    expect(within(detail).getByText("未开始")).toBeTruthy();
+    expect(screen.queryByText(/执行中|已进入执行/)).toBeNull();
+  });
+
+  it("rejects TaskAsset execution through the approval-only callback and keeps execution not started", async () => {
+    const linked = { object_id: "object-reject-execution", object_type: "task", name: "拒绝执行任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-reject", title: "拒绝执行任务", status: "draft", approval_status: "pending", execution_status: "not_started" } };
+    const reject = vi.fn().mockResolvedValue({ task_id: "task-reject", status: "draft", approval_status: "rejected", execution_status: "not_started" });
+    render(<ImplementationWorkspace objects={[linked]} onApproveTaskExecution={vi.fn()} onRejectTaskExecution={reject} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /拒绝执行任务/ }));
+    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    await vi.waitFor(() => expect(reject).toHaveBeenCalledWith("task-reject"));
+    const detail = screen.getByLabelText("对象操作");
+    await vi.waitFor(() => expect(screen.getByText("已拒绝执行 · 未开始")).toBeTruthy());
+    expect(within(detail).getByText("已驳回")).toBeTruthy();
+    expect(within(detail).getByText("未开始")).toBeTruthy();
+    expect(screen.queryByText(/执行中|已进入执行/)).toBeNull();
+  });
+
+  it("restores approved and rejected TaskAsset execution approval state from reloaded props", () => {
+    const approved = { object_id: "object-approved-task", object_type: "task", name: "已批准执行任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-approved", title: "已批准执行任务", status: "draft", approval_status: "approved", execution_status: "not_started" } };
+    const rejected = { object_id: "object-rejected-task", object_type: "task", name: "已拒绝执行任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-rejected", title: "已拒绝执行任务", status: "draft", approval_status: "rejected", execution_status: "not_started" } };
+    const { rerender } = render(<ImplementationWorkspace objects={[approved]} onApproveTaskExecution={vi.fn()} onRejectTaskExecution={vi.fn()} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /已批准执行任务/ }));
+    expect(screen.getByText("已批准执行 · 等待开始执行")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "批准执行" })).toBeNull();
+    rerender(<ImplementationWorkspace objects={[rejected]} onApproveTaskExecution={vi.fn()} onRejectTaskExecution={vi.fn()} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /已拒绝执行任务/ }));
+    expect(screen.getByText("已拒绝执行 · 未开始")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "批准执行" })).toBeNull();
+  });
+
+  it("continues discussion from TaskAsset approval without mutating approval state", () => {
+    const linked = { object_id: "object-discuss-task", object_type: "task", name: "继续讨论任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-discuss", title: "继续讨论任务", status: "draft", approval_status: "pending", execution_status: "not_started" } };
+    const approve = vi.fn(), reject = vi.fn(), discuss = vi.fn();
+    render(<ImplementationWorkspace objects={[linked]} onApproveTaskExecution={approve} onRejectTaskExecution={reject} onContinue={discuss} />);
+    fireEvent.click(screen.getByRole("button", { name: /继续讨论任务/ }));
+    fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
+    expect(discuss).toHaveBeenCalledWith(linked);
+    expect(approve).not.toHaveBeenCalled();
+    expect(reject).not.toHaveBeenCalled();
+    const detail = screen.getByLabelText("对象操作");
+    expect(within(detail).getByText("待审批")).toBeTruthy();
+    expect(within(detail).getByText("未开始")).toBeTruthy();
   });
 
   it("separates a persisted context object from new draft recognition", () => {
