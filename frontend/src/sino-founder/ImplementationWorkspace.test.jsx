@@ -107,4 +107,33 @@ describe("ImplementationWorkspace", () => {
     expect(screen.getByRole("button", { name: "驳回" })).toBeTruthy();
     expect(screen.queryByText(/已进入执行/)).toBeNull();
   });
+
+  it("hides pending review after confirm or reject reload state", () => {
+    const pending = { candidate_id: "candidate-review", conversation_id: "conv-review", intent_type: "create", proposed_object_type: "task", proposed_name: "审核候选", proposed_description: "等待确认", source_message_refs: ["message-review"], confidence: .82, review_status: "pending" };
+    const { rerender } = render(<ImplementationWorkspace conversationId="conv-review" candidates={[pending]} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /审核候选/ })).toBeTruthy();
+    rerender(<ImplementationWorkspace conversationId="conv-review" candidates={[{ ...pending, review_status: "confirmed", mutation_result: { candidate_confirmed: true, execution_created: false } }]} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /审核候选/ })).toBeNull();
+    expect(screen.queryByText("待确认", { selector: ".sino-status-chip" })).toBeNull();
+    expect(screen.queryByText(/已进入执行/)).toBeNull();
+    rerender(<ImplementationWorkspace conversationId="conv-review" candidates={[{ ...pending, review_status: "rejected" }]} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /审核候选/ })).toBeNull();
+    expect(screen.queryByText("待确认", { selector: ".sino-status-chip" })).toBeNull();
+  });
+
+  it("keeps continue discussion as a pending candidate action", () => {
+    const candidate = { candidate_id: "candidate-discuss", conversation_id: "conv-discuss", intent_type: "create", proposed_object_type: "task", proposed_name: "继续讨论候选", proposed_description: "继续当前会话讨论", source_message_refs: ["message-discuss"], confidence: .82, review_status: "pending" };
+    const review = vi.fn(), discuss = vi.fn();
+    render(<ImplementationWorkspace conversationId="conv-discuss" candidates={[candidate]} onCandidateReview={review} onCandidateContinue={discuss} />);
+    fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
+    expect(discuss).toHaveBeenCalledWith(candidate);
+    expect(review).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /继续讨论候选/ })).toBeTruthy();
+  });
+
+  it("renders the same pending candidate once when reload data contains duplicates", () => {
+    const candidate = { candidate_id: "candidate-once", conversation_id: "conv-once", intent_type: "create", proposed_object_type: "task", proposed_name: "唯一候选", proposed_description: "重复数据只显示一次", source_message_refs: ["message-once"], confidence: .82, review_status: "pending" };
+    render(<ImplementationWorkspace conversationId="conv-once" candidates={[candidate, { ...candidate }]} contextCandidate={{ ...candidate }} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.getAllByRole("button", { name: /唯一候选/ })).toHaveLength(1);
+  });
 });

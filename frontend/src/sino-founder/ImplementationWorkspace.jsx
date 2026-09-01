@@ -7,6 +7,7 @@ const executionRef = (item) => item?.execution_refs?.at(-1) || null;
 const executionLabel = (item) => statusLabel(executionRef(item)?.status, { execution: true });
 const candidateChange = (item) => item.proposed_description || item.proposed_patch?.description || item.reason || "等待 Founder 确认变更内容";
 const candidateReviewStatusLabel = (status) => ({ pending: "待确认", confirmed: "已确认", rejected: "已驳回" }[status] || statusLabel(status));
+const uniqueCandidates = (items) => Array.from(new Map(items.filter(Boolean).map((item) => [item.candidate_id, item])).values());
 
 function ObjectCard({ item, selected, onSelect }) {
   return <button type="button" className={`sino-implementation-card${selected ? " is-active" : ""}`} onClick={() => onSelect(item.object_id)}>
@@ -36,7 +37,7 @@ function PendingCandidateCard({ item, target, selected, onSelect, onReview, onCo
 
 export function ImplementationWorkspace({ objects = [], candidates = [], conversationId = null, contextObject = null, contextCandidate = null, intelligence = null, creationContext = null, recognitionStatus = null, onApprove, onContinue, onArchive, onOpenObject, onCandidateReview, onCandidateContinue, busy }) {
   const [selectedId, setSelectedId] = useState(null);
-  const visibleCandidates = candidates.filter((item) => !conversationId || !item.conversation_id || item.conversation_id === conversationId);
+  const visibleCandidates = uniqueCandidates(candidates.filter((item) => !conversationId || !item.conversation_id || item.conversation_id === conversationId));
   const pending = visibleCandidates.filter((item) => item.review_status === "pending");
   const pendingTargetIds = new Set(pending.map((item) => item.target_object_id).filter(Boolean));
   const recognized = objects.filter((item) => item.object_id !== contextObject?.object_id && !pendingTargetIds.has(item.object_id));
