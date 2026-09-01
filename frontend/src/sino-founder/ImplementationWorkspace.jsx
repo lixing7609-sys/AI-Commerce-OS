@@ -6,6 +6,7 @@ const displayName = (name) => DISPLAY_NAMES[name] || name;
 const executionRef = (item) => item?.execution_refs?.at(-1) || null;
 const executionLabel = (item) => statusLabel(executionRef(item)?.status, { execution: true });
 const candidateChange = (item) => item.proposed_description || item.proposed_patch?.description || item.reason || "等待 Founder 确认变更内容";
+const candidateReviewStatusLabel = (status) => ({ pending: "待确认", confirmed: "已确认", rejected: "已驳回" }[status] || statusLabel(status));
 
 function ObjectCard({ item, selected, onSelect }) {
   return <button type="button" className={`sino-implementation-card${selected ? " is-active" : ""}`} onClick={() => onSelect(item.object_id)}>
@@ -22,14 +23,14 @@ function PendingCandidateCard({ item, target, selected, onSelect, onReview, onCo
   const execution = executionRef(target);
   return <article className={`sino-implementation-card sino-implementation-card--pending${selected ? " is-active" : ""}`}>
     <button type="button" className="sino-implementation-card__body" onClick={() => onSelect(`candidate:${item.candidate_id}`)}>
-      <span className="sino-status-chip">待审批</span>
+      <span className="sino-status-chip">待确认</span>
       <strong>{displayName(name)}</strong>{displayName(name) !== name ? <small>{name}</small> : null}
       <small>{objectTypeLabel(item.proposed_object_type || target?.object_type, target?.type_label)}</small>
       <b>{currentVersion ? `V${currentVersion} → V${candidateVersion}` : `候选版本 V${candidateVersion}`}</b>
       <p><span>{intentLabel(item.intent_type)}：</span>{candidateChange(item)}</p>
       {execution ? <em>当前执行版本：V{execution.object_version || currentVersion} · {statusLabel(execution.status, { execution: true })}</em> : null}
     </button>
-    <footer className="sino-implementation-card__actions"><button type="button" className="is-primary" onClick={() => onReview(item, "approve")} disabled={busy}>批准</button><button type="button" onClick={() => onContinue(item)} disabled={busy}>继续讨论</button><button type="button" className="is-muted" onClick={() => onReview(item, "reject")} disabled={busy}>驳回</button></footer>
+    <footer className="sino-implementation-card__actions"><button type="button" className="is-primary" onClick={() => onReview(item, "confirm")} disabled={busy}>确认</button><button type="button" onClick={() => onContinue(item)} disabled={busy}>继续讨论</button><button type="button" className="is-muted" onClick={() => onReview(item, "reject")} disabled={busy}>驳回</button></footer>
   </article>;
 }
 
@@ -49,7 +50,7 @@ export function ImplementationWorkspace({ objects = [], candidates = [], context
   return <section className="sino-object-workspace sino-capability-context" aria-label="能力上下文">
     <header><h2>能力上下文</h2><span className="sino-kicker">Capability Context</span><p>从当前讨论持续形成的对象结构</p></header>
     {(creationContext || primary || candidatePrimary) && <section className="sino-capability-context__summary"><h3>当前创建对象</h3><strong>{objectTypeLabel(primary?.object_type || candidatePrimary?.proposed_object_type || creationContext?.type)}</strong><p>{primary?.name || candidatePrimary?.proposed_name || creationContext?.name || "名称待讨论"}</p></section>}
-    {pending.length ? <section className="sino-object-workspace__group sino-object-workspace__pending"><h3>待审批</h3>{pending.map((item) => <PendingCandidateCard key={item.candidate_id} item={item} target={targetFor(item)} selected={selectedCandidate?.candidate_id === item.candidate_id} onSelect={setSelectedId} onReview={onCandidateReview} onContinue={onCandidateContinue} busy={busy} />)}</section> : null}
+    {pending.length ? <section className="sino-object-workspace__group sino-object-workspace__pending"><h3>待确认</h3>{pending.map((item) => <PendingCandidateCard key={item.candidate_id} item={item} target={targetFor(item)} selected={selectedCandidate?.candidate_id === item.candidate_id} onSelect={setSelectedId} onReview={onCandidateReview} onContinue={onCandidateContinue} busy={busy} />)}</section> : null}
     <div className="sino-object-workspace__list">
       {recognitionStatus?.status === "unavailable" ? <div className="sino-object-workspace__empty"><strong>对象识别暂不可用</strong><p>Sino 对话仍可正常继续，稍后会重新尝试识别。</p></div> : null}
       {group("新增对象 · 等待确认", drafts)}
@@ -59,7 +60,7 @@ export function ImplementationWorkspace({ objects = [], candidates = [], context
     </div>
     <section className="sino-capability-context__structure" aria-label="能力结构"><div><span>目标</span><p>{primary?.description || candidatePrimary?.proposed_description || intelligence?.summary || creationContext?.prompt || "等待讨论形成"}</p></div><div><span>已确认结论</span><p>{intelligence?.decisions?.filter?.((item) => item.confirmed).map((item) => item.title || item.content).join(" · ") || "暂无"}</p></div><div><span>新增知识</span><p>{intelligence?.knowledge?.map?.((item) => item.title || item.content).slice(0, 3).join(" · ") || "暂无"}</p></div><div><span>关键约束</span><p>{intelligence?.constraints?.map?.((item) => item.title || item.content || item).slice(0, 3).join(" · ") || "暂无"}</p></div><div><span>待确认问题</span><p>{intelligence?.pending_questions?.map?.((item) => item.content || item).slice(0, 3).join(" · ") || "暂无"}</p></div><div><span>依赖对象</span><p>{primary?.dependency_object_ids?.join?.(" · ") || "暂无"}</p></div><div><span>计划发布给</span><p>{primary?.used_by?.join?.(" · ") || "待确认：Studio AI / Operator AI / Industrial AI / Quant AI"}</p></div></section>
     {selectedCandidate && selectedCandidate.review_status === "pending" ? <article className="sino-object-detail sino-object-detail--candidate" aria-label="候选变更详情"><dl><div><dt>Candidate ID</dt><dd>{selectedCandidate.candidate_id}</dd></div><div><dt>意图类型</dt><dd>{intentLabel(selectedCandidate.intent_type)}</dd></div><div><dt>来源 Conversation</dt><dd>{selectedCandidate.conversation_id || "暂无"}</dd></div><div><dt>来源消息</dt><dd>{selectedCandidate.source_message_refs?.join(" · ") || "暂无"}</dd></div><div><dt>Confidence</dt><dd>{Math.round((selectedCandidate.confidence || 0) * 100)}%</dd></div></dl></article> : null}
-    {selectedCandidate && selectedCandidate.review_status !== "pending" ? <article className="sino-object-detail" aria-label="候选变更操作"><header><span>{intentLabel(selectedCandidate.intent_type)}</span><h3>{displayName(selectedCandidate.proposed_name || "目标对象待确认")}</h3></header><p>{candidateChange(selectedCandidate)}</p><dl><div><dt>审核状态</dt><dd>{statusLabel(selectedCandidate.review_status)}</dd></div><div><dt>来源 Conversation</dt><dd>{selectedCandidate.conversation_id || "暂无"}</dd></div></dl></article> : null}
+    {selectedCandidate && selectedCandidate.review_status !== "pending" ? <article className="sino-object-detail" aria-label="候选变更操作"><header><span>{intentLabel(selectedCandidate.intent_type)}</span><h3>{displayName(selectedCandidate.proposed_name || "目标对象待确认")}</h3></header><p>{candidateChange(selectedCandidate)}</p><dl><div><dt>审核状态</dt><dd>{candidateReviewStatusLabel(selectedCandidate.review_status)}</dd></div><div><dt>来源 Conversation</dt><dd>{selectedCandidate.conversation_id || "暂无"}</dd></div></dl></article> : null}
     {selected && !pendingTargetIds.has(selected.object_id) && <article className="sino-object-detail" aria-label="对象操作"><header><span>{objectTypeLabel(selected.object_type, selected.type_label)}</span><h3>{selected.name}</h3></header><p>{selected.description || "暂无说明"}</p><dl><div><dt>状态</dt><dd>{statusLabel(selected.status)}</dd></div><div><dt>当前版本</dt><dd>V{selected.version}</dd></div><div><dt>来源会话</dt><dd>{selected.source_conversation_id || "暂无"}</dd></div></dl>{executionRef(selected) ? <p className="sino-object-detail__execution">已进入执行 · V{executionRef(selected).object_version || selected.version} · {executionLabel(selected)}</p> : null}<footer><button type="button" onClick={() => onOpenObject(selected)}>查看对象</button>{selected.status === "draft" && <button type="button" onClick={() => onApprove(selected)} disabled={busy}>批准</button>}<button type="button" onClick={() => onContinue(selected)} disabled={busy}>继续讨论</button>{selected.status === "draft" && <button type="button" onClick={() => onArchive(selected)} disabled={busy}>驳回 / 归档</button>}</footer></article>}
   </section>;
 }

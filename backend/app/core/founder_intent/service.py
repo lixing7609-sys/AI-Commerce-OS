@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SecretaryDigestDB
-from app.core.founder_object.service import OBJECT_TYPES, _display, _normalize_name, approve_object
+from app.core.founder_object.service import OBJECT_TYPES, _display, _normalize_name
 from app.core.model_center.service import resolve_runtime_config
 from app.database.db import SessionLocal
 from app.llm.gateway import llm_gateway
@@ -29,7 +29,8 @@ def _iso(value): return value.isoformat() if value else None
 
 
 def _candidate_display(row: FounderObjectCandidateDB) -> dict:
-    return {"candidate_id": row.id, "intent_id": row.intent_id, "conversation_id": row.conversation_id, "candidate_kind": row.candidate_kind, "intent_type": row.intent_type, "target_object_id": row.target_object_id, "target_object_ids": list(row.target_object_ids or []), "proposed_object_type": row.proposed_object_type, "proposed_name": row.proposed_name, "proposed_description": row.proposed_description, "proposed_status": row.proposed_status, "proposed_patch": dict(row.proposed_patch or {}), "relation_changes": list(row.relation_changes or []), "reason": row.reason, "confidence": row.confidence, "source_message_refs": list(row.source_message_refs or []), "review_status": row.review_status, "mutation_result": dict(row.mutation_result or {}), "created_at": _iso(row.created_at), "reviewed_at": _iso(row.reviewed_at)}
+    mutation_result = dict(row.mutation_result or {})
+    return {"candidate_id": row.id, "intent_id": row.intent_id, "conversation_id": row.conversation_id, "candidate_kind": row.candidate_kind, "intent_type": row.intent_type, "target_object_id": row.target_object_id, "target_object_ids": list(row.target_object_ids or []), "proposed_object_type": row.proposed_object_type, "proposed_name": row.proposed_name, "proposed_description": row.proposed_description, "proposed_status": row.proposed_status, "proposed_patch": dict(row.proposed_patch or {}), "relation_changes": list(row.relation_changes or []), "reason": row.reason, "confidence": row.confidence, "source_message_refs": list(row.source_message_refs or []), "review_status": row.review_status, "review_action": mutation_result.get("review_action"), "mutation_result": mutation_result, "created_at": _iso(row.created_at), "reviewed_at": _iso(row.reviewed_at)}
 
 
 class IntentContextBuilder:
@@ -189,31 +190,25 @@ def get_conversation_candidate_context(conversation_id: str) -> dict | None:
 
 
 def review_candidate(candidate_id: str, action: str) -> dict:
-    if action not in {"approve", "reject"}: raise ValueError("invalid candidate review action")
+    normalized_action = "confirm" if action == "approve" else action
+    if normalized_action not in {"confirm", "reject"}: raise ValueError("invalid candidate review action")
     with SessionLocal() as session:
         candidate = session.get(FounderObjectCandidateDB, candidate_id)
         if not candidate: raise LookupError("Founder Candidate not found")
         if candidate.review_status != "pending":
-            existing_result = dict(candidate.mutation_result or {})
-            existing_object_id = existing_result.get("object_id")
-            review_status = candidate.review_status
-            candidate_snapshot = _candidate_display(candidate)
-            if action != "approve" or review_status != "approved" or not existing_object_id: return candidate_snapshot
-        else:
-            existing_object_id = None
-        if action == "reject": candidate.review_status = "rejected"; candidate.reviewed_at = datetime.now(timezone.utc); session.commit(); return _candidate_display(candidate)
-        if not existing_object_id:
-            result = _apply_mutation(session, candidate)
-            candidate.review_status = "approved"; candidate.reviewed_at = datetime.now(timezone.utc); candidate.mutation_result = result; session.commit(); existing_object_id = result.get("object_id")
-        intent_type = candidate.intent_type
-    if existing_object_id and intent_type in {"create", "modify", "split", "merge"}:
-        approved_object = approve_object(existing_object_id, source_candidate_id=candidate_id)
-        execution = approved_object.get("execution_refs", [])[-1] if approved_object.get("execution_refs") else {}
-        with SessionLocal() as session:
-            candidate = session.get(FounderObjectCandidateDB, candidate_id)
-            candidate.mutation_result = {**dict(candidate.mutation_result or {}), "object_id": approved_object["object_id"], "version": approved_object["version"], "status": approved_object["status"], "execution_id": execution.get("execution_id"), "task_asset_id": execution.get("task_asset_id")}
-            session.commit(); session.refresh(candidate); return _candidate_display(candidate)
-    return get_candidate(candidate_id)
+            return _candidate_display(candidate)
+        now = datetime.now(timezone.utc)
+        if normalized_action == "reject":
+            candidate.review_status = "rejected"; candidate.reviewed_at = now
+            candidate.mutation_result = {**dict(candidate.mutation_result or {}), "review_action": "reject", "candidate_confirmed": False}
+            session.commit(); return _candidate_display(candidate)
+        # MVP safety boundary: candidate confirmation acknowledges that Sino
+        # identified a durable object candidate. It is not object approval and
+        # must not mutate FounderObject, create TaskAsset, create Execution, or
+        # call approve_object(). Later lifecycle actions own those transitions.
+        candidate.review_status = "confirmed"; candidate.reviewed_at = now
+        candidate.mutation_result = {**dict(candidate.mutation_result or {}), "review_action": "confirm", "candidate_confirmed": True, "object_mutation_performed": False, "task_asset_created": False, "execution_created": False}
+        session.commit(); return _candidate_display(candidate)
 
 
 def _add_revision(session, record: FounderObjectDB):

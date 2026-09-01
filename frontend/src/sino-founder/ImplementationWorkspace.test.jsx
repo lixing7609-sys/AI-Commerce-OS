@@ -31,11 +31,11 @@ describe("ImplementationWorkspace", () => {
     const candidate = { candidate_id: "candidate-1", intent_type: "delay", proposed_object_type: "agent", proposed_name: "广告投放 Agent", proposed_status: "deferred", reason: "当前先不开发", confidence: .94, review_status: "pending" };
     const review = vi.fn(), discuss = vi.fn();
     render(<ImplementationWorkspace candidates={[candidate]} onCandidateReview={review} onCandidateContinue={discuss} />);
-    expect(screen.getByRole("heading", { name: "待审批" })).toBeTruthy();
-    expect(screen.getByText("待审批", { selector: ".sino-status-chip" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "待确认" })).toBeTruthy();
+    expect(screen.getByText("待确认", { selector: ".sino-status-chip" })).toBeTruthy();
     expect(screen.getByText(/当前先不开发/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "批准" }));
-    expect(review).toHaveBeenCalledWith(candidate, "approve");
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    expect(review).toHaveBeenCalledWith(candidate, "confirm");
     fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
     expect(discuss).toHaveBeenCalledWith(candidate);
     fireEvent.click(screen.getByRole("button", { name: "驳回" }));
@@ -48,9 +48,11 @@ describe("ImplementationWorkspace", () => {
     render(<ImplementationWorkspace objects={[object]} contextObject={object} candidates={[candidate]} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
     expect(screen.getByText("V2 → V3")).toBeTruthy();
     expect(screen.getByText("当前执行版本：V2 · 待开发")).toBeTruthy();
-    expect(screen.getByText("待审批", { selector: ".sino-status-chip" })).toBeTruthy();
+    expect(screen.getByText("待确认", { selector: ".sino-status-chip" })).toBeTruthy();
     expect(screen.queryByText("V2 · 已批准")).toBeNull();
-    expect(screen.getAllByRole("button", { name: /批准|继续讨论|驳回/ })).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "确认" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "继续讨论" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "驳回" })).toBeTruthy();
   });
 
   it("returns to the effective approved version after a candidate is rejected", () => {
@@ -59,7 +61,15 @@ describe("ImplementationWorkspace", () => {
     render(<ImplementationWorkspace objects={[object]} candidates={[rejected]} onApprove={vi.fn()} onContinue={vi.fn()} onArchive={vi.fn()} />);
     expect(screen.getByText("V3 · 已批准")).toBeTruthy();
     expect(screen.getByText("执行：待开发 · V3")).toBeTruthy();
-    expect(screen.queryByText("待审批", { selector: ".sino-status-chip" })).toBeNull();
+    expect(screen.queryByText("待确认", { selector: ".sino-status-chip" })).toBeNull();
+  });
+
+  it("renders confirmed candidates without execution language", () => {
+    const candidate = { candidate_id: "candidate-confirmed", conversation_id: "conv-confirmed", intent_type: "create", proposed_object_type: "capability", proposed_name: "Browser Session", proposed_description: "共享浏览器会话能力", review_status: "confirmed", mutation_result: { candidate_confirmed: true, execution_created: false } };
+    render(<ImplementationWorkspace candidates={[candidate]} contextCandidate={candidate} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.getByText("已确认")).toBeTruthy();
+    expect(screen.getAllByText("Browser Session").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/已进入执行/)).toBeNull();
   });
 
   it("isolates recognition unavailability from the Conversation", () => {
