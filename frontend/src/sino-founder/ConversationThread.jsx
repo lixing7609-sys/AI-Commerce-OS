@@ -92,6 +92,8 @@ function OperationalRuntimeStatus({ runtime }) {
     blocked: "等待 Founder 处理",
   };
   const result = runtime.result?.result || runtime.result;
+  const operationType = runtime.operation_type || runtime.result?.operation_type || result?.operation_type;
+  const checkResult = runtime.result?.check_result || result?.check_result;
   return <aside className="sino-operational-runtime-status" aria-label="Operational Runtime Status">
     <span>Sino Operational Runtime</span>
     <h3>{labels[runtime.status] || runtime.status}</h3>
@@ -100,6 +102,12 @@ function OperationalRuntimeStatus({ runtime }) {
       {runtime.task_id ? <div><dt>TaskAsset</dt><dd>{runtime.task_id}</dd></div> : null}
       {runtime.execution_id ? <div><dt>Execution</dt><dd>{runtime.execution_id}</dd></div> : null}
       {runtime.risk_decision?.risk_level ? <div><dt>Risk</dt><dd>{runtime.risk_decision.risk_level}</dd></div> : null}
+      {operationType ? <div><dt>Operation</dt><dd>{operationType}</dd></div> : null}
+      {checkResult ? <div><dt>Check result</dt><dd>{checkResult}</dd></div> : null}
+      {Number.isFinite(result?.passed) ? <div><dt>Passed</dt><dd>{result.passed}</dd></div> : null}
+      {Number.isFinite(result?.failed) ? <div><dt>Failed</dt><dd>{result.failed}</dd></div> : null}
+      {Number.isFinite(result?.errors) ? <div><dt>Errors</dt><dd>{result.errors}</dd></div> : null}
+      {typeof result?.exit_code === "number" ? <div><dt>Exit code</dt><dd>{result.exit_code}</dd></div> : null}
       {result?.branch ? <div><dt>Branch</dt><dd>{result.branch}</dd></div> : null}
       {result?.head ? <div><dt>HEAD</dt><dd>{result.head}</dd></div> : null}
       {typeof result?.working_tree_clean === "boolean" ? <div><dt>Working tree</dt><dd>{result.working_tree_clean ? "clean" : "dirty"}</dd></div> : null}
