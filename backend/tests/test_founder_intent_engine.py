@@ -125,6 +125,63 @@ def test_continue_candidate_discussion_keeps_candidate_pending_in_same_conversat
     assert object_service.list_founder_objects() == []
 
 
+def test_mvp_natural_discussion_has_no_candidate(monkeypatch):
+    runtime(monkeypatch); conversation = conversation_service.create_conversation(title="No candidate")
+    candidates = intent_service.FounderIntentEngine().run(conversation.id, "m-chat", "AI电商未来会怎么发展？")
+    assert candidates == []
+
+
+def test_mvp_goal_like_message_creates_one_pending_task_candidate(monkeypatch):
+    runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Goal")
+    candidates = intent_service.FounderIntentEngine().run(conversation.id, "m-goal", "我们应该做一个自动生成落地页的 Agent。")
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate["candidate_type"] == "TASK"
+    assert candidate["review_status"] == "pending"
+    assert candidate["conversation_id"] == conversation.id
+    assert candidate["source_message_id"] == "m-goal"
+    assert candidate["source_message_refs"] == ["m-goal"]
+    assert candidate["confidence"] >= intent_service.MVP_CONFIDENCE_THRESHOLD
+
+
+def test_mvp_decision_message_creates_one_pending_decision_candidate(monkeypatch):
+    runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Decision")
+    candidates = intent_service.FounderIntentEngine().run(conversation.id, "m-decision", "第一阶段只支持一个广告平台和一个真实商品。")
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate["candidate_type"] == "DECISION"
+    assert candidate["proposed_object_type"] == "decision"
+    assert candidate["review_status"] == "pending"
+    assert "广告平台" in candidate["proposed_description"]
+
+
+def test_mvp_task_like_execution_message_remains_candidate_only(monkeypatch):
+    runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Task-like")
+    monkeypatch.setattr(object_service, "create_task_asset", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("recognition must not create TaskAsset")))
+    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args: (_ for _ in ()).throw(AssertionError("recognition must not create Execution")))
+    candidates = intent_service.FounderIntentEngine().run(conversation.id, "m-task", "现在就把这个 Agent 做出来。")
+    assert len(candidates) == 1
+    assert candidates[0]["candidate_type"] == "TASK"
+    assert candidates[0]["review_status"] == "pending"
+    assert object_service.list_founder_objects() == []
+
+
+def test_mvp_same_source_message_is_idempotent(monkeypatch):
+    runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Idempotent")
+    engine = intent_service.FounderIntentEngine()
+    one = engine.run(conversation.id, "m-repeat", "我们应该做一个自动生成落地页的 Agent。")
+    two = engine.run(conversation.id, "m-repeat", "我们应该做一个自动生成落地页的 Agent。")
+    assert len(one) == len(two) == 1
+    assert one[0]["candidate_id"] == two[0]["candidate_id"]
+
+
+def test_low_confidence_intent_is_not_persisted(monkeypatch):
+    runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Low confidence")
+    output = {"intents": [{"intent_type": "create", "candidate_type": "TASK", "proposed_object_type": "task", "proposed_name": "Maybe Later", "proposed_description": "也许以后可以考虑。", "reason": "弱信号", "confidence": .4}]}
+    candidates = intent_service.FounderIntentEngine(lambda _ctx: (output, "test", "intent-model")).run(conversation.id, "m-low", "也许以后可以考虑一个 Agent。")
+    assert candidates == []
+
+
 def test_provider_and_parse_failure_never_mutate(monkeypatch):
     runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Failure")
     def fail(_ctx): raise ValueError("bad provider output")

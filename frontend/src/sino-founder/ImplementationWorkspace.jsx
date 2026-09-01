@@ -34,19 +34,21 @@ function PendingCandidateCard({ item, target, selected, onSelect, onReview, onCo
   </article>;
 }
 
-export function ImplementationWorkspace({ objects = [], candidates = [], contextObject = null, contextCandidate = null, intelligence = null, creationContext = null, recognitionStatus = null, onApprove, onContinue, onArchive, onOpenObject, onCandidateReview, onCandidateContinue, busy }) {
+export function ImplementationWorkspace({ objects = [], candidates = [], conversationId = null, contextObject = null, contextCandidate = null, intelligence = null, creationContext = null, recognitionStatus = null, onApprove, onContinue, onArchive, onOpenObject, onCandidateReview, onCandidateContinue, busy }) {
   const [selectedId, setSelectedId] = useState(null);
-  const pending = candidates.filter((item) => item.review_status === "pending");
+  const visibleCandidates = candidates.filter((item) => !conversationId || !item.conversation_id || item.conversation_id === conversationId);
+  const pending = visibleCandidates.filter((item) => item.review_status === "pending");
   const pendingTargetIds = new Set(pending.map((item) => item.target_object_id).filter(Boolean));
   const recognized = objects.filter((item) => item.object_id !== contextObject?.object_id && !pendingTargetIds.has(item.object_id));
   const drafts = recognized.filter((item) => item.status === "draft");
   const approved = recognized.filter((item) => item.status !== "draft");
-  const selectedCandidate = candidates.find((item) => `candidate:${item.candidate_id}` === selectedId) || contextCandidate || null;
+  const visibleContextCandidate = contextCandidate && (!conversationId || !contextCandidate.conversation_id || contextCandidate.conversation_id === conversationId) ? contextCandidate : null;
+  const selectedCandidate = visibleCandidates.find((item) => `candidate:${item.candidate_id}` === selectedId) || visibleContextCandidate || null;
   const selected = objects.find((item) => item.object_id === selectedId) || (!selectedCandidate ? contextObject : null) || null;
   const targetFor = (candidate) => objects.find((item) => item.object_id === candidate.target_object_id) || (contextObject?.object_id === candidate.target_object_id ? contextObject : null);
   const group = (title, items) => items.length ? <section className="sino-object-workspace__group"><h3>{title}</h3>{items.map((item) => <ObjectCard key={item.object_id} item={item} selected={selected?.object_id === item.object_id} onSelect={setSelectedId} />)}</section> : null;
   const primary = selected || contextObject || drafts[0] || approved[0] || null;
-  const candidatePrimary = selectedCandidate || contextCandidate || pending[0] || null;
+  const candidatePrimary = selectedCandidate || visibleContextCandidate || pending[0] || null;
   return <section className="sino-object-workspace sino-capability-context" aria-label="能力上下文">
     <header><h2>能力上下文</h2><span className="sino-kicker">Capability Context</span><p>从当前讨论持续形成的对象结构</p></header>
     {(creationContext || primary || candidatePrimary) && <section className="sino-capability-context__summary"><h3>当前创建对象</h3><strong>{objectTypeLabel(primary?.object_type || candidatePrimary?.proposed_object_type || creationContext?.type)}</strong><p>{primary?.name || candidatePrimary?.proposed_name || creationContext?.name || "名称待讨论"}</p></section>}
@@ -56,7 +58,7 @@ export function ImplementationWorkspace({ objects = [], candidates = [], context
       {group("新增对象 · 等待确认", drafts)}
       {group("已进入执行", approved)}
       {contextObject && !pendingTargetIds.has(contextObject.object_id) ? <section className="sino-object-workspace__group"><h3>当前对象</h3><ObjectCard item={contextObject} selected={selected?.object_id === contextObject.object_id} onSelect={setSelectedId} /></section> : null}
-      {!objects.length && !candidates.length && !creationContext && <div className="sino-object-workspace__empty"><strong>当前讨论尚未形成能力对象</strong><p>继续讨论后，Sino 会自动识别 Agent、Skill、Workflow、Prompt、Capability 或 Project。</p></div>}
+      {!objects.length && !visibleCandidates.length && !creationContext && <div className="sino-object-workspace__empty"><strong>当前讨论尚未形成能力对象</strong><p>继续讨论后，Sino 会自动识别 Agent、Skill、Workflow、Prompt、Capability 或 Project。</p></div>}
     </div>
     <section className="sino-capability-context__structure" aria-label="能力结构"><div><span>目标</span><p>{primary?.description || candidatePrimary?.proposed_description || intelligence?.summary || creationContext?.prompt || "等待讨论形成"}</p></div><div><span>已确认结论</span><p>{intelligence?.decisions?.filter?.((item) => item.confirmed).map((item) => item.title || item.content).join(" · ") || "暂无"}</p></div><div><span>新增知识</span><p>{intelligence?.knowledge?.map?.((item) => item.title || item.content).slice(0, 3).join(" · ") || "暂无"}</p></div><div><span>关键约束</span><p>{intelligence?.constraints?.map?.((item) => item.title || item.content || item).slice(0, 3).join(" · ") || "暂无"}</p></div><div><span>待确认问题</span><p>{intelligence?.pending_questions?.map?.((item) => item.content || item).slice(0, 3).join(" · ") || "暂无"}</p></div><div><span>依赖对象</span><p>{primary?.dependency_object_ids?.join?.(" · ") || "暂无"}</p></div><div><span>计划发布给</span><p>{primary?.used_by?.join?.(" · ") || "待确认：Studio AI / Operator AI / Industrial AI / Quant AI"}</p></div></section>
     {selectedCandidate && selectedCandidate.review_status === "pending" ? <article className="sino-object-detail sino-object-detail--candidate" aria-label="候选变更详情"><dl><div><dt>Candidate ID</dt><dd>{selectedCandidate.candidate_id}</dd></div><div><dt>意图类型</dt><dd>{intentLabel(selectedCandidate.intent_type)}</dd></div><div><dt>来源 Conversation</dt><dd>{selectedCandidate.conversation_id || "暂无"}</dd></div><div><dt>来源消息</dt><dd>{selectedCandidate.source_message_refs?.join(" · ") || "暂无"}</dd></div><div><dt>Confidence</dt><dd>{Math.round((selectedCandidate.confidence || 0) * 100)}%</dd></div></dl></article> : null}

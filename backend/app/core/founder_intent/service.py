@@ -23,6 +23,8 @@ from core.founder_object.model import ConversationObjectContextDB, FounderObject
 logger = logging.getLogger(__name__)
 INTENT_TYPES = {"create", "modify", "merge", "split", "delay", "approve", "reject", "archive", "reference_existing"}
 CANDIDATE_KIND = {"create": "create_object", "modify": "modify_object", "merge": "merge_objects", "split": "split_object", "delay": "status_change", "approve": "status_change", "reject": "status_change", "archive": "status_change", "reference_existing": "reference_existing"}
+MVP_CONFIDENCE_THRESHOLD = 0.65
+MVP_CANDIDATE_TYPES = {"TASK", "DECISION"}
 
 
 def _iso(value): return value.isoformat() if value else None
@@ -30,7 +32,12 @@ def _iso(value): return value.isoformat() if value else None
 
 def _candidate_display(row: FounderObjectCandidateDB) -> dict:
     mutation_result = dict(row.mutation_result or {})
-    return {"candidate_id": row.id, "intent_id": row.intent_id, "conversation_id": row.conversation_id, "candidate_kind": row.candidate_kind, "intent_type": row.intent_type, "target_object_id": row.target_object_id, "target_object_ids": list(row.target_object_ids or []), "proposed_object_type": row.proposed_object_type, "proposed_name": row.proposed_name, "proposed_description": row.proposed_description, "proposed_status": row.proposed_status, "proposed_patch": dict(row.proposed_patch or {}), "relation_changes": list(row.relation_changes or []), "reason": row.reason, "confidence": row.confidence, "source_message_refs": list(row.source_message_refs or []), "review_status": row.review_status, "review_action": mutation_result.get("review_action"), "mutation_result": mutation_result, "created_at": _iso(row.created_at), "reviewed_at": _iso(row.reviewed_at)}
+    proposed_patch = dict(row.proposed_patch or {})
+    refs = list(row.source_message_refs or [])
+    candidate_type = proposed_patch.get("candidate_type")
+    if not candidate_type:
+        candidate_type = "DECISION" if row.proposed_object_type == "decision" else "TASK" if row.proposed_object_type == "task" else (row.proposed_object_type or "").upper()
+    return {"candidate_id": row.id, "intent_id": row.intent_id, "conversation_id": row.conversation_id, "candidate_kind": row.candidate_kind, "intent_type": row.intent_type, "candidate_type": candidate_type, "source_message_id": refs[0] if refs else None, "target_object_id": row.target_object_id, "target_object_ids": list(row.target_object_ids or []), "proposed_object_type": row.proposed_object_type, "proposed_name": row.proposed_name, "proposed_description": row.proposed_description, "proposed_status": row.proposed_status, "proposed_patch": proposed_patch, "relation_changes": list(row.relation_changes or []), "reason": row.reason, "confidence": row.confidence, "source_message_refs": refs, "review_status": row.review_status, "review_action": mutation_result.get("review_action"), "mutation_result": mutation_result, "created_at": _iso(row.created_at), "reviewed_at": _iso(row.reviewed_at)}
 
 
 class IntentContextBuilder:
@@ -88,13 +95,38 @@ def _extract_json(content: str) -> dict:
 
 def _fingerprint(conversation_id: str, intent: dict, refs: list[str]) -> str:
     evidence_key = refs[0] if refs else ""
-    payload = {"conversation_id": conversation_id, "target": intent.get("target_object_id") or _normalize_name(intent.get("proposed_name") or ""), "intent": intent["intent_type"], "patch": intent.get("proposed_patch") or {}, "relations": intent.get("relation_changes") or [], "evidence": evidence_key}
+    payload = {"conversation_id": conversation_id, "target": intent.get("target_object_id") or _normalize_name(intent.get("proposed_name") or ""), "intent": intent["intent_type"], "candidate_type": intent.get("candidate_type"), "patch": intent.get("proposed_patch") or {}, "relations": intent.get("relation_changes") or [], "evidence": evidence_key}
     return sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+
+
+def _clean_title(text: str, fallback: str) -> str:
+    title = re.sub(r"[。！？!?]+$", "", str(text or "").strip())
+    title = re.sub(r"^(我们|我|现在|就|应该|需要|决定|确定|第一阶段|先)+", "", title).strip(" ：:，,")
+    return (title or fallback)[:120]
+
+
+def _mvp_candidate_from_text(context: dict) -> dict:
+    text = str(context.get("founder_message") or "").strip()
+    if not text:
+        return {"intents": []}
+    lowered = text.lower()
+    discussion_markers = ("未来会怎么发展", "怎么看", "如何看待", "聊聊", "讨论一下", "是什么", "为什么")
+    if any(marker in lowered for marker in discussion_markers) and not any(marker in lowered for marker in ("应该做", "需要做", "现在就", "第一阶段", "只支持", "决定", "确定")):
+        return {"intents": []}
+    decision_markers = ("第一阶段", "只支持", "先支持", "决定", "确定", "边界是", "范围是", "原则是")
+    task_markers = ("应该做", "需要做", "做一个", "做出来", "开发", "实现", "构建", "生成", "agent", "任务")
+    if any(marker in lowered for marker in decision_markers):
+        title = _clean_title(text, "Founder Decision")
+        return {"intents": [{"intent_type": "create", "candidate_type": "DECISION", "proposed_object_type": "decision", "proposed_name": title, "proposed_description": text, "proposed_patch": {"candidate_type": "DECISION", "summary": text}, "reason": "Founder 明确表达了产品阶段、范围或原则决策。", "confidence": 0.86, "source_message_refs": [context["trigger_message_id"]]}]}
+    if any(marker in lowered for marker in task_markers):
+        title = _clean_title(text, "Founder Task Candidate")
+        return {"intents": [{"intent_type": "create", "candidate_type": "TASK", "proposed_object_type": "task", "proposed_name": title, "proposed_description": text, "proposed_patch": {"candidate_type": "TASK", "summary": text}, "reason": "Founder 表达了可进入后续生命周期的明确目标或任务意图。", "confidence": 0.82, "source_message_refs": [context["trigger_message_id"]]}]}
+    return {"intents": []}
 
 
 class FounderIntentEngine:
     def __init__(self, generator: Callable[[dict], tuple[dict, str | None, str | None]] | None = None):
-        self.context_builder = IntentContextBuilder(); self.resolver = EntityResolver(); self.generator = generator or self._provider_recognize
+        self.context_builder = IntentContextBuilder(); self.resolver = EntityResolver(); self.generator = generator or self._mvp_recognize
 
     def run(self, conversation_id: str, trigger_message_id: str, founder_message: str) -> list[dict]:
         context = self.context_builder.build(conversation_id, trigger_message_id, founder_message)
@@ -106,11 +138,18 @@ class FounderIntentEngine:
             for raw in output.get("intents", []):
                 intent_type = str(raw.get("intent_type", "")).lower().strip()
                 if intent_type not in INTENT_TYPES: continue
+                confidence = max(0, min(1, float(raw.get("confidence") or 0)))
+                if confidence < MVP_CONFIDENCE_THRESHOLD: continue
                 item = {**raw, "intent_type": intent_type, "requires_review": True}
+                item["candidate_type"] = str(item.get("candidate_type") or "").upper().strip()
                 target = item.get("target_object") if isinstance(item.get("target_object"), dict) else {}
                 item["target_object_name"] = item.get("target_object_name") or target.get("name")
                 item["target_object_id"] = item.get("target_object_id") or target.get("object_id")
                 item["proposed_name"] = item.get("proposed_name") or item.get("target_object_name")
+                if item["candidate_type"] and item["candidate_type"] not in MVP_CANDIDATE_TYPES:
+                    continue
+                if item["candidate_type"]:
+                    item["proposed_patch"] = {"candidate_type": item["candidate_type"], **(item.get("proposed_patch") or {})}
                 if intent_type == "delay":
                     item["proposed_status"] = item.get("proposed_status") or "deferred"
                     item["proposed_patch"] = {"status": item["proposed_status"], **(item.get("proposed_patch") or {})}
@@ -140,6 +179,10 @@ class FounderIntentEngine:
                 session.add(row)
             session.commit()
         return list_candidates(context["conversation_id"])
+
+    @staticmethod
+    def _mvp_recognize(context: dict) -> tuple[dict, str | None, str | None]:
+        return _mvp_candidate_from_text(context), "deterministic", "founder-intent-mvp"
 
     @staticmethod
     def _provider_recognize(context: dict) -> tuple[dict, str | None, str | None]:

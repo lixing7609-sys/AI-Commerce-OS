@@ -88,4 +88,23 @@ describe("ImplementationWorkspace", () => {
     expect(screen.getByText("message-1")).toBeTruthy();
     expect(screen.getByText("80%")).toBeTruthy();
   });
+
+  it("shows pending candidates for the current conversation only", () => {
+    const current = { candidate_id: "candidate-current", conversation_id: "conv-current", intent_type: "create", proposed_object_type: "task", proposed_name: "当前任务候选", proposed_description: "当前会话", source_message_refs: ["message-current"], confidence: .82, review_status: "pending" };
+    const other = { candidate_id: "candidate-other", conversation_id: "conv-other", intent_type: "create", proposed_object_type: "task", proposed_name: "其他会话候选", proposed_description: "其他会话", source_message_refs: ["message-other"], confidence: .82, review_status: "pending" };
+    render(<ImplementationWorkspace conversationId="conv-current" candidates={[current, other]} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /当前任务候选/ })).toBeTruthy();
+    expect(screen.queryByText("其他会话候选")).toBeNull();
+  });
+
+  it("restores a pending candidate from a reloaded snapshot without implying execution", () => {
+    const candidate = { candidate_id: "candidate-restored", conversation_id: "conv-restored", intent_type: "create", candidate_type: "TASK", proposed_object_type: "task", proposed_name: "恢复后的候选", proposed_description: "刷新后仍可审核", source_message_refs: ["message-restored"], confidence: .82, review_status: "pending" };
+    render(<ImplementationWorkspace conversationId="conv-restored" candidates={[candidate]} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "待确认" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /恢复后的候选/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "确认" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "继续讨论" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "驳回" })).toBeTruthy();
+    expect(screen.queryByText(/已进入执行/)).toBeNull();
+  });
 });
