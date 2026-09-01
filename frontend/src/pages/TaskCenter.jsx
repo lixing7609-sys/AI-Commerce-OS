@@ -4,10 +4,8 @@ import Sidebar from "../components/layout/Sidebar";
 import RecoveryCandidatesPanel from "../components/tasks/RecoveryCandidatesPanel";
 import TaskDetailDrawer from "../components/tasks/TaskDetailDrawer";
 import ShopScopeSelector from "../components/shops/ShopScopeSelector";
-import { getTaskStats } from "../services/api";
-import { getTasks } from "../services/taskReadService";
+import { getTaskDetail, getTaskList, getTaskStats } from "../services/taskReadService";
 import { getShops } from "../services/shopApi";
-import { getTask } from "../services/taskApi";
 import {
   getStoredShopScope,
   setStoredShopScope,
@@ -139,7 +137,7 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
     async function loadData() {
       try {
         const [tasksData, statsData] = await Promise.all([
-          getTasks({
+          getTaskList({
             status: statusFilter === "all" ? undefined : statusFilter,
             limit: 50,
             offset: 0,
@@ -227,7 +225,7 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
       setDetailLoading(true);
 
       try {
-        const detail = await getTask(activeTaskId);
+        const detail = await getTaskDetail(activeTaskId);
 
         if (cancelled) {
           return;
@@ -265,7 +263,7 @@ function TaskCenter({ onNavigate = () => {}, selectedTaskId = null }) {
 
     async function loadDelegationExtras() {
       try {
-        const detail = await getTask(activeTaskId);
+        const detail = await getTaskDetail(activeTaskId);
 
         if (cancelled) {
           return;
