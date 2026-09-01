@@ -113,6 +113,49 @@ describe("ImplementationWorkspace", () => {
     expect(screen.queryByRole("button", { name: "批准执行" })).toBeNull();
   });
 
+  it("shows Start Execution only for approved not-started TaskAssets", () => {
+    const approved = { object_id: "object-start-ready", object_type: "task", name: "可开始任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-start-ready", title: "可开始任务", status: "draft", approval_status: "approved", execution_status: "not_started" } };
+    const pending = { object_id: "object-start-pending", object_type: "task", name: "待审批任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-start-pending", title: "待审批任务", status: "draft", approval_status: "pending", execution_status: "not_started" } };
+    const rejected = { object_id: "object-start-rejected", object_type: "task", name: "已拒绝任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-start-rejected", title: "已拒绝任务", status: "draft", approval_status: "rejected", execution_status: "not_started" } };
+    const queued = { object_id: "object-start-queued", object_type: "task", name: "已排队任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-start-queued", title: "已排队任务", status: "in_progress", approval_status: "approved", execution_status: "queued", execution_id: "execution-queued" } };
+    const { rerender } = render(<ImplementationWorkspace objects={[approved]} onStartTaskExecution={vi.fn()} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /可开始任务/ }));
+    expect(screen.getByRole("button", { name: "开始执行" })).toBeTruthy();
+    rerender(<ImplementationWorkspace objects={[pending]} onStartTaskExecution={vi.fn()} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /待审批任务/ }));
+    expect(screen.queryByRole("button", { name: "开始执行" })).toBeNull();
+    rerender(<ImplementationWorkspace objects={[rejected]} onStartTaskExecution={vi.fn()} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /已拒绝任务/ }));
+    expect(screen.queryByRole("button", { name: "开始执行" })).toBeNull();
+    rerender(<ImplementationWorkspace objects={[queued]} onStartTaskExecution={vi.fn()} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /已排队任务/ }));
+    expect(screen.queryByRole("button", { name: "开始执行" })).toBeNull();
+  });
+
+  it("starts approved TaskAsset through explicit start callback and shows queued state", async () => {
+    const linked = { object_id: "object-explicit-start", object_type: "task", name: "显式开始任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-explicit-start", title: "显式开始任务", status: "draft", approval_status: "approved", execution_status: "not_started" } };
+    const start = vi.fn().mockResolvedValue({ task_id: "task-explicit-start", execution_id: "execution-explicit", task_status: "in_progress", approval_status: "approved", execution_status: "queued", created: true });
+    render(<ImplementationWorkspace objects={[linked]} onStartTaskExecution={start} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /显式开始任务/ }));
+    fireEvent.click(screen.getByRole("button", { name: "开始执行" }));
+    await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+    expect(start).toHaveBeenCalledWith("task-explicit-start");
+    await vi.waitFor(() => expect(screen.getByText("已进入执行 · 等待执行")).toBeTruthy());
+    const detail = screen.getByLabelText("对象操作");
+    expect(within(detail).getByText("execution-explicit")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "开始执行" })).toBeNull();
+    expect(screen.queryByText("执行中")).toBeNull();
+  });
+
+  it("restores existing execution relationship from reloaded TaskAsset ref", () => {
+    const linked = { object_id: "object-start-restored", object_type: "task", name: "恢复执行任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-start-restored", title: "恢复执行任务", status: "in_progress", approval_status: "approved", execution_status: "queued", execution_start: { execution_id: "execution-restored", status: "queued", started_from: "explicit_taskasset_start" } } };
+    render(<ImplementationWorkspace objects={[linked]} onStartTaskExecution={vi.fn()} onContinue={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /恢复执行任务/ }));
+    expect(screen.getByText("已进入执行 · 等待执行")).toBeTruthy();
+    expect(screen.getByText("execution-restored")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "开始执行" })).toBeNull();
+  });
+
   it("continues discussion from TaskAsset approval without mutating approval state", () => {
     const linked = { object_id: "object-discuss-task", object_type: "task", name: "继续讨论任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-discuss", title: "继续讨论任务", status: "draft", approval_status: "pending", execution_status: "not_started" } };
     const approve = vi.fn(), reject = vi.fn(), discuss = vi.fn();

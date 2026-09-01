@@ -29,9 +29,11 @@ def _normalize_name(name: str) -> str:
 
 def _task_asset_bridge_ref(session, object_id: str) -> dict | None:
     for task in session.scalars(select(TaskAssetDB).where(TaskAssetDB.system_id == "founder_ai")):
-        bridge = dict((task.scope or {}).get("founder_object_bridge") or {})
+        scope = dict(task.scope or {})
+        bridge = dict(scope.get("founder_object_bridge") or {})
         if bridge.get("source_founder_object_id") == object_id:
-            return {"task_id": task.id, "title": task.title, "status": task.status, "approval_status": task.approval_status, "execution_status": task.execution_status, "created_from": bridge.get("created_from") or "founder_object_bridge"}
+            execution_start = dict(scope.get("execution_start") or {})
+            return {"task_id": task.id, "title": task.title, "status": task.status, "approval_status": task.approval_status, "execution_status": task.execution_status, "created_from": bridge.get("created_from") or "founder_object_bridge", "execution_start": execution_start or None, "execution_id": execution_start.get("execution_id")}
     return None
 
 

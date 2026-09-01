@@ -22,6 +22,7 @@ from app.founder_ai.execution_registry import approve_execution_session, create_
 from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions, list_actually_active_sessions
 from app.founder_ai.execution_registry import authorize_codex_request, apply_codex_founder_authorization, save_execution_session
 from app.founder_ai.execution_worker import enqueue_execution, execution_queue, resume_execution
+from app.founder_ai.standard_task_execution import start_task_asset_execution
 from app.founder_ai.sino_brain import SinoBrain
 from app.llm.exceptions import LLMGatewayError
 from app.founder_ai.self_management import SinoStateAnalyzer
@@ -584,6 +585,16 @@ def decide_task_asset_execution_approval_endpoint(task_id: str, request: TaskAss
         "execution_status": task.execution_status,
         "decision_applied": task.approval_status,
     }
+
+
+@router.post("/task-assets/{task_id}/start-execution", response_model=dict[str, Any])
+def start_task_asset_execution_endpoint(task_id: str):
+    try:
+        return start_task_asset_execution(task_id=task_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @router.post("/objects/{object_id}/archive", response_model=dict[str, Any])

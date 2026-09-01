@@ -985,6 +985,168 @@ def restore_production_ready_task(task_id: str) -> dict:
         }
 
 
+def _task_asset_start_fingerprint(task: TaskAssetDB) -> str:
+    scope = dict(task.scope or {})
+    authority = dict(scope.get("candidate_authority") or {})
+    if authority.get("canonical_fingerprint"):
+        return authority["canonical_fingerprint"]
+    bridge = dict(scope.get("founder_object_bridge") or {})
+    return _canonical_hash({
+        "task_id": task.id,
+        "title": task.title,
+        "description": task.description,
+        "conversation_id": task.conversation_id,
+        "founder_object_bridge": bridge,
+    })
+
+
+def _task_asset_start_context(task: TaskAssetDB, *, execution_id: str,
+                              canonical_fingerprint: str) -> dict:
+    scope = dict(task.scope or {})
+    bridge = dict(scope.get("founder_object_bridge") or {})
+    authority = dict(scope.get("candidate_authority") or {})
+    return {
+        "task_asset_start": {
+            "schema_version": "explicit-taskasset-start-v1",
+            "started_from": "explicit_taskasset_start",
+            "task_asset_id": task.id,
+            "execution_id": execution_id,
+            "canonical_fingerprint": canonical_fingerprint,
+            "source_founder_object_id": bridge.get("source_founder_object_id"),
+            "source_candidate_id": bridge.get("source_candidate_id") or authority.get("candidate_id"),
+            "source_conversation_id": bridge.get("source_conversation_id") or task.conversation_id,
+            "source_message_refs": list(bridge.get("source_message_refs") or []),
+        },
+        "founder_object_bridge": bridge,
+        "candidate_authority": authority,
+    }
+
+
+def start_task_asset_execution(*, task_id: str, enqueue=enqueue_execution) -> dict:
+    """Explicitly start an already-approved TaskAsset.
+
+    TaskAsset creation and TaskAsset execution approval intentionally stop before
+    this boundary. This function is the first TaskAsset lifecycle action that may
+    create and enqueue a canonical ExecutionSession.
+    """
+    with SessionLocal() as db:
+        task = db.scalar(select(TaskAssetDB).where(TaskAssetDB.id == task_id).with_for_update())
+        if task is None or task.system_id != "founder_ai":
+            raise LookupError("task_asset_not_found")
+        task_scope = dict(task.scope or {})
+        prior_start = dict(task_scope.get("execution_start") or {})
+        if prior_start.get("execution_id"):
+            return {
+                "task_id": task.id,
+                "execution_id": prior_start["execution_id"],
+                "task_status": task.status,
+                "status": task.status,
+                "approval_status": task.approval_status,
+                "execution_status": prior_start.get("status") or task.execution_status,
+                "created": False,
+                "reused": True,
+            }
+        if task.approval_status != "approved":
+            raise ValueError("task_asset_execution_approval_required")
+        if task.execution_status != "not_started":
+            raise ValueError("task_asset_execution_already_started")
+        canonical_fingerprint = _task_asset_start_fingerprint(task)
+        execution_id = stable_execution_id(
+            task_id=task.id, canonical_fingerprint=canonical_fingerprint,
+        )
+        started_at = _now()
+        bridge = dict(task_scope.get("founder_object_bridge") or {})
+        start = {
+            "schema_version": "execution-start-v1",
+            "started_from": "explicit_taskasset_start",
+            "execution_id": execution_id,
+            "task_asset_id": task.id,
+            "task_id": task.id,
+            "canonical_fingerprint": canonical_fingerprint,
+            "status": "starting",
+            "started_at": started_at,
+            "source_founder_object_id": bridge.get("source_founder_object_id"),
+            "source_candidate_id": bridge.get("source_candidate_id"),
+            "source_conversation_id": bridge.get("source_conversation_id") or task.conversation_id,
+        }
+        if bridge.get("source_message_refs"):
+            start["source_message_refs"] = list(bridge.get("source_message_refs") or [])
+        task_scope["execution_start"] = start
+        task.scope = task_scope
+        task.status = "in_progress"
+        task.execution_status = "starting"
+        task_title = task.title
+        task_description = task.description or task.title
+        conversation_id = task.conversation_id
+        context = _task_asset_start_context(
+            task, execution_id=execution_id, canonical_fingerprint=canonical_fingerprint,
+        )
+        db.commit()
+
+    draft = TaskAssetDraft(
+        title=task_title,
+        description=task_description,
+        conversation_id=conversation_id,
+        scope={"goal_type": "development", "context": context},
+        constraints=[
+            "Execute only the approved TaskAsset scope.",
+            "Preserve existing Task / Approval / Execution safety contracts.",
+        ],
+        risk="medium",
+        approval_required=False,
+    )
+    package = ExecutionPackage(
+        goal=task_title,
+        context=context,
+        task_asset=draft,
+        constraints=list(draft.constraints),
+        verification=["Run task-specific verification", "Report execution result"],
+        commit_requirement="Use exact-file Autonomous Checkpoint; do not push.",
+        approval_required=False,
+        execution_allowed=True,
+    )
+    try:
+        execution = create_execution_session(task_id, package, execution_id=execution_id)
+    except TypeError as error:
+        if "execution_id" not in str(error):
+            raise
+        execution = create_execution_session(task_id, package)
+    execution.status = "approved"
+    execution.approved_at = getattr(execution, "approved_at", None) or _now()
+    execution.scope_fingerprint = canonical_fingerprint
+    execution.handoff_id = execution.handoff_id or f"taskasset-handoff-{uuid4().hex[:20]}"
+    execution.readiness_contract_id = execution.readiness_contract_id or f"taskasset-readiness-{uuid4().hex[:20]}"
+    save_execution_session(execution, package)
+    queue_item = enqueue(execution.id)
+    queued_at = getattr(queue_item, "created_at", None)
+    queued_at_value = queued_at.isoformat() if hasattr(queued_at, "isoformat") else _now()
+    execution.status = "queued"
+    execution.queued_at = execution.queued_at or queued_at_value
+    save_execution_session(execution, package)
+    with SessionLocal() as db:
+        record = db.scalar(select(TaskAssetDB).where(TaskAssetDB.id == task_id).with_for_update())
+        scope = dict(record.scope or {})
+        start = dict(scope.get("execution_start") or {})
+        start.update({"status": "queued", "queued_at": queued_at_value})
+        scope["execution_start"] = start
+        record.scope = scope
+        record.status = "in_progress"
+        record.execution_status = "queued"
+        db.commit()
+    Thread(target=_monitor, args=(conversation_id, task_id, execution.id), daemon=True,
+           name=f"taskasset-{execution.id}").start()
+    return {
+        "task_id": task_id,
+        "execution_id": execution.id,
+        "task_status": "in_progress",
+        "status": "in_progress",
+        "approval_status": "approved",
+        "execution_status": "queued",
+        "created": True,
+        "reused": False,
+    }
+
+
 def start_prepared_standard_task(*, conversation_id: str, enqueue=enqueue_execution) -> dict:
     """Authorize a persisted Production-ready TaskAsset, then create and enqueue Execution."""
     with SessionLocal() as db:

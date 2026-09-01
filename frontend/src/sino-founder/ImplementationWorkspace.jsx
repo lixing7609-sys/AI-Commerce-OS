@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { approveTaskForExecution, rejectTaskForExecution } from "../services/founderAiApi.js";
+import { approveTaskForExecution, rejectTaskForExecution, startTaskExecution } from "../services/founderAiApi.js";
 import { intentLabel, objectTypeLabel, statusLabel } from "./founderTerminology.js";
 
 const DISPLAY_NAMES = { "Discussion to Skill Pipeline": "讨论 → Skill 生成管线" };
@@ -9,11 +9,14 @@ const taskAssetRef = (item) => item?.task_asset_ref || item?.task_asset || null;
 const taskAssetId = (item) => item?.task_id || item?.id || null;
 const executionLabel = (item) => statusLabel(executionRef(item)?.status, { execution: true });
 const taskExecutionLabel = (status) => status === "not_started" ? "未开始" : statusLabel(status, { execution: true });
+const taskExecutionMessage = (status) => status === "queued" ? "等待执行" : status === "starting" ? "正在准备执行" : statusLabel(status, { execution: true });
+const taskExecutionId = (taskRef) => taskRef?.execution_id || taskRef?.execution_start?.execution_id || null;
 const candidateChange = (item) => item.proposed_description || item.proposed_patch?.description || item.reason || "等待 Founder 确认变更内容";
 const candidateReviewStatusLabel = (status) => ({ pending: "待确认", confirmed: "已确认", rejected: "已驳回" }[status] || statusLabel(status));
 const uniqueCandidates = (items) => Array.from(new Map(items.filter(Boolean).map((item) => [item.candidate_id, item])).values());
 const canCreateTaskAsset = (item) => item?.object_type === "task" && item?.status === "approved" && !taskAssetRef(item);
 const canReviewTaskExecution = (taskRef) => taskRef?.approval_status === "pending" && taskRef?.execution_status === "not_started";
+const canStartTaskExecution = (taskRef) => taskRef?.approval_status === "approved" && taskRef?.execution_status === "not_started" && !taskExecutionId(taskRef);
 
 function ObjectCard({ item, taskRef, selected, onSelect }) {
   return <button type="button" className={`sino-implementation-card${selected ? " is-active" : ""}`} onClick={() => onSelect(item.object_id)}>
@@ -42,7 +45,7 @@ function PendingCandidateCard({ item, target, selected, onSelect, onReview, onCo
   </article>;
 }
 
-export function ImplementationWorkspace({ objects = [], candidates = [], conversationId = null, contextObject = null, contextCandidate = null, intelligence = null, creationContext = null, recognitionStatus = null, onApprove, onCreateTask, onContinue, onArchive, onOpenObject, onCandidateReview, onCandidateContinue, onApproveTaskExecution = approveTaskForExecution, onRejectTaskExecution = rejectTaskForExecution, busy }) {
+export function ImplementationWorkspace({ objects = [], candidates = [], conversationId = null, contextObject = null, contextCandidate = null, intelligence = null, creationContext = null, recognitionStatus = null, onApprove, onCreateTask, onContinue, onArchive, onOpenObject, onCandidateReview, onCandidateContinue, onApproveTaskExecution = approveTaskForExecution, onRejectTaskExecution = rejectTaskForExecution, onStartTaskExecution = startTaskExecution, busy }) {
   const [selectedId, setSelectedId] = useState(null);
   const [taskApprovalBusy, setTaskApprovalBusy] = useState(false);
   const [taskApprovalUpdates, setTaskApprovalUpdates] = useState({});
@@ -73,6 +76,29 @@ export function ImplementationWorkspace({ objects = [], candidates = [], convers
       setTaskApprovalBusy(false);
     }
   };
+  const startSelectedTaskExecution = async () => {
+    const id = taskAssetId(selectedTaskRef);
+    if (!id || taskApprovalBusy || busy) return;
+    setTaskApprovalBusy(true);
+    try {
+      const result = await onStartTaskExecution(id);
+      setTaskApprovalUpdates((items) => ({ ...items, [id]: {
+        ...selectedTaskRef,
+        ...result,
+        task_id: result.task_id || id,
+        status: result.task_status || result.status || selectedTaskRef.status,
+        execution_id: result.execution_id || taskExecutionId(selectedTaskRef),
+        execution_start: {
+          ...(selectedTaskRef.execution_start || {}),
+          execution_id: result.execution_id || taskExecutionId(selectedTaskRef),
+          status: result.execution_status,
+          started_from: "explicit_taskasset_start",
+        },
+      } }));
+    } finally {
+      setTaskApprovalBusy(false);
+    }
+  };
   const group = (title, items) => items.length ? <section className="sino-object-workspace__group"><h3>{title}</h3>{items.map((item) => <ObjectCard key={item.object_id} item={item} taskRef={effectiveTaskRef(item)} selected={selected?.object_id === item.object_id} onSelect={setSelectedId} />)}</section> : null;
   const primary = selected || contextObject || drafts[0] || approved[0] || null;
   const candidatePrimary = selectedCandidate || visibleContextCandidate || pending[0] || null;
@@ -91,6 +117,6 @@ export function ImplementationWorkspace({ objects = [], candidates = [], convers
     <section className="sino-capability-context__structure" aria-label="能力结构"><div><span>目标</span><p>{primary?.description || candidatePrimary?.proposed_description || intelligence?.summary || creationContext?.prompt || "等待讨论形成"}</p></div><div><span>已确认结论</span><p>{intelligence?.decisions?.filter?.((item) => item.confirmed).map((item) => item.title || item.content).join(" · ") || "暂无"}</p></div><div><span>新增知识</span><p>{intelligence?.knowledge?.map?.((item) => item.title || item.content).slice(0, 3).join(" · ") || "暂无"}</p></div><div><span>关键约束</span><p>{intelligence?.constraints?.map?.((item) => item.title || item.content || item).slice(0, 3).join(" · ") || "暂无"}</p></div><div><span>待确认问题</span><p>{intelligence?.pending_questions?.map?.((item) => item.content || item).slice(0, 3).join(" · ") || "暂无"}</p></div><div><span>依赖对象</span><p>{primary?.dependency_object_ids?.join?.(" · ") || "暂无"}</p></div><div><span>计划发布给</span><p>{primary?.used_by?.join?.(" · ") || "待确认：Studio AI / Operator AI / Industrial AI / Quant AI"}</p></div></section>
     {selectedCandidate && selectedCandidate.review_status === "pending" ? <article className="sino-object-detail sino-object-detail--candidate" aria-label="候选变更详情"><dl><div><dt>Candidate ID</dt><dd>{selectedCandidate.candidate_id}</dd></div><div><dt>意图类型</dt><dd>{intentLabel(selectedCandidate.intent_type)}</dd></div><div><dt>来源 Conversation</dt><dd>{selectedCandidate.conversation_id || "暂无"}</dd></div><div><dt>来源消息</dt><dd>{selectedCandidate.source_message_refs?.join(" · ") || "暂无"}</dd></div><div><dt>Confidence</dt><dd>{Math.round((selectedCandidate.confidence || 0) * 100)}%</dd></div></dl></article> : null}
     {selectedCandidate && selectedCandidate.review_status !== "pending" ? <article className="sino-object-detail" aria-label="候选变更操作"><header><span>{intentLabel(selectedCandidate.intent_type)}</span><h3>{displayName(selectedCandidate.proposed_name || "目标对象待确认")}</h3></header><p>{candidateChange(selectedCandidate)}</p><dl><div><dt>审核状态</dt><dd>{candidateReviewStatusLabel(selectedCandidate.review_status)}</dd></div><div><dt>来源 Conversation</dt><dd>{selectedCandidate.conversation_id || "暂无"}</dd></div>{selectedCandidate.mutation_result?.object_id ? <><div><dt>正式对象</dt><dd>已生成正式对象</dd></div><div><dt>Object ID</dt><dd>{selectedCandidate.mutation_result.object_id}</dd></div><div><dt>Object Type</dt><dd>{objectTypeLabel(selectedCandidate.mutation_result.object_type || selectedCandidate.proposed_object_type)}</dd></div><div><dt>Object Status</dt><dd>{statusLabel(selectedCandidate.mutation_result.materialization_status || "draft")}</dd></div></> : null}</dl></article> : null}
-    {selected && !pendingTargetIds.has(selected.object_id) && <article className="sino-object-detail" aria-label="对象操作"><header><span>{objectTypeLabel(selected.object_type, selected.type_label)}</span><h3>{selected.name}</h3></header><p>{selected.description || "暂无说明"}</p><dl><div><dt>状态</dt><dd>{statusLabel(selected.status)}</dd></div><div><dt>当前版本</dt><dd>V{selected.version}</dd></div><div><dt>来源会话</dt><dd>{selected.source_conversation_id || "暂无"}</dd></div>{selectedTaskRef ? <><div><dt>TaskAsset</dt><dd>已创建 TaskAsset</dd></div><div><dt>任务标题</dt><dd>{selectedTaskRef.title || selected.name}</dd></div><div><dt>任务状态</dt><dd>{statusLabel(selectedTaskRef.status)}</dd></div><div><dt>任务审批</dt><dd>{statusLabel(selectedTaskRef.approval_status)}</dd></div><div><dt>任务执行</dt><dd>{taskExecutionLabel(selectedTaskRef.execution_status)}</dd></div></> : null}</dl>{selectedTaskRef?.approval_status === "approved" && selectedTaskRef?.execution_status === "not_started" ? <p className="sino-object-detail__task-approval">已批准执行 · 等待开始执行</p> : null}{selectedTaskRef?.approval_status === "rejected" ? <p className="sino-object-detail__task-approval">已拒绝执行 · 未开始</p> : null}{executionRef(selected) ? <p className="sino-object-detail__execution">已进入执行 · V{executionRef(selected).object_version || selected.version} · {executionLabel(selected)}</p> : null}<footer><button type="button" onClick={() => onOpenObject(selected)}>查看对象</button>{selected.status === "draft" && <button type="button" onClick={() => onApprove(selected)} disabled={effectiveBusy}>批准对象</button>}{canCreateTaskAsset(selected) && <button type="button" onClick={() => onCreateTask?.(selected)} disabled={effectiveBusy}>创建任务</button>}{canReviewTaskExecution(selectedTaskRef) ? <><button type="button" className="is-primary" onClick={() => reviewTaskExecution("approve")} disabled={effectiveBusy}>批准执行</button><button type="button" onClick={() => reviewTaskExecution("reject")} disabled={effectiveBusy}>拒绝</button></> : null}{selectedTaskRef ? <button type="button" onClick={() => onOpenObject(selected)} disabled={effectiveBusy}>查看任务中心</button> : null}<button type="button" onClick={() => onContinue(selected)} disabled={effectiveBusy}>继续讨论</button>{selected.status === "draft" && <button type="button" onClick={() => onArchive(selected)} disabled={effectiveBusy}>驳回 / 归档</button>}</footer></article>}
+    {selected && !pendingTargetIds.has(selected.object_id) && <article className="sino-object-detail" aria-label="对象操作"><header><span>{objectTypeLabel(selected.object_type, selected.type_label)}</span><h3>{selected.name}</h3></header><p>{selected.description || "暂无说明"}</p><dl><div><dt>状态</dt><dd>{statusLabel(selected.status)}</dd></div><div><dt>当前版本</dt><dd>V{selected.version}</dd></div><div><dt>来源会话</dt><dd>{selected.source_conversation_id || "暂无"}</dd></div>{selectedTaskRef ? <><div><dt>TaskAsset</dt><dd>已创建 TaskAsset</dd></div><div><dt>任务标题</dt><dd>{selectedTaskRef.title || selected.name}</dd></div><div><dt>任务状态</dt><dd>{statusLabel(selectedTaskRef.status)}</dd></div><div><dt>任务审批</dt><dd>{statusLabel(selectedTaskRef.approval_status)}</dd></div><div><dt>任务执行</dt><dd>{taskExecutionLabel(selectedTaskRef.execution_status)}</dd></div>{taskExecutionId(selectedTaskRef) ? <div><dt>Execution ID</dt><dd>{taskExecutionId(selectedTaskRef)}</dd></div> : null}</> : null}</dl>{selectedTaskRef?.approval_status === "approved" && selectedTaskRef?.execution_status === "not_started" ? <p className="sino-object-detail__task-approval">已批准执行 · 等待开始执行</p> : null}{selectedTaskRef?.approval_status === "rejected" ? <p className="sino-object-detail__task-approval">已拒绝执行 · 未开始</p> : null}{selectedTaskRef && selectedTaskRef.execution_status !== "not_started" ? <p className="sino-object-detail__task-approval">已进入执行 · {taskExecutionMessage(selectedTaskRef.execution_status)}</p> : null}{executionRef(selected) ? <p className="sino-object-detail__execution">已进入执行 · V{executionRef(selected).object_version || selected.version} · {executionLabel(selected)}</p> : null}<footer><button type="button" onClick={() => onOpenObject(selected)}>查看对象</button>{selected.status === "draft" && <button type="button" onClick={() => onApprove(selected)} disabled={effectiveBusy}>批准对象</button>}{canCreateTaskAsset(selected) && <button type="button" onClick={() => onCreateTask?.(selected)} disabled={effectiveBusy}>创建任务</button>}{canReviewTaskExecution(selectedTaskRef) ? <><button type="button" className="is-primary" onClick={() => reviewTaskExecution("approve")} disabled={effectiveBusy}>批准执行</button><button type="button" onClick={() => reviewTaskExecution("reject")} disabled={effectiveBusy}>拒绝</button></> : null}{canStartTaskExecution(selectedTaskRef) ? <button type="button" className="is-primary" onClick={startSelectedTaskExecution} disabled={effectiveBusy}>开始执行</button> : null}{selectedTaskRef ? <button type="button" onClick={() => onOpenObject(selected)} disabled={effectiveBusy}>查看任务中心</button> : null}<button type="button" onClick={() => onContinue(selected)} disabled={effectiveBusy}>继续讨论</button>{selected.status === "draft" && <button type="button" onClick={() => onArchive(selected)} disabled={effectiveBusy}>驳回 / 归档</button>}</footer></article>}
   </section>;
 }
