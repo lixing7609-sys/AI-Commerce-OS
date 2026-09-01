@@ -3,16 +3,28 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
+from app.core.task_asset.model import TaskAssetDB
+import app.core.task_asset.service as task_asset_service
 import app.core.conversation.service as conversation_service
 import app.core.founder_object.service as object_service
 from core.founder_object.model import FounderObjectDB
 
 
-def add_object(factory, conversation_id, object_type, name, status="draft"):
+def add_object(factory, conversation_id, object_type, name, status="draft", source_candidate_id=None, source_message_refs=None):
     with factory() as session:
-        item = FounderObjectDB(object_type=object_type, name=name, normalized_name=object_service._normalize_name(name), description="original", status=status, source_conversation_id=conversation_id, scope_key="founder_ai")
+        item = FounderObjectDB(object_type=object_type, name=name, normalized_name=object_service._normalize_name(name), description="original", status=status, source_conversation_id=conversation_id, source_candidate_id=source_candidate_id, source_message_refs=source_message_refs or [], scope_key="founder_ai")
         session.add(item); session.commit(); session.refresh(item)
         return item.id
+
+
+def _install_sqlite(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(conversation_service, "SessionLocal", factory)
+    monkeypatch.setattr(object_service, "SessionLocal", factory)
+    monkeypatch.setattr(task_asset_service, "SessionLocal", factory)
+    return factory
 
 
 def test_conversation_recognizes_updates_and_approves_real_skill(monkeypatch):
@@ -100,6 +112,68 @@ def test_continue_discussion_keeps_draft_object_without_execution_side_effects(m
     assert restored["context_conversation_id"] == conversation.id
     assert unchanged["status"] == "draft"
     assert unchanged["execution_refs"] == []
+
+
+def test_approved_task_object_creates_safe_task_asset_once(monkeypatch):
+    factory = _install_sqlite(monkeypatch)
+    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Task bridge must not create Execution")), raising=False)
+    monkeypatch.setattr(object_service, "start_prepared_standard_task", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("Task bridge must not start execution")), raising=False)
+    monkeypatch.setattr(object_service, "authorize_codex_request", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Task bridge must not call Codex")), raising=False)
+    conversation = conversation_service.create_conversation(title="Bridge task object")
+    object_id = add_object(factory, conversation.id, "task", "生成落地页 Agent", "approved", source_candidate_id="candidate-task", source_message_refs=["message-task"])
+
+    first = object_service.create_task_asset_from_object(object_id)
+    second = object_service.create_task_asset_from_object(object_id)
+
+    assert first["created"] is True
+    assert second["reused"] is True
+    assert second["task_id"] == first["task_id"]
+    assert first["status"] == "draft"
+    assert first["approval_status"] == "pending"
+    assert first["execution_status"] == "not_started"
+    with factory() as session:
+        tasks = session.query(TaskAssetDB).all()
+        obj = session.get(FounderObjectDB, object_id)
+    assert len(tasks) == 1
+    bridge = tasks[0].scope["founder_object_bridge"]
+    assert bridge["created_from"] == "founder_object_bridge"
+    assert bridge["source_founder_object_id"] == object_id
+    assert bridge["source_candidate_id"] == "candidate-task"
+    assert bridge["source_conversation_id"] == conversation.id
+    assert bridge["source_message_refs"] == ["message-task"]
+    assert bridge["object_version"] == 1
+    assert obj.execution_refs == []
+    restored = object_service.get_object(object_id)
+    assert restored["task_asset_ref"]["task_id"] == first["task_id"]
+    assert restored["task_asset_ref"]["execution_status"] == "not_started"
+
+
+def test_task_bridge_rejects_draft_task_object(monkeypatch):
+    factory = _install_sqlite(monkeypatch)
+    conversation = conversation_service.create_conversation(title="Draft task bridge")
+    object_id = add_object(factory, conversation.id, "task", "未批准任务对象", "draft")
+    try:
+        object_service.create_task_asset_from_object(object_id)
+    except ValueError as error:
+        assert "approved" in str(error)
+    else:
+        raise AssertionError("draft task object must not create TaskAsset")
+    with factory() as session:
+        assert session.query(TaskAssetDB).count() == 0
+
+
+def test_task_bridge_rejects_decision_object(monkeypatch):
+    factory = _install_sqlite(monkeypatch)
+    conversation = conversation_service.create_conversation(title="Decision bridge")
+    object_id = add_object(factory, conversation.id, "decision", "第一阶段平台决策", "approved")
+    try:
+        object_service.create_task_asset_from_object(object_id)
+    except ValueError as error:
+        assert "task objects" in str(error)
+    else:
+        raise AssertionError("decision object must not create TaskAsset")
+    with factory() as session:
+        assert session.query(TaskAssetDB).count() == 0
 
 
 def test_same_semantic_object_is_reused_across_unbound_conversations(monkeypatch):

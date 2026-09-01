@@ -48,7 +48,7 @@ from app.core.conversation_first.model import GoalAssetDB
 from app.database.db import SessionLocal
 from app.core.task_asset.service import get_founder_task_asset
 from app.core.dependency_outcome.service import feedback_execution_dependencies
-from app.core.founder_object.service import approve_object, archive_object, attach_object_context, detach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
+from app.core.founder_object.service import approve_object, archive_object, attach_object_context, create_task_asset_from_object, detach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
 from app.core.founder_intent.service import attach_candidate_context, get_conversation_candidate_context, list_candidates, review_candidate
 from app.founder_ai.brain_runtime import brain_runtime
 from app.core.asset_lifecycle.service import (
@@ -554,6 +554,13 @@ def clear_conversation_object_context(conversation_id: str):
 @router.post("/objects/{object_id}/approve", response_model=dict[str, Any])
 def approve_founder_object(object_id: str):
     try: return approve_object(object_id)
+    except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error: raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/objects/{object_id}/create-task", response_model=dict[str, Any])
+def create_task_from_founder_object(object_id: str):
+    try: return create_task_asset_from_object(object_id)
     except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error: raise HTTPException(status_code=409, detail=str(error)) from error
 

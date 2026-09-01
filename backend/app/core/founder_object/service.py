@@ -7,6 +7,8 @@ from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB
+from app.core.task_asset.model import TaskAssetDB
+from app.core.task_asset import service as task_asset_service
 from app.database.db import SessionLocal
 from core.founder_object.model import ConversationObjectContextDB, FounderObjectDB, FounderObjectRevisionDB
 
@@ -25,8 +27,16 @@ def _normalize_name(name: str) -> str:
     return re.sub(r"[\s\-_·]+", "", name).lower()
 
 
-def _display(record: FounderObjectDB, revisions: list[FounderObjectRevisionDB] | None = None) -> dict:
-    return {"object_id": record.id, "object_type": record.object_type, "type_label": TYPE_LABELS.get(record.object_type, record.object_type), "name": record.name, "description": record.description, "status": record.status, "version": record.version, "source_candidate_id": record.source_candidate_id, "source_conversation_id": record.source_conversation_id, "source_message_refs": list(record.source_message_refs or []), "parent_object_id": record.parent_object_id, "child_object_ids": list(record.child_object_ids or []), "dependency_object_ids": list(record.dependency_object_ids or []), "related_object_ids": list(record.related_object_ids or []), "execution_refs": list(record.execution_refs or []), "artifact_refs": list(record.artifact_refs or []), "memory_refs": list(record.memory_refs or []), "decision_refs": list(record.decision_refs or []), "knowledge_refs": list(record.knowledge_refs or []), "founder_question": record.founder_question, "created_at": record.created_at.isoformat() if record.created_at else None, "updated_at": record.updated_at.isoformat() if record.updated_at else None, "revisions": [{"revision_id": item.id, "version": item.version, "name": item.name, "description": item.description, "status": item.status, "source_conversation_id": item.source_conversation_id, "created_at": item.created_at.isoformat() if item.created_at else None} for item in (revisions or [])]}
+def _task_asset_bridge_ref(session, object_id: str) -> dict | None:
+    for task in session.scalars(select(TaskAssetDB).where(TaskAssetDB.system_id == "founder_ai")):
+        bridge = dict((task.scope or {}).get("founder_object_bridge") or {})
+        if bridge.get("source_founder_object_id") == object_id:
+            return {"task_id": task.id, "title": task.title, "status": task.status, "approval_status": task.approval_status, "execution_status": task.execution_status, "created_from": bridge.get("created_from") or "founder_object_bridge"}
+    return None
+
+
+def _display(record: FounderObjectDB, revisions: list[FounderObjectRevisionDB] | None = None, task_asset_ref: dict | None = None) -> dict:
+    return {"object_id": record.id, "object_type": record.object_type, "type_label": TYPE_LABELS.get(record.object_type, record.object_type), "name": record.name, "description": record.description, "status": record.status, "version": record.version, "source_candidate_id": record.source_candidate_id, "source_conversation_id": record.source_conversation_id, "source_message_refs": list(record.source_message_refs or []), "parent_object_id": record.parent_object_id, "child_object_ids": list(record.child_object_ids or []), "dependency_object_ids": list(record.dependency_object_ids or []), "related_object_ids": list(record.related_object_ids or []), "execution_refs": list(record.execution_refs or []), "task_asset_ref": task_asset_ref, "artifact_refs": list(record.artifact_refs or []), "memory_refs": list(record.memory_refs or []), "decision_refs": list(record.decision_refs or []), "knowledge_refs": list(record.knowledge_refs or []), "founder_question": record.founder_question, "created_at": record.created_at.isoformat() if record.created_at else None, "updated_at": record.updated_at.isoformat() if record.updated_at else None, "revisions": [{"revision_id": item.id, "version": item.version, "name": item.name, "description": item.description, "status": item.status, "source_conversation_id": item.source_conversation_id, "created_at": item.created_at.isoformat() if item.created_at else None} for item in (revisions or [])]}
 
 
 def _recognition_candidates(text: str) -> list[dict]:
@@ -107,7 +117,7 @@ def list_conversation_objects(conversation_id: str) -> list[dict]:
         attached = session.get(ConversationObjectContextDB, conversation_id)
         object_ids = [attached.object_id] if attached else []
         records = list(session.scalars(select(FounderObjectDB).where((FounderObjectDB.source_conversation_id == conversation_id) | (FounderObjectDB.id.in_(object_ids)), FounderObjectDB.status != "archived").order_by(FounderObjectDB.updated_at.desc())))
-        return [{**_display(item, list(session.scalars(select(FounderObjectRevisionDB).where(FounderObjectRevisionDB.object_id == item.id).order_by(FounderObjectRevisionDB.version.desc())))), "is_context_object": bool(attached and attached.object_id == item.id)} for item in records]
+        return [{**_display(item, list(session.scalars(select(FounderObjectRevisionDB).where(FounderObjectRevisionDB.object_id == item.id).order_by(FounderObjectRevisionDB.version.desc()))), _task_asset_bridge_ref(session, item.id)), "is_context_object": bool(attached and attached.object_id == item.id)} for item in records]
 
 
 def list_founder_objects(include_archived: bool = False) -> list[dict]:
@@ -117,7 +127,7 @@ def list_founder_objects(include_archived: bool = False) -> list[dict]:
         if not include_archived:
             query = query.where(FounderObjectDB.status != "archived")
         records = list(session.scalars(query.order_by(FounderObjectDB.updated_at.desc())))
-        return [_display(item, list(session.scalars(select(FounderObjectRevisionDB).where(FounderObjectRevisionDB.object_id == item.id).order_by(FounderObjectRevisionDB.version.asc())))) for item in records]
+        return [_display(item, list(session.scalars(select(FounderObjectRevisionDB).where(FounderObjectRevisionDB.object_id == item.id).order_by(FounderObjectRevisionDB.version.asc()))), _task_asset_bridge_ref(session, item.id)) for item in records]
 
 
 def get_object(object_id: str) -> dict | None:
@@ -125,7 +135,7 @@ def get_object(object_id: str) -> dict | None:
         record = session.get(FounderObjectDB, object_id)
         if not record: return None
         revisions = list(session.scalars(select(FounderObjectRevisionDB).where(FounderObjectRevisionDB.object_id == object_id).order_by(FounderObjectRevisionDB.version.desc())))
-        return _display(record, revisions)
+        return _display(record, revisions, _task_asset_bridge_ref(session, record.id))
 
 
 def get_conversation_context_object(conversation_id: str) -> dict | None:
@@ -138,7 +148,7 @@ def get_conversation_context_object(conversation_id: str) -> dict | None:
                 session.commit()
             return None
         revisions = list(session.scalars(select(FounderObjectRevisionDB).where(FounderObjectRevisionDB.object_id == record.id).order_by(FounderObjectRevisionDB.version.desc())))
-        return _display(record, revisions)
+        return _display(record, revisions, _task_asset_bridge_ref(session, record.id))
 
 
 def attach_object_context(object_id: str, conversation_id: str | None = None) -> dict:
@@ -155,7 +165,7 @@ def attach_object_context(object_id: str, conversation_id: str | None = None) ->
         if context: context.object_id = object_id; context.attached_at = datetime.now(timezone.utc)
         else: session.add(ConversationObjectContextDB(conversation_id=conversation.id, object_id=object_id))
         session.commit()
-        return {**_display(record), "context_conversation_id": conversation.id}
+        return {**_display(record, task_asset_ref=_task_asset_bridge_ref(session, record.id)), "context_conversation_id": conversation.id}
 
 
 def detach_object_context(conversation_id: str) -> None:
@@ -189,3 +199,41 @@ def approve_object(object_id: str, source_candidate_id: str | None = None) -> di
         record.updated_at = datetime.now(timezone.utc)
         session.commit(); session.refresh(record)
         return _display(record)
+
+
+def _bridge_response(object_id: str, task: TaskAssetDB, *, created: bool) -> dict:
+    return {"object_id": object_id, "task_id": task.id, "title": task.title, "status": task.status, "approval_status": task.approval_status, "execution_status": task.execution_status, "created": created, "reused": not created}
+
+
+def create_task_asset_from_object(object_id: str) -> dict:
+    with SessionLocal() as session:
+        record = session.get(FounderObjectDB, object_id)
+        if not record: raise LookupError("Founder Object not found")
+        if record.object_type != "task": raise ValueError("Only approved task objects can create TaskAsset")
+        if record.status != "approved": raise ValueError("Task object must be approved before TaskAsset creation")
+        existing_ref = _task_asset_bridge_ref(session, record.id)
+        if existing_ref:
+            task = session.get(TaskAssetDB, existing_ref["task_id"])
+            if task:
+                return _bridge_response(record.id, task, created=False)
+        bridge = {
+            "created_from": "founder_object_bridge",
+            "source_founder_object_id": record.id,
+            "source_candidate_id": record.source_candidate_id,
+            "source_conversation_id": record.source_conversation_id,
+            "source_message_refs": list(record.source_message_refs or []),
+            "object_version": record.version,
+        }
+        title = record.name
+        description = record.description
+        conversation_id = record.source_conversation_id
+    task = task_asset_service.create_task_asset(
+        title=title,
+        description=description,
+        conversation_id=conversation_id,
+        scope={"founder_object_bridge": bridge},
+        status="draft",
+        approval_status="pending",
+        execution_status="not_started",
+    )
+    return _bridge_response(object_id, task, created=True)

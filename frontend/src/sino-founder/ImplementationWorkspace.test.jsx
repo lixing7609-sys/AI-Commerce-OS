@@ -19,12 +19,47 @@ describe("ImplementationWorkspace", () => {
 
   it("shows approved object state without implying execution or another approval action", () => {
     const item = { object_id: "object-approved", object_type: "task", name: "已批准任务对象", description: "只是对象批准", status: "approved", version: 1, source_conversation_id: "conversation-1", dependency_object_ids: [], related_object_ids: [], execution_refs: [] };
-    render(<ImplementationWorkspace objects={[item]} onApprove={vi.fn()} onContinue={vi.fn()} onArchive={vi.fn()} />);
+    render(<ImplementationWorkspace objects={[item]} onApprove={vi.fn()} onCreateTask={vi.fn()} onContinue={vi.fn()} onArchive={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /已批准任务对象/ }));
     expect(screen.getByText("已批准")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "批准对象" })).toBeNull();
     expect(screen.queryByText(/已进入执行 ·/)).toBeNull();
     expect(screen.queryByText(/执行中|任务已创建/)).toBeNull();
+  });
+
+  it("shows Create Task only for approved task objects and calls the bridge once", () => {
+    const task = { object_id: "object-task", object_type: "task", name: "生成落地页 Agent", description: "approved task object", status: "approved", version: 1, source_conversation_id: "conversation-1", execution_refs: [] };
+    const createTask = vi.fn();
+    render(<ImplementationWorkspace objects={[task]} onCreateTask={createTask} onApprove={vi.fn()} onContinue={vi.fn()} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /生成落地页 Agent/ }));
+    fireEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    expect(createTask).toHaveBeenCalledTimes(1);
+    expect(createTask).toHaveBeenCalledWith(task);
+  });
+
+  it("hides Create Task for draft task and approved decision objects", () => {
+    const draft = { object_id: "object-draft", object_type: "task", name: "草稿任务对象", status: "draft", version: 1, execution_refs: [] };
+    const decision = { object_id: "object-decision", object_type: "decision", name: "已批准决策对象", status: "approved", version: 1, execution_refs: [] };
+    const { rerender } = render(<ImplementationWorkspace objects={[draft]} onCreateTask={vi.fn()} onApprove={vi.fn()} onContinue={vi.fn()} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /草稿任务对象/ }));
+    expect(screen.queryByRole("button", { name: "创建任务" })).toBeNull();
+    rerender(<ImplementationWorkspace objects={[decision]} onCreateTask={vi.fn()} onApprove={vi.fn()} onContinue={vi.fn()} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /已批准决策对象/ }));
+    expect(screen.queryByRole("button", { name: "创建任务" })).toBeNull();
+  });
+
+  it("shows safe TaskAsset state and hides Create Task when bridge relationship is restored", () => {
+    const linked = { object_id: "object-linked", object_type: "task", name: "已桥接任务对象", description: "linked", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-asset-1", title: "已桥接任务对象", status: "draft", approval_status: "pending", execution_status: "not_started" } };
+    render(<ImplementationWorkspace objects={[linked]} onCreateTask={vi.fn()} onApprove={vi.fn()} onContinue={vi.fn()} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /已桥接任务对象/ }));
+    const detail = screen.getByLabelText("对象操作");
+    expect(within(detail).getByText("已创建 TaskAsset")).toBeTruthy();
+    expect(within(detail).getAllByText("已桥接任务对象").length).toBeGreaterThan(0);
+    expect(within(detail).getByText("草稿")).toBeTruthy();
+    expect(within(detail).getByText("待审批")).toBeTruthy();
+    expect(within(detail).getByText("待开发")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "创建任务" })).toBeNull();
+    expect(screen.queryByText(/执行中|已启动|Codex 正在执行|任务已批准执行/)).toBeNull();
   });
 
   it("separates a persisted context object from new draft recognition", () => {
