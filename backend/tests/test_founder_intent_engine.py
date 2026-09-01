@@ -166,6 +166,69 @@ def test_mvp_task_like_execution_message_remains_candidate_only(monkeypatch):
     assert object_service.list_founder_objects() == []
 
 
+def test_confirm_decision_candidate_materializes_draft_object(monkeypatch):
+    runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Decision materialization")
+    candidate = intent_service.FounderIntentEngine().run(conversation.id, "m-decision-materialize", "第一阶段只支持一个广告平台和一个真实商品。")[0]
+    confirmed = intent_service.review_candidate(candidate["candidate_id"], "confirm")
+    objects = object_service.list_founder_objects()
+    assert len(objects) == 1
+    obj = objects[0]
+    assert obj["object_type"] == "decision"
+    assert obj["status"] == "draft"
+    assert obj["source_candidate_id"] == candidate["candidate_id"]
+    assert obj["source_conversation_id"] == conversation.id
+    assert obj["source_message_refs"] == ["m-decision-materialize"]
+    assert confirmed["mutation_result"]["object_id"] == obj["object_id"]
+    assert confirmed["mutation_result"]["object_type"] == "decision"
+    assert confirmed["mutation_result"]["materialization_status"] == "draft"
+    assert confirmed["mutation_result"]["task_asset_created"] is False
+    assert confirmed["mutation_result"]["execution_created"] is False
+
+
+def test_confirm_task_candidate_materializes_draft_object_without_execution_side_effects(monkeypatch):
+    runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Task materialization")
+    monkeypatch.setattr(object_service, "create_task_asset", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("materialization must not create TaskAsset")))
+    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args: (_ for _ in ()).throw(AssertionError("materialization must not create Execution")))
+    monkeypatch.setattr(intent_service, "_apply_mutation", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("materialization must not use broad mutation path")))
+    candidate = intent_service.FounderIntentEngine().run(conversation.id, "m-task-materialize", "现在就把这个 Agent 做出来。")[0]
+    confirmed = intent_service.review_candidate(candidate["candidate_id"], "confirm")
+    objects = object_service.list_founder_objects()
+    assert len(objects) == 1
+    obj = objects[0]
+    assert obj["object_type"] == "task"
+    assert obj["status"] == "draft"
+    assert obj["source_candidate_id"] == candidate["candidate_id"]
+    assert obj["source_conversation_id"] == conversation.id
+    assert obj["source_message_refs"] == ["m-task-materialize"]
+    assert confirmed["mutation_result"]["object_id"] == obj["object_id"]
+    assert confirmed["mutation_result"]["object_type"] == "task"
+    assert confirmed["mutation_result"]["task_asset_created"] is False
+    assert confirmed["mutation_result"]["execution_created"] is False
+
+
+def test_confirm_same_candidate_reuses_materialized_object(monkeypatch):
+    runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Materialization idempotency")
+    candidate = intent_service.FounderIntentEngine().run(conversation.id, "m-idempotent-materialize", "我们应该做一个自动生成落地页的 Agent。")[0]
+    first = intent_service.review_candidate(candidate["candidate_id"], "confirm")
+    second = intent_service.review_candidate(candidate["candidate_id"], "approve")
+    objects = object_service.list_founder_objects()
+    assert len(objects) == 1
+    assert first["mutation_result"]["object_id"] == second["mutation_result"]["object_id"] == objects[0]["object_id"]
+
+
+def test_confirm_goal_candidate_does_not_materialize(monkeypatch):
+    factory = runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Goal unsupported")
+    with factory() as session:
+        session.add(intent_service.FounderObjectCandidateDB(intent_id="intent-goal", conversation_id=conversation.id, candidate_kind="create_object", intent_type="create", proposed_object_type="goal", proposed_name="AI Commerce Goal", proposed_description="长期目标", proposed_patch={"candidate_type": "GOAL"}, reason="goal candidate", confidence=.9, source_message_refs=["m-goal"], fingerprint="goal-candidate-fingerprint"))
+        session.commit()
+    candidate = intent_service.list_candidates(conversation.id)[0]
+    confirmed = intent_service.review_candidate(candidate["candidate_id"], "confirm")
+    assert confirmed["review_status"] == "confirmed"
+    assert confirmed["mutation_result"]["materialization_status"] == "not_supported"
+    assert "object_id" not in confirmed["mutation_result"]
+    assert object_service.list_founder_objects() == []
+
+
 def test_mvp_same_source_message_is_idempotent(monkeypatch):
     runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Idempotent")
     engine = intent_service.FounderIntentEngine()

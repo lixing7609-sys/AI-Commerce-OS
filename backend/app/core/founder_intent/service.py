@@ -25,6 +25,7 @@ INTENT_TYPES = {"create", "modify", "merge", "split", "delay", "approve", "rejec
 CANDIDATE_KIND = {"create": "create_object", "modify": "modify_object", "merge": "merge_objects", "split": "split_object", "delay": "status_change", "approve": "status_change", "reject": "status_change", "archive": "status_change", "reference_existing": "reference_existing"}
 MVP_CONFIDENCE_THRESHOLD = 0.65
 MVP_CANDIDATE_TYPES = {"TASK", "DECISION"}
+MATERIALIZABLE_CANDIDATE_TYPES = {"DECISION": "decision", "TASK": "task"}
 
 
 def _iso(value): return value.isoformat() if value else None
@@ -38,6 +39,18 @@ def _candidate_display(row: FounderObjectCandidateDB) -> dict:
     if not candidate_type:
         candidate_type = "DECISION" if row.proposed_object_type == "decision" else "TASK" if row.proposed_object_type == "task" else (row.proposed_object_type or "").upper()
     return {"candidate_id": row.id, "intent_id": row.intent_id, "conversation_id": row.conversation_id, "candidate_kind": row.candidate_kind, "intent_type": row.intent_type, "candidate_type": candidate_type, "source_message_id": refs[0] if refs else None, "target_object_id": row.target_object_id, "target_object_ids": list(row.target_object_ids or []), "proposed_object_type": row.proposed_object_type, "proposed_name": row.proposed_name, "proposed_description": row.proposed_description, "proposed_status": row.proposed_status, "proposed_patch": proposed_patch, "relation_changes": list(row.relation_changes or []), "reason": row.reason, "confidence": row.confidence, "source_message_refs": refs, "review_status": row.review_status, "review_action": mutation_result.get("review_action"), "mutation_result": mutation_result, "created_at": _iso(row.created_at), "reviewed_at": _iso(row.reviewed_at)}
+
+
+def _candidate_type(row: FounderObjectCandidateDB) -> str:
+    proposed_patch = dict(row.proposed_patch or {})
+    candidate_type = str(proposed_patch.get("candidate_type") or "").upper().strip()
+    if candidate_type:
+        return candidate_type
+    if row.proposed_object_type == "decision":
+        return "DECISION"
+    if row.proposed_object_type == "task":
+        return "TASK"
+    return str(row.proposed_object_type or "").upper().strip()
 
 
 class IntentContextBuilder:
@@ -232,6 +245,30 @@ def get_conversation_candidate_context(conversation_id: str) -> dict | None:
         return _candidate_display(row) if row else None
 
 
+def _materialize_confirmed_candidate(session, candidate: FounderObjectCandidateDB) -> dict | None:
+    candidate_type = _candidate_type(candidate)
+    object_type = MATERIALIZABLE_CANDIDATE_TYPES.get(candidate_type)
+    if candidate.intent_type != "create" or not object_type:
+        return None
+    if object_type not in OBJECT_TYPES or not candidate.proposed_name:
+        return None
+    existing = session.scalar(select(FounderObjectDB).where(FounderObjectDB.source_candidate_id == candidate.id))
+    conversation = session.get(ConversationDB, candidate.conversation_id)
+    scope = conversation.project_id if conversation and conversation.project_id else "founder_ai"
+    if existing is None:
+        existing = session.scalar(select(FounderObjectDB).where(FounderObjectDB.object_type == object_type, FounderObjectDB.normalized_name == _normalize_name(candidate.proposed_name), FounderObjectDB.scope_key == scope))
+        if existing and not existing.source_candidate_id:
+            existing.source_candidate_id = candidate.id
+            existing.source_conversation_id = existing.source_conversation_id or candidate.conversation_id
+            existing.source_message_refs = list(dict.fromkeys([*list(existing.source_message_refs or []), *list(candidate.source_message_refs or [])]))
+            existing.updated_at = datetime.now(timezone.utc)
+    if existing is None:
+        existing = FounderObjectDB(object_type=object_type, name=candidate.proposed_name, normalized_name=_normalize_name(candidate.proposed_name), description=candidate.proposed_description, status="draft", scope_key=scope, source_candidate_id=candidate.id, source_conversation_id=candidate.conversation_id, source_message_refs=list(candidate.source_message_refs or []))
+        session.add(existing); session.flush()
+        session.add(FounderObjectRevisionDB(object_id=existing.id, version=1, name=existing.name, description=existing.description, status=existing.status, source_conversation_id=existing.source_conversation_id, source_message_refs=list(existing.source_message_refs or []), snapshot=_display(existing)))
+    return {"object_id": existing.id, "object_type": existing.object_type, "object_version": existing.version, "materialization_action": "create_or_reuse", "materialization_status": existing.status}
+
+
 def review_candidate(candidate_id: str, action: str) -> dict:
     normalized_action = "confirm" if action == "approve" else action
     if normalized_action not in {"confirm", "reject"}: raise ValueError("invalid candidate review action")
@@ -245,12 +282,13 @@ def review_candidate(candidate_id: str, action: str) -> dict:
             candidate.review_status = "rejected"; candidate.reviewed_at = now
             candidate.mutation_result = {**dict(candidate.mutation_result or {}), "review_action": "reject", "candidate_confirmed": False}
             session.commit(); return _candidate_display(candidate)
-        # MVP safety boundary: candidate confirmation acknowledges that Sino
-        # identified a durable object candidate. It is not object approval and
-        # must not mutate FounderObject, create TaskAsset, create Execution, or
-        # call approve_object(). Later lifecycle actions own those transitions.
+        # MVP safety boundary: candidate confirmation can materialize a draft
+        # FounderObject for reviewed create intents, but it is not object
+        # approval and must not create TaskAsset, create Execution, or call
+        # approve_object(). Later lifecycle actions own those transitions.
         candidate.review_status = "confirmed"; candidate.reviewed_at = now
-        candidate.mutation_result = {**dict(candidate.mutation_result or {}), "review_action": "confirm", "candidate_confirmed": True, "object_mutation_performed": False, "task_asset_created": False, "execution_created": False}
+        materialized = _materialize_confirmed_candidate(session, candidate)
+        candidate.mutation_result = {**dict(candidate.mutation_result or {}), "review_action": "confirm", "candidate_confirmed": True, "object_mutation_performed": bool(materialized), "task_asset_created": False, "execution_created": False, **(materialized or {"materialization_status": "not_supported"})}
         session.commit(); return _candidate_display(candidate)
 
 

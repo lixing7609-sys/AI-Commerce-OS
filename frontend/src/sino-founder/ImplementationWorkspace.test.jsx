@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ImplementationWorkspace } from "./ImplementationWorkspace.jsx";
 
@@ -69,6 +69,37 @@ describe("ImplementationWorkspace", () => {
     render(<ImplementationWorkspace candidates={[candidate]} contextCandidate={candidate} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
     expect(screen.getByText("已确认")).toBeTruthy();
     expect(screen.getAllByText("Browser Session").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/已进入执行/)).toBeNull();
+  });
+
+  it("shows a confirmed DECISION materialized as a draft object", () => {
+    const candidate = { candidate_id: "candidate-decision", conversation_id: "conv-decision", intent_type: "create", proposed_object_type: "decision", proposed_name: "第一阶段平台决策", proposed_description: "只支持一个广告平台", review_status: "confirmed", mutation_result: { candidate_confirmed: true, object_id: "object-decision", object_type: "decision", object_version: 1, materialization_action: "create_or_reuse", materialization_status: "draft", task_asset_created: false, execution_created: false } };
+    render(<ImplementationWorkspace conversationId="conv-decision" candidates={[candidate]} contextCandidate={candidate} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.getByText("已确认")).toBeTruthy();
+    expect(screen.getByText("已生成正式对象")).toBeTruthy();
+    expect(screen.getByText("object-decision")).toBeTruthy();
+    const detail = screen.getByLabelText("候选变更操作");
+    expect(within(detail).getByText("Decision（决策）")).toBeTruthy();
+    expect(within(detail).getByText("草稿")).toBeTruthy();
+    expect(screen.queryByText(/已进入执行/)).toBeNull();
+  });
+
+  it("shows a confirmed TASK materialized as a draft object without execution language", () => {
+    const candidate = { candidate_id: "candidate-task", conversation_id: "conv-task", intent_type: "create", proposed_object_type: "task", proposed_name: "生成落地页 Agent", proposed_description: "做出 Agent", review_status: "confirmed", mutation_result: { candidate_confirmed: true, object_id: "object-task", object_type: "task", object_version: 1, materialization_action: "create_or_reuse", materialization_status: "draft", task_asset_created: false, execution_created: false } };
+    render(<ImplementationWorkspace conversationId="conv-task" candidates={[candidate]} contextCandidate={candidate} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.getByText("已生成正式对象")).toBeTruthy();
+    expect(screen.getByText("object-task")).toBeTruthy();
+    const detail = screen.getByLabelText("候选变更操作");
+    expect(within(detail).getByText("Task（任务）")).toBeTruthy();
+    expect(within(detail).getByText("草稿")).toBeTruthy();
+    expect(screen.queryByText(/任务已创建|已批准|执行中|已进入执行/)).toBeNull();
+  });
+
+  it("does not falsely show object creation for confirmed GOAL candidates", () => {
+    const candidate = { candidate_id: "candidate-goal", conversation_id: "conv-goal", intent_type: "create", proposed_object_type: "goal", proposed_name: "长期目标", proposed_description: "暂不支持 goal materialization", review_status: "confirmed", mutation_result: { candidate_confirmed: true, materialization_status: "not_supported", task_asset_created: false, execution_created: false } };
+    render(<ImplementationWorkspace conversationId="conv-goal" candidates={[candidate]} contextCandidate={candidate} onCandidateReview={vi.fn()} onCandidateContinue={vi.fn()} />);
+    expect(screen.getByText("已确认")).toBeTruthy();
+    expect(screen.queryByText("已生成正式对象")).toBeNull();
     expect(screen.queryByText(/已进入执行/)).toBeNull();
   });
 
