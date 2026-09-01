@@ -6,11 +6,11 @@ import {
   createMemoryRevision,
   getAssetMemoryCenter,
   getLibraryArtifact,
-  getLibraryMemory,
   mergeLibraryMemories,
   updateArtifactStatus,
   updateMemoryStatus,
 } from "../services/founderAiApi.js";
+import { getMemoryDetail, getMemoryList } from "../services/memoryReadService.js";
 import { CapabilityMapPanel } from "./CapabilityMapPanel.jsx";
 import { NextStrategicActionsPanel } from "./NextStrategicActionsPanel.jsx";
 import { RoadmapPanel } from "./RoadmapPanel.jsx";
@@ -27,7 +27,13 @@ const isTechnical = (item) => TECHNICAL_TYPES.has(item.artifact_type || item.mem
 function loadWithTimeout() {
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => reject(new Error("资产与记忆历史加载超时，请重试")), LOAD_TIMEOUT_MS);
-    getAssetMemoryCenter().then((value) => { window.clearTimeout(timeout); resolve(value); }, (error) => { window.clearTimeout(timeout); reject(error); });
+    Promise.all([getAssetMemoryCenter(), getMemoryList()]).then(
+      ([history, memoryList]) => {
+        window.clearTimeout(timeout);
+        resolve({ ...history, memories: memoryList.items || [] });
+      },
+      (error) => { window.clearTimeout(timeout); reject(error); }
+    );
   });
 }
 
@@ -102,7 +108,7 @@ export function AssetMemoryCenter({ refreshKey, context, strategy, briefing, ini
   async function openDetail(item, kind) {
     if (kind === "strategy") { setSelected({ ...item, kind }); setNotice(""); setError(""); return; }
     setBusy(true); setNotice(""); setError("");
-    try { setSelected({ ...(kind === "artifact" ? await getLibraryArtifact(item.artifact_id) : await getLibraryMemory(item.memory_id)), kind }); }
+    try { setSelected({ ...(kind === "artifact" ? await getLibraryArtifact(item.artifact_id) : await getMemoryDetail(item.memory_id)), kind }); }
     catch (requestError) { setError(requestError.message); }
     finally { setBusy(false); }
   }

@@ -7,12 +7,12 @@ import { MemoryAssetList } from "./MemoryAssetList.jsx";
 import { TaskAssetList } from "./TaskAssetList.jsx";
 import { MODULE_COMPONENTS } from "../../console/moduleRegistry.jsx";
 import { getArtifacts } from "../../services/artifactApi.js";
-import { getMemories } from "../../services/memoryApi.js";
+import { getMemoryList } from "../../services/memoryReadService.js";
 import { getTaskAssets } from "../../services/taskAssetApi.js";
 
 vi.mock("../../services/taskAssetApi.js", () => ({ getTaskAssets: vi.fn() }));
 vi.mock("../../services/artifactApi.js", () => ({ getArtifacts: vi.fn() }));
-vi.mock("../../services/memoryApi.js", () => ({ getMemories: vi.fn() }));
+vi.mock("../../services/memoryReadService.js", () => ({ getMemoryList: vi.fn() }));
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -40,8 +40,20 @@ describe("Founder canonical asset views", () => {
   });
 
   it("renders MemoryAsset error state", async () => {
-    getMemories.mockRejectedValue(new Error("offline"));
+    getMemoryList.mockRejectedValue(new Error("offline"));
     render(<MemoryAssetList />);
     expect(await screen.findByText("记忆资产加载失败，请稍后重试。")).toBeTruthy();
+  });
+
+  it("renders MemoryAsset data through the shared canonical frontend shape", async () => {
+    getMemoryList.mockResolvedValue({
+      source: "memory_asset",
+      items: [{ id: "memory-1", memory_id: "memory-1", title: "Founder learning", memory_type: "learning", summary: "Stable shape", confidence: 0.8, status: "active" }],
+    });
+    render(<MemoryAssetList />);
+    expect(await screen.findByText("Founder learning")).toBeTruthy();
+    expect(screen.getByText("learning")).toBeTruthy();
+    expect(screen.getByText("Stable shape")).toBeTruthy();
+    expect(getMemoryList).toHaveBeenCalledTimes(1);
   });
 });

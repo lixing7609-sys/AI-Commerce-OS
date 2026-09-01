@@ -2,10 +2,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createArtifactVersion, createIntelligenceReference, createMemoryRevision, getAssetMemoryCenter, getLibraryArtifact, getLibraryMemory, updateArtifactStatus, updateMemoryStatus } from "../services/founderAiApi.js";
+import { createArtifactVersion, createIntelligenceReference, createMemoryRevision, getAssetMemoryCenter, getLibraryArtifact, updateArtifactStatus, updateMemoryStatus } from "../services/founderAiApi.js";
+import { getMemoryDetail, getMemoryList } from "../services/memoryReadService.js";
 import { AssetMemoryCenter } from "./AssetMemoryCenter.jsx";
 
 vi.mock("../services/founderAiApi.js", () => ({ createArtifactVersion: vi.fn(), createIntelligenceReference: vi.fn(), createMemoryRevision: vi.fn(), getAssetMemoryCenter: vi.fn(), getLibraryArtifact: vi.fn(), getLibraryMemory: vi.fn(), mergeLibraryMemories: vi.fn(), updateArtifactStatus: vi.fn(), updateMemoryStatus: vi.fn() }));
+vi.mock("../services/memoryReadService.js", () => ({ getMemoryDetail: vi.fn(), getMemoryList: vi.fn() }));
 
 const history = {
   artifacts: [
@@ -24,8 +26,9 @@ const briefing = { recommended_decision: "Complete Memory Evolution", recommenda
 
 beforeEach(() => {
   vi.clearAllMocks(); getAssetMemoryCenter.mockResolvedValue(history);
+  getMemoryList.mockResolvedValue({ items: history.memories, total: history.memories.length, source: "memory_asset" });
   getLibraryArtifact.mockResolvedValue({ ...history.artifacts[0], title: "Hide scrollbar", version: 1, conversation_id: "conv-1", updated_at: "2026-08-10T11:24:40Z", history: [{ artifact_id: "artifact-1", version: 1, created_at: "2026-08-10T11:24:40Z", status: "active" }], references: [] });
-  getLibraryMemory.mockResolvedValue({ ...history.memories[0], revision_number: 1, updated_at: "2026-08-10T11:24:41Z", history: [{ memory_id: "memory-decision", revision_number: 1, created_at: "2026-08-10T11:24:41Z", status: "active" }], references: [] });
+  getMemoryDetail.mockResolvedValue({ ...history.memories[0], revision_number: 1, updated_at: "2026-08-10T11:24:41Z", history: [{ memory_id: "memory-decision", revision_number: 1, created_at: "2026-08-10T11:24:41Z", status: "active" }], references: [], provenance: { canonical_source: "memory_asset", compatibility_source: "library_memory" } });
 });
 afterEach(() => cleanup());
 
@@ -51,6 +54,7 @@ describe("AssetMemoryCenter", () => {
   it("shows all historical memories with default filters", async () => {
     render(<AssetMemoryCenter />);
     await screen.findByText("Legacy artifact");
+    expect(getMemoryList).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("tab", { name: /长期记忆/ }));
     expect(screen.getByText("Execution decision")).toBeTruthy();
     expect(screen.getByText("Execution learning")).toBeTruthy();
@@ -158,14 +162,15 @@ describe("AssetMemoryCenter", () => {
 
   it("renders memory detail and preserves revision and status actions", async () => {
     createIntelligenceReference.mockResolvedValue({ reference_id: "ref-memory", source_id: "memory-decision", target_type: "conversation", target_id: "conv-1" });
-    createMemoryRevision.mockResolvedValue({ ...(await getLibraryMemory()), memory_id: "memory-revision", revision_number: 2 });
-    updateMemoryStatus.mockResolvedValue({ ...(await getLibraryMemory()), status: "outdated" });
+    createMemoryRevision.mockResolvedValue({ ...(await getMemoryDetail()), memory_id: "memory-revision", revision_number: 2 });
+    updateMemoryStatus.mockResolvedValue({ ...(await getMemoryDetail()), status: "outdated" });
     const { container } = render(<AssetMemoryCenter context={{ conversation_id: "conv-1" }} />);
     await screen.findByText("Legacy artifact");
     fireEvent.click(screen.getByRole("tab", { name: /长期记忆/ }));
     expect(screen.getByText("选择一条资产查看详情")).toBeTruthy();
     fireEvent.click(screen.getByText("Execution decision"));
     expect(await screen.findByText("修订历史")).toBeTruthy();
+    expect(getMemoryDetail).toHaveBeenCalledWith("memory-decision");
     expect(container.querySelector(".sino-asset-detail pre.sino-detail-scroll-region")).toBeTruthy();
     expect(screen.getByRole("button", { name: "引用此记忆" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "引用此记忆" }));
@@ -193,7 +198,9 @@ describe("AssetMemoryCenter", () => {
   it("reloads history after a completed execution refresh key changes", async () => {
     const { rerender } = render(<AssetMemoryCenter refreshKey="history" />);
     await waitFor(() => expect(getAssetMemoryCenter).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getMemoryList).toHaveBeenCalledTimes(1));
     rerender(<AssetMemoryCenter refreshKey="execution-2" />);
     await waitFor(() => expect(getAssetMemoryCenter).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(getMemoryList).toHaveBeenCalledTimes(2));
   });
 });
