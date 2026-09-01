@@ -1,7 +1,7 @@
 import { FounderActionCard } from "./FounderActionCard.jsx";
 import { ContextSourcesDebug } from "./ContextSourcesDebug.jsx";
 import { projectMaturityProjection } from "./projectMaturityProjection.js";
-import { cancelFounderExecution } from "../services/founderAiApi.js";
+import { approveFounderObject, approveTaskForExecution, cancelFounderExecution, rejectTaskForExecution, startTaskExecution } from "../services/founderAiApi.js";
 import { acceptFounderTaskResult } from "../services/founderAiApi.js";
 import { decideCodexAuthorization } from "../services/founderAiApi.js";
 import { decideFounderClarification } from "../services/founderAiApi.js";
@@ -84,6 +84,33 @@ export function FounderWorkQueue({ tasks = [], focusedTaskId, conversationId, bu
   </section>;
 }
 
+function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDiscussion }) {
+  const mvpActions = actions.filter((item) => ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START"].includes(item.action_type || item.type) && item.status === "pending");
+  if (!mvpActions.length) return null;
+  const complete = async (handler) => {
+    await handler();
+    await onResolved?.();
+  };
+  return <>
+    {mvpActions.map((item) => {
+      const type = item.action_type || item.type;
+      const risk = item.risk_level || item.risk || "MEDIUM";
+      if (type === "OBJECT_APPROVAL") return <article className="sino-founder-action-item" aria-label="Object Approval" key={item.action_id}>
+        <span>对象审批 · {risk}</span><h3>{item.title || "批准对象"}</h3><p>{item.summary}</p>
+        <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => approveFounderObject(item.object_id || item.source_id))}>批准对象</button><button type="button" disabled={busy} onClick={onContinueDiscussion}>继续讨论</button></footer>
+      </article>;
+      if (type === "EXECUTION_APPROVAL") return <article className="sino-founder-action-item" aria-label="Execution Approval" key={item.action_id}>
+        <span>执行审批 · {risk}</span><h3>{item.title || "批准执行"}</h3><p>{item.summary}</p>
+        <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => approveTaskForExecution(item.task_id || item.source_id))}>批准执行</button><button type="button" disabled={busy} onClick={() => complete(() => rejectTaskForExecution(item.task_id || item.source_id))}>拒绝</button><button type="button" disabled={busy} onClick={onContinueDiscussion}>继续讨论</button></footer>
+      </article>;
+      return <article className="sino-founder-action-item" aria-label="Execution Start" key={item.action_id}>
+        <span>开始执行 · {risk}</span><h3>{item.title || "开始执行"}</h3><p>{item.summary}</p>
+        <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => startTaskExecution(item.task_id || item.source_id))}>开始执行</button><button type="button" disabled={busy} onClick={onContinueDiscussion}>稍后 / 继续讨论</button></footer>
+      </article>;
+    })}
+  </>;
+}
+
 export function ExecutionCenterEmpty() {
   return <section className="sino-brain-context sino-founder-task-sidebar sino-execution-center-empty" aria-label="Execution Center">
     <header className="sino-work-queue-heading"><div><h2>执行中心</h2></div></header>
@@ -91,7 +118,7 @@ export function ExecutionCenterEmpty() {
   </section>;
 }
 
-export function SinoBrainContext({ brain, conversationId, contextGroundings, busy, capabilityAction, capabilityAsset, selectedConstitutionWorkItemId, onReviewConstitutionWorkItem, onReviewConstitutionRouting, onConfirmFormalObject, onOpenProject, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal, onExternalProbeDecision, onImageProbeDecision, onArchitectureDecision, onTaskAccepted, onClarificationResolved, onTaskCandidateResolved }) {
+export function SinoBrainContext({ brain, conversationId, contextGroundings, busy, capabilityAction, capabilityAsset, selectedConstitutionWorkItemId, onReviewConstitutionWorkItem, onReviewConstitutionRouting, onConfirmFormalObject, onOpenProject, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal, onExternalProbeDecision, onImageProbeDecision, onArchitectureDecision, onTaskAccepted, onClarificationResolved, onTaskCandidateResolved, onFounderActionResolved }) {
   if (!brain) return null;
   const brief = brain.goal_brief || {};
   const quickFixRoute = brain.discovery?.task_complexity_route;
@@ -138,14 +165,15 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
   const executionPackage = brain.discovery?.execution_package;
   const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
+  const mvpQueueActions = (brain.discovery?.founder_action_queue || []).filter((item) => ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START"].includes(item.action_type || item.type) && item.status === "pending");
   const conversationTasks = brain.discovery?.conversation_tasks || [];
-  if (conversationTasks.length > 0) return <FounderWorkQueue tasks={conversationTasks} focusedTaskId={brain.discovery?.focused_task_id}
+  if (conversationTasks.length > 0 && !mvpQueueActions.length) return <FounderWorkQueue tasks={conversationTasks} focusedTaskId={brain.discovery?.focused_task_id}
     conversationId={conversationId} busy={busy} onFocused={onTaskCandidateResolved} onCandidateResolved={onTaskCandidateResolved}
     onContinueDiscussion={onContinueDiscussion} />;
   if (!routeHasTask) {
     const clarificationActions = (brain.discovery?.founder_action_queue || []).filter((item) => item.type === "CLARIFICATION" && item.status === "pending");
     const taskConfirmationActions = (brain.discovery?.founder_action_queue || []).filter((item) => item.type === "TASK_CONFIRMATION" && item.status === "pending");
-    const founderActions = [...taskConfirmationActions, ...clarificationActions];
+    const founderActions = [...mvpQueueActions, ...taskConfirmationActions, ...clarificationActions];
     const clarificationRequired = clarificationActions.length > 0 || brain.discovery?.clarification_state?.founder_action_required === true;
     const taskConfirmationRequired = taskConfirmationActions.length > 0;
     if (!founderActions.length) return <ExecutionCenterEmpty />;
@@ -153,6 +181,7 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
       <header className="sino-work-queue-heading"><div><h2>执行中心</h2></div></header>
       <section className="sino-task-status-empty" aria-label="Task Status"><header><h2>任务状态</h2></header><strong>{taskConfirmationRequired ? "待确认" : clarificationRequired ? "等待确认" : "讨论中"}</strong><p>{taskConfirmationRequired ? "已形成待确认任务，尚未开始执行" : "尚未形成执行任务"}</p><small>{founderActions.length ? "Founder：需要操作" : "Founder：无需操作"}</small></section>
       <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>需要你处理</h2><span>{founderActions.length ? `${founderActions.length} 项待处理` : "暂无需要你处理的事项"}</span></header>
+        <FounderActionQueueItems actions={mvpQueueActions} busy={busy} onResolved={onFounderActionResolved} onContinueDiscussion={onContinueDiscussion} />
         {taskConfirmationActions.map((item) => { const candidate = item.task_candidate || {}; const list = (value) => Array.isArray(value) ? value : value ? [value] : []; return <article className="sino-founder-action-item" aria-label="Task Confirmation" key={item.action_id}><span>待确认任务</span><h3>{candidate.title || item.title}</h3><p>{candidate.goal || item.summary}</p><dl><div><dt>范围</dt><dd>{list(candidate.scope).join(" · ") || "按当前讨论"}</dd></div><div><dt>约束</dt><dd>{list(candidate.constraints).join(" · ") || "按当前讨论"}</dd></div><div><dt>验收标准</dt><dd>{list(candidate.acceptance_criteria).join(" · ") || "按当前讨论"}</dd></div></dl><footer><button type="button" className="is-primary" disabled={busy} onClick={async () => { const value = await decideFounderTaskCandidate(conversationId, candidate.candidate_id, "confirm"); onTaskCandidateResolved?.(value); }}>确认执行</button><button type="button" disabled={busy} onClick={async () => { const value = await decideFounderTaskCandidate(conversationId, candidate.candidate_id, "modify"); onTaskCandidateResolved?.(value); onContinueDiscussion?.(); }}>修改任务</button><button type="button" disabled={busy} onClick={async () => { const value = await decideFounderTaskCandidate(conversationId, candidate.candidate_id, "continue_discussion"); onTaskCandidateResolved?.(value); onContinueDiscussion?.(); }}>继续讨论</button></footer></article>; })}
         {clarificationActions.map((item) => { const confirmable = Boolean(item.current_understanding?.confirmed_decisions?.length); return <article className="sino-founder-action-item" aria-label="Clarification Required" key={item.action_id}><span>待确认</span><h3>{item.title}</h3><p>{item.summary}</p>{confirmable ? <dl>{Object.entries(item.current_understanding.confirmed_decisions[0]).filter(([key]) => key !== "type").map(([key, value]) => <div key={key}><dt>{{ left: "左", center: "中", right: "右" }[key] || key}</dt><dd>{value}</dd></div>)}</dl> : null}<footer>{confirmable ? <button type="button" className="is-primary" disabled={busy} onClick={async () => { const value = await decideFounderClarification(conversationId, "confirm"); onClarificationResolved?.(value); }}>确认当前理解</button> : null}<button type="button" disabled={busy} onClick={async () => { const value = await decideFounderClarification(conversationId, "continue_discussion"); onClarificationResolved?.(value); onContinueDiscussion?.(); }}>继续讨论</button></footer></article>; })}
       </section>
@@ -164,7 +193,7 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
     const imageGateVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
     const acceptance = quickFixRoute?.founder_acceptance;
     const codexBoundary = progress?.codex_authorization_boundary;
-    const actionCount = Number(Boolean(isStrategicTask && ["pending", "ready_for_founder_decision", "revision_requested"].includes(architectureDecisionStatus))) + Number(Boolean(externalGate)) + Number(Boolean(imageGateVisible)) + Number(Boolean(codexBoundary)) + Number(Boolean(visibleResult?.verification_status === "PASS" && acceptance?.status !== "accepted")) + Number(Boolean(progress?.execution_status === "technical_blocker"));
+    const actionCount = mvpQueueActions.length + Number(Boolean(isStrategicTask && ["pending", "ready_for_founder_decision", "revision_requested"].includes(architectureDecisionStatus))) + Number(Boolean(externalGate)) + Number(Boolean(imageGateVisible)) + Number(Boolean(codexBoundary)) + Number(Boolean(visibleResult?.verification_status === "PASS" && acceptance?.status !== "accepted")) + Number(Boolean(progress?.execution_status === "technical_blocker"));
     const architecturePending = isStrategicTask && ["pending", "ready_for_founder_decision", "revision_requested"].includes(architectureDecisionStatus);
     const accepted = acceptance?.status === "accepted";
     const hasHandledActions = accepted || ["approved", "rejected"].includes(architectureDecisionStatus);
@@ -173,6 +202,7 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
       <FounderActionCard compact action={action} busy={busy} readOnly onViewAssets={onViewAssets} />
       {canStop ? <section className="sino-emergency-stop" aria-label="任务控制"><button type="button" disabled={busy || progress?.execution_status === "cancelling"} onClick={() => cancelFounderExecution(executionId).catch(() => {})}>{progress?.execution_status === "cancelling" ? "正在停止…" : "停止任务"}</button></section> : null}
       <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>需要你处理</h2><span>{actionCount ? `${actionCount} 项待处理` : "暂无需要你处理的事项"}</span></header>
+        <FounderActionQueueItems actions={mvpQueueActions} busy={busy} onResolved={onFounderActionResolved} onContinueDiscussion={onContinueDiscussion} />
         {architecturePending && quickFixRoute?.architecture_proposal ? <ArchitectureProposalCard proposal={quickFixRoute.architecture_proposal} busy={busy} onDecision={onArchitectureDecision} /> : null}
         {externalGate ? <ExternalModelProbeDecisionCard gate={externalGate} busy={busy} onDecision={onExternalProbeDecision} /> : null}
         {imageGateVisible ? <ImageModelProbeDecisionCard loop={autonomousLoop} busy={busy} onDecision={onImageProbeDecision} /> : null}

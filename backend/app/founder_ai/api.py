@@ -51,6 +51,7 @@ from app.core.task_asset.service import decide_task_asset_execution_approval, ge
 from app.core.dependency_outcome.service import feedback_execution_dependencies
 from app.core.founder_object.service import approve_object, archive_object, attach_object_context, create_task_asset_from_object, detach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
 from app.core.founder_intent.service import attach_candidate_context, get_conversation_candidate_context, list_candidates, review_candidate
+from app.founder_ai.action_queue import list_founder_action_queue, sync_founder_action_queue
 from app.founder_ai.brain_runtime import brain_runtime
 from app.core.asset_lifecycle.service import (
     LifecycleConflict,
@@ -470,6 +471,7 @@ def get_conversation_workspace(conversation_id: str):
         reconcile_discussion_task_candidate(conversation_id)
         from app.founder_ai.conversation_task_collection import resolve_task_navigation
         resolve_task_navigation(conversation_id)
+        sync_founder_action_queue(conversation_id)
         snapshot = council_service.snapshot(conversation_id)
         from app.founder_ai.conversation_task_interaction import project_execution_events
         if project_execution_events(conversation_id):
@@ -523,12 +525,21 @@ def conversation_objects(conversation_id: str):
 def founder_objects():
     return list_founder_objects()
 
+
+@router.get("/action-queue", response_model=list[dict[str, Any]])
+def founder_action_queue(conversation_id: str | None = None):
+    return list_founder_action_queue(conversation_id)
+
 @router.get("/conversations/{conversation_id}/candidates", response_model=list[dict[str, Any]])
 def founder_candidates(conversation_id: str): return list_candidates(conversation_id)
 
 @router.post("/candidates/{candidate_id}/review", response_model=dict[str, Any])
 def review_founder_candidate(candidate_id: str, request: CandidateReviewIn):
-    try: return review_candidate(candidate_id, request.action)
+    try:
+        result = review_candidate(candidate_id, request.action)
+        if result.get("conversation_id"):
+            sync_founder_action_queue(result["conversation_id"])
+        return result
     except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error: raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -558,14 +569,23 @@ def clear_conversation_object_context(conversation_id: str):
 
 @router.post("/objects/{object_id}/approve", response_model=dict[str, Any])
 def approve_founder_object(object_id: str):
-    try: return approve_object(object_id)
+    try:
+        result = approve_object(object_id)
+        if result.get("source_conversation_id"):
+            sync_founder_action_queue(result["source_conversation_id"])
+        return result
     except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error: raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @router.post("/objects/{object_id}/create-task", response_model=dict[str, Any])
 def create_task_from_founder_object(object_id: str):
-    try: return create_task_asset_from_object(object_id)
+    try:
+        result = create_task_asset_from_object(object_id)
+        task = get_founder_task_asset(result["task_id"])
+        if task and task.conversation_id:
+            sync_founder_action_queue(task.conversation_id)
+        return result
     except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error: raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -578,6 +598,8 @@ def decide_task_asset_execution_approval_endpoint(task_id: str, request: TaskAss
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    if task.conversation_id:
+        sync_founder_action_queue(task.conversation_id)
     return {
         "task_id": task.id,
         "status": task.status,
@@ -590,7 +612,14 @@ def decide_task_asset_execution_approval_endpoint(task_id: str, request: TaskAss
 @router.post("/task-assets/{task_id}/start-execution", response_model=dict[str, Any])
 def start_task_asset_execution_endpoint(task_id: str):
     try:
-        return start_task_asset_execution(task_id=task_id)
+        result = start_task_asset_execution(task_id=task_id)
+        try:
+            task = get_founder_task_asset(task_id)
+            if task and task.conversation_id:
+                sync_founder_action_queue(task.conversation_id)
+        except Exception:
+            pass
+        return result
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:

@@ -1,9 +1,28 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../services/founderAiApi.js", () => ({
+  acceptFounderTaskResult: vi.fn().mockResolvedValue({}),
+  approveFounderObject: vi.fn().mockResolvedValue({ object_id: "object-1", status: "approved" }),
+  approveTaskForExecution: vi.fn().mockResolvedValue({ task_id: "task-1", approval_status: "approved", execution_status: "not_started" }),
+  cancelFounderExecution: vi.fn().mockResolvedValue({}),
+  decideCodexAuthorization: vi.fn().mockResolvedValue({}),
+  decideFounderClarification: vi.fn().mockResolvedValue({}),
+  decideFounderTaskCandidate: vi.fn().mockResolvedValue({}),
+  focusFounderTask: vi.fn().mockResolvedValue({}),
+  rejectTaskForExecution: vi.fn().mockResolvedValue({ task_id: "task-1", approval_status: "rejected", execution_status: "not_started" }),
+  startTaskExecution: vi.fn().mockResolvedValue({ task_id: "task-1", execution_id: "execution-1", execution_status: "queued" }),
+}));
+
 import { SinoBrainContext } from "./SinoBrainContext.jsx";
+import { approveFounderObject, approveTaskForExecution, rejectTaskForExecution, startTaskExecution } from "../services/founderAiApi.js";
 
 describe("SinoBrainContext", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
   // Legacy Brain Dashboard/action-card assertions are retained as migration
   // history but skipped where the final Task Status + Action Queue UI replaces them.
   it("projects Architecture Tasks at Decision Readiness without execution", () => {
@@ -18,6 +37,60 @@ describe("SinoBrainContext", () => {
     expect(screen.getByRole("button", { name: "批准有限 Probe" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
     expect(screen.queryByText("Strategy Meeting")).toBeNull();
+  });
+  it("displays OBJECT_APPROVAL with precise queue wording and lifecycle action", async () => {
+    const resolved = vi.fn();
+    render(<SinoBrainContext conversationId="conv-1" onFounderActionResolved={resolved} brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{ action_id: "object-approval:object-1", action_type: "OBJECT_APPROVAL", type: "OBJECT_APPROVAL", status: "pending", title: "批准对象", summary: "正式任务对象", risk_level: "MEDIUM", source_type: "founder_object", source_id: "object-1", object_id: "object-1", conversation_id: "conv-1" }] } }} />);
+    const action = screen.getByRole("article", { name: "Object Approval" });
+    expect(action.textContent).toContain("对象审批");
+    expect(screen.getByRole("button", { name: "批准对象" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "批准对象" }));
+    await waitFor(() => expect(approveFounderObject).toHaveBeenCalledWith("object-1"));
+    expect(resolved).toHaveBeenCalled();
+  });
+
+  it("displays EXECUTION_APPROVAL without starting execution", async () => {
+    render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{ action_id: "execution-approval:task-1", action_type: "EXECUTION_APPROVAL", type: "EXECUTION_APPROVAL", status: "pending", title: "批准执行", summary: "待审批 TaskAsset", risk_level: "HIGH", source_type: "task_asset", source_id: "task-1", task_id: "task-1", conversation_id: "conv-1" }] } }} />);
+    expect(screen.getByRole("article", { name: "Execution Approval" }).textContent).toContain("执行审批");
+    fireEvent.click(screen.getByRole("button", { name: "批准执行" }));
+    await waitFor(() => expect(approveTaskForExecution).toHaveBeenCalledWith("task-1"));
+    expect(startTaskExecution).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    await waitFor(() => expect(rejectTaskForExecution).toHaveBeenCalledWith("task-1"));
+  });
+
+  it("displays EXECUTION_START through the explicit start gate", async () => {
+    render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{ action_id: "execution-start:task-1", action_type: "EXECUTION_START", type: "EXECUTION_START", status: "pending", title: "开始执行", summary: "已批准 TaskAsset", risk_level: "HIGH", source_type: "task_asset", source_id: "task-1", task_id: "task-1", conversation_id: "conv-1" }] } }} />);
+    expect(screen.getByRole("article", { name: "Execution Start" }).textContent).toContain("开始执行");
+    fireEvent.click(screen.getByRole("button", { name: "开始执行" }));
+    await waitFor(() => expect(startTaskExecution).toHaveBeenCalledWith("task-1"));
+  });
+
+  it("keeps Candidate Confirm and Create Task out of the Founder Action Queue", () => {
+    render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [
+      { action_id: "candidate:candidate-1", action_type: "CANDIDATE_CONFIRM", type: "CANDIDATE_CONFIRM", status: "pending", title: "确认候选" },
+      { action_id: "create-task:object-1", action_type: "TASK_CREATION", type: "TASK_CREATION", status: "pending", title: "创建任务" },
+    ] } }} />);
+    expect(screen.queryByRole("article", { name: "Object Approval" })).toBeNull();
+    expect(screen.queryByRole("article", { name: "Execution Approval" })).toBeNull();
+    expect(screen.queryByRole("article", { name: "Execution Start" })).toBeNull();
+    expect(screen.queryByText("确认候选")).toBeNull();
+    expect(screen.queryByText("创建任务")).toBeNull();
+  });
+
+  it("keeps Continue Discussion pending and supports global pending aggregation", () => {
+    const discuss = vi.fn();
+    render(<SinoBrainContext conversationId="conv-a" onContinueDiscussion={discuss} brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [
+      { action_id: "object-approval:object-a", action_type: "OBJECT_APPROVAL", type: "OBJECT_APPROVAL", status: "pending", title: "批准 A", summary: "Conversation A", risk_level: "MEDIUM", source_type: "founder_object", source_id: "object-a", object_id: "object-a", conversation_id: "conv-a" },
+      { action_id: "execution-start:task-b", action_type: "EXECUTION_START", type: "EXECUTION_START", status: "pending", title: "开始 B", summary: "Conversation B", risk_level: "HIGH", source_type: "task_asset", source_id: "task-b", task_id: "task-b", conversation_id: "conv-b" },
+    ] } }} />);
+    expect(screen.getByText("2 项待处理")).toBeTruthy();
+    expect(screen.getByText("Conversation A")).toBeTruthy();
+    expect(screen.getByText("Conversation B")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
+    expect(discuss).toHaveBeenCalled();
+    expect(approveFounderObject).not.toHaveBeenCalled();
+    expect(startTaskExecution).not.toHaveBeenCalled();
   });
   it.skip("projects Quick Fix without Goal confirmation or Strategy actions", () => {
     render(<SinoBrainContext brain={{ stage: "goal_review", execution_progress: { task_id: "task-quick", current_action: "正在定位", next_action: "Sino 自动执行" }, discovery: { task_complexity_route: { classification: "QUICK_FIX", execution_status: "inspecting", founder_gate_required: false, quick_fix_contract: { target_area: "Left Sidebar / AI Commerce OS Project Tree" } } } }} />);

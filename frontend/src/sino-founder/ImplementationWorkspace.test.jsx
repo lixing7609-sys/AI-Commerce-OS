@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ImplementationWorkspace } from "./ImplementationWorkspace.jsx";
 
@@ -75,12 +75,14 @@ describe("ImplementationWorkspace", () => {
   it("approves TaskAsset execution through the approval-only callback and keeps execution not started", async () => {
     const linked = { object_id: "object-approve-execution", object_type: "task", name: "批准执行任务", status: "approved", version: 1, execution_refs: [], task_asset_ref: { task_id: "task-approve", title: "批准执行任务", status: "draft", approval_status: "pending", execution_status: "not_started" } };
     const approve = vi.fn().mockResolvedValue({ task_id: "task-approve", status: "draft", approval_status: "approved", execution_status: "not_started" });
-    render(<ImplementationWorkspace objects={[linked]} onApproveTaskExecution={approve} onRejectTaskExecution={vi.fn()} onContinue={vi.fn()} />);
+    const changed = vi.fn();
+    render(<ImplementationWorkspace objects={[linked]} onApproveTaskExecution={approve} onRejectTaskExecution={vi.fn()} onContinue={vi.fn()} onTaskLifecycleChanged={changed} />);
     fireEvent.click(screen.getByRole("button", { name: /批准执行任务/ }));
     fireEvent.click(screen.getByRole("button", { name: "批准执行" }));
-    await vi.waitFor(() => expect(approve).toHaveBeenCalledWith("task-approve"));
+    await waitFor(() => expect(changed).toHaveBeenCalled());
+    await waitFor(() => expect(approve).toHaveBeenCalledWith("task-approve"));
     const detail = screen.getByLabelText("对象操作");
-    await vi.waitFor(() => expect(screen.getByText("已批准执行 · 等待开始执行")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("已批准执行 · 等待开始执行")).toBeTruthy());
     expect(within(detail).getAllByText("已批准").length).toBeGreaterThan(0);
     expect(within(detail).getByText("未开始")).toBeTruthy();
     expect(screen.queryByText(/执行中|已进入执行/)).toBeNull();
@@ -92,9 +94,9 @@ describe("ImplementationWorkspace", () => {
     render(<ImplementationWorkspace objects={[linked]} onApproveTaskExecution={vi.fn()} onRejectTaskExecution={reject} onContinue={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /拒绝执行任务/ }));
     fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
-    await vi.waitFor(() => expect(reject).toHaveBeenCalledWith("task-reject"));
+    await waitFor(() => expect(reject).toHaveBeenCalledWith("task-reject"));
     const detail = screen.getByLabelText("对象操作");
-    await vi.waitFor(() => expect(screen.getByText("已拒绝执行 · 未开始")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("已拒绝执行 · 未开始")).toBeTruthy());
     expect(within(detail).getByText("已驳回")).toBeTruthy();
     expect(within(detail).getByText("未开始")).toBeTruthy();
     expect(screen.queryByText(/执行中|已进入执行/)).toBeNull();
@@ -138,9 +140,9 @@ describe("ImplementationWorkspace", () => {
     render(<ImplementationWorkspace objects={[linked]} onStartTaskExecution={start} onContinue={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /显式开始任务/ }));
     fireEvent.click(screen.getByRole("button", { name: "开始执行" }));
-    await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
     expect(start).toHaveBeenCalledWith("task-explicit-start");
-    await vi.waitFor(() => expect(screen.getByText("已进入执行 · 等待执行")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("已进入执行 · 等待执行")).toBeTruthy());
     const detail = screen.getByLabelText("对象操作");
     expect(within(detail).getByText("execution-explicit")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "开始执行" })).toBeNull();

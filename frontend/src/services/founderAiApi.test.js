@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bindFounderConversationProject } from "./founderAiApi";
 
-import { analyzeFounderConversation, analyzeWithSinoBrain, approveCapabilityReady, buildSystemBlueprint, checkModelProvider, completeCapabilityDevelopment, confirmCandidateGoal, createArtifactVersion, createFounderConversation, createFounderProject, createIntelligenceReference, createMemoryRevision, decideExecutionDelta, deleteFounderConversation, deleteFounderProject, discoverProviderModels, discussWithCouncil, discussWithSino, executeFounderExecution, getAssetMemoryCenter, getCapabilityDomains, getCapabilityRepositoryAssets, getConversationWorkspace, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getLibraryArtifact, getLibraryMemory, getLifecycleReuseSuggestions, getModelCenter, getProjectIntelligence, installModelProvider, performConversationCapabilityAction, reasonConfirmedGoal, reuseLifecycleAsset, resumeFounderExecution, runCapabilityTest, saveApplicationModelAssignments, saveExecutionEngine, saveModelProvider, saveModelRoles, selectProviderModels, startCapabilityDevelopment, startTaskExecution, submitExecutionDelta, updateArtifactStatus, updateFounderProject, updateMemoryStatus } from "./founderAiApi";
+import { analyzeFounderConversation, analyzeWithSinoBrain, approveCapabilityReady, buildSystemBlueprint, checkModelProvider, completeCapabilityDevelopment, confirmCandidateGoal, createArtifactVersion, createFounderConversation, createFounderProject, createIntelligenceReference, createMemoryRevision, decideExecutionDelta, deleteFounderConversation, deleteFounderProject, discoverProviderModels, discussWithCouncil, discussWithSino, executeFounderExecution, getAssetMemoryCenter, getCapabilityDomains, getCapabilityRepositoryAssets, getConversationWorkspace, getFounderActionQueue, getFounderBriefing, getFounderConversations, getFounderExecution, getFounderProjects, getFounderStrategy, getLibraryArtifact, getLibraryMemory, getLifecycleReuseSuggestions, getModelCenter, getProjectIntelligence, installModelProvider, performConversationCapabilityAction, reasonConfirmedGoal, reuseLifecycleAsset, resumeFounderExecution, runCapabilityTest, saveApplicationModelAssignments, saveExecutionEngine, saveModelProvider, saveModelRoles, selectProviderModels, startCapabilityDevelopment, startTaskExecution, submitExecutionDelta, updateArtifactStatus, updateFounderProject, updateMemoryStatus } from "./founderAiApi";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -17,6 +17,14 @@ describe("Founder AI conversation API", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => [{ id: "conversation-1" }] });
     expect(await getFounderConversations()).toEqual([{ id: "conversation-1" }]);
     expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/conversations");
+  });
+
+  it("lists global and conversation-scoped Founder Action Queue items", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => [] });
+    await getFounderActionQueue();
+    await getFounderActionQueue("conv/1");
+    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/action-queue");
+    expect(fetchMock.mock.calls[1][0]).toBe("http://127.0.0.1:8000/api/v1/founder-ai/action-queue?conversation_id=conv%2F1");
   });
 
   it("deletes a Founder Conversation through the real API", async () => {
