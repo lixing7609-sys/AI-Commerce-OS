@@ -92,18 +92,27 @@ def get_model_capability_registry() -> dict:
         models = list(session.scalars(select(ModelRegistryDB)))
         configs = {item.capability_key: item for item in session.scalars(select(AICapabilityConfigDB))}
         image_results = _image_probe_results(session)
-    return build_model_capability_registry(providers, models, configs, image_results)
+        from app.core.model_center.runtime_chain import identity, resolve_model_resource_health
+        resource_health = {
+            identity(model.provider_id, model.model_id): resolve_model_resource_health(session, model.provider_id, model.model_id)
+            for model in models
+        }
+    return build_model_capability_registry(providers, models, configs, image_results, resource_health)
 
 
-def build_model_capability_registry(providers: dict, models: list, configs: dict, image_results: dict | None = None) -> dict:
+def build_model_capability_registry(providers: dict, models: list, configs: dict, image_results: dict | None = None,
+                                    resource_health: dict | None = None) -> dict:
     image_results = image_results or {}
+    resource_health = resource_health or {}
     vision = dict(((configs.get("vision_model_routing").configuration if configs.get("vision_model_routing") else {}) or {}).get("model_probes") or {})
     image_verified = dict(((configs.get("image_generation_model_routing").configuration if configs.get("image_generation_model_routing") else {}) or {}).get("model_probes") or {})
     items = []
     for model in models:
         key = _ref(model.provider_id, model.model_id)
         provider = providers.get(model.provider_id)
-        healthy = bool(provider and provider.enabled and provider.health_status == "healthy")
+        resource_key = f"{model.provider_id}::{model.model_id}"
+        health = resource_health.get(resource_key) or {}
+        healthy = bool(provider and provider.enabled and health.get("health_status") == "healthy")
         vision_probe = vision.get(key)
         image_probe = image_results.get(key)
         image_pass = image_verified.get(key)
@@ -121,6 +130,11 @@ def build_model_capability_registry(providers: dict, models: list, configs: dict
         items.append({
             "provider_id": model.provider_id, "model_id": model.model_id, "display_name": model.display_name,
             "enabled": bool(model.enabled), "selected": bool(model.selected), "healthy": healthy,
+            "health_status": health.get("health_status", "unknown"),
+            "health_classification": health.get("health_classification", "UNKNOWN"),
+            "health_source": health.get("health_source", "none"),
+            "last_checked_at": health.get("last_checked_at"),
+            "provider_health_status": provider.health_status if provider else None,
             "capabilities": {
                 "supports_text_reasoning": _state("UNVERIFIED", "INFERRED_UNVERIFIED"),
                 "supports_vision_understanding": vision_state,

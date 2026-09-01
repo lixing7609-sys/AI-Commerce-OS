@@ -218,7 +218,10 @@ def probe_provider(provider_key: str):
             raise HTTPException(status_code=404, detail="provider_not_supported")
         return {"status": configuration["health_status"], "provider": provider_key, "model": None, "configuration": configuration}
     try:
-        response = LLMGateway().generate_for(provider_key, LLMRequest(system_prompt="You are a provider health probe.", user_prompt="Reply with OK.", temperature=0, max_tokens=8))
+        response = LLMGateway().generate_for(provider_key, LLMRequest(
+            system_prompt="You are a provider health probe.", user_prompt="Reply with OK.", temperature=0, max_tokens=8,
+            metadata={"runtime_role": "model_health", "invocation_source": "model_health_probe", "runtime_mode": "probe"},
+        ))
         provider = record_health(provider_key, "healthy")
         return {"status": "healthy", "provider": response.provider, "model": response.model, "configuration": provider}
     except ConfigurationError as error:

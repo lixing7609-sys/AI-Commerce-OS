@@ -7,11 +7,13 @@ const modelId = (value) => typeof value === "string" ? value : value?.model_id;
 const providerErrorLabels = { invalid_credentials: "认证失败", authentication_failed: "认证失败", insufficient_quota: "账户额度不足", provider_unavailable: "无法连接服务", invalid_response: "服务返回异常", model_unavailable: "模型不可用" };
 const failureLabel = (value) => providerErrorLabels[value] || "连接异常";
 const actionFailure = (action) => `${action}失败，请检查服务商授权或连接后重试`;
-export const MODEL_ASSIGNMENT_STATUS = Object.freeze({ NORMAL: "NORMAL", CONFIG_ERROR: "CONFIG_ERROR", ERROR: "ERROR", UNCONFIGURED: "UNCONFIGURED" });
+export const MODEL_ASSIGNMENT_STATUS = Object.freeze({ NORMAL: "NORMAL", CONFIG_ERROR: "CONFIG_ERROR", ERROR: "ERROR", CAPABILITY_MISMATCH: "CAPABILITY_MISMATCH", UNRESOLVED: "UNRESOLVED", UNCONFIGURED: "UNCONFIGURED" });
 const assignmentStatusView = {
   [MODEL_ASSIGNMENT_STATUS.NORMAL]: { key: "normal", label: "正常" },
   [MODEL_ASSIGNMENT_STATUS.CONFIG_ERROR]: { key: "config-error", label: "配置错误" },
   [MODEL_ASSIGNMENT_STATUS.ERROR]: { key: "error", label: "异常" },
+  [MODEL_ASSIGNMENT_STATUS.CAPABILITY_MISMATCH]: { key: "capability-mismatch", label: "能力不匹配" },
+  [MODEL_ASSIGNMENT_STATUS.UNRESOLVED]: { key: "unresolved", label: "失效引用" },
   [MODEL_ASSIGNMENT_STATUS.UNCONFIGURED]: { key: "unconfigured", label: "未配置" },
 };
 
@@ -22,19 +24,23 @@ function AssignmentStatus({ view, label, kind }) {
 export function resolveModelAssignmentStatus({ value, choices, invalid = false }) {
   if (!value) return MODEL_ASSIGNMENT_STATUS.UNCONFIGURED;
   const model = choices.find((item) => item.value === value);
-  if (invalid || !model) return MODEL_ASSIGNMENT_STATUS.CONFIG_ERROR;
+  if (!model) return MODEL_ASSIGNMENT_STATUS.UNRESOLVED;
+  if (invalid) return MODEL_ASSIGNMENT_STATUS.CONFIG_ERROR;
+  if (model.invalid) return model.invalid_reason === "identity_unresolved" ? MODEL_ASSIGNMENT_STATUS.UNRESOLVED : MODEL_ASSIGNMENT_STATUS.CAPABILITY_MISMATCH;
   return model.healthy ? MODEL_ASSIGNMENT_STATUS.NORMAL : MODEL_ASSIGNMENT_STATUS.ERROR;
 }
 
 export function resolveAssignmentStatus({ primaryStatus, fallbackStatus, fallbackSupported = true }) {
   if (primaryStatus === MODEL_ASSIGNMENT_STATUS.UNCONFIGURED) return MODEL_ASSIGNMENT_STATUS.UNCONFIGURED;
+  if (primaryStatus === MODEL_ASSIGNMENT_STATUS.UNRESOLVED) return MODEL_ASSIGNMENT_STATUS.UNRESOLVED;
   if (primaryStatus === MODEL_ASSIGNMENT_STATUS.CONFIG_ERROR) return MODEL_ASSIGNMENT_STATUS.CONFIG_ERROR;
+  if (primaryStatus === MODEL_ASSIGNMENT_STATUS.CAPABILITY_MISMATCH) return MODEL_ASSIGNMENT_STATUS.CAPABILITY_MISMATCH;
   if (primaryStatus === MODEL_ASSIGNMENT_STATUS.NORMAL) return MODEL_ASSIGNMENT_STATUS.NORMAL;
   if (fallbackSupported && fallbackStatus === MODEL_ASSIGNMENT_STATUS.NORMAL) return MODEL_ASSIGNMENT_STATUS.NORMAL;
   return MODEL_ASSIGNMENT_STATUS.ERROR;
 }
 
-const assignmentStatusPriority = { [MODEL_ASSIGNMENT_STATUS.UNCONFIGURED]: 0, [MODEL_ASSIGNMENT_STATUS.NORMAL]: 1, [MODEL_ASSIGNMENT_STATUS.ERROR]: 2, [MODEL_ASSIGNMENT_STATUS.CONFIG_ERROR]: 3 };
+const assignmentStatusPriority = { [MODEL_ASSIGNMENT_STATUS.UNCONFIGURED]: 0, [MODEL_ASSIGNMENT_STATUS.NORMAL]: 1, [MODEL_ASSIGNMENT_STATUS.ERROR]: 2, [MODEL_ASSIGNMENT_STATUS.CAPABILITY_MISMATCH]: 3, [MODEL_ASSIGNMENT_STATUS.UNRESOLVED]: 4, [MODEL_ASSIGNMENT_STATUS.CONFIG_ERROR]: 5 };
 const referenceKey = (reference) => {
   const provider = reference?.provider_key || reference?.provider_id;
   const model = reference?.model || reference?.model_id;
@@ -134,21 +140,24 @@ export function ModelCenter({ onHome }) {
   const providerTriggerRef = useRef(null);
   const featureDialogRef = useRef(null);
   const featureTriggerRef = useRef(null);
-  const revalidatedModelsRef = useRef(new Set());
+  const inFlightModelHealthRef = useRef(new Set());
   const installed = useMemo(() => center.providers.filter((item) => item.installed), [center.providers]);
 
-  async function revalidateStaleModels(value) {
-    const stale = (value.connected_models || []).filter((item) => item.is_stale && !revalidatedModelsRef.current.has(item.identity));
-    if (!stale.length) return value;
-    for (const item of stale) {
-      revalidatedModelsRef.current.add(item.identity);
-      await checkModelResource(item.provider_id, item.model_id).catch(() => null);
+  async function runModelHealthProbe(providerKey, model) {
+    const id = modelId(model);
+    const identity = providerKey && id ? `${providerKey}::${id}` : "";
+    if (!identity || inFlightModelHealthRef.current.has(identity)) return null;
+    inFlightModelHealthRef.current.add(identity);
+    try {
+      return await checkModelResource(providerKey, id);
+    } finally {
+      inFlightModelHealthRef.current.delete(identity);
     }
-    return getModelCenter();
   }
-  async function reload({ revalidate = false } = {}) { let value = await getModelCenter(); setCenter(value); if (revalidate) { value = await revalidateStaleModels(value); setCenter(value); } return value; }
+  function uniqueModelIds(models = []) { return [...new Set(models.map(modelId).filter(Boolean))]; }
+  async function reload() { const value = await getModelCenter(); setCenter(value); return value; }
   useEffect(() => {
-    reload({ revalidate: true }).catch((error) => setMessage(error.message));
+    reload().catch((error) => setMessage(error.message));
     getRuntimeEnvironmentRegistry().then(setRuntimeRegistry).catch((error) => setMessage(error.message));
   }, []);
 
@@ -182,7 +191,7 @@ export function ModelCenter({ onHome }) {
     catch (error) { if (editing) { const updated = await restoreProvider(editing).catch(() => null); updateProviderState(editing, { error: failureLabel(updated?.health_error), successMessage: "" }); } else setMessage(actionFailure("连接")); }
     finally { if (editing) updateProviderState(editing, { isConnecting: false }); setBusy(""); }
   }
-  async function refresh(provider) { const key = provider.provider_key; updateProviderState(key, { isRefreshingModels: true, error: "", successMessage: "正在刷新模型与真实状态…" }); try { const result = await discoverProviderModels(key); mergeProvider(result); for (const model of result.selected_models || []) { await checkModelResource(key, model).catch(() => null); revalidatedModelsRef.current.add(`${key}::${model}`); } await reload(); updateProviderState(key, { successMessage: `模型已刷新，共 ${result.available_models?.length || 0} 个`, error: "" }); } catch (error) { updateProviderState(key, { error: failureLabel(provider.health_error), successMessage: "" }); } finally { updateProviderState(key, { isRefreshingModels: false }); } }
+  async function refresh(provider) { const key = provider.provider_key; updateProviderState(key, { isRefreshingModels: true, error: "", successMessage: "正在刷新模型与真实状态…" }); try { const result = await discoverProviderModels(key); mergeProvider(result); for (const model of uniqueModelIds(result.selected_models || [])) await runModelHealthProbe(key, model).catch(() => null); await reload(); updateProviderState(key, { successMessage: `模型已刷新，共 ${result.available_models?.length || 0} 个`, error: "" }); } catch (error) { updateProviderState(key, { error: failureLabel(provider.health_error), successMessage: "" }); } finally { updateProviderState(key, { isRefreshingModels: false }); } }
   async function choose(provider, model, checked) { const key = provider.provider_key; const id = modelId(model); const next = checked ? [...provider.selected_models, id] : provider.selected_models.filter((item) => item !== id); updateProviderState(key, { isSaving: true, error: "", successMessage: "正在保存…" }); try { const result = await selectProviderModels(key, next); mergeProvider(result); updateProviderState(key, { successMessage: "模型选择已保存" }); } catch (error) { updateProviderState(key, { error: "模型选择保存失败", successMessage: "" }); } finally { updateProviderState(key, { isSaving: false }); } }
   async function removeModel() {
     if (!removalTarget || removalTarget.dependencies.length) return;
@@ -196,7 +205,7 @@ export function ModelCenter({ onHome }) {
     finally { setBusy(""); }
   }
   async function health(provider) { const key = provider.provider_key; updateProviderState(key, { isCheckingHealth: true, error: "", successMessage: "正在检查…" }); try { const result = await checkModelProvider(key); mergeProvider(result.configuration); const feedback = result.status === "healthy" ? "连接正常" : failureLabel(result.configuration?.health_error); updateProviderState(key, { successMessage: result.status === "healthy" ? feedback : "", error: result.status === "healthy" ? "" : feedback }); } catch (error) { updateProviderState(key, { error: failureLabel(provider.health_error), successMessage: "" }); } finally { updateProviderState(key, { isCheckingHealth: false }); } }
-  async function healthModel(provider, model) { const key = provider.provider_key; updateProviderState(key, { isCheckingModelHealth: true, error: "", successMessage: "正在检查具体模型…" }); try { const result = await checkModelResource(key, modelId(model)); revalidatedModelsRef.current.add(`${key}::${modelId(model)}`); await reload(); const feedback = result.status === "healthy" ? "模型当前可用" : failureLabel(result.error_code); updateProviderState(key, { successMessage: result.status === "healthy" ? feedback : "", error: result.status === "healthy" ? "" : feedback }); } catch (error) { updateProviderState(key, { error: "模型资源检查失败", successMessage: "" }); } finally { updateProviderState(key, { isCheckingModelHealth: false }); } }
+  async function healthModel(provider, model) { const key = provider.provider_key; updateProviderState(key, { isCheckingModelHealth: true, error: "", successMessage: "正在检查具体模型…" }); try { const result = await runModelHealthProbe(key, model); if (!result) return; await reload(); const feedback = result.status === "healthy" ? "模型当前可用" : failureLabel(result.error_code); updateProviderState(key, { successMessage: result.status === "healthy" ? feedback : "", error: result.status === "healthy" ? "" : feedback }); } catch (error) { updateProviderState(key, { error: "模型资源检查失败", successMessage: "" }); } finally { updateProviderState(key, { isCheckingModelHealth: false }); } }
   function selectModel(provider, model, trigger) { providerTriggerRef.current = trigger; setAdding(false); setFeatureModal(null); setEditing(provider.provider_key); setSelectedModel(model); }
   function closeProviderModal() { setEditing(null); setSelectedModel(null); requestAnimationFrame(() => providerTriggerRef.current?.focus()); }
   function openFeatureModal(name, trigger) { featureTriggerRef.current = trigger; setAdding(false); setEditing(null); setSelectedModel(null); setFeatureModal(name); }
@@ -316,13 +325,13 @@ function ModelAssignments({ roles, options, eligible, registry, busy, onAssign, 
     const save = onSave || ((nextPrimary, nextFallback) => routing ? onVisionAssign("VISION_UNDERSTANDING", nextPrimary, nextFallback) : onAssign(roleKey, nextPrimary, nextFallback));
     const duplicate = primary && primaryValues.filter((value) => value === primary).length > 1;
     const sameModel = Boolean(primary && fallback && fallback === primary);
-    const primaryStatus = resolveModelAssignmentStatus({ value: primary, choices, invalid: duplicate || sameModel });
-    const fallbackStatus = resolveModelAssignmentStatus({ value: fallback, choices, invalid: sameModel });
+    const renderedChoices = [...choices];
+    for (const value of [primary, fallback]) if (value && !renderedChoices.some((item) => item.value === value)) { const [providerId, model] = value.split("::"); const known = (registry?.models || []).find((item) => item.provider_id === providerId && item.model_id === model); renderedChoices.push({ value, label: known?.display_name || model, provider: { display_name: options.find((item) => item.value === value)?.provider?.display_name || providerId }, invalid: true, invalid_reason: known ? "capability_mismatch" : "identity_unresolved" }); }
+    const primaryStatus = resolveModelAssignmentStatus({ value: primary, choices: renderedChoices, invalid: duplicate || sameModel });
+    const fallbackStatus = resolveModelAssignmentStatus({ value: fallback, choices: renderedChoices, invalid: sameModel });
     const status = resolveAssignmentStatus({ primaryStatus, fallbackStatus, fallbackSupported: true });
     const primaryView = assignmentStatusView[primaryStatus]; const fallbackView = assignmentStatusView[fallbackStatus]; const assignmentView = assignmentStatusView[status];
     const optionLabel = (item) => `${item.label}${item.provider?.display_name ? ` · ${item.provider.display_name}` : ""}`;
-    const renderedChoices = [...choices];
-    for (const value of [primary, fallback]) if (value && !renderedChoices.some((item) => item.value === value)) { const [providerId, model] = value.split("::"); const known = (registry?.models || []).find((item) => item.provider_id === providerId && item.model_id === model); renderedChoices.push({ value, label: known?.display_name || model, provider: { display_name: options.find((item) => item.value === value)?.provider?.display_name || providerId }, invalid: true }); }
     return <div className="sino-model-assignment-row" key={label}><strong>{label}</strong><label><span>Primary</span><select aria-label={`${label} Primary`} value={primary} disabled={busy.includes(roleKey || "routing")} onChange={(event) => save(event.target.value, fallback === event.target.value ? "" : fallback)}><option value="">未分配</option>{renderedChoices.map((item) => { const usedByOtherSlot = primaryValues.some((value) => value === item.value && value !== primary); return <option key={`${label}-primary-${item.value}`} value={item.value} disabled={item.invalid || usedByOtherSlot}>{optionLabel(item)}{item.invalid ? "（能力不匹配）" : usedByOtherSlot ? "（已用于其他讨论模型）" : ""}</option>; })}</select></label><AssignmentStatus view={primaryView} label={label} kind="primary" /><label><span>Fallback</span><select aria-label={`${label} Fallback`} value={fallback} disabled={!primary || busy.includes(roleKey || "routing")} onChange={(event) => save(primary, event.target.value)}><option value="">未配置</option>{renderedChoices.map((item) => <option key={`${label}-fallback-${item.value}`} value={item.value} disabled={item.value === primary || item.invalid}>{optionLabel(item)}{item.invalid ? "（能力不匹配）" : ""}</option>)}</select></label><AssignmentStatus view={fallbackView} label={label} kind="fallback" /><AssignmentStatus view={assignmentView} label={label} kind="assignment" /></div>;
   };
   const slots = council.slots?.length ? council.slots : [...(council.models || []).map((primary) => ({ primary, fallback: null })), ...Array.from({ length: Math.max(0, 5 - (council.models || []).length) }, () => ({ primary: null, fallback: null }))];
@@ -346,7 +355,10 @@ function ModelEconomics({ economics, getAssignmentRoles }) {
     if (row.pricing_status === "configured_no_usage") return "无调用成本";
     return "无法计算";
   };
-  return <section className="sino-usage-cost" aria-label="用量与成本"><div className="sino-settings-domain-heading"><h3>用量与成本</h3><span aria-label="已分配模型摘要">{rows.length} 个有效已分配模型{orphanCount ? ` · ${orphanCount} 个失效引用` : ""}</span></div><dl><div><dt>Connected Models</dt><dd>{economics.connected_model_count ?? "统计未接入"}</dd></div><div><dt>有效已分配模型</dt><dd>{rows.length}</dd></div><div><dt>失效引用</dt><dd>{orphanCount}</dd></div><div><dt>Invocation 覆盖</dt><dd>{coverageText(coverage.invocation)}</dd></div><div><dt>Token 覆盖</dt><dd>{coverageText(coverage.token)}</dd></div><div><dt>Pricing 覆盖</dt><dd>{coverageText(coverage.pricing)}</dd></div></dl><div className="sino-model-economics-table" role="table" aria-label="已分配模型经济账"><div className="sino-model-economics-row sino-model-economics-row--header" role="row"><span role="columnheader">模型</span><span role="columnheader">职责</span><span role="columnheader">连接 / 健康</span><span role="columnheader">调用</span><span role="columnheader">Token</span><span role="columnheader">成本</span><span role="columnheader">平均延迟</span></div>{rows.map((row) => <div className="sino-model-economics-row" role="row" key={`${row.provider_id}::${row.model_id}`}><span role="cell"><strong>{row.display_name}</strong><small>{row.provider_name}</small></span><span role="cell">{formatStableAssignmentRoles(getAssignmentRoles(row.provider_id, row.model_id)).join(" · ")}</span><span role="cell">已连接 · {row.health_status === "healthy" ? "正常" : row.health_status === "unhealthy" ? "异常" : "未测试"}<small>{row.telemetry_status === "recorded" ? "调用统计已记录" : "调用统计已接入 · 无记录"}</small></span><span role="cell">{row.request_count}</span><span role="cell">{tokenText(row)}</span><span role="cell">{costText(row)}</span><span role="cell">{row.average_latency_ms === null ? "—" : `${Math.round(row.average_latency_ms)} ms`}</span></div>)}{economics.orphan_references?.map((item) => <div className="sino-model-economics-row sino-model-economics-row--orphan" role="row" key={`orphan:${item.provider_id}::${item.model_id}`}><span role="cell"><strong>{item.model_id}</strong></span><span role="cell">{formatStableAssignmentRoles(item.roles).join(" · ")}</span><span role="cell">配置错误 / 失效引用</span><span role="cell">—</span><span role="cell">—</span><span role="cell">—</span><span role="cell">—</span></div>)}</div></section>;
+  const roleText = (row) => row.roles?.length ? formatStableAssignmentRoles(row.roles).join(" · ") || row.roles.join(" · ") : formatStableAssignmentRoles(getAssignmentRoles(row.provider_id, row.model_id)).join(" · ");
+  const classificationText = (row) => ({ CURRENT_SINO_REFERENCE: "当前 Sino 引用", CURRENT_SYSTEM_REFERENCE: "当前 System 引用", CURRENT_BOTH_REFERENCE: "当前 Sino + System 引用", HISTORICAL_REFERENCE: "历史使用", INVALID_REFERENCE: "失效引用" }[row.reference_classification] || "未分类");
+  const invalidText = (item) => item.state === "IDENTITY_UNRESOLVED" ? "Identity Unresolved / 失效引用" : item.state === "RESOURCE_MISSING" ? "Resource Missing / 失效引用" : "失效引用";
+  return <section className="sino-usage-cost" aria-label="用量与成本"><div className="sino-settings-domain-heading"><h3>用量与成本</h3><span aria-label="已分配模型摘要">{rows.length} 个用量资源{orphanCount ? ` · ${orphanCount} 个失效引用` : ""}</span></div><dl><div><dt>Connected Models</dt><dd>{economics.connected_model_count ?? "统计未接入"}</dd></div><div><dt>当前资源</dt><dd>{economics.current_resource_count ?? rows.filter((row) => String(row.reference_classification || "").startsWith("CURRENT_")).length}</dd></div><div><dt>失效引用</dt><dd>{orphanCount}</dd></div><div><dt>Invocation 覆盖</dt><dd>{coverageText(coverage.invocation)}</dd></div><div><dt>Token 覆盖</dt><dd>{coverageText(coverage.token)}</dd></div><div><dt>Pricing 覆盖</dt><dd>{coverageText(coverage.pricing)}</dd></div></dl><div className="sino-model-economics-table" role="table" aria-label="已分配模型经济账"><div className="sino-model-economics-row sino-model-economics-row--header" role="row"><span role="columnheader">资源</span><span role="columnheader">职责</span><span role="columnheader">分类 / 健康</span><span role="columnheader">调用</span><span role="columnheader">Token</span><span role="columnheader">成本</span><span role="columnheader">平均延迟</span></div>{rows.map((row) => <div className="sino-model-economics-row" role="row" key={row.identity || `${row.provider_id}::${row.model_id}`}><span role="cell"><strong>{row.display_name}</strong><small>{row.provider_name}</small></span><span role="cell">{roleText(row)}</span><span role="cell">{classificationText(row)} · {row.health_status === "healthy" ? "正常" : row.health_status === "unhealthy" ? "异常" : "待验证"}<small>{row.telemetry_status === "recorded" ? "调用统计已记录" : "调用统计已接入 · 无记录"}</small></span><span role="cell">{row.request_count}</span><span role="cell">{tokenText(row)}</span><span role="cell">{costText(row)}</span><span role="cell">{row.average_latency_ms === null ? "—" : `${Math.round(row.average_latency_ms)} ms`}</span></div>)}{economics.orphan_references?.map((item) => <div className="sino-model-economics-row sino-model-economics-row--orphan" role="row" key={`orphan:${item.provider_id}::${item.model_id}`}><span role="cell"><strong>{item.model_id}</strong></span><span role="cell">{formatStableAssignmentRoles(item.roles).join(" · ") || item.roles?.join(" · ")}</span><span role="cell">{invalidText(item)}</span><span role="cell">—</span><span role="cell">—</span><span role="cell">—</span><span role="cell">—</span></div>)}</div></section>;
 }
 
 function RuntimeEnvironmentSettings({ registry }) {

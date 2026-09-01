@@ -227,20 +227,23 @@ def get_model_center() -> dict:
         registry_rows = list(session.scalars(select(ModelRegistryDB)))
         from app.core.conversation_first.model import SinoBrainSessionDB
         brain_states = list(session.scalars(select(SinoBrainSessionDB)))
-        from app.core.model_center.runtime_chain import connected_model_registry, eligible_models, invocation_economics
+        from app.core.model_center.runtime_chain import connected_model_registry, eligible_models, identity, invocation_economics, resolve_model_resource_health
         connected_models = connected_model_registry(session=session)
         economics = invocation_economics(session=session)
         eligible_by_role = {role: eligible_models(role=role, session=session) for role in ("sino_conversation", "deep_thinking", "code_execution", "multi_model_discussion", "vision")}
+        resource_health = {
+            identity(model.provider_id, model.model_id): resolve_model_resource_health(session, model.provider_id, model.model_id)
+            for model in registry_rows
+        }
     provider_items = [_serialize(row, key) for key, row in rows.items()]
     for key in PROVIDERS:
         if key not in rows:
             provider_items.append(_serialize(None, key))
     capability_roles = []
     for capability in CAPABILITIES:
-        legacy = next((old for old, new in LEGACY_ROLE_ALIASES.items() if new == capability), None)
         config = (capability_configs.get(capability).configuration if capability_configs.get(capability) else {}) or {}
         discussion_slots = _discussion_slots(config) if capability == "multi_model_discussion" else []
-        capability_roles.append({"role_key": capability, "label": CAPABILITY_LABELS[capability], "provider_key": config.get("provider_key") or roles.get(capability) or roles.get(legacy), "model": config.get("model"), "fallbacks": list(config.get("fallbacks", [])), "fixed": False, "multiple": capability == "multi_model_discussion", "models": [slot["primary"] for slot in discussion_slots if slot.get("primary")], "slots": discussion_slots, "execution_engine_id": config.get("execution_engine_id", "codex") if capability == "code_execution" else None})
+        capability_roles.append({"role_key": capability, "label": CAPABILITY_LABELS[capability], "provider_key": config.get("provider_key"), "model": config.get("model"), "fallbacks": list(config.get("fallbacks", [])), "fixed": False, "multiple": capability == "multi_model_discussion", "models": [slot["primary"] for slot in discussion_slots if slot.get("primary")], "slots": discussion_slots, "execution_engine_id": config.get("execution_engine_id", "codex") if capability == "code_execution" else None, "assignment_authority": "ai_capability_configs"})
     image_generation_probes = dict(((capability_configs.get("image_generation_model_routing").configuration if capability_configs.get("image_generation_model_routing") else {}) or {}).get("model_probes") or {})
     from app.core.model_center.capability_registry import build_model_capability_registry
     image_results = {}
@@ -248,7 +251,7 @@ def get_model_center() -> dict:
         loop = dict((state.discovery or {}).get("autonomous_main_loop") or {})
         for result in (loop.get("model_probe_job") or {}).get("probe_results") or []:
             image_results[f"{result.get('provider_id')}:{result.get('model_id')}"] = result
-    capability_registry = build_model_capability_registry(rows, registry_rows, capability_configs, image_results)
+    capability_registry = build_model_capability_registry(rows, registry_rows, capability_configs, image_results, resource_health)
     registry_capabilities = {
         (item["provider_id"], item["model_id"]): item["capabilities"]
         for item in capability_registry["models"]
@@ -280,8 +283,7 @@ def _agent_skills(agent_id: str, capability_configs: dict, roles: dict) -> list[
         definition = SKILL_REGISTRY[skill_id]
         capability = definition["model_assignment_capability"]
         config = (capability_configs.get(capability).configuration if capability_configs.get(capability) else {}) or {}
-        legacy = next((old for old, new in LEGACY_ROLE_ALIASES.items() if new == capability), None)
-        provider_key = config.get("provider_key") or roles.get(capability) or roles.get(legacy)
+        provider_key = config.get("provider_key")
         model = config.get("model")
         models = list(config.get("models", [])) if skill_id == "multi_model_discussion" else []
         configured = bool(models if skill_id == "multi_model_discussion" else provider_key and model)
@@ -295,12 +297,7 @@ def _application_assignment(application_key: str, capability: str, assignments: 
     explicit = next((item for item in assignments if item.application_key == application_key and item.capability_key == capability), None)
     provider_key = explicit.provider_key if explicit else None
     model = explicit.model if explicit else None
-    if application_key == "founder_ai" and not provider_key:
-        legacy = next((old for old, new in LEGACY_ROLE_ALIASES.items() if new == capability), None)
-        provider_key = roles.get(capability) or roles.get(legacy)
-        provider = rows.get(provider_key)
-        model = provider.model if provider else None
-    return {"capability_key": capability, "label": CAPABILITY_LABELS[capability], "provider_key": provider_key, "model": model, "fixed": False}
+    return {"capability_key": capability, "label": CAPABILITY_LABELS[capability], "provider_key": provider_key, "model": model, "fixed": False, "assignment_authority": "application_capability_assignments_legacy"}
 
 
 def _bootstrap_legacy_runtime_once() -> None:
@@ -417,8 +414,7 @@ def _validated_model_reference(session, provider_key: str | None, model: str | N
     if not provider_key:
         return None
     provider = session.get(ModelProviderConfigDB, provider_key)
-    if (not provider or not provider.enabled or (require_healthy and provider.health_status != "healthy")
-            or model not in (provider.selected_models or [])):
+    if not provider or not provider.enabled or model not in (provider.selected_models or []):
         raise ValueError("model_not_available")
     return {"provider_key": provider_key, "model": model}
 
@@ -539,24 +535,18 @@ def resolve_runtime_config(provider_key: str | None = None, role: str | None = N
         if role:
             capability = LEGACY_ROLE_ALIASES.get(role, role)
             capability_config = session.get(AICapabilityConfigDB, capability)
-            app_assignment = session.scalar(select(ApplicationCapabilityAssignmentDB).where(ApplicationCapabilityAssignmentDB.application_key == "founder_ai", ApplicationCapabilityAssignmentDB.capability_key == capability))
-            assignment = session.get(ModelRoleAssignmentDB, capability) or session.get(ModelRoleAssignmentDB, role)
-            # Agent capability assignments are the current Founder-facing source of
-            # truth.  Application assignments are retained for compatibility, but
-            # must not override a model explicitly selected for the Sino skill.
+            # AICapabilityConfigDB is the canonical runtime assignment authority.
+            # ApplicationCapabilityAssignmentDB and ModelRoleAssignmentDB are legacy
+            # compatibility records only and must not participate in runtime choice.
             if capability_config and capability_config.configuration.get("provider_key"):
                 key = capability_config.configuration.get("provider_key")
                 selected_model = capability_config.configuration.get("model")
-            elif app_assignment and app_assignment.provider_key:
-                key = app_assignment.provider_key
-                selected_model = app_assignment.model
             else:
                 selected_model = None
-                key = assignment.provider_key if assignment else None
+                key = None
         if not key:
-            reasoner = session.get(ModelRoleAssignmentDB, "sino_conversation") or session.get(ModelRoleAssignmentDB, "reasoner")
-            key = reasoner.provider_key if reasoner else None
             selected_model = None
+            key = None
         row = session.get(ModelProviderConfigDB, key) if key else None
         if not row or not row.enabled or not _is_configured(row):
             return None
@@ -694,9 +684,9 @@ def model_assignment_dependencies(session, provider_key: str, model: str) -> lis
             vision = configuration.get("VISION_UNDERSTANDING") or {}
             if matches(vision.get("preferred_primary")): add("Vision")
             if matches(vision.get("preferred_fallback")): add("Vision Fallback")
-    for assignment in session.scalars(select(ApplicationCapabilityAssignmentDB).where(ApplicationCapabilityAssignmentDB.provider_key == provider_key, ApplicationCapabilityAssignmentDB.model == model)):
-        capability_label = labels.get(assignment.capability_key, CAPABILITY_LABELS.get(assignment.capability_key, assignment.capability_key))
-        add(f"{APPLICATIONS.get(assignment.application_key, assignment.application_key)} · {capability_label}")
+    # ApplicationCapabilityAssignmentDB is a legacy compatibility projection.
+    # It is not a runtime assignment authority and must not block current Model
+    # Resource lifecycle operations.
     from app.core.conversation.model import ConversationDB
     for conversation in session.scalars(select(ConversationDB).where(
         ConversationDB.conversation_model_provider == provider_key,

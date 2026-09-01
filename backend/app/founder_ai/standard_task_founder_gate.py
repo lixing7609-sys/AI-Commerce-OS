@@ -147,7 +147,10 @@ def _run_probe(conversation_id: str, gate_id: str, boundary: dict) -> dict:
     assert_probe_in_scope(boundary, provider_id=provider_id, attempt=1)
     started = monotonic(); status = "FAIL"; reason = None; model_id = None
     try:
-        response = LLMGateway().generate_for(provider_id, LLMRequest(system_prompt="You are a provider health probe.", user_prompt=boundary["prompt"], temperature=0, max_tokens=8))
+        response = LLMGateway().generate_for(provider_id, LLMRequest(
+            system_prompt="You are a provider health probe.", user_prompt=boundary["prompt"], temperature=0, max_tokens=8,
+            metadata={"runtime_role": "model_health", "invocation_source": "model_health_probe", "runtime_mode": "probe"},
+        ))
         status, model_id = "PASS", response.model
         record_health(provider_id, "healthy")
     except Exception as error:  # adapter errors are evidence, not an authorization escape

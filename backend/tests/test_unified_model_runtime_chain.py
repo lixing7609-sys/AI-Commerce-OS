@@ -291,7 +291,14 @@ def test_orphan_assignment_is_separate_from_current_economics(monkeypatch):
     assert result["models"][0]["model_id"] == "chat-a"
     assert result["models"][0]["request_count"] == 0
     assert result["models"][0]["telemetry_status"] == "enabled_no_records"
-    assert result["orphan_references"] == [{"provider_id": "removed", "model_id": "deepseek-chat", "roles": ["讨论模型 1"], "reason": "not_connected"}]
+    assert result["orphan_references"] == [{
+        "provider_id": "removed",
+        "model_id": "deepseek-chat",
+        "roles": ["讨论模型 1"],
+        "reason": "resource_missing",
+        "state": "RESOURCE_MISSING",
+        "reference_classification": "INVALID_REFERENCE",
+    }]
 
 
 def test_invocation_ledger_persists_failure_tokens_latency_and_pricing(monkeypatch):
@@ -557,3 +564,93 @@ def test_fallback_invocations_keep_consumer_attribution_and_distinct_resources(m
         assert fallback.resource_identity == "provider-a::fallback"
         assert fallback.runtime_mode == "fallback"
         assert (fallback.fallback_from_provider, fallback.fallback_from_model) == ("provider-a", "primary")
+
+
+def test_usage_economics_classifies_current_historical_invalid_and_executor_resources(monkeypatch):
+    _, factory = _database(monkeypatch)
+    now = datetime.now(timezone.utc)
+    with factory() as session:
+        session.add(_provider(selected=["sino-a", "system-b", "both-c"]))
+        session.add_all([
+            model_center.ModelRegistryDB(provider_id="provider-a", model_id="sino-a", display_name="Sino A", capability=["对话"]),
+            model_center.ModelRegistryDB(provider_id="provider-a", model_id="system-b", display_name="System B", capability=["coding"]),
+            model_center.ModelRegistryDB(provider_id="provider-a", model_id="both-c", display_name="Both C", capability=["对话", "coding"]),
+            model_center.AICapabilityConfigDB(capability_key="sino_conversation", configuration={"provider_key": "provider-a", "model": "sino-a", "fallbacks": []}),
+            model_center.AICapabilityConfigDB(capability_key="multi_model_discussion", configuration={"slots": [
+                {"primary": {"provider_key": "provider-a", "model": "both-c"}, "fallback": None},
+                {"primary": {"provider_key": "missing", "model": "legacy-e"}, "fallback": None},
+            ]}),
+            model_center.AICapabilityConfigDB(capability_key="code_execution", configuration={"provider_key": "provider-a", "model": "both-c", "fallbacks": [], "execution_engine_id": "codex"}),
+        ])
+        for model in ("sino-a", "system-b", "both-c"):
+            session.add(model_center.ModelInvocationDB(
+                invocation_id=f"health-{model}", timestamp=now, provider_id="provider-a", model_id=model,
+                consumer_type=CONSUMER_TYPE_HEALTH_PROBE, consumer_role=CONSUMER_ROLE_MODEL_HEALTH_PROBE,
+                assignment_role="model_health", status="completed", input_tokens=100, output_tokens=200,
+                total_tokens=300, estimated_cost=99, invocation_source="model_health_probe", runtime_mode="probe",
+            ))
+        session.add(model_center.ModelInvocationDB(
+            invocation_id="historical-d", timestamp=now, provider_id="provider-a", model_id="historical-d",
+            status="completed", input_tokens=1, output_tokens=2, total_tokens=3,
+            invocation_source="runtime", runtime_mode="default",
+        ))
+        session.add(model_center.ModelInvocationDB(
+            invocation_id="codex-current", timestamp=now, execution_resource_identity="executor::codex",
+            consumer_type=CONSUMER_TYPE_SYSTEM_EXECUTOR, consumer_role=CONSUMER_ROLE_CODE_EXECUTION,
+            status="completed", latency_ms=30, invocation_source="execution_loop.codex", runtime_mode="default",
+        ))
+        session.commit()
+
+    result = invocation_economics()
+    rows = {row["identity"]: row for row in result["models"]}
+    assert rows["provider-a::sino-a"]["reference_classification"] == "CURRENT_SINO_REFERENCE"
+    assert rows["provider-a::both-c"]["reference_classification"] == "CURRENT_BOTH_REFERENCE"
+    assert rows["provider-a::sino-a"]["health_status"] == "healthy"
+    assert rows["provider-a::sino-a"]["request_count"] == 0
+    assert rows["provider-a::sino-a"]["total_tokens"] is None
+    assert rows["provider-a::sino-a"]["cost"] is None
+    assert rows["provider-a::both-c"]["request_count"] == 0
+    assert rows["provider-a::historical-d"]["reference_classification"] == "HISTORICAL_REFERENCE"
+    assert rows["provider-a::historical-d"]["request_count"] == 1
+    assert rows["provider-a::historical-d"]["total_tokens"] == 3
+    assert rows["executor::codex"]["resource_kind"] == "EXECUTION_RESOURCE"
+    assert rows["executor::codex"]["reference_classification"] == "CURRENT_SYSTEM_REFERENCE"
+    assert rows["executor::codex"]["token_status"] == "unavailable"
+    assert rows["executor::codex"]["cost"] is None
+    assert result["orphan_references"] == [{
+        "provider_id": "missing",
+        "model_id": "legacy-e",
+        "roles": ["讨论模型 2"],
+        "reason": "resource_missing",
+        "state": "RESOURCE_MISSING",
+        "reference_classification": "INVALID_REFERENCE",
+    }]
+
+
+def test_usage_and_selector_recover_from_model_resource_health_without_resaving_assignment(monkeypatch):
+    _, factory = _database(monkeypatch)
+    now = datetime.now(timezone.utc)
+    with factory() as session:
+        session.add(_provider(selected=["chat-a"]))
+        session.add(model_center.ModelRegistryDB(provider_id="provider-a", model_id="chat-a", display_name="Chat A", capability=["对话"]))
+        session.add(model_center.AICapabilityConfigDB(capability_key="sino_conversation", configuration={"provider_key": "provider-a", "model": "chat-a", "fallbacks": []}))
+        session.add(model_center.ModelInvocationDB(
+            invocation_id="chat-bad", timestamp=now, provider_id="provider-a", model_id="chat-a",
+            status="failed", error_code="rate_limited", invocation_source="founder_conversation", runtime_mode="default",
+        ))
+        session.commit()
+
+    assert sino_assigned_models() == []
+    assert invocation_economics()["models"][0]["health_status"] == "unhealthy"
+
+    with factory() as session:
+        session.add(model_center.ModelInvocationDB(
+            invocation_id="chat-ok", timestamp=now + timedelta(seconds=1), provider_id="provider-a", model_id="chat-a",
+            status="completed", invocation_source="model_health_probe", runtime_mode="probe",
+        ))
+        session.commit()
+
+    assert [row["identity"] for row in sino_assigned_models()] == ["provider-a::chat-a"]
+    rows = {row["identity"]: row for row in invocation_economics()["models"]}
+    assert rows["provider-a::chat-a"]["health_status"] == "healthy"
+    assert rows["provider-a::chat-a"]["reference_classification"] == "CURRENT_SINO_REFERENCE"

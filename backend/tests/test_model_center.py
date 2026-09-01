@@ -35,8 +35,8 @@ def test_model_center_saves_encrypted_provider_and_restores_roles(monkeypatch, t
     assert runtime.api_key == "secret-key-1234"
     assert runtime.model == "gpt-runtime"
     result = model_center.save_roles({"reasoner": "gpt", "architect": "gpt", "reviewer": None, "executor": None})
-    assert next(item for item in result["roles"] if item["role_key"] == "sino_conversation")["provider_key"] == "gpt"
-    assert model_center.resolve_runtime_config(role="architect").provider_key == "gpt"
+    assert next(item for item in result["roles"] if item["role_key"] == "sino_conversation")["provider_key"] is None
+    assert model_center.resolve_runtime_config(role="architect") is None
 
 
 def test_model_center_preserves_existing_key_and_records_health(monkeypatch, tmp_path):
@@ -75,16 +75,19 @@ def test_model_center_exposes_unified_invocation_counts_tokens_and_latency(monke
             model_center.ModelInvocationDB(invocation_id="inv-1", provider_id="deepseek", model_id="deepseek-chat", assignment_role="sino_conversation", invocation_source="founder_conversation", runtime_mode="default", status="completed", input_tokens=10, output_tokens=20, total_tokens=30, latency_ms=100),
             model_center.ModelInvocationDB(invocation_id="inv-2", provider_id="deepseek", model_id="deepseek-chat", assignment_role="multi_model_discussion", invocation_source="council_participant", runtime_mode="default", status="completed", input_tokens=15, output_tokens=25, total_tokens=40, latency_ms=200),
             model_center.ModelInvocationDB(invocation_id="inv-3", provider_id="deepseek", model_id="deepseek-chat", assignment_role="multi_model_discussion", invocation_source="council_participant", runtime_mode="fallback", status="failed", error_code="provider_unavailable", latency_ms=900),
+            model_center.ModelInvocationDB(invocation_id="health-1", provider_id="deepseek", model_id="deepseek-chat", consumer_type="HEALTH_PROBE", consumer_role="MODEL_HEALTH_PROBE", assignment_role="model_health", invocation_source="model_health_probe", runtime_mode="probe", status="completed", input_tokens=1000, output_tokens=2000, total_tokens=3000, latency_ms=50, estimated_cost=99),
         ])
         session.commit()
     usage = model_center.get_model_center()["model_usage"]
-    assert len(usage) == 1
-    assert usage[0]["provider_id"] == "deepseek"
-    assert usage[0]["model_id"] == "deepseek-chat"
-    assert usage[0]["request_count"] == 3
-    assert usage[0]["total_tokens"] == 70
-    assert usage[0]["average_latency_ms"] == 150.0
-    assert usage[0]["telemetry_status"] == "recorded"
+    usage_by_identity = {item["identity"]: item for item in usage}
+    usage = usage_by_identity["deepseek::deepseek-chat"]
+    assert usage["provider_id"] == "deepseek"
+    assert usage["model_id"] == "deepseek-chat"
+    assert usage["request_count"] == 3
+    assert usage["total_tokens"] == 70
+    assert usage["average_latency_ms"] == 150.0
+    assert usage["telemetry_status"] == "recorded"
+    assert usage_by_identity["executor::codex"]["reference_classification"] == "CURRENT_SYSTEM_REFERENCE"
 
 
 def test_system_builder_reads_architect_assignment_without_exposing_key(monkeypatch, tmp_path):
@@ -213,23 +216,22 @@ def test_model_removal_rejects_primary_fallback_and_discussion_dependencies(monk
         model_center.select_models("deepseek", ["deepseek-chat"])
 
 
-def test_model_removal_rejects_application_runtime_dependency(monkeypatch, tmp_path):
+def test_model_removal_ignores_legacy_application_assignment_dependency(monkeypatch, tmp_path):
     _database(monkeypatch, tmp_path)
     model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)
     model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-reasoner", api_key=None, enabled=True)
     model_center.save_application_assignments("operator_ai", {"deep_thinking": {"provider_key": "deepseek", "model": "deepseek-reasoner"}})
-    with pytest.raises(ValueError, match="model_in_use:Operator AI · 深度推理"):
-        model_center.select_models("deepseek", ["deepseek-chat"])
+    result = model_center.select_models("deepseek", ["deepseek-chat"])
+    assert result["selected_models"] == ["deepseek-chat"]
 
 
-def test_application_assignment_drives_founder_runtime(monkeypatch, tmp_path):
+def test_application_assignment_is_legacy_and_does_not_drive_founder_runtime(monkeypatch, tmp_path):
     _database(monkeypatch, tmp_path)
     model_center.save_provider("deepseek", base_url="https://api.deepseek.com", model="deepseek-chat", api_key="secret", enabled=True)
     result = model_center.save_application_assignments("founder_ai", {"sino_conversation": {"provider_key": "deepseek", "model": "deepseek-chat"}})
     founder = next(item for item in result["applications"] if item["application_key"] == "founder_ai")
     assert next(item for item in founder["assignments"] if item["capability_key"] == "sino_conversation")["model"] == "deepseek-chat"
-    runtime = model_center.resolve_runtime_config(role="reasoner")
-    assert runtime.provider_key == "deepseek"
+    assert model_center.resolve_runtime_config(role="reasoner") is None
 
 
 def test_capability_assignment_persists_exact_healthy_model(monkeypatch, tmp_path):

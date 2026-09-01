@@ -55,6 +55,13 @@ CONSUMER_ROLES = {
     CONSUMER_ROLE_TASK_NAVIGATION,
     CONSUMER_ROLE_LEGACY_UNKNOWN,
 }
+REFERENCE_CURRENT_SINO = "CURRENT_SINO_REFERENCE"
+REFERENCE_CURRENT_SYSTEM = "CURRENT_SYSTEM_REFERENCE"
+REFERENCE_CURRENT_BOTH = "CURRENT_BOTH_REFERENCE"
+REFERENCE_HISTORICAL = "HISTORICAL_REFERENCE"
+REFERENCE_INVALID = "INVALID_REFERENCE"
+RESOURCE_KIND_MODEL = "MODEL_RESOURCE"
+RESOURCE_KIND_EXECUTOR = "EXECUTION_RESOURCE"
 
 
 def identity(provider_id: str, model_id: str) -> str:
@@ -88,17 +95,27 @@ def _infer_consumer_attribution(metadata: dict) -> tuple[str | None, str | None]
         return explicit_type, explicit_role
 
     source = metadata.get("invocation_source")
+    purpose = metadata.get("purpose")
+    brain_stage = metadata.get("brain_stage")
     assignment_role = metadata.get("runtime_role") or metadata.get("assignment_role")
     if source == "model_health_probe" or assignment_role == "model_health":
         return CONSUMER_TYPE_HEALTH_PROBE, CONSUMER_ROLE_MODEL_HEALTH_PROBE
     if source == "founder_intent" or assignment_role == "founder_intent_engine":
         return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_CANDIDATE_DERIVATION
+    if purpose == "task_candidate_derivation":
+        return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_CANDIDATE_DERIVATION
+    if purpose == "meaningful_execution_update":
+        return CONSUMER_TYPE_SYSTEM_EXECUTOR, CONSUMER_ROLE_EXECUTION_SUMMARY
     if source in {"council_participant", "council_synthesis"} or assignment_role == "multi_model_discussion":
         return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_DISCUSSION
     if source == "vision" or assignment_role == "vision":
         return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_VISION
     if source == "task_navigation":
         return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_TASK_NAVIGATION
+    if source in {"execution_model", "verification"}:
+        return CONSUMER_TYPE_SYSTEM_EXECUTOR, CONSUMER_ROLE_VERIFICATION if source == "verification" else CONSUMER_ROLE_EXECUTION_MODEL
+    if brain_stage:
+        return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_REASONING
     if source == "founder_conversation" or assignment_role == "sino_conversation":
         return CONSUMER_TYPE_SINO_AI, CONSUMER_ROLE_SINO_CONVERSATION
     return None, None
@@ -267,6 +284,43 @@ def _ref_identity(ref: dict | None) -> str | None:
     return identity(provider, model) if provider and model else None
 
 
+def _legacy_model_aliases(session) -> dict[str, str]:
+    """Single deterministic alias authority.
+
+    This resolver intentionally starts from explicit persisted configuration only.
+    It never guesses from display names or near matches, so unresolved historical
+    strings such as deepseek-chat remain unresolved unless a future explicit alias
+    map is added by an authorized migration/config change.
+    """
+    record = session.get(AICapabilityConfigDB, "legacy_model_aliases")
+    aliases = dict(record.configuration or {}) if record else {}
+    return {str(key): str(value) for key, value in aliases.items() if key and value}
+
+
+def resolve_model_reference_identity(session, ref: dict | None) -> dict:
+    provider = (ref or {}).get("provider_key", (ref or {}).get("provider_id"))
+    model = (ref or {}).get("model", (ref or {}).get("model_id"))
+    raw_identity = identity(provider, model) if provider and model else None
+    if not raw_identity:
+        return {"stored_identity": raw_identity, "resolved_identity": None, "state": "IDENTITY_UNRESOLVED", "reason": "missing_provider_or_model"}
+    connected = {item["identity"] for item in connected_model_registry(session=session)}
+    if raw_identity in connected:
+        return {"stored_identity": raw_identity, "resolved_identity": raw_identity, "state": "RESOLVED", "reason": None}
+    alias = _legacy_model_aliases(session).get(raw_identity) or _legacy_model_aliases(session).get(model or "")
+    if alias and alias in connected:
+        return {"stored_identity": raw_identity, "resolved_identity": alias, "state": "RESOLVED_BY_ALIAS", "reason": None}
+    registry_exists = bool(session.scalar(select(ModelRegistryDB.id).where(
+        ModelRegistryDB.provider_id == provider,
+        ModelRegistryDB.model_id == model,
+    )))
+    return {
+        "stored_identity": raw_identity,
+        "resolved_identity": None,
+        "state": "RESOURCE_MISSING" if not registry_exists else "IDENTITY_UNRESOLVED",
+        "reason": "resource_missing" if not registry_exists else "not_connected",
+    }
+
+
 def _conversation_authorized_references(session) -> dict[str, list[str]]:
     """Conversation selector authorization comes from Conversation-capable Sino bindings."""
     configs = {item.capability_key: dict(item.configuration or {}) for item in session.scalars(select(AICapabilityConfigDB))}
@@ -298,7 +352,9 @@ def _conversation_authorized_references(session) -> dict[str, list[str]]:
     for ref, label in references:
         key = _ref_identity(ref)
         if key:
-            roles.setdefault(key, []).append(label)
+            resolved = resolve_model_reference_identity(session, ref)
+            if resolved["resolved_identity"]:
+                roles.setdefault(resolved["resolved_identity"], []).append(label)
     return roles
 
 
@@ -500,8 +556,16 @@ def invocation_economics(session=None) -> dict:
     try:
         connected = connected_model_registry(session=session)
         connected_by_key = {item["identity"]: item for item in connected}
-        assignments, orphans = _assignment_references(session)
-        valid_keys = {key for key in assignments if key in connected_by_key}
+        references = _usage_reference_projection(session)
+        current_model_keys = set(references["sino"]) | set(references["system"])
+        valid_current_model_keys = {key for key in current_model_keys if key in connected_by_key}
+        business_invocation_filter = (
+            func.coalesce(ModelInvocationDB.consumer_type, "") != CONSUMER_TYPE_HEALTH_PROBE,
+            func.coalesce(ModelInvocationDB.consumer_role, "") != CONSUMER_ROLE_MODEL_HEALTH_PROBE,
+            func.coalesce(ModelInvocationDB.invocation_source, "") != "model_health_probe",
+            func.coalesce(ModelInvocationDB.runtime_mode, "") != "probe",
+            func.coalesce(ModelInvocationDB.assignment_role, "") != "model_health",
+        )
         invocation_rows = session.execute(select(
             ModelInvocationDB.provider_id, ModelInvocationDB.model_id,
             func.count(ModelInvocationDB.invocation_id),
@@ -512,17 +576,44 @@ def invocation_economics(session=None) -> dict:
         ).where(
             ModelInvocationDB.provider_id.is_not(None),
             ModelInvocationDB.model_id.is_not(None),
+            *business_invocation_filter,
         ).group_by(ModelInvocationDB.provider_id, ModelInvocationDB.model_id)).all()
         usage = {identity(row[0], row[1]): row for row in invocation_rows}
+        historical_model_keys = set(usage) - valid_current_model_keys
         rows = []
         now = datetime.now(timezone.utc)
-        for key in sorted(valid_keys):
-            model = connected_by_key[key]; row = usage.get(key)
-            rule = _pricing_rule(session, model["provider_id"], model["model_id"], now)
+        for key in sorted(valid_current_model_keys | historical_model_keys):
+            row = usage.get(key)
+            connected_model = connected_by_key.get(key)
+            provider_id, model_id = key.split("::", 1)
+            registry_model = session.scalar(select(ModelRegistryDB).where(
+                ModelRegistryDB.provider_id == provider_id,
+                ModelRegistryDB.model_id == model_id,
+            ))
+            provider = session.get(ModelProviderConfigDB, provider_id)
+            model = connected_model or {
+                "provider_id": provider_id, "model_id": model_id, "identity": key,
+                "display_name": registry_model.display_name if registry_model else model_id,
+                "provider_name": provider.display_name if provider else provider_id,
+                "connected": False, "enabled": bool(registry_model.enabled) if registry_model else False,
+                "health_status": "unknown", "availability": "unknown",
+                "health_classification": "UNKNOWN", "health_source": "historical",
+            }
+            rule = _pricing_rule(session, provider_id, model_id, now)
             invocations = int(row[2]) if row else 0
             token_count = int(row[9]) if row else 0
             priced_count = int(row[10]) if row else 0
-            rows.append({**model, "roles": assignments[key], "request_count": invocations,
+            if key in references["sino"] and key in references["system"]:
+                classification = REFERENCE_CURRENT_BOTH
+            elif key in references["sino"]:
+                classification = REFERENCE_CURRENT_SINO
+            elif key in references["system"]:
+                classification = REFERENCE_CURRENT_SYSTEM
+            else:
+                classification = REFERENCE_HISTORICAL
+            roles = [*references["sino"].get(key, []), *references["system"].get(key, [])]
+            rows.append({**model, "resource_kind": RESOURCE_KIND_MODEL, "reference_classification": classification,
+                "roles": list(dict.fromkeys(roles)), "request_count": invocations,
                 "completed_request_count": int(row[3]) if row else 0,
                 "input_tokens": int(row[4]) if row and row[4] is not None else None,
                 "output_tokens": int(row[5]) if row and row[5] is not None else None,
@@ -535,14 +626,59 @@ def invocation_economics(session=None) -> dict:
                 "pricing_rule_id": rule.id if rule else None,
                 "pricing_source": rule.pricing_source if rule else None,
                 "currency": rule.currency if rule else None})
-        orphan_items = [{"provider_id": key.split("::", 1)[0], "model_id": key.split("::", 1)[1], "roles": roles, "reason": "not_connected"} for key, roles in orphans.items()]
+        executor_usage_rows = session.execute(select(
+            ModelInvocationDB.execution_resource_identity,
+            func.count(ModelInvocationDB.invocation_id),
+            func.count(case((ModelInvocationDB.status == "completed", 1))),
+            func.sum(ModelInvocationDB.input_tokens), func.sum(ModelInvocationDB.output_tokens), func.sum(ModelInvocationDB.total_tokens),
+            func.avg(case((ModelInvocationDB.status == "completed", ModelInvocationDB.latency_ms))),
+            func.sum(ModelInvocationDB.estimated_cost), func.count(ModelInvocationDB.total_tokens), func.count(ModelInvocationDB.pricing_rule_id),
+        ).where(
+            ModelInvocationDB.execution_resource_identity.is_not(None),
+            *business_invocation_filter,
+        ).group_by(ModelInvocationDB.execution_resource_identity)).all()
+        executor_usage = {row[0]: row for row in executor_usage_rows}
+        current_executor_keys = set(references["executors"])
+        for key in sorted(current_executor_keys | set(executor_usage)):
+            row = executor_usage.get(key)
+            rows.append({
+                "identity": key, "resource_kind": RESOURCE_KIND_EXECUTOR,
+                "execution_resource_identity": key, "provider_id": None, "model_id": None,
+                "display_name": references["executors"].get(key, [key])[0].replace("System · ", ""),
+                "provider_name": "System / Executor",
+                "connected": key in current_executor_keys, "enabled": key in current_executor_keys,
+                "health_status": "healthy" if key in current_executor_keys else "unknown",
+                "availability": "available" if key in current_executor_keys else "unknown",
+                "health_classification": "HEALTHY" if key in current_executor_keys else "UNKNOWN",
+                "health_source": "execution_resource_registry" if key in current_executor_keys else "historical",
+                "reference_classification": REFERENCE_CURRENT_SYSTEM if key in current_executor_keys else REFERENCE_HISTORICAL,
+                "roles": references["executors"].get(key, []),
+                "request_count": int(row[1]) if row else 0,
+                "completed_request_count": int(row[2]) if row else 0,
+                "input_tokens": int(row[3]) if row and row[3] is not None else None,
+                "output_tokens": int(row[4]) if row and row[4] is not None else None,
+                "total_tokens": int(row[5]) if row and row[5] is not None else None,
+                "average_latency_ms": round(float(row[6]), 1) if row and row[6] is not None else None,
+                "cost": float(row[7]) if row and row[7] is not None else None,
+                "telemetry_status": "recorded" if row else "enabled_no_records",
+                "token_status": "recorded" if row and int(row[8]) else "unavailable" if row else "enabled_no_records",
+                "pricing_status": "recorded" if row and int(row[9]) else "not_configured",
+                "pricing_rule_id": None, "pricing_source": None, "currency": None,
+            })
+        orphan_items = [
+            {"provider_id": key.split("::", 1)[0], "model_id": key.split("::", 1)[1], "roles": value["roles"],
+             "reason": value["reason"], "state": value["state"], "reference_classification": REFERENCE_INVALID}
+            for key, value in references["invalid"].items()
+        ]
         total = len(rows)
         coverage = {
             "invocation": {"covered": sum(item["telemetry_status"] == "recorded" for item in rows), "total": total},
             "token": {"covered": sum(item["token_status"] == "recorded" for item in rows), "total": total},
             "pricing": {"covered": sum(item["pricing_status"] in {"recorded", "configured", "token_unavailable"} for item in rows), "total": total},
         }
-        return {"telemetry_status": "enabled", "connected_model_count": len(connected), "valid_assigned_model_count": len(rows),
+        return {"telemetry_status": "enabled", "connected_model_count": len(connected),
+                "valid_assigned_model_count": len(valid_current_model_keys),
+                "current_resource_count": len([item for item in rows if item["reference_classification"] in {REFERENCE_CURRENT_SINO, REFERENCE_CURRENT_SYSTEM, REFERENCE_CURRENT_BOTH}]),
                 "orphan_reference_count": len(orphan_items), "telemetry_coverage": coverage, "models": rows, "orphan_references": orphan_items}
     finally:
         if owns:
@@ -550,6 +686,67 @@ def invocation_economics(session=None) -> dict:
 
 
 def _assignment_references(session) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    projection = _usage_reference_projection(session)
+    valid = {**projection["sino"], **projection["system"]}
+    invalid = {key: value["roles"] for key, value in projection["invalid"].items()}
+    return valid, invalid
+
+
+def _usage_reference_projection(session) -> dict[str, dict]:
+    sino: dict[str, list[str]] = {}
+    system: dict[str, list[str]] = {}
+    executors: dict[str, list[str]] = {}
+    invalid: dict[str, dict] = {}
+    labels = {
+        "sino_conversation": "Sino 主对话",
+        "deep_thinking": "深度推理",
+        "goal_reasoning": "目标推理",
+        "project_analysis": "项目分析",
+        "solution_review": "方案评审",
+        "system_builder": "系统构建",
+        "code_execution": "System · Execution Model",
+    }
+
+    def add_model(ref, label: str, target: dict[str, list[str]]) -> None:
+        resolved = resolve_model_reference_identity(session, ref)
+        stored = resolved["stored_identity"]
+        if resolved["resolved_identity"]:
+            target.setdefault(resolved["resolved_identity"], []).append(label)
+        elif stored:
+            entry = invalid.setdefault(stored, {"roles": [], "reason": resolved["reason"], "state": resolved["state"]})
+            entry["roles"].append(label)
+
+    def add_executor(engine_id: str | None, label: str) -> None:
+        key = canonical_execution_resource_identity(engine_id)
+        if key:
+            executors.setdefault(key, []).append(label)
+
+    configs = {item.capability_key: dict(item.configuration or {}) for item in session.scalars(select(AICapabilityConfigDB))}
+    for capability, label in labels.items():
+        data = configs.get(capability) or {}
+        if capability == "code_execution":
+            add_model(data, label, system)
+            add_executor(data.get("execution_engine_id", "codex"), "System · Codex")
+        elif data:
+            add_model(data, label, sino)
+            for fallback in data.get("fallbacks") or []:
+                add_model(fallback, f"{label} Fallback", sino)
+    from app.core.model_center.service import _discussion_slots
+    for index, slot in enumerate(_discussion_slots(configs.get("multi_model_discussion")), 1):
+        add_model(slot.get("primary"), f"讨论模型 {index}", sino)
+        add_model(slot.get("fallback"), f"讨论模型 {index} Fallback", sino)
+    vision = (configs.get("model_routing_policy_v1") or {}).get("VISION_UNDERSTANDING") or {}
+    add_model(vision.get("preferred_primary") or vision.get("active_primary"), "Vision", sino)
+    add_model(vision.get("preferred_fallback"), "Vision Fallback", sino)
+    return {
+        "sino": {key: list(dict.fromkeys(value)) for key, value in sino.items()},
+        "system": {key: list(dict.fromkeys(value)) for key, value in system.items()},
+        "executors": {key: list(dict.fromkeys(value)) for key, value in executors.items()},
+        "invalid": {key: {**value, "roles": list(dict.fromkeys(value["roles"]))} for key, value in invalid.items()},
+    }
+
+
+def _legacy_assignment_references(session) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     refs: dict[str, list[str]] = {}
     labels = {"sino_conversation": "Sino 主对话", "deep_thinking": "深度推理", "code_execution": "Coding"}
     legacy_roles = {"reasoner": "sino_conversation", "architect": "system_builder", "reviewer": "project_analysis", "executor": "code_execution"}

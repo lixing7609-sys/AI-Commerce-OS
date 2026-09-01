@@ -276,7 +276,7 @@ def derive_task_candidate_from_conversation(conversation_id: str, *, generator: 
                 request = LLMRequest(
                     system_prompt=prompt, user_prompt=json.dumps(context, ensure_ascii=False), temperature=.2,
                     max_tokens=1500, response_format="json",
-                    metadata={"runtime_role": "sino_conversation", "purpose": "task_candidate_derivation"})
+                    metadata={"runtime_role": "sino_conversation", "purpose": "task_candidate_derivation", "conversation_id": conversation_id})
                 response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
                 payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
             raw_candidate = _safe_mapping(_safe_mapping(payload).get("task_candidate"))
@@ -623,7 +623,7 @@ def summarize_execution_events(conversation_id: str, events: list[dict], *, gene
                 request = LLMRequest(
                     system_prompt=prompt, user_prompt=json.dumps({"conversation_context": context, "events": events}, ensure_ascii=False),
                     temperature=.35, max_tokens=320, response_format="json",
-                    metadata={"runtime_role": "sino_conversation", "purpose": "meaningful_execution_update"})
+                    metadata={"runtime_role": "sino_conversation", "purpose": "meaningful_execution_update", "conversation_id": conversation_id})
                 response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
                 payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
             summary = str(payload.get("summary") or "").strip()
