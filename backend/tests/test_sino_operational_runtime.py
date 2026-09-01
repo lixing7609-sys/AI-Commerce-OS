@@ -17,6 +17,8 @@ from app.founder_ai import execution_registry
 
 LOW_REQUEST = "检查当前 AI-Commerce-OS 工程状态，告诉我当前 branch、HEAD 和是否有未提交文件。"
 HIGH_REQUEST = "把当前分支直接 push 到远程"
+FOCUSED_TEST_REQUEST = "运行 Sino Operational Runtime 的测试，告诉我结果。"
+FRONTEND_BUILD_REQUEST = "检查一下前端现在能不能正常构建。"
 
 
 def _runtime(monkeypatch, tmp_path, *, conversation_id="conv-operational"):
@@ -67,6 +69,31 @@ def test_low_risk_repo_inspection_request_is_classified_low():
     assert decision["risk_level"] == "LOW"
     assert decision["auto_continue"] is True
     assert decision["work_type"] == "CONTROLLED_LOCAL_DEVELOPMENT_TASK"
+    assert decision["operation_type"] == "REPO_INSPECTION"
+
+
+def test_focused_test_request_is_low_auto_continue_and_allowlisted():
+    decision = runtime.classify_operational_risk(FOCUSED_TEST_REQUEST)
+    spec = runtime.OPERATION_REGISTRY[decision["operation_type"]]
+    assert decision["operation_type"] == "FOCUSED_TEST"
+    assert decision["risk_level"] == "LOW"
+    assert decision["auto_continue"] is True
+    assert spec.argv == ("backend/.venv/bin/pytest", "backend/tests/test_sino_operational_runtime.py", "-q")
+
+
+def test_frontend_build_request_is_low_auto_continue_and_allowlisted():
+    decision = runtime.classify_operational_risk(FRONTEND_BUILD_REQUEST)
+    spec = runtime.OPERATION_REGISTRY[decision["operation_type"]]
+    assert decision["operation_type"] == "FRONTEND_BUILD"
+    assert decision["risk_level"] == "LOW"
+    assert decision["auto_continue"] is True
+    assert spec.argv == ("npm", "--prefix", "frontend", "run", "build")
+
+
+def test_arbitrary_shell_request_is_not_executed():
+    decision = runtime.classify_operational_risk("运行 ls -la && cat ~/.ssh/id_rsa")
+    assert decision["work_type"] is None
+    assert decision["auto_continue"] is False
 
 
 def test_low_request_auto_continues_to_task_execution_and_same_conversation(monkeypatch, tmp_path):
@@ -98,6 +125,98 @@ def test_low_request_auto_continues_to_task_execution_and_same_conversation(monk
     assert result["execution_id"] in execution_registry._sessions
     assert any("执行完成" in item.content for item in messages)
     assert state.discovery["operational_runtime"]["status"] == "completed"
+
+
+def test_focused_test_uses_shell_false_and_persists_result(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-focused-test")
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        captured["shell"] = kwargs.get("shell")
+        return SimpleNamespace(returncode=0, stdout="7 passed in 0.12s", stderr="")
+
+    monkeypatch.setattr(runtime.subprocess, "run", fake_run)
+    result = runtime.execute_low_risk_operation(
+        conversation_id="conv-focused-test",
+        founder_request=FOCUSED_TEST_REQUEST,
+        source_message_id="message-focused",
+    )
+    assert captured["argv"] == ["backend/.venv/bin/pytest", "backend/tests/test_sino_operational_runtime.py", "-q"]
+    assert captured["shell"] is False
+    assert result["status"] == "completed"
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-focused-test").all()
+    assert task.result["operation_type"] == "FOCUSED_TEST"
+    assert task.result["check_result"] == "PASS"
+    assert task.result["result"]["passed"] == 7
+    assert any("测试完成：7 passed" in item.content for item in messages)
+
+
+def test_frontend_build_uses_shell_false_and_persists_result(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-build")
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        captured["shell"] = kwargs.get("shell")
+        return SimpleNamespace(returncode=0, stdout="✓ built in 622ms", stderr="")
+
+    monkeypatch.setattr(runtime.subprocess, "run", fake_run)
+    result = runtime.execute_low_risk_operation(
+        conversation_id="conv-build",
+        founder_request=FRONTEND_BUILD_REQUEST,
+        source_message_id="message-build",
+    )
+    assert captured["argv"] == ["npm", "--prefix", "frontend", "run", "build"]
+    assert captured["shell"] is False
+    assert result["status"] == "completed"
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+    assert task.result["operation_type"] == "FRONTEND_BUILD"
+    assert task.result["check_result"] == "PASS"
+
+
+def test_timeout_produces_failed_execution_result(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-timeout")
+
+    def timeout(*_args, **_kwargs):
+        raise runtime.subprocess.TimeoutExpired(cmd=["backend/.venv/bin/pytest"], timeout=1, output="partial", stderr="timeout")
+
+    monkeypatch.setattr(runtime.subprocess, "run", timeout)
+    result = runtime.execute_low_risk_operation(
+        conversation_id="conv-timeout",
+        founder_request=FOCUSED_TEST_REQUEST,
+        source_message_id="message-timeout",
+    )
+    assert result["status"] == "failed"
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-timeout").all()
+    assert task.execution_status == "failed"
+    assert task.result["check_result"] == "EXECUTOR_FAILURE"
+    assert any("timed out" in item.content for item in messages)
+
+
+def test_non_zero_pytest_result_is_check_failure_not_executor_failure(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-check-fail")
+    monkeypatch.setattr(
+        runtime.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="5 passed, 2 failed in 0.34s", stderr=""),
+    )
+    result = runtime.execute_low_risk_operation(
+        conversation_id="conv-check-fail",
+        founder_request=FOCUSED_TEST_REQUEST,
+        source_message_id="message-check-fail",
+    )
+    assert result["status"] == "completed"
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+    assert task.execution_status == "completed"
+    assert task.result["check_result"] == "FAIL"
+    assert task.result["result"]["failed"] == 2
 
 
 def test_same_source_message_retry_reuses_task_and_execution(monkeypatch, tmp_path):

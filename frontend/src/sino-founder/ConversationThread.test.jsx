@@ -91,6 +91,44 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText("YES")).toBeTruthy();
   });
 
+  it("shows focused test execution result in the same conversation", () => {
+    const value = {
+      ...snapshot("conv-focused", [{ message_id: "m1", role: "founder", content: "运行测试" }]),
+      sino_brain: {
+        discovery: {
+          operational_runtime: {
+            status: "completed",
+            task_id: "task-focused",
+            execution_id: "execution-focused",
+            result: {
+              operation_type: "FOCUSED_TEST",
+              check_result: "PASS",
+              summary: "测试完成：7 passed，0 failed，0 errors。",
+              result: { operation_type: "FOCUSED_TEST", passed: 7, failed: 0, errors: 0, exit_code: 0 },
+            },
+          },
+        },
+      },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("FOCUSED_TEST")).toBeTruthy();
+    expect(screen.getByText("PASS")).toBeTruthy();
+    expect(screen.getByText("7")).toBeTruthy();
+    expect(screen.getByText("测试完成：7 passed，0 failed，0 errors。")).toBeTruthy();
+  });
+
+  it("shows frontend build PASS and FAIL results", () => {
+    const pass = {
+      ...snapshot("conv-build", [{ message_id: "m1", role: "founder", content: "检查前端构建" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "completed", task_id: "task-build", execution_id: "execution-build", result: { operation_type: "FRONTEND_BUILD", check_result: "PASS", summary: "Frontend build PASS。", result: { operation_type: "FRONTEND_BUILD", exit_code: 0 } } } } },
+    };
+    const { rerender } = render(<ConversationThread snapshot={pass} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("FRONTEND_BUILD")).toBeTruthy();
+    expect(screen.getByText("PASS")).toBeTruthy();
+    rerender(<ConversationThread snapshot={{ ...pass, sino_brain: { discovery: { operational_runtime: { ...pass.sino_brain.discovery.operational_runtime, result: { operation_type: "FRONTEND_BUILD", check_result: "FAIL", summary: "Frontend build FAIL。", result: { operation_type: "FRONTEND_BUILD", exit_code: 1 } } } } } }} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("FAIL")).toBeTruthy();
+  });
+
   it("keeps operational runtime isolated by conversation snapshot", () => {
     const convA = {
       ...snapshot("conv-a", [{ message_id: "m1", role: "founder", content: "检查状态" }]),
