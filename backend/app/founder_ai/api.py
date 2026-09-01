@@ -53,6 +53,7 @@ from app.core.founder_object.service import approve_object, archive_object, atta
 from app.core.founder_intent.service import attach_candidate_context, get_conversation_candidate_context, list_candidates, review_candidate
 from app.founder_ai.action_queue import list_founder_action_queue, sync_founder_action_queue
 from app.founder_ai.brain_runtime import brain_runtime
+from app.founder_ai.operational_runtime import handle_operational_conversation_request
 from app.core.asset_lifecycle.service import (
     LifecycleConflict,
     approve_ready,
@@ -649,6 +650,14 @@ def discuss_with_sino(conversation_id: str, request: DiscussionMessageIn):
         interaction_context["source_message_id"] = founder_message_id
         if request.client_message_id:
             interaction_context["client_message_id"] = request.client_message_id
+        operational = handle_operational_conversation_request(
+            conversation_id=conversation_id,
+            founder_request=request.content,
+            source_message_id=founder_message_id,
+        )
+        if operational.get("handled"):
+            brain_runtime.sync_message_refs(conversation_id)
+            return _candidate_snapshot(secretary.snapshot(conversation_id), conversation_id)
         from app.founder_ai.conversation_task_interaction import (
             bind_task_candidate_execution, execution_state_reply, has_explicit_execution_intent,
             persist_task_candidate, persist_task_understanding, record_runtime_intervention,

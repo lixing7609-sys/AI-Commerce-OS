@@ -84,8 +84,10 @@ export function FounderWorkQueue({ tasks = [], focusedTaskId, conversationId, bu
   </section>;
 }
 
+const UNIFIED_QUEUE_TYPES = ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START", "HIGH_RISK_OPERATIONAL_TASK"];
+
 function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDiscussion }) {
-  const mvpActions = actions.filter((item) => ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START"].includes(item.action_type || item.type) && item.status === "pending");
+  const mvpActions = actions.filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
   if (!mvpActions.length) return null;
   const complete = async (handler) => {
     await handler();
@@ -102,6 +104,10 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
       if (type === "EXECUTION_APPROVAL") return <article className="sino-founder-action-item" aria-label="Execution Approval" key={item.action_id}>
         <span>执行审批 · {risk}</span><h3>{item.title || "批准执行"}</h3><p>{item.summary}</p>
         <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => approveTaskForExecution(item.task_id || item.source_id))}>批准执行</button><button type="button" disabled={busy} onClick={() => complete(() => rejectTaskForExecution(item.task_id || item.source_id))}>拒绝</button><button type="button" disabled={busy} onClick={onContinueDiscussion}>继续讨论</button></footer>
+      </article>;
+      if (type === "HIGH_RISK_OPERATIONAL_TASK") return <article className="sino-founder-action-item" aria-label="High Risk Operational Action" key={item.action_id}>
+        <span>高风险操作 · {risk}</span><h3>{item.title || "需要 Founder 确认"}</h3><p>{item.summary}</p>
+        <footer><button type="button" disabled={busy} onClick={onContinueDiscussion}>继续讨论</button></footer>
       </article>;
       return <article className="sino-founder-action-item" aria-label="Execution Start" key={item.action_id}>
         <span>开始执行 · {risk}</span><h3>{item.title || "开始执行"}</h3><p>{item.summary}</p>
@@ -165,7 +171,7 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
   const executionPackage = brain.discovery?.execution_package;
   const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
-  const mvpQueueActions = (brain.discovery?.founder_action_queue || []).filter((item) => ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START"].includes(item.action_type || item.type) && item.status === "pending");
+  const mvpQueueActions = (brain.discovery?.founder_action_queue || []).filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
   const conversationTasks = brain.discovery?.conversation_tasks || [];
   if (conversationTasks.length > 0 && !mvpQueueActions.length) return <FounderWorkQueue tasks={conversationTasks} focusedTaskId={brain.discovery?.focused_task_id}
     conversationId={conversationId} busy={busy} onFocused={onTaskCandidateResolved} onCandidateResolved={onTaskCandidateResolved}

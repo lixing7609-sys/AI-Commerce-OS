@@ -50,6 +50,59 @@ describe("ConversationThread layout", () => {
     expect(screen.queryByRole("article", { name: "Architecture Proposal" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Standard Task 流程" })).toBeNull();
   });
+
+  it("shows low-risk operational runtime states in the same conversation", () => {
+    const value = {
+      ...snapshot("conv-operational", [{ message_id: "m1", role: "founder", content: "检查当前工程状态" }]),
+      sino_brain: {
+        discovery: {
+          operational_runtime: {
+            status: "queued",
+            message: "这是一个低风险本地开发检查，我会直接执行。正在准备执行…",
+            task_id: "task-operational",
+            execution_id: "execution-operational",
+            risk_decision: { risk_level: "LOW" },
+          },
+        },
+      },
+    };
+    const { rerender } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByRole("complementary", { name: "Operational Runtime Status" })).toBeTruthy();
+    expect(screen.getByText("正在准备执行…")).toBeTruthy();
+
+    rerender(<ConversationThread snapshot={{ ...value, sino_brain: { discovery: { operational_runtime: { ...value.sino_brain.discovery.operational_runtime, status: "running", message: "正在执行…" } } } }} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getAllByText("正在执行…").length).toBeGreaterThan(0);
+
+    rerender(<ConversationThread snapshot={{ ...value, sino_brain: { discovery: { operational_runtime: { ...value.sino_brain.discovery.operational_runtime, status: "completed", result: { summary: "当前 branch：feature/sino-operational-runtime-v1", result: { branch: "feature/sino-operational-runtime-v1", head: "head-test", working_tree_clean: true } } } } } }} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("执行完成")).toBeTruthy();
+    expect(screen.getByText("feature/sino-operational-runtime-v1")).toBeTruthy();
+    expect(screen.getByText("head-test")).toBeTruthy();
+    expect(screen.getByText("clean")).toBeTruthy();
+  });
+
+  it("shows operational failure and retryability in the same conversation", () => {
+    const value = {
+      ...snapshot("conv-operational-failed", [{ message_id: "m1", role: "founder", content: "检查当前工程状态" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "failed", error: "git unavailable", retryable: true, task_id: "task-failed", execution_id: "execution-failed" } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("执行失败")).toBeTruthy();
+    expect(screen.getByText("git unavailable")).toBeTruthy();
+    expect(screen.getByText("YES")).toBeTruthy();
+  });
+
+  it("keeps operational runtime isolated by conversation snapshot", () => {
+    const convA = {
+      ...snapshot("conv-a", [{ message_id: "m1", role: "founder", content: "检查状态" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "completed", task_id: "task-a", execution_id: "execution-a", result: { result: { branch: "branch-a", head: "head-a", working_tree_clean: true } } } } },
+    };
+    const convB = snapshot("conv-b", [{ message_id: "m2", role: "founder", content: "普通讨论" }]);
+    const { rerender } = render(<ConversationThread snapshot={convA} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("branch-a")).toBeTruthy();
+    rerender(<ConversationThread snapshot={convB} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.queryByText("branch-a")).toBeNull();
+  });
+
   it("wires approve, reject and revision feedback to real proposal actions", async () => {
     const onDecision = vi.fn().mockResolvedValue(undefined);
     const proposal = { proposal_id: "proposal-actions", proposal_version: 3, status: "ready_for_founder_decision", current_problem: "Boundary", proposed_boundary: "Ready only", founder_responsibilities: [], studio_responsibilities: [], capability_lifecycle: [], binding_contract: {}, migration_impact: [], risks: [] };

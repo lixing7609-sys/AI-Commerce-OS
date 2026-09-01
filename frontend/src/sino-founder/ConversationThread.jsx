@@ -82,6 +82,32 @@ const proposalText = (proposal) => {
   ].filter(Boolean).join("\n");
 };
 
+function OperationalRuntimeStatus({ runtime }) {
+  if (!runtime?.status) return null;
+  const labels = {
+    queued: "正在准备执行…",
+    running: "正在执行…",
+    completed: "执行完成",
+    failed: "执行失败",
+    blocked: "等待 Founder 处理",
+  };
+  const result = runtime.result?.result || runtime.result;
+  return <aside className="sino-operational-runtime-status" aria-label="Operational Runtime Status">
+    <span>Sino Operational Runtime</span>
+    <h3>{labels[runtime.status] || runtime.status}</h3>
+    <p>{runtime.message || runtime.result?.summary || runtime.error || runtime.reason || "本地任务状态已记录。"}</p>
+    {runtime.task_id || runtime.execution_id ? <dl>
+      {runtime.task_id ? <div><dt>TaskAsset</dt><dd>{runtime.task_id}</dd></div> : null}
+      {runtime.execution_id ? <div><dt>Execution</dt><dd>{runtime.execution_id}</dd></div> : null}
+      {runtime.risk_decision?.risk_level ? <div><dt>Risk</dt><dd>{runtime.risk_decision.risk_level}</dd></div> : null}
+      {result?.branch ? <div><dt>Branch</dt><dd>{result.branch}</dd></div> : null}
+      {result?.head ? <div><dt>HEAD</dt><dd>{result.head}</dd></div> : null}
+      {typeof result?.working_tree_clean === "boolean" ? <div><dt>Working tree</dt><dd>{result.working_tree_clean ? "clean" : "dirty"}</dd></div> : null}
+      {runtime.retryable != null ? <div><dt>Retryable</dt><dd>{runtime.retryable ? "YES" : "NO"}</dd></div> : null}
+    </dl> : null}
+  </aside>;
+}
+
 function CouncilConversation({ run }) {
   const modelRuns = Array.isArray(run?.model_runs) ? run.model_runs.filter((item) => item && typeof item === "object") : [];
   const identityKey = (item) => `${item?.provider || ""}::${item?.model || ""}`;
@@ -322,6 +348,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const isOutcomeReview = isProjectPlanning && maturity.maturity_status === "ready_for_review";
   const reviewableProjectDraft = drafts?.some((item) => item.source_conversation_id === snapshot?.conversation?.id && item.status === "ready_for_review" && item.draft_type === "project_definition");
   const implementationPlan = snapshot?.sino_brain?.discovery?.implementation_planning;
+  const operationalRuntime = snapshot?.sino_brain?.discovery?.operational_runtime;
   const isImplementationPlanning = snapshot?.sino_brain?.stage === "implementation_planning";
   const executionPackage = snapshot?.sino_brain?.discovery?.execution_package;
   const autonomousLoop = snapshot?.sino_brain?.discovery?.autonomous_main_loop;
@@ -334,7 +361,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const imageProbeDecisionVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
   const externalProbeGate = quickFixRoute?.founder_gate_contract?.gate_type === "EXTERNAL_MODEL_PROBE" ? quickFixRoute.founder_gate_contract : null;
   return <section className={`sino-conversation-thread${visibleMessages.length ? "" : " is-empty"}`} aria-label="Conversation">
-    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}{visibleMessages.length ? visibleMessages.map((item) => {
+    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}<OperationalRuntimeStatus runtime={operationalRuntime} />{visibleMessages.length ? visibleMessages.map((item) => {
       if (item.role === "assistant" && ["council", "auto_deliberation"].includes(item.message_type)) return null;
       if (item.role === "assistant" && ["goal_brief", "decision", "discussion_package"].includes(item.message_type)) return null;
       const run = (!hasStageProjection || activeStage === "strategy") && item.role === "founder" && ["council", "auto_deliberation"].includes(item.message_type) ? latestRuns.get(item.content) : null;
