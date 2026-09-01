@@ -4,9 +4,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
 from app.core.task_asset.model import TaskAssetDB
+from app.core.conversation_first.model import SinoBrainSessionDB
 import app.core.task_asset.service as task_asset_service
 import app.core.conversation.service as conversation_service
 import app.core.founder_object.service as object_service
+import app.founder_ai.action_queue as action_queue
 from core.founder_object.model import FounderObjectDB
 
 
@@ -24,7 +26,108 @@ def _install_sqlite(monkeypatch):
     monkeypatch.setattr(conversation_service, "SessionLocal", factory)
     monkeypatch.setattr(object_service, "SessionLocal", factory)
     monkeypatch.setattr(task_asset_service, "SessionLocal", factory)
+    monkeypatch.setattr(action_queue, "SessionLocal", factory)
     return factory
+
+
+def add_brain(factory, conversation_id, project_id=None, queue=None):
+    with factory() as session:
+        state = session.query(SinoBrainSessionDB).filter_by(conversation_id=conversation_id).one_or_none()
+        if state is None:
+            state = SinoBrainSessionDB(conversation_id=conversation_id)
+            session.add(state)
+        state.project_id = project_id
+        state.discovery = {"founder_action_queue": queue or []}
+        session.commit()
+
+
+def test_action_queue_projects_draft_object_approval_once(monkeypatch):
+    factory = _install_sqlite(monkeypatch)
+    conversation = conversation_service.create_conversation(title="Queue object approval")
+    add_brain(factory, conversation.id, project_id="project-1")
+    object_id = add_object(factory, conversation.id, "task", "待批准任务对象", "draft")
+
+    first = action_queue.sync_founder_action_queue(conversation.id)
+    second = action_queue.sync_founder_action_queue(conversation.id)
+
+    pending = [item for item in second if item["status"] == "pending" and item["action_type"] == "OBJECT_APPROVAL"]
+    assert len(pending) == 1
+    assert pending[0]["object_id"] == object_id
+    assert pending[0]["source_type"] == "founder_object"
+    assert pending[0]["source_id"] == object_id
+    assert pending[0]["risk_level"] == "MEDIUM"
+    assert len([item for item in first if item["action_type"] == "OBJECT_APPROVAL"]) == 1
+
+
+def test_action_queue_resolves_object_approval_after_inline_approval(monkeypatch):
+    factory = _install_sqlite(monkeypatch)
+    conversation = conversation_service.create_conversation(title="Queue object resolved")
+    add_brain(factory, conversation.id)
+    object_id = add_object(factory, conversation.id, "decision", "第一阶段决策", "draft")
+    action_queue.sync_founder_action_queue(conversation.id)
+
+    object_service.approve_object(object_id)
+    queue = action_queue.sync_founder_action_queue(conversation.id)
+
+    assert not [item for item in queue if item["action_type"] == "OBJECT_APPROVAL" and item["status"] == "pending"]
+    assert [item for item in queue if item["action_type"] == "OBJECT_APPROVAL" and item["status"] == "completed"]
+
+
+def test_action_queue_projects_execution_approval_and_start_without_duplicates(monkeypatch):
+    factory = _install_sqlite(monkeypatch)
+    conversation = conversation_service.create_conversation(title="Queue task actions")
+    add_brain(factory, conversation.id)
+    with factory() as session:
+        session.add(TaskAssetDB(id="task-pending", system_id="founder_ai", conversation_id=conversation.id, title="待审批任务", scope={}, status="draft", approval_status="pending", execution_status="not_started"))
+        session.add(TaskAssetDB(id="task-approved", system_id="founder_ai", conversation_id=conversation.id, title="待开始任务", scope={}, status="draft", approval_status="approved", execution_status="not_started"))
+        session.commit()
+
+    first = action_queue.sync_founder_action_queue(conversation.id)
+    second = action_queue.sync_founder_action_queue(conversation.id)
+
+    approvals = [item for item in second if item["action_type"] == "EXECUTION_APPROVAL" and item["status"] == "pending"]
+    starts = [item for item in second if item["action_type"] == "EXECUTION_START" and item["status"] == "pending"]
+    assert len(approvals) == 1 and approvals[0]["task_id"] == "task-pending"
+    assert len(starts) == 1 and starts[0]["task_id"] == "task-approved"
+    assert len([item for item in first if item["status"] == "pending"]) == 2
+
+
+def test_action_queue_resolves_stale_task_items_from_canonical_state(monkeypatch):
+    factory = _install_sqlite(monkeypatch)
+    conversation = conversation_service.create_conversation(title="Queue stale resolution")
+    add_brain(factory, conversation.id, queue=[
+        {"action_id": "execution-approval:task-1", "action_type": "EXECUTION_APPROVAL", "type": "EXECUTION_APPROVAL", "status": "pending", "source_type": "task_asset", "source_id": "task-1", "task_id": "task-1"},
+        {"action_id": "execution-start:task-2", "action_type": "EXECUTION_START", "type": "EXECUTION_START", "status": "pending", "source_type": "task_asset", "source_id": "task-2", "task_id": "task-2"},
+    ])
+    with factory() as session:
+        session.add(TaskAssetDB(id="task-1", system_id="founder_ai", conversation_id=conversation.id, title="已审批任务", scope={}, status="draft", approval_status="approved", execution_status="not_started"))
+        session.add(TaskAssetDB(id="task-2", system_id="founder_ai", conversation_id=conversation.id, title="已启动任务", scope={"execution_start": {"execution_id": "execution-1"}}, status="in_progress", approval_status="approved", execution_status="queued"))
+        session.commit()
+
+    queue = action_queue.sync_founder_action_queue(conversation.id)
+
+    assert not [item for item in queue if item["action_type"] == "EXECUTION_APPROVAL" and item["status"] == "pending"]
+    assert len([item for item in queue if item["action_type"] == "EXECUTION_START" and item["status"] == "pending"]) == 1
+    assert [item for item in queue if item["source_id"] == "task-2" and item["status"] == "completed"]
+
+
+def test_action_queue_global_aggregation_keeps_conversation_lineage(monkeypatch):
+    factory = _install_sqlite(monkeypatch)
+    conversation_a = conversation_service.create_conversation(title="Queue A")
+    conversation_b = conversation_service.create_conversation(title="Queue B")
+    add_brain(factory, conversation_a.id)
+    add_brain(factory, conversation_b.id)
+    object_a = add_object(factory, conversation_a.id, "decision", "A 决策", "draft")
+    with factory() as session:
+        session.add(TaskAssetDB(id="task-b", system_id="founder_ai", conversation_id=conversation_b.id, title="B 任务", scope={}, status="draft", approval_status="approved", execution_status="not_started"))
+        session.commit()
+
+    all_items = action_queue.list_founder_action_queue()
+    a_items = action_queue.list_founder_action_queue(conversation_a.id)
+
+    assert {item["conversation_id"] for item in all_items} == {conversation_a.id, conversation_b.id}
+    assert len(a_items) == 1
+    assert a_items[0]["object_id"] == object_a
 
 
 def test_conversation_recognizes_updates_and_approves_real_skill(monkeypatch):

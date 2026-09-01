@@ -45,7 +45,7 @@ function PendingCandidateCard({ item, target, selected, onSelect, onReview, onCo
   </article>;
 }
 
-export function ImplementationWorkspace({ objects = [], candidates = [], conversationId = null, contextObject = null, contextCandidate = null, intelligence = null, creationContext = null, recognitionStatus = null, onApprove, onCreateTask, onContinue, onArchive, onOpenObject, onCandidateReview, onCandidateContinue, onApproveTaskExecution = approveTaskForExecution, onRejectTaskExecution = rejectTaskForExecution, onStartTaskExecution = startTaskExecution, busy }) {
+export function ImplementationWorkspace({ objects = [], candidates = [], conversationId = null, contextObject = null, contextCandidate = null, intelligence = null, creationContext = null, recognitionStatus = null, onApprove, onCreateTask, onContinue, onArchive, onOpenObject, onCandidateReview, onCandidateContinue, onApproveTaskExecution = approveTaskForExecution, onRejectTaskExecution = rejectTaskForExecution, onStartTaskExecution = startTaskExecution, onTaskLifecycleChanged, busy }) {
   const [selectedId, setSelectedId] = useState(null);
   const [taskApprovalBusy, setTaskApprovalBusy] = useState(false);
   const [taskApprovalUpdates, setTaskApprovalUpdates] = useState({});
@@ -72,6 +72,7 @@ export function ImplementationWorkspace({ objects = [], candidates = [], convers
     try {
       const result = decision === "approve" ? await onApproveTaskExecution(id) : await onRejectTaskExecution(id);
       setTaskApprovalUpdates((items) => ({ ...items, [id]: { ...selectedTaskRef, ...result, task_id: result.task_id || id } }));
+      await onTaskLifecycleChanged?.(result);
     } finally {
       setTaskApprovalBusy(false);
     }
@@ -95,6 +96,7 @@ export function ImplementationWorkspace({ objects = [], candidates = [], convers
           started_from: "explicit_taskasset_start",
         },
       } }));
+      await onTaskLifecycleChanged?.(result);
     } finally {
       setTaskApprovalBusy(false);
     }
