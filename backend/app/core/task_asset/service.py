@@ -17,6 +17,7 @@ class TaskAssetBoundaryError(ValueError):
 
 
 APPROVAL_DECISIONS = {"approved", "rejected"}
+TASK_ASSET_EXECUTION_APPROVAL_DECISIONS = {"approve": "approved", "reject": "rejected"}
 
 
 def _now() -> str:
@@ -156,6 +157,50 @@ def invalidate_task_execution_approval(task: TaskAssetDB, *, reason: str) -> dic
     task.scope = scope
     task.approval_status = "invalidated"
     return approval
+
+
+def decide_task_asset_execution_approval(*, task_id: str, decision: str, actor: str = "founder") -> TaskAssetDB:
+    """Approve/reject a TaskAsset for future execution without creating or starting Execution.
+
+    This is the approval-only gate for FounderObject-bridged TaskAssets. It is
+    intentionally separate from the standard-task resume path, which may create
+    and enqueue Execution after approval.
+    """
+    if decision not in TASK_ASSET_EXECUTION_APPROVAL_DECISIONS:
+        raise ValueError("unsupported_task_asset_execution_approval_decision")
+    target = TASK_ASSET_EXECUTION_APPROVAL_DECISIONS[decision]
+    with SessionLocal() as session:
+        task = session.scalar(select(TaskAssetDB).where(TaskAssetDB.id == task_id).with_for_update())
+        if task is None or task.system_id != FOUNDER_SYSTEM_KEY:
+            raise LookupError("task_asset_not_found")
+        if task.execution_status != "not_started":
+            raise ValueError("task_asset_execution_already_started")
+        current = task.approval_status
+        if current == target:
+            return task
+        if current in {"approved", "rejected"} and current != target:
+            raise ValueError("task_asset_execution_approval_already_decided")
+        if current not in {"pending", "not_required"}:
+            raise ValueError("task_asset_execution_approval_not_pending")
+        now = _now()
+        scope = dict(task.scope or {})
+        approval = dict(scope.get("task_asset_execution_approval") or {})
+        approval.update({
+            "schema_version": "task-asset-execution-approval-v1",
+            "task_id": task.id,
+            "decision": target,
+            "actor": actor,
+            "decided_at": now,
+        })
+        approval.setdefault("created_at", now)
+        scope["task_asset_execution_approval"] = approval
+        task.scope = scope
+        task.approval_status = target
+        task.execution_status = "not_started"
+        task.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        session.refresh(task)
+        return task
 
 
 def _validate_reference(session, model, identifier: str | None, label: str) -> None:

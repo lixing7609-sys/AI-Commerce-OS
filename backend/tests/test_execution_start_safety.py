@@ -330,8 +330,181 @@ def test_clarification_and_authority_mismatch_stop_before_execution(monkeypatch)
     execution, _service, factory = _runtime(monkeypatch)
     blocked = _prepare(execution, clarification_required=True)
     assert blocked["execution_status"] == "blocked"
+
+
+def test_task_asset_execution_approval_only_approves_without_starting(monkeypatch):
+    execution, service, factory = _runtime(monkeypatch)
     with factory() as db:
-        assert db.query(TaskAssetDB).count() == 0
+        db.add(TaskAssetDB(id="task-bridge-approval", system_id="founder_ai", conversation_id="conv-r3-start",
+                           title="Bridge Task", scope={}, status="draft",
+                           approval_status="pending", execution_status="not_started"))
+        db.commit()
+    monkeypatch.setattr(execution, "create_execution_session", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("approval-only gate must not create Execution")), raising=False)
+    monkeypatch.setattr(execution, "enqueue_execution", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("approval-only gate must not enqueue")), raising=False)
+    monkeypatch.setattr(execution, "start_prepared_standard_task", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("approval-only gate must not start")), raising=False)
+
+    approved = service.decide_task_asset_execution_approval(task_id="task-bridge-approval", decision="approve")
+    again = service.decide_task_asset_execution_approval(task_id="task-bridge-approval", decision="approve")
+
+    assert approved.approval_status == "approved"
+    assert approved.execution_status == "not_started"
+    assert again.id == approved.id
+    with factory() as db:
+        task = db.get(TaskAssetDB, "task-bridge-approval")
+        assert task.approval_status == "approved"
+        assert task.execution_status == "not_started"
+        assert task.scope["task_asset_execution_approval"]["decision"] == "approved"
+
+
+def test_task_asset_execution_approval_only_rejects_without_starting(monkeypatch):
+    execution, service, factory = _runtime(monkeypatch)
+    with factory() as db:
+        db.add(TaskAssetDB(id="task-bridge-reject", system_id="founder_ai", conversation_id="conv-r3-start",
+                           title="Bridge Task", scope={}, status="draft",
+                           approval_status="pending", execution_status="not_started"))
+        db.commit()
+    monkeypatch.setattr(execution, "create_execution_session", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("reject must not create Execution")), raising=False)
+    monkeypatch.setattr(execution, "enqueue_execution", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("reject must not enqueue")), raising=False)
+
+    rejected = service.decide_task_asset_execution_approval(task_id="task-bridge-reject", decision="reject")
+    again = service.decide_task_asset_execution_approval(task_id="task-bridge-reject", decision="reject")
+
+    assert rejected.approval_status == "rejected"
+    assert rejected.execution_status == "not_started"
+    assert again.id == rejected.id
+    with factory() as db:
+        task = db.get(TaskAssetDB, "task-bridge-reject")
+        assert task.approval_status == "rejected"
+        assert task.execution_status == "not_started"
+
+
+def test_task_asset_execution_approval_rejects_opposite_decision_after_resolved(monkeypatch):
+    _execution, service, factory = _runtime(monkeypatch)
+    with factory() as db:
+        db.add(TaskAssetDB(id="task-bridge-resolved", system_id="founder_ai", conversation_id="conv-r3-start",
+                           title="Bridge Task", scope={}, status="draft",
+                           approval_status="pending", execution_status="not_started"))
+        db.commit()
+
+    service.decide_task_asset_execution_approval(task_id="task-bridge-resolved", decision="approve")
+    with pytest.raises(ValueError, match="task_asset_execution_approval_already_decided"):
+        service.decide_task_asset_execution_approval(task_id="task-bridge-resolved", decision="reject")
+
+
+def test_task_asset_execution_approval_refuses_started_task(monkeypatch):
+    _execution, service, factory = _runtime(monkeypatch)
+    with factory() as db:
+        db.add(TaskAssetDB(id="task-bridge-started", system_id="founder_ai", conversation_id="conv-r3-start",
+                           title="Bridge Task", scope={}, status="in_progress",
+                           approval_status="pending", execution_status="queued"))
+        db.commit()
+
+    with pytest.raises(ValueError, match="task_asset_execution_already_started"):
+        service.decide_task_asset_execution_approval(task_id="task-bridge-started", decision="approve")
+    with factory() as db:
+        task = db.get(TaskAssetDB, "task-bridge-started")
+        assert task.approval_status == "pending"
+        assert task.execution_status == "queued"
+
+
+def test_explicit_task_asset_start_creates_execution_and_enqueues_once(monkeypatch):
+    execution, _service, factory = _runtime(monkeypatch)
+    with factory() as db:
+        db.add(TaskAssetDB(
+            id="task-start-approved", system_id="founder_ai", conversation_id="conv-r3-start",
+            title="Approved bridge task", description="Run approved bridge task",
+            scope={"founder_object_bridge": {
+                "source_founder_object_id": "object-task",
+                "source_candidate_id": "candidate-task",
+                "source_conversation_id": "conv-r3-start",
+                "source_message_refs": ["message-task"],
+            }},
+            status="draft", approval_status="approved", execution_status="not_started",
+        ))
+        db.commit()
+    created, saved, enqueued = [], [], []
+    monkeypatch.setattr(execution, "create_execution_session", _execution_factory(created, saved))
+    monkeypatch.setattr(execution, "save_execution_session", lambda session, package=None: saved.append((session, package)))
+
+    result = execution.start_task_asset_execution(
+        task_id="task-start-approved", enqueue=lambda execution_id: enqueued.append(execution_id),
+    )
+
+    assert result["created"] is True
+    assert result["reused"] is False
+    assert result["task_id"] == "task-start-approved"
+    assert result["execution_status"] == "queued"
+    assert len(created) == 1
+    session, package = created[0]
+    assert session.task_asset_id == "task-start-approved"
+    assert enqueued == [session.id]
+    context = package.context["task_asset_start"]
+    assert context["started_from"] == "explicit_taskasset_start"
+    assert context["source_founder_object_id"] == "object-task"
+    assert context["source_candidate_id"] == "candidate-task"
+    assert context["source_conversation_id"] == "conv-r3-start"
+    with factory() as db:
+        task = db.get(TaskAssetDB, "task-start-approved")
+        assert task.status == "in_progress"
+        assert task.execution_status == "queued"
+        assert task.scope["execution_start"]["execution_id"] == session.id
+        assert task.scope["execution_start"]["started_from"] == "explicit_taskasset_start"
+
+
+def test_explicit_task_asset_start_rejects_pending_and_rejected_approval(monkeypatch):
+    execution, _service, factory = _runtime(monkeypatch)
+    with factory() as db:
+        db.add(TaskAssetDB(id="task-start-pending", system_id="founder_ai", conversation_id="conv-r3-start",
+                           title="Pending", scope={}, status="draft",
+                           approval_status="pending", execution_status="not_started"))
+        db.add(TaskAssetDB(id="task-start-rejected", system_id="founder_ai", conversation_id="conv-r3-start",
+                           title="Rejected", scope={}, status="draft",
+                           approval_status="rejected", execution_status="not_started"))
+        db.commit()
+    monkeypatch.setattr(execution, "create_execution_session", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("start must reject before session creation")), raising=False)
+    monkeypatch.setattr(execution, "enqueue_execution", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("start must reject before enqueue")), raising=False)
+
+    with pytest.raises(ValueError, match="task_asset_execution_approval_required"):
+        execution.start_task_asset_execution(task_id="task-start-pending")
+    with pytest.raises(ValueError, match="task_asset_execution_approval_required"):
+        execution.start_task_asset_execution(task_id="task-start-rejected")
+
+
+def test_explicit_task_asset_start_rejects_non_not_started_without_existing_start(monkeypatch):
+    execution, _service, factory = _runtime(monkeypatch)
+    with factory() as db:
+        db.add(TaskAssetDB(id="task-start-queued", system_id="founder_ai", conversation_id="conv-r3-start",
+                           title="Queued", scope={}, status="in_progress",
+                           approval_status="approved", execution_status="queued"))
+        db.commit()
+    monkeypatch.setattr(execution, "create_execution_session", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("already queued must not create another session")), raising=False)
+
+    with pytest.raises(ValueError, match="task_asset_execution_already_started"):
+        execution.start_task_asset_execution(task_id="task-start-queued")
+
+
+def test_explicit_task_asset_start_reuses_existing_execution_start(monkeypatch):
+    execution, _service, factory = _runtime(monkeypatch)
+    with factory() as db:
+        db.add(TaskAssetDB(
+            id="task-start-existing", system_id="founder_ai", conversation_id="conv-r3-start",
+            title="Existing", scope={"execution_start": {
+                "execution_id": "execution-existing",
+                "status": "queued",
+                "started_from": "explicit_taskasset_start",
+            }},
+            status="in_progress", approval_status="approved", execution_status="queued",
+        ))
+        db.commit()
+    monkeypatch.setattr(execution, "create_execution_session", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("duplicate start must reuse existing execution")), raising=False)
+    monkeypatch.setattr(execution, "enqueue_execution", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("duplicate start must not enqueue again")), raising=False)
+
+    result = execution.start_task_asset_execution(task_id="task-start-existing")
+
+    assert result["created"] is False
+    assert result["reused"] is True
+    assert result["execution_id"] == "execution-existing"
+    assert result["execution_status"] == "queued"
 
 
 def test_execution_queue_enforces_transition_graph():

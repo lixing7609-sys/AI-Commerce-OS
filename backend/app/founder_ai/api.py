@@ -22,6 +22,7 @@ from app.founder_ai.execution_registry import approve_execution_session, create_
 from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions, list_actually_active_sessions
 from app.founder_ai.execution_registry import authorize_codex_request, apply_codex_founder_authorization, save_execution_session
 from app.founder_ai.execution_worker import enqueue_execution, execution_queue, resume_execution
+from app.founder_ai.standard_task_execution import start_task_asset_execution
 from app.founder_ai.sino_brain import SinoBrain
 from app.llm.exceptions import LLMGatewayError
 from app.founder_ai.self_management import SinoStateAnalyzer
@@ -46,9 +47,9 @@ from app.founder_ai.council import council_service
 from app.founder_ai.execution_delta import ExecutionDeltaService
 from app.core.conversation_first.model import GoalAssetDB
 from app.database.db import SessionLocal
-from app.core.task_asset.service import get_founder_task_asset
+from app.core.task_asset.service import decide_task_asset_execution_approval, get_founder_task_asset
 from app.core.dependency_outcome.service import feedback_execution_dependencies
-from app.core.founder_object.service import approve_object, archive_object, attach_object_context, detach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
+from app.core.founder_object.service import approve_object, archive_object, attach_object_context, create_task_asset_from_object, detach_object_context, get_conversation_context_object, get_object, list_conversation_objects, list_founder_objects
 from app.core.founder_intent.service import attach_candidate_context, get_conversation_candidate_context, list_candidates, review_candidate
 from app.founder_ai.brain_runtime import brain_runtime
 from app.core.asset_lifecycle.service import (
@@ -100,6 +101,10 @@ class TaskExecutionApprovalDecisionIn(BaseModel):
     task_id: str
     candidate_id: str
     canonical_fingerprint: str
+    decision: str
+
+
+class TaskAssetExecutionApprovalIn(BaseModel):
     decision: str
 
 
@@ -556,6 +561,40 @@ def approve_founder_object(object_id: str):
     try: return approve_object(object_id)
     except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error: raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/objects/{object_id}/create-task", response_model=dict[str, Any])
+def create_task_from_founder_object(object_id: str):
+    try: return create_task_asset_from_object(object_id)
+    except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error: raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/task-assets/{task_id}/execution-approval", response_model=dict[str, Any])
+def decide_task_asset_execution_approval_endpoint(task_id: str, request: TaskAssetExecutionApprovalIn):
+    try:
+        task = decide_task_asset_execution_approval(task_id=task_id, decision=request.decision)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {
+        "task_id": task.id,
+        "status": task.status,
+        "approval_status": task.approval_status,
+        "execution_status": task.execution_status,
+        "decision_applied": task.approval_status,
+    }
+
+
+@router.post("/task-assets/{task_id}/start-execution", response_model=dict[str, Any])
+def start_task_asset_execution_endpoint(task_id: str):
+    try:
+        return start_task_asset_execution(task_id=task_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @router.post("/objects/{object_id}/archive", response_model=dict[str, Any])
