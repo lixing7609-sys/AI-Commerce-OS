@@ -13,12 +13,16 @@ describe("Conversation Composer layout", () => {
 
   it("keeps the complete desktop ancestor chain at a calculable full height", () => {
     const shell = css.match(/\.founder-workspace\s*\{([^}]*)\}/)?.[1] || "";
-    const surface = css.match(/\.founder-conversation-surface\s*\{([^}]*)\}/)?.[1] || "";
+    const surfacePlacement = css.match(/\.founder-workspace > \.founder-conversation-surface\s*\{([^}]*)\}/)?.[1] || "";
+    const surface = css.match(/(?:^|\n)\.founder-conversation-surface\s*\{([^}]*)\}/)?.[1] || "";
     const page = [...css.matchAll(/\.sino-conversation-page\s*\{([^}]*)\}/g)].map((match) => match[1]).find((rule) => rule.includes("height: 100%")) || "";
     const thread = [...css.matchAll(/\.sino-conversation-thread\s*\{([^}]*)\}/g)].map((match) => match[1]).find((rule) => rule.includes("height: 100%")) || "";
-    expect(shell).toContain("grid-template-columns: 244px minmax(420px, 1fr) var(--execution-center-width, 336px)");
+    expect(shell).toContain("grid-template-columns: var(--founder-nav-width, 244px) minmax(420px, 1fr) var(--execution-center-width, 336px)");
+    expect(shell).toContain("grid-template-rows: var(--workspace-topbar-height) minmax(0, 1fr)");
     expect(shell).toContain("height: 100dvh");
     expect(shell).toContain("overflow: hidden");
+    expect(surfacePlacement).toContain("grid-column: 2");
+    expect(surfacePlacement).toContain("grid-row: 2");
     expect(surface).toContain("height: 100%");
     expect(surface).toContain("min-height: 0");
     expect(surface).toContain("overflow: hidden");
@@ -50,9 +54,12 @@ describe("Conversation Composer layout", () => {
   });
 
   it("keeps the right Founder Action panel inside the viewport with independent scrolling", () => {
-    const context = [...css.matchAll(/\.founder-execution-center\s*\{([^}]*)\}/g)].map((match) => match[1]).find((rule) => rule.includes("--execution-center-width")) || "";
+    const context = [...css.matchAll(/\.founder-workspace > \.founder-execution-center\s*\{([^}]*)\}/g)].map((match) => match[1]).find((rule) => rule.includes("grid-column")) || "";
+    const shellRule = css.match(/\.founder-workspace\s*\{([^}]*)\}/)?.[1] || "";
     const panel = css.match(/\.founder-execution-center > \.sino-founder-task-sidebar\s*\{([^}]*)\}/)?.[1] || "";
-    expect(context).toContain("width: var(--execution-center-width, 336px)");
+    expect(shellRule).toContain("var(--execution-center-width, 336px)");
+    expect(context).toContain("grid-column: 3");
+    expect(context).toContain("grid-row: 1 / 3");
     expect(panel).toContain("height: 100%");
     expect(panel).toContain("overflow: auto");
   });
@@ -90,6 +97,7 @@ describe("Conversation Composer layout", () => {
   it("uses Sans identity labels and a Serif long-form AI body without changing Founder typography", () => {
     expect(css).toContain('font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif');
     expect(css).toContain('font-family: "Songti SC", "STSong", "SimSun", serif');
-    expect(css).toContain('.sino-conversation-log article[data-role="founder"] > .sino-message-body');
+    expect(css).toContain('.sino-message-bubble--founder > .sino-message-body');
+    expect(css).toContain('.sino-conversation-log article[data-role="founder"] .sino-message-body p');
   });
 });

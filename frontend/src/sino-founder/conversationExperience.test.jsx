@@ -29,9 +29,12 @@ describe("Sino Conversation experience", () => {
   });
 
   it("shows a transient thinking state without creating a Conversation message", () => {
-    render(<ConversationThread snapshot={snapshot([{ message_id: "f1", role: "founder", content: "问题" }])} message="" onMessage={vi.fn()} onSend={vi.fn()} busy replyPending />);
+    const { container } = render(<ConversationThread snapshot={snapshot([{ message_id: "f1", role: "founder", content: "问题" }])} message="" onMessage={vi.fn()} onSend={vi.fn()} busy replyPending />);
     expect(screen.getByRole("status", { name: "Sino 正在思考" })).toBeTruthy();
-    expect(screen.getAllByText("Founder")).toHaveLength(1);
+    const founderMessage = container.querySelector('article[data-role="founder"]');
+    expect(founderMessage).toBeTruthy();
+    expect(founderMessage.textContent).toContain("问题");
+    expect(founderMessage.textContent).not.toContain("Founder");
   });
 
   it("replaces thinking with one transient streaming reply", () => {

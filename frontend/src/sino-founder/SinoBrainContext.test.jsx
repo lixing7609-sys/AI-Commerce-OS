@@ -93,7 +93,7 @@ describe("SinoBrainContext", () => {
     expect(screen.queryByRole("button", { name: /继续/ })).toBeNull();
   });
   it("counts only currently used Context Sources and keeps unused context behind a nested fold", () => {
-    render(<SinoBrainContext brain={{ project_id: "project-child", stage: "project_planning", discovery: { project_aware: true, current_project: { project_name: "Intelligence Evolution Layer" }, discussion_maturity: { maturity_status: "continue_analysis", reason: "继续分析", autonomous_next_analysis: "继续" } } }} contextGroundings={[{ message_id: "message-1", sources: [{ key: "parent_constitution", label: "Parent Constitution", used: true, references: [{ source_id: "conv-1", title: "AI Commerce OS Constitution V1" }] }, { key: "goals", label: "项目目标", used: false }] }]} />);
+    render(<SinoBrainContext brain={{ project_id: "project-child", stage: "project_planning", discovery: { project_aware: true, current_project: { project_name: "Intelligence Evolution Layer" }, founder_action_queue: [{ action_id: "clarify-1", type: "CLARIFICATION", status: "pending", title: "确认上下文", summary: "请确认当前上下文引用。" }], discussion_maturity: { maturity_status: "continue_analysis", reason: "继续分析", autonomous_next_analysis: "继续" } } }} contextGroundings={[{ message_id: "message-1", sources: [{ key: "parent_constitution", label: "Parent Constitution", used: true, references: [{ source_id: "conv-1", title: "AI Commerce OS Constitution V1" }] }, { key: "goals", label: "项目目标", used: false }] }]} />);
     const details = screen.getByText("Context Sources · 1").closest("details");
     expect(details.open).toBe(false);
     expect(details.textContent).toContain("Parent Constitution");
