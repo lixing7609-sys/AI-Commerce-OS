@@ -11,10 +11,20 @@ describe("ImplementationWorkspace", () => {
     render(<ImplementationWorkspace objects={[item]} onApprove={approve} onContinue={discuss} onArchive={archive} />);
     fireEvent.click(screen.getByRole("button", { name: /Chrome Extension Skill/ }));
     expect(screen.getAllByText(/V1/).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "批准" }));
+    fireEvent.click(screen.getByRole("button", { name: "批准对象" }));
     fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
     fireEvent.click(screen.getByRole("button", { name: "驳回 / 归档" }));
     expect(approve).toHaveBeenCalledWith(item); expect(discuss).toHaveBeenCalledWith(item); expect(archive).toHaveBeenCalledWith(item);
+  });
+
+  it("shows approved object state without implying execution or another approval action", () => {
+    const item = { object_id: "object-approved", object_type: "task", name: "已批准任务对象", description: "只是对象批准", status: "approved", version: 1, source_conversation_id: "conversation-1", dependency_object_ids: [], related_object_ids: [], execution_refs: [] };
+    render(<ImplementationWorkspace objects={[item]} onApprove={vi.fn()} onContinue={vi.fn()} onArchive={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /已批准任务对象/ }));
+    expect(screen.getByText("已批准")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "批准对象" })).toBeNull();
+    expect(screen.queryByText(/已进入执行 ·/)).toBeNull();
+    expect(screen.queryByText(/执行中|任务已创建/)).toBeNull();
   });
 
   it("separates a persisted context object from new draft recognition", () => {

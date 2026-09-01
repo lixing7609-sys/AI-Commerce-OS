@@ -820,15 +820,8 @@ export function ConversationWorkspace() {
     setBusy(true); setError("");
     try {
       const next = await approveFounderObject(item.object_id);
-      const executionRef = next.execution_refs?.at(-1);
       const restored = conversationId ? await getConversationWorkspace(conversationId) : null;
       setSnapshot(restored || ((current) => ({ ...current, founder_objects: (current?.founder_objects || []).map((value) => value.object_id === next.object_id ? next : value) })));
-      if (executionRef?.execution_id) {
-        setExecutionId(executionRef.execution_id);
-        remember(EXECUTION_KEY, executionRef.execution_id);
-        setExecution(restored?.active_execution || await getFounderExecution(executionRef.execution_id));
-      }
-      setView("execution");
     }
     catch (requestError) { setError(requestError.message); }
     finally { setBusy(false); }

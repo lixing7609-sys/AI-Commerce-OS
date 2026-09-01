@@ -7,10 +7,7 @@ from sqlalchemy import select
 
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB
-from app.core.task_asset.service import create_task_asset
 from app.database.db import SessionLocal
-from app.founder_ai.execution_registry import create_execution_session
-from app.founder_ai.orchestrator import TaskAssetDraft, build_execution_package
 from core.founder_object.model import ConversationObjectContextDB, FounderObjectDB, FounderObjectRevisionDB
 
 OBJECT_TYPES = {"application_system", "project", "agent", "skill", "workflow", "prompt", "capability", "connector", "task", "artifact", "decision", "constraint", "knowledge", "memory"}
@@ -182,26 +179,13 @@ def approve_object(object_id: str, source_candidate_id: str | None = None) -> di
         record = session.get(FounderObjectDB, object_id)
         if not record: raise LookupError("Founder Object not found")
         if record.status == "archived": raise ValueError("Archived Object cannot be approved")
-        # Approval is an idempotent lifecycle transition. Repeated browser
-        # submissions must not create a second Task Asset / Execution Session.
-        if record.status == "approved" and record.execution_refs:
-            # A newly-approved revision keeps the existing waiting execution
-            # identity, but explicitly advances its approved object version.
-            # Pending candidates never reach this branch, so execution cannot
-            # inherit an unapproved version.
-            refs = list(record.execution_refs or [])
-            refs[-1] = {**refs[-1], "object_version": record.version, "source_candidate_id": source_candidate_id or refs[-1].get("source_candidate_id")}
-            record.execution_refs = refs
-            if source_candidate_id: record.source_candidate_id = source_candidate_id
-            record.updated_at = datetime.now(timezone.utc)
-            session.commit(); session.refresh(record)
-            return _display(record)
-        if source_candidate_id and not record.source_candidate_id: record.source_candidate_id = source_candidate_id; session.commit()
-        conversation_id, name, description, object_type, candidate_id = record.source_conversation_id, record.name, record.description, record.object_type, record.source_candidate_id or source_candidate_id
-    trace = {"founder_object_id": object_id, "source_object_id": object_id, "source_candidate_id": candidate_id, "object_type": object_type, "object_name": name, "object_version": get_object(object_id)["version"]}
-    task = create_task_asset(title=name, description=description, scope=trace, status="approved", approval_status="approved", execution_status="not_started", conversation_id=conversation_id)
-    draft = TaskAssetDraft(title=name, description=description, scope={"context": trace}, constraints=["Founder Object approval is the execution boundary"], risk="medium", approval_required=True, conversation_id=conversation_id)
-    execution = create_execution_session(task.id, build_execution_package(draft))
-    with SessionLocal() as session:
-        record = session.get(FounderObjectDB, object_id); record.status = "approved"; record.source_candidate_id = candidate_id; record.execution_refs = [*list(record.execution_refs or []), {"execution_id": execution.id, "task_asset_id": task.id, "status": execution.status, "source_object_id": object_id, "source_candidate_id": candidate_id, "object_version": record.version}]; record.updated_at = datetime.now(timezone.utc); session.commit(); session.refresh(record)
+        # Explicit Object Approval is a lifecycle state transition only.
+        # TaskAsset / Execution creation belongs to a later explicit bridge,
+        # not to approving the durable FounderObject itself.
+        if source_candidate_id and not record.source_candidate_id:
+            record.source_candidate_id = source_candidate_id
+        if record.status != "approved":
+            record.status = "approved"
+        record.updated_at = datetime.now(timezone.utc)
+        session.commit(); session.refresh(record)
         return _display(record)

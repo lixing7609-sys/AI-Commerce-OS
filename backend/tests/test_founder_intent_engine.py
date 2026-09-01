@@ -14,8 +14,8 @@ from core.founder_object.model import FounderObjectDB, ConversationObjectContext
 def runtime(monkeypatch):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool); Base.metadata.create_all(engine); factory = sessionmaker(bind=engine)
     for module in (conversation_service, intent_service, object_service): monkeypatch.setattr(module, "SessionLocal", factory)
-    monkeypatch.setattr(object_service, "create_task_asset", lambda **kwargs: SimpleNamespace(id="task-intent", **kwargs))
-    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args: SimpleNamespace(id="execution-intent", status="draft"))
+    monkeypatch.setattr(object_service, "create_task_asset", lambda **kwargs: SimpleNamespace(id="task-intent", **kwargs), raising=False)
+    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args: SimpleNamespace(id="execution-intent", status="draft"), raising=False)
     return factory
 
 
@@ -157,8 +157,8 @@ def test_mvp_decision_message_creates_one_pending_decision_candidate(monkeypatch
 
 def test_mvp_task_like_execution_message_remains_candidate_only(monkeypatch):
     runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Task-like")
-    monkeypatch.setattr(object_service, "create_task_asset", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("recognition must not create TaskAsset")))
-    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args: (_ for _ in ()).throw(AssertionError("recognition must not create Execution")))
+    monkeypatch.setattr(object_service, "create_task_asset", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("recognition must not create TaskAsset")), raising=False)
+    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args: (_ for _ in ()).throw(AssertionError("recognition must not create Execution")), raising=False)
     candidates = intent_service.FounderIntentEngine().run(conversation.id, "m-task", "现在就把这个 Agent 做出来。")
     assert len(candidates) == 1
     assert candidates[0]["candidate_type"] == "TASK"
@@ -187,8 +187,8 @@ def test_confirm_decision_candidate_materializes_draft_object(monkeypatch):
 
 def test_confirm_task_candidate_materializes_draft_object_without_execution_side_effects(monkeypatch):
     runtime(monkeypatch); conversation = conversation_service.create_conversation(title="Task materialization")
-    monkeypatch.setattr(object_service, "create_task_asset", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("materialization must not create TaskAsset")))
-    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args: (_ for _ in ()).throw(AssertionError("materialization must not create Execution")))
+    monkeypatch.setattr(object_service, "create_task_asset", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("materialization must not create TaskAsset")), raising=False)
+    monkeypatch.setattr(object_service, "create_execution_session", lambda *_args: (_ for _ in ()).throw(AssertionError("materialization must not create Execution")), raising=False)
     monkeypatch.setattr(intent_service, "_apply_mutation", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("materialization must not use broad mutation path")))
     candidate = intent_service.FounderIntentEngine().run(conversation.id, "m-task-materialize", "现在就把这个 Agent 做出来。")[0]
     confirmed = intent_service.review_candidate(candidate["candidate_id"], "confirm")
