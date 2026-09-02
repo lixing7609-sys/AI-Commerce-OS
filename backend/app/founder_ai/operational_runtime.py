@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -34,6 +35,7 @@ REPO_INSPECTION = "REPO_INSPECTION"
 FOCUSED_TEST = "FOCUSED_TEST"
 FRONTEND_BUILD = "FRONTEND_BUILD"
 BOUNDED_CODE_CHANGE = "BOUNDED_CODE_CHANGE"
+SAFE_CHECKPOINT_COMMIT = "SAFE_CHECKPOINT_COMMIT"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +69,7 @@ OPERATION_REGISTRY: dict[str, OperationSpec] = {
 }
 
 BOUNDED_STATUS_CARD_TITLE_CHANGE = "rename_operational_runtime_status_card"
+BOUNDED_SAFE_CHECKPOINT_FIXTURE_CHANGE = "write_safe_checkpoint_e2e_fixture"
 BOUNDED_CODE_CHANGE_PLANS: dict[str, dict] = {
     BOUNDED_STATUS_CARD_TITLE_CHANGE: {
         "plan_id": BOUNDED_STATUS_CARD_TITLE_CHANGE,
@@ -88,8 +91,35 @@ BOUNDED_CODE_CHANGE_PLANS: dict[str, dict] = {
             ["npm", "--prefix", "frontend", "test", "--", "--run", "src/sino-founder/ConversationThread.test.jsx"],
             ["npm", "--prefix", "frontend", "run", "build"],
         ],
+        "auto_checkpoint": True,
+        "commit_message": "fix(sino-runtime): align controlled runtime status label",
         "rollback_boundary": "Only the allowed file may be changed; Founder can review/revert via git diff.",
-    }
+    },
+    BOUNDED_SAFE_CHECKPOINT_FIXTURE_CHANGE: {
+        "plan_id": BOUNDED_SAFE_CHECKPOINT_FIXTURE_CHANGE,
+        "title": "写入 Safe Checkpoint E2E fixture",
+        "allowed_files": ["frontend/src/sino-founder/safe-checkpoint-e2e-fixture.txt"],
+        "allowed_directories": [],
+        "acceptance_criteria": [
+            "Safe Checkpoint E2E fixture is written by Sino runtime",
+            "ConversationThread focused frontend test passes",
+            "Frontend build passes",
+        ],
+        "explicit_non_goals": [
+            "Do not modify implementation files through the E2E checkpoint",
+            "Do not modify DB schema or data",
+            "Do not invoke Provider or Codex directly",
+            "Do not push, merge, rebase, tag, deploy, or delete files",
+        ],
+        "verification_commands": [
+            ["npm", "--prefix", "frontend", "test", "--", "--run", "src/sino-founder/ConversationThread.test.jsx"],
+            ["npm", "--prefix", "frontend", "run", "build"],
+        ],
+        "auto_checkpoint": True,
+        "commit_message": "test(sino-runtime): record safe checkpoint e2e fixture",
+        "allow_preexisting_dirty_for_e2e": True,
+        "rollback_boundary": "Only the safe checkpoint E2E fixture file may be created and committed.",
+    },
 }
 
 
@@ -117,6 +147,7 @@ def classify_operational_risk(content: str) -> dict:
     frontend_build_terms = ("前端", "frontend", "构建", "build")
     bounded_change_terms = ("改成", "修改", "更新", "调整", "改一下", "change", "update")
     bounded_status_title_terms = ("sino controlled runtime", "sino operational runtime", "状态卡标题", "runtime 状态卡")
+    safe_checkpoint_fixture_terms = ("safe checkpoint e2e fixture", "safe checkpoint", "checkpoint 验证", "本地 checkpoint")
     if any(term in lowered for term in high_terms):
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
@@ -126,6 +157,18 @@ def classify_operational_risk(content: str) -> dict:
         }
     if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in bounded_status_title_terms):
         plan = BOUNDED_CODE_CHANGE_PLANS[BOUNDED_STATUS_CARD_TITLE_CHANGE]
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": MEDIUM_RISK,
+            "auto_continue": False,
+            "operation": "bounded_code_change",
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "reason": "bounded_code_change_requires_founder_approval",
+            "approval_required": True,
+            "plan": plan,
+        }
+    if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in safe_checkpoint_fixture_terms):
+        plan = BOUNDED_CODE_CHANGE_PLANS[BOUNDED_SAFE_CHECKPOINT_FIXTURE_CHANGE]
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
             "risk_level": MEDIUM_RISK,
@@ -183,6 +226,7 @@ def _run_git(args: list[str], *, cwd: Path) -> str:
         text=True,
         capture_output=True,
         timeout=10,
+        shell=False,
     )
     return completed.stdout.strip()
 
@@ -310,6 +354,153 @@ def _git_diff_names(*, cwd: Path) -> set[str]:
     return {line.strip() for line in completed.stdout.splitlines() if line.strip()}
 
 
+def _git_output(args: list[str], *, cwd: Path, check: bool = True, timeout: int = 15) -> subprocess.CompletedProcess:
+    prohibited = {"push", "pull", "fetch", "merge", "rebase", "cherry-pick", "reset", "clean", "tag"}
+    if not args or args[0] in prohibited:
+        raise ValueError("git_command_not_allowed_for_safe_checkpoint")
+    return subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=check,
+        shell=False,
+    )
+
+
+def _git_status_short(*, cwd: Path) -> list[str]:
+    output = _git_output(["status", "--short"], cwd=cwd).stdout
+    return [line for line in output.splitlines() if line.strip()]
+
+
+def _staged_files_from_status(status_lines: list[str]) -> set[str]:
+    return {line[3:].strip() for line in status_lines if line and line[0] != " " and line[0] != "?"}
+
+
+def _dirty_files_from_status(status_lines: list[str]) -> set[str]:
+    return {line[3:].strip() for line in status_lines if line.strip()}
+
+
+def _git_diff_check(*, cwd: Path, cached: bool = False) -> dict:
+    args = ["diff", "--check"]
+    if cached:
+        args = ["diff", "--cached", "--check"]
+    completed = _git_output(args, cwd=cwd, check=False)
+    return {
+        "success": completed.returncode == 0,
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+        "summary": _excerpt((completed.stdout or "") + (completed.stderr or ""), 1000),
+    }
+
+
+def _safe_commit_message(plan: dict) -> str:
+    candidate = str(plan.get("commit_message") or "fix(sino-runtime): apply bounded code change").splitlines()[0]
+    candidate = re.sub(r"[;&|`$<>]", "", candidate).strip()
+    if not re.match(r"^[a-z]+\([a-z0-9-]+\): .{1,72}$", candidate):
+        return "fix(sino-runtime): apply bounded code change"
+    return candidate[:100]
+
+
+def _git_state_blocker(root: Path) -> str | None:
+    git_dir = root / ".git"
+    for name in ("MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "BISECT_LOG"):
+        if (git_dir / name).exists():
+            return f"repository_in_{name.lower()}_state"
+    if (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists():
+        return "repository_in_rebase_state"
+    return None
+
+
+def safe_checkpoint_commit(
+    *,
+    plan: dict,
+    execution_result: dict,
+    task_id: str,
+    execution_id: str,
+    action_id: str,
+    preexisting_dirty_files: set[str] | None = None,
+    allow_preexisting_dirty: bool = False,
+    cwd: Path | None = None,
+) -> dict:
+    started_at = _now()
+    root = cwd or repo_root()
+    preexisting_dirty_files = set(preexisting_dirty_files or set())
+    checkpoint_existing = dict(execution_result.get("checkpoint") or {})
+    if checkpoint_existing.get("commit_created") and checkpoint_existing.get("new_head"):
+        return {**checkpoint_existing, "status": "completed", "reused": True, "failure_type": "CHECKPOINT_ALREADY_EXISTS"}
+    if execution_result.get("operation_type") != BOUNDED_CODE_CHANGE:
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "CHECKPOINT_PRECONDITION_FAILED", "summary": "source operation is not BOUNDED_CODE_CHANGE", "started_at": started_at, "completed_at": _now()}
+    if execution_result.get("status") != "completed" or execution_result.get("success") is not True:
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "VERIFICATION_NOT_PASSED", "summary": "bounded code change did not complete successfully", "started_at": started_at, "completed_at": _now()}
+    if execution_result.get("boundary_check") != "PASS" or execution_result.get("unexpected_files"):
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "BOUNDARY_VIOLATION", "summary": "bounded code change boundary did not pass", "started_at": started_at, "completed_at": _now()}
+    if execution_result.get("check_result") != "PASS":
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "VERIFICATION_NOT_PASSED", "summary": "verification did not pass", "started_at": started_at, "completed_at": _now()}
+    if any("build" in step.get("argv", []) and step.get("check_result") != "PASS" for step in execution_result.get("verification_steps") or []):
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "BUILD_NOT_PASSED", "summary": "required build did not pass", "started_at": started_at, "completed_at": _now()}
+    changed_files = [item for item in execution_result.get("changed_files") or [] if _is_allowed_change(item, plan)]
+    if not changed_files:
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "CHECKPOINT_PRECONDITION_FAILED", "summary": "no changed files to checkpoint", "started_at": started_at, "completed_at": _now()}
+    state_blocker = _git_state_blocker(root)
+    if state_blocker:
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "CHECKPOINT_PRECONDITION_FAILED", "summary": state_blocker, "started_at": started_at, "completed_at": _now()}
+    diff_check = _git_diff_check(cwd=root)
+    if not diff_check["success"]:
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "GIT_DIFF_CHECK_FAILED", "git_diff_check": diff_check, "summary": diff_check["summary"], "started_at": started_at, "completed_at": _now()}
+    status_before = _git_status_short(cwd=root)
+    staged_before = sorted(_staged_files_from_status(status_before))
+    if staged_before:
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "STAGED_BOUNDARY_MISMATCH", "staged_before": staged_before, "summary": "pre-existing staged files block checkpoint", "started_at": started_at, "completed_at": _now()}
+    dirty_before = _dirty_files_from_status(status_before)
+    expected = set(changed_files)
+    unrelated_dirty = sorted(dirty_before - expected - (preexisting_dirty_files if allow_preexisting_dirty else set()))
+    if unrelated_dirty:
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "UNEXPECTED_DIRTY_FILE", "unexpected_files": unrelated_dirty, "summary": f"unexpected dirty files block checkpoint: {', '.join(unrelated_dirty)}", "started_at": started_at, "completed_at": _now()}
+    outside_boundary = sorted(path for path in expected if not _is_allowed_change(path, plan))
+    if outside_boundary:
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "BOUNDARY_VIOLATION", "unexpected_files": outside_boundary, "summary": f"changed file outside boundary: {', '.join(outside_boundary)}", "started_at": started_at, "completed_at": _now()}
+    previous_head = _git_output(["rev-parse", "HEAD"], cwd=root).stdout.strip()
+    _git_output(["add", *changed_files], cwd=root)
+    cached_files = sorted(_git_output(["diff", "--cached", "--name-only"], cwd=root).stdout.splitlines())
+    cached_check = _git_diff_check(cwd=root, cached=True)
+    if cached_files != sorted(expected) or not cached_check["success"]:
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "STAGED_BOUNDARY_MISMATCH", "commit_files": cached_files, "expected_files": sorted(expected), "git_cached_diff_check": cached_check, "summary": "staged files did not match expected bounded files", "started_at": started_at, "completed_at": _now()}
+    message = _safe_commit_message(plan)
+    commit = _git_output(["commit", "-m", message], cwd=root, check=False, timeout=30)
+    if commit.returncode != 0:
+        return {"operation_type": SAFE_CHECKPOINT_COMMIT, "success": False, "failure_type": "GIT_COMMIT_FAILED", "summary": _excerpt(commit.stderr or commit.stdout, 1000), "commit_message": message, "started_at": started_at, "completed_at": _now()}
+    new_head = _git_output(["rev-parse", "HEAD"], cwd=root).stdout.strip()
+    status_after = _git_status_short(cwd=root)
+    staged_after = sorted(_staged_files_from_status(status_after))
+    working_tree_clean_after = not status_after
+    show = _git_output(["show", "--stat", "--oneline", "HEAD"], cwd=root).stdout
+    return {
+        "operation_type": SAFE_CHECKPOINT_COMMIT,
+        "status": "completed",
+        "success": True,
+        "previous_head": previous_head,
+        "new_head": new_head,
+        "commit_created": True,
+        "commit_message": message,
+        "commit_files": sorted(expected),
+        "commit_file_count": len(expected),
+        "unexpected_files": [],
+        "staged_before": staged_before,
+        "staged_after": staged_after,
+        "working_tree_clean_after": working_tree_clean_after,
+        "git_diff_check": diff_check,
+        "git_cached_diff_check": cached_check,
+        "task_id": task_id,
+        "execution_id": execution_id,
+        "action_id": action_id,
+        "git_show_stat": show,
+        "started_at": started_at,
+        "completed_at": _now(),
+    }
+
+
 def _is_allowed_change(path: str, plan: dict) -> bool:
     allowed_files = {str(_safe_relative_path(item)) for item in plan.get("allowed_files") or []}
     allowed_dirs = [str(_safe_relative_path(item)).rstrip("/") + "/" for item in plan.get("allowed_directories") or []]
@@ -319,6 +510,24 @@ def _is_allowed_change(path: str, plan: dict) -> bool:
 def run_bounded_code_change(plan: dict, *, cwd: Path | None = None) -> dict:
     """Apply one allowlisted bounded code change; no raw shell or user command execution."""
     root = cwd or repo_root()
+    if plan.get("plan_id") == BOUNDED_SAFE_CHECKPOINT_FIXTURE_CHANGE:
+        target_rel = "frontend/src/sino-founder/safe-checkpoint-e2e-fixture.txt"
+        if not _is_allowed_change(target_rel, plan):
+            raise ValueError("bounded_code_change_target_not_allowed")
+        target = root / _safe_relative_path(target_rel)
+        content = "Sino Safe Checkpoint E2E fixture: bounded change verified and locally checkpointed.\\n"
+        if target.exists() and target.read_text() == content:
+            return {
+                "changed_files": [],
+                "diff_summary": "No code change required; safe checkpoint fixture was already present.",
+                "already_applied": True,
+            }
+        target.write_text(content)
+        return {
+            "changed_files": [target_rel],
+            "diff_summary": "Created the Safe Checkpoint E2E fixture through the bounded local executor.",
+            "already_applied": False,
+        }
     if plan.get("plan_id") != BOUNDED_STATUS_CARD_TITLE_CHANGE:
         raise ValueError("unsupported_bounded_code_change_plan")
     target_rel = "frontend/src/sino-founder/ConversationThread.jsx"
@@ -921,6 +1130,7 @@ def execute_bounded_code_change(
     plan: dict,
     code_runner: Callable[[dict], dict] | None = None,
     verifier: Callable[[list[list[str]]], list[dict]] | None = None,
+    checkpointer: Callable[..., dict] | None = None,
 ) -> dict:
     risk = {
         "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
@@ -1079,6 +1289,25 @@ def execute_bounded_code_change(
                 **test_counts,
             },
         }
+        checkpoint_result = None
+        if plan.get("auto_checkpoint", True) and boundary_status == "PASS" and check_result == "PASS" and success:
+            checkpoint_result = (checkpointer or safe_checkpoint_commit)(
+                plan=plan,
+                execution_result=persisted_result,
+                task_id=task.id,
+                execution_id=execution_id,
+                action_id=action_id,
+                preexisting_dirty_files=before_diff,
+                allow_preexisting_dirty=bool(plan.get("allow_preexisting_dirty_for_e2e")),
+            )
+            persisted_result["checkpoint"] = checkpoint_result
+            persisted_result["checkpoint_status"] = "PASS" if checkpoint_result.get("success") else "FAIL"
+            persisted_result["result"]["checkpoint"] = checkpoint_result
+            if not checkpoint_result.get("success"):
+                persisted_result["status"] = "failed"
+                persisted_result["success"] = False
+                persisted_result["check_result"] = checkpoint_result.get("failure_type") or "CHECKPOINT_PRECONDITION_FAILED"
+                persisted_result["summary"] = f"受控代码修改已完成验证，但 checkpoint 未创建：{checkpoint_result.get('summary') or checkpoint_result.get('failure_type')}"
         with SessionLocal() as session:
             record = session.get(TaskAssetDB, task.id)
             record.result = persisted_result
@@ -1102,7 +1331,14 @@ def execute_bounded_code_change(
         _update_brain(conversation_id, completed_payload)
         _append_assistant_message(
             conversation_id,
-            f"{summary}\n\n修改文件：{', '.join(persisted_result['changed_files']) or '无'}\n验证：{check_result}\n工作区：{persisted_result['working_tree_status']}",
+            (
+                f"{persisted_result['summary']}\n\n"
+                f"修改文件：{', '.join(persisted_result['changed_files']) or '无'}\n"
+                f"验证：{persisted_result['check_result']}\n"
+                f"Checkpoint：{(persisted_result.get('checkpoint') or {}).get('commit_message') or persisted_result.get('checkpoint_status') or '未执行'}\n"
+                f"新 HEAD：{(persisted_result.get('checkpoint') or {}).get('new_head') or '无'}\n"
+                f"工作区：{(persisted_result.get('checkpoint') or {}).get('working_tree_clean_after') if persisted_result.get('checkpoint') else persisted_result['working_tree_status']}"
+            ),
             message_type="operational_result",
             grounding={"operational_runtime": completed_payload, "task_id": task.id, "execution_id": execution_id},
         )
