@@ -84,7 +84,7 @@ export function FounderWorkQueue({ tasks = [], focusedTaskId, conversationId, bu
   </section>;
 }
 
-const UNIFIED_QUEUE_TYPES = ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START", "HIGH_RISK_OPERATIONAL_TASK", "BOUNDED_CODE_CHANGE_APPROVAL", "SAFE_PUSH_APPROVAL"];
+const UNIFIED_QUEUE_TYPES = ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START", "HIGH_RISK_OPERATIONAL_TASK", "BOUNDED_CODE_CHANGE_APPROVAL", "SAFE_PUSH_APPROVAL", "SAFE_MERGE_APPROVAL"];
 
 function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDiscussion }) {
   const mvpActions = actions.filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
@@ -142,6 +142,28 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
             <div><dt>范围</dt><dd>只会把当前分支的已验证本地 commit 正常 push 到同名远程分支；不会 force push，不会 push tags，不会 merge，不会 deploy。</dd></div>
           </dl>
           <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准推送</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
+        </article>;
+      }
+      if (type === "SAFE_MERGE_APPROVAL") {
+        const metadata = item.metadata || {};
+        const mergeRequest = metadata.merge_request || {};
+        return <article className="sino-founder-action-item" aria-label="Safe Merge Approval" key={item.action_id}>
+          <span>SAFE MERGE · {risk}</span><h3>{item.title || "批准本地安全合并"}</h3><p>{item.summary}</p>
+          <dl>
+            <div><dt>Source branch</dt><dd>{mergeRequest.source_branch || metadata.source_branch || "—"}</dd></div>
+            <div><dt>Source HEAD</dt><dd>{mergeRequest.source_head || metadata.source_head || "—"}</dd></div>
+            <div><dt>Source remote</dt><dd>{mergeRequest.source_remote || metadata.source_remote || "origin"}</dd></div>
+            <div><dt>Source remote HEAD</dt><dd>{mergeRequest.source_remote_head || metadata.source_remote_head || "—"}</dd></div>
+            <div><dt>Target branch</dt><dd>{mergeRequest.target_branch || metadata.target_branch || "feature/foundation-reset-integration"}</dd></div>
+            <div><dt>Target HEAD</dt><dd>{mergeRequest.target_head_before || metadata.target_head_before || "—"}</dd></div>
+            <div><dt>Target remote sync</dt><dd>{mergeRequest.target_ahead_remote || mergeRequest.target_behind_remote ? "NOT_SYNCED" : "SYNCED"}</dd></div>
+            <div><dt>Source remote sync</dt><dd>{mergeRequest.source_ahead_remote || mergeRequest.source_behind_remote ? "NOT_SYNCED" : "SYNCED"}</dd></div>
+            <div><dt>Strategy</dt><dd>--no-ff</dd></div>
+            <div><dt>Conflict auto-resolution</dt><dd>NO，不会自动解决冲突</dd></div>
+            <div><dt>Push after merge</dt><dd>NO，不会 push target branch</dd></div>
+            <div><dt>方向</dt><dd>source → target；不会 merge main/master/develop，不会 force，不会 deploy。</dd></div>
+          </dl>
+          <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准合并</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
         </article>;
       }
       return <article className="sino-founder-action-item" aria-label="Execution Start" key={item.action_id}>

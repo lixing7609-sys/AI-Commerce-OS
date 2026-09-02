@@ -215,6 +215,81 @@ describe("SinoBrainContext", () => {
     expect(resolved).not.toHaveBeenCalled();
   });
 
+  it("displays SAFE_MERGE approval with source target no-ff and no-push details", async () => {
+    const resolved = vi.fn();
+    render(<SinoBrainContext conversationId="conv-1" onFounderActionResolved={resolved} brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
+      action_id: "safe-merge:message-1",
+      action_type: "SAFE_MERGE_APPROVAL",
+      type: "SAFE_MERGE_APPROVAL",
+      status: "pending",
+      title: "批准本地安全合并",
+      summary: "合并 feature 到 integration",
+      risk_level: "HIGH",
+      metadata: {
+        merge_request: {
+          source_branch: "feature/sino-safe-merge-v1",
+          source_head: "source-head",
+          source_remote: "origin",
+          source_remote_head: "source-head",
+          target_branch: "feature/foundation-reset-integration",
+          target_head_before: "target-head",
+          target_ahead_remote: 0,
+          target_behind_remote: 0,
+          source_ahead_remote: 0,
+          source_behind_remote: 0,
+        },
+      },
+    }] } }} />);
+    const action = screen.getByRole("article", { name: "Safe Merge Approval" });
+    expect(action.textContent).toContain("SAFE MERGE");
+    expect(action.textContent).toContain("HIGH");
+    expect(action.textContent).toContain("feature/sino-safe-merge-v1");
+    expect(action.textContent).toContain("source-head");
+    expect(action.textContent).toContain("feature/foundation-reset-integration");
+    expect(action.textContent).toContain("target-head");
+    expect(action.textContent).toContain("--no-ff");
+    expect(action.textContent).toContain("不会自动解决冲突");
+    expect(action.textContent).toContain("不会 push target branch");
+    fireEvent.click(screen.getByRole("button", { name: "批准合并" }));
+    await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("safe-merge:message-1", "approve"));
+    expect(resolved).toHaveBeenCalled();
+  });
+
+  it("rejects SAFE_MERGE without starting any other execution action", async () => {
+    render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
+      action_id: "safe-merge:message-2",
+      action_type: "SAFE_MERGE_APPROVAL",
+      type: "SAFE_MERGE_APPROVAL",
+      status: "pending",
+      title: "批准本地安全合并",
+      summary: "合并 feature 到 integration",
+      risk_level: "HIGH",
+      metadata: { merge_request: { source_branch: "feature/x", source_head: "source", target_branch: "feature/foundation-reset-integration", target_head_before: "target" } },
+    }] } }} />);
+    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("safe-merge:message-2", "reject"));
+    expect(startTaskExecution).not.toHaveBeenCalled();
+  });
+
+  it("continues SAFE_MERGE discussion without resolving the queue item", async () => {
+    const discuss = vi.fn();
+    const resolved = vi.fn();
+    render(<SinoBrainContext conversationId="conv-1" onContinueDiscussion={discuss} onFounderActionResolved={resolved} brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
+      action_id: "safe-merge:message-3",
+      action_type: "SAFE_MERGE_APPROVAL",
+      type: "SAFE_MERGE_APPROVAL",
+      status: "pending",
+      title: "批准本地安全合并",
+      summary: "合并 feature 到 integration",
+      risk_level: "HIGH",
+      metadata: { merge_request: { source_branch: "feature/x", source_head: "source", target_branch: "feature/foundation-reset-integration", target_head_before: "target" } },
+    }] } }} />);
+    fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
+    await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("safe-merge:message-3", "continue_discussion"));
+    expect(discuss).toHaveBeenCalled();
+    expect(resolved).not.toHaveBeenCalled();
+  });
+
   it("keeps Candidate Confirm and Create Task out of the Founder Action Queue", () => {
     render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [
       { action_id: "candidate:candidate-1", action_type: "CANDIDATE_CONFIRM", type: "CANDIDATE_CONFIRM", status: "pending", title: "确认候选" },

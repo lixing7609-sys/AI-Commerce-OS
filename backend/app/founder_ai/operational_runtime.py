@@ -32,14 +32,18 @@ HIGH_RISK = "HIGH"
 OPERATIONAL_QUEUE_TYPE = "HIGH_RISK_OPERATIONAL_TASK"
 BOUNDED_CODE_CHANGE_QUEUE_TYPE = "BOUNDED_CODE_CHANGE_APPROVAL"
 SAFE_PUSH_QUEUE_TYPE = "SAFE_PUSH_APPROVAL"
+SAFE_MERGE_QUEUE_TYPE = "SAFE_MERGE_APPROVAL"
 REPO_INSPECTION = "REPO_INSPECTION"
 FOCUSED_TEST = "FOCUSED_TEST"
 FRONTEND_BUILD = "FRONTEND_BUILD"
 BOUNDED_CODE_CHANGE = "BOUNDED_CODE_CHANGE"
 SAFE_CHECKPOINT_COMMIT = "SAFE_CHECKPOINT_COMMIT"
 SAFE_PUSH = "SAFE_PUSH"
+SAFE_MERGE = "SAFE_MERGE"
 SAFE_PUSH_ALLOWED_REMOTES = {"origin"}
 SAFE_PUSH_PROTECTED_BRANCHES = {"main", "master", "develop", "feature/foundation-reset-integration"}
+SAFE_MERGE_TARGET_BRANCH = "feature/foundation-reset-integration"
+SAFE_MERGE_PROTECTED_BRANCHES = {"main", "master", "develop"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,7 +156,18 @@ def classify_operational_risk(content: str) -> dict:
     bounded_change_terms = ("改成", "修改", "更新", "调整", "改一下", "change", "update")
     bounded_status_title_terms = ("sino controlled runtime", "sino operational runtime", "状态卡标题", "runtime 状态卡")
     safe_checkpoint_fixture_terms = ("safe checkpoint e2e fixture", "safe checkpoint", "checkpoint 验证", "本地 checkpoint")
+    safe_merge_terms = ("merge", "合并", "--no-ff", "no-ff", "integration baseline", "integration branch", "集成分支")
     safe_push_terms = ("push", "推送", "推到远程", "远程分支", "origin", "safe push")
+    if any(term in lowered for term in safe_merge_terms):
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": HIGH_RISK,
+            "auto_continue": False,
+            "operation": "safe_merge",
+            "operation_type": SAFE_MERGE,
+            "reason": "safe_merge_requires_separate_founder_approval",
+            "approval_required": True,
+        }
     if any(term in lowered for term in safe_push_terms):
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
@@ -567,6 +582,224 @@ def _git_safe_push(remote_name: str, branch: str, *, cwd: Path, timeout: int = 6
         check=False,
         shell=False,
     )
+
+
+def _safe_merge_action_id(source_message_id: str) -> str:
+    return f"safe-merge:{source_message_id}"
+
+
+def _git_branch_exists(branch: str, *, cwd: Path) -> bool:
+    result = _git_output(["branch", "--list", branch], cwd=cwd, check=False)
+    return bool(result.stdout.strip())
+
+
+def _git_rev_parse(ref: str, *, cwd: Path) -> str | None:
+    result = _git_output(["rev-parse", ref], cwd=cwd, check=False)
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def _git_remote_head(remote: str, branch: str, *, cwd: Path) -> str | None:
+    result = _git_output(["ls-remote", remote, f"refs/heads/{branch}"], cwd=cwd, check=False, timeout=20)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return result.stdout.split()[0]
+
+
+def _git_is_ancestor(ancestor: str, descendant: str, *, cwd: Path) -> bool:
+    if not ancestor or not descendant:
+        return False
+    result = _git_output(["merge-base", "--is-ancestor", ancestor, descendant], cwd=cwd, check=False)
+    return result.returncode == 0
+
+
+def _safe_merge_source_evidence(source_branch: str, source_head: str, *, cwd: Path) -> dict:
+    evidence_path = cwd / ".sino-safe-merge-evidence.json"
+    if not evidence_path.exists():
+        return {"source_verification_status": "MISSING", "source_safe_push_status": "MISSING", "source_not_pushed": True}
+    try:
+        import json
+        payload = json.loads(evidence_path.read_text())
+    except Exception:
+        return {"source_verification_status": "MISSING", "source_safe_push_status": "MISSING", "source_not_pushed": True}
+    records = payload.get("records") if isinstance(payload, dict) else None
+    if isinstance(records, dict):
+        record = dict(records.get(source_head) or records.get("CURRENT_HEAD") or {})
+    elif isinstance(payload, dict) and payload.get("source_head") == source_head:
+        record = dict(payload)
+    else:
+        record = {}
+    if record.get("source_branch") and record.get("source_branch") != source_branch:
+        record = {}
+    verification = record.get("verification_status") or record.get("source_verification_status") or "MISSING"
+    safe_push = record.get("safe_push_status") or record.get("source_safe_push_status") or "MISSING"
+    raw_pushed_head = record.get("pushed_remote_head") or record.get("source_remote_head")
+    raw_checkpoint_head = record.get("checkpoint_head")
+    pushed_head = source_head if raw_pushed_head in {source_head, "CURRENT_HEAD"} else raw_pushed_head
+    checkpoint_head = source_head if raw_checkpoint_head in {source_head, "CURRENT_HEAD"} else raw_checkpoint_head
+    return {
+        "source_verification_status": verification,
+        "source_safe_push_status": safe_push,
+        "pushed_remote_head": pushed_head,
+        "checkpoint_head": checkpoint_head,
+        "source_verified": verification == "PASS" and checkpoint_head == source_head,
+        "source_pushed": safe_push == "PASS" and pushed_head == source_head,
+        "evidence": record,
+    }
+
+
+def _safe_merge_conflict_prediction(target_head: str | None, source_head: str | None, *, cwd: Path) -> dict:
+    if not target_head or not source_head:
+        return {"checked": False, "conflict_predicted": False, "conflict_files": []}
+    result = _git_output(["merge-tree", target_head, source_head], cwd=cwd, check=False, timeout=20)
+    output = f"{result.stdout or ''}\n{result.stderr or ''}"
+    conflict = result.returncode not in {0, 1} or "<<<<<<<" in output or "changed in both" in output or "CONFLICT" in output
+    files = sorted(set(re.findall(r"Auto-merging\s+(.+)|CONFLICT \([^)]*\): Merge conflict in\s+(.+)|changed in both\s+(.+)", output)))
+    flattened = sorted({part for item in files for part in (item if isinstance(item, tuple) else (item,)) if part})
+    return {"checked": True, "conflict_predicted": conflict, "conflict_files": flattened, "stdout_excerpt": _excerpt(result.stdout or ""), "stderr_excerpt": _excerpt(result.stderr or "")}
+
+
+def _safe_merge_preflight(
+    *,
+    cwd: Path | None = None,
+    source_branch: str | None = None,
+    target_branch: str = SAFE_MERGE_TARGET_BRANCH,
+    remote_name: str = "origin",
+) -> dict:
+    root = cwd or repo_root()
+    status_lines = _git_status_short(cwd=root)
+    current_branch = _git_output(["branch", "--show-current"], cwd=root).stdout.strip()
+    source = source_branch or current_branch
+    target = target_branch
+    remotes = set(_git_output(["remote"], cwd=root).stdout.splitlines())
+    remote_exists = remote_name in remotes
+    source_exists = _git_branch_exists(source, cwd=root) if source else False
+    target_exists = _git_branch_exists(target, cwd=root) if target else False
+    source_head = _git_rev_parse(source, cwd=root) if source_exists else None
+    target_head = _git_rev_parse(target, cwd=root) if target_exists else None
+    source_remote_head = _git_remote_head(remote_name, source, cwd=root) if remote_exists and source else None
+    target_remote_head = _git_remote_head(remote_name, target, cwd=root) if remote_exists and target else None
+    source_ahead = 0 if source_head and source_remote_head and source_head == source_remote_head else (1 if source_head and source_remote_head else 0)
+    source_behind = 0 if source_head and source_remote_head and source_head == source_remote_head else (1 if source_head and source_remote_head else 0)
+    target_ahead = 0 if target_head and target_remote_head and target_head == target_remote_head else (1 if target_head and target_remote_head else 0)
+    target_behind = 0 if target_head and target_remote_head and target_head == target_remote_head else (1 if target_head and target_remote_head else 0)
+    evidence = _safe_merge_source_evidence(source, source_head or "", cwd=root) if source_head else {"source_verified": False, "source_pushed": False}
+    conflict = _safe_merge_conflict_prediction(target_head, source_head, cwd=root) if source_head and target_head else {"checked": False, "conflict_predicted": False, "conflict_files": []}
+    return {
+        "current_branch": current_branch,
+        "source_branch": source,
+        "source_head": source_head,
+        "source_remote": remote_name,
+        "source_remote_head": source_remote_head,
+        "source_exists": source_exists,
+        "source_allowed": bool(source and source.startswith("feature/") and source not in SAFE_MERGE_PROTECTED_BRANCHES and not source.startswith(("release/", "hotfix/"))),
+        "source_ahead_remote": source_ahead,
+        "source_behind_remote": source_behind,
+        "target_branch": target,
+        "target_head": target_head,
+        "target_head_before": target_head,
+        "target_remote": remote_name,
+        "target_remote_head": target_remote_head,
+        "target_remote_head_before": target_remote_head,
+        "target_exists": target_exists,
+        "target_allowed": target == SAFE_MERGE_TARGET_BRANCH,
+        "target_ahead_remote": target_ahead,
+        "target_behind_remote": target_behind,
+        "remote_exists": remote_exists,
+        "remote_name": remote_name,
+        "working_tree_clean": not status_lines,
+        "staged_files": sorted(_staged_files_from_status(status_lines)),
+        "untracked_files": sorted(_untracked_files_from_status(status_lines)),
+        "status_short": status_lines,
+        "detached_head": not bool(current_branch),
+        "state_blocker": _git_state_blocker(root),
+        "merge_strategy": "no_ff",
+        "push_after_merge": False,
+        "auto_conflict_resolution": False,
+        "conflict_prediction": conflict,
+        **evidence,
+        "checked_at": _now(),
+    }
+
+
+def _safe_merge_failure(failure_type: str, summary: str, *, started_at: str, approval_action_id: str | None = None, preflight: dict | None = None) -> dict:
+    return {
+        "operation_type": SAFE_MERGE,
+        "status": "failed",
+        "success": False,
+        "failure_type": failure_type,
+        "summary": summary,
+        "approval_action_id": approval_action_id,
+        "merge_strategy": "no_ff",
+        "merge_commit_created": False,
+        "push_performed": False,
+        "conflict": False,
+        "conflict_files": [],
+        "already_merged": False,
+        "preflight": dict(preflight or {}),
+        "started_at": started_at,
+        "completed_at": _now(),
+        "real_executor_used": "LOCAL_EXECUTOR",
+    }
+
+
+def _validate_safe_merge_preconditions(approved_request: dict, current: dict, *, started_at: str, action_id: str) -> dict | None:
+    if current.get("state_blocker"):
+        return _safe_merge_failure("REPO_OPERATION_IN_PROGRESS", str(current["state_blocker"]), started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("detached_head"):
+        return _safe_merge_failure("SOURCE_BRANCH_NOT_ALLOWED", "detached HEAD blocks Safe Merge", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("staged_files"):
+        return _safe_merge_failure("STAGED_FILES_PRESENT", "staged files block Safe Merge", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("untracked_files"):
+        return _safe_merge_failure("UNTRACKED_FILES_PRESENT", "untracked files block Safe Merge", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("working_tree_clean"):
+        return _safe_merge_failure("WORKING_TREE_NOT_CLEAN", "working tree must be clean before Safe Merge", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("source_exists") or not current.get("source_allowed") or current.get("source_branch") in {"main", "master", "develop"}:
+        return _safe_merge_failure("SOURCE_BRANCH_NOT_ALLOWED", "source branch must be local feature/*", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("target_exists") or not current.get("target_allowed") or current.get("target_branch") in {"main", "master", "develop"}:
+        return _safe_merge_failure("TARGET_BRANCH_NOT_ALLOWED", "target branch must be the approved integration branch", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("source_branch") == current.get("target_branch"):
+        return _safe_merge_failure("SOURCE_BRANCH_NOT_ALLOWED", "source and target branch must differ", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("source_head") != approved_request.get("source_head"):
+        return _safe_merge_failure("SOURCE_HEAD_CHANGED", "source HEAD changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("target_head") != approved_request.get("target_head_before"):
+        return _safe_merge_failure("TARGET_HEAD_CHANGED", "target HEAD changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("source_branch") != approved_request.get("source_branch") or current.get("target_branch") != approved_request.get("target_branch"):
+        return _safe_merge_failure("SAFE_MERGE_PRECONDITION_CHANGED", "source or target branch changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("source_remote_head") != approved_request.get("source_remote_head") or current.get("source_head") != current.get("source_remote_head") or current.get("source_ahead_remote") or current.get("source_behind_remote"):
+        return _safe_merge_failure("SOURCE_REMOTE_NOT_SYNCED", "source branch must be fully synced with its remote", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("target_remote_head") and (current.get("target_remote_head") != approved_request.get("target_remote_head_before") or current.get("target_head") != current.get("target_remote_head") or current.get("target_ahead_remote") or current.get("target_behind_remote")):
+        return _safe_merge_failure("TARGET_REMOTE_NOT_SYNCED", "target branch must be fully synced with its remote", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("source_verified"):
+        return _safe_merge_failure("SOURCE_NOT_VERIFIED", "source verification evidence is missing or not PASS", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("source_pushed"):
+        return _safe_merge_failure("SOURCE_NOT_PUSHED", "source Safe Push evidence is missing or not PASS", started_at=started_at, approval_action_id=action_id, preflight=current)
+    conflict = dict(current.get("conflict_prediction") or {})
+    if conflict.get("conflict_predicted"):
+        failure = _safe_merge_failure("MERGE_CONFLICT_PREDICTED", "preflight detected likely merge conflict", started_at=started_at, approval_action_id=action_id, preflight=current)
+        failure.update({"conflict": True, "conflict_files": conflict.get("conflict_files") or []})
+        return failure
+    return None
+
+
+def _git_safe_switch(branch: str, *, cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess:
+    target = _safe_git_ref(branch, field="branch")
+    return subprocess.run(["git", "switch", target], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False, shell=False)
+
+
+def _git_safe_merge_no_ff(source_branch: str, *, cwd: Path, timeout: int = 60) -> subprocess.CompletedProcess:
+    source = _safe_git_ref(source_branch, field="source_branch")
+    return subprocess.run(["git", "merge", "--no-ff", source], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False, shell=False)
+
+
+def _git_safe_merge_abort(*, cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "merge", "--abort"], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False, shell=False)
+
+
+def _merge_parent_count(head: str, *, cwd: Path) -> int:
+    line = _git_output(["rev-list", "--parents", "-n", "1", head], cwd=cwd).stdout.strip()
+    return max(0, len(line.split()) - 1)
 
 
 def safe_checkpoint_commit(
@@ -1014,6 +1247,79 @@ def _append_safe_push_queue_item(conversation_id: str, founder_request: str, sou
             "action_id": action_id,
             "push_request": push_request,
             "message": "这是 HIGH risk 推送请求；已进入 Founder Action Queue。批准前不会执行 git push。",
+        }
+        state.discovery = discovery
+        state.stage = "operational_runtime"
+        state.updated_at = datetime.now(timezone.utc)
+        session.commit()
+    return action_id
+
+
+def _append_safe_merge_queue_item(conversation_id: str, founder_request: str, source_message_id: str, risk: dict) -> str:
+    now = _now()
+    action_id = _safe_merge_action_id(source_message_id)
+    merge_request = _safe_merge_preflight()
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("sino_brain_session_not_found")
+        discovery = dict(state.discovery or {})
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]
+        existing = next((item for item in queue if item.get("action_id") == action_id), None)
+        payload = {
+            "action_id": action_id,
+            "action_type": SAFE_MERGE_QUEUE_TYPE,
+            "type": SAFE_MERGE_QUEUE_TYPE,
+            "title": "批准本地安全合并",
+            "summary": founder_request[:300],
+            "risk_level": HIGH_RISK,
+            "risk": "high",
+            "status": "pending",
+            "conversation_id": conversation_id,
+            "source_type": "conversation_message",
+            "source_id": source_message_id,
+            "created_at": existing.get("created_at") if existing else now,
+            "updated_at": now,
+            "decision": existing.get("decision") if existing else None,
+            "decided_at": existing.get("decided_at") if existing else None,
+            "reason": risk.get("reason"),
+            "metadata": {
+                "queue_schema": "sino-safe-merge-v1",
+                "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+                "operation_type": SAFE_MERGE,
+                "founder_request": founder_request,
+                "merge_request": merge_request,
+                "source_branch": merge_request.get("source_branch"),
+                "source_head": merge_request.get("source_head"),
+                "source_remote": merge_request.get("source_remote"),
+                "source_remote_head": merge_request.get("source_remote_head"),
+                "target_branch": merge_request.get("target_branch"),
+                "target_head_before": merge_request.get("target_head_before"),
+                "target_remote": merge_request.get("target_remote"),
+                "target_remote_head_before": merge_request.get("target_remote_head_before"),
+                "merge_strategy": "no_ff",
+                "push_after_merge": False,
+                "auto_conflict_resolution": False,
+            },
+        }
+        if existing:
+            for index, item in enumerate(queue):
+                if item.get("action_id") == action_id:
+                    queue[index] = {**item, **payload, "status": item.get("status") or "pending"}
+                    break
+        else:
+            queue.append(payload)
+        discovery["founder_action_queue"] = queue
+        discovery["founder_action_required"] = True
+        discovery["operational_runtime"] = {
+            "status": "approval_required",
+            "risk_decision": risk,
+            "founder_request": founder_request,
+            "source_message_id": source_message_id,
+            "operation_type": SAFE_MERGE,
+            "action_id": action_id,
+            "merge_request": merge_request,
+            "message": "这是 HIGH risk 本地合并请求；已进入 Founder Action Queue。批准前不会执行 git switch 或 git merge。",
         }
         state.discovery = discovery
         state.stage = "operational_runtime"
@@ -1888,6 +2194,335 @@ def execute_safe_push(
     return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "completed", "result": result}
 
 
+def _safe_merge_task_scope(*, founder_request: str, conversation_id: str, source_message_id: str, action_id: str, merge_request: dict) -> dict:
+    return {
+        "operational_runtime": {
+            "schema_version": "sino-safe-merge-v1",
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "operation": "safe_merge",
+            "operation_type": SAFE_MERGE,
+            "founder_request": founder_request,
+            "conversation_id": conversation_id,
+            "source_message_id": source_message_id,
+            "action_id": action_id,
+            "repo_path": str(repo_root()),
+            "risk_level": HIGH_RISK,
+            "approval_required": True,
+            "approval_action_id": action_id,
+            "merge_request": merge_request,
+            "source_branch": merge_request.get("source_branch"),
+            "source_head": merge_request.get("source_head"),
+            "target_branch": merge_request.get("target_branch"),
+            "target_head_before": merge_request.get("target_head_before"),
+            "merge_strategy": "no_ff",
+            "push_after_merge": False,
+            "auto_conflict_resolution": False,
+        }
+    }
+
+
+def _persist_safe_merge_result(
+    *,
+    conversation_id: str,
+    task: TaskAssetDB,
+    execution_id: str,
+    action_id: str,
+    queued_payload: dict,
+    result: dict,
+    queue_status: str,
+) -> None:
+    completed_at = result.get("completed_at") or _now()
+    with SessionLocal() as session:
+        record = session.get(TaskAssetDB, task.id)
+        if record is not None:
+            record.result = result
+            record.status = result["status"]
+            record.execution_status = result["status"]
+            scope = dict(record.scope or {})
+            start = dict(scope.get("execution_start") or {})
+            start.update({"status": result["status"], "completed_at": completed_at})
+            scope["execution_start"] = start
+            record.scope = scope
+            session.commit()
+    registry_record = get_execution_session(execution_id)
+    if registry_record:
+        registry_session, package = registry_record
+        registry_session.status = result["status"]
+        registry_session.completed_at = completed_at
+        registry_session.result = result
+        if result.get("failure_type"):
+            registry_session.error_message = result.get("summary")
+        save_execution_session(registry_session, package)
+    _mark_bounded_action(conversation_id, action_id, {
+        "status": queue_status,
+        "decision": "approved",
+        "decided_at": completed_at,
+        "task_id": task.id,
+        "execution_id": execution_id,
+        "result": result,
+    })
+    _update_brain(conversation_id, {**queued_payload, "status": result["status"], "result": result, "message": result.get("summary")})
+
+
+def execute_safe_merge(
+    *,
+    conversation_id: str,
+    founder_request: str,
+    source_message_id: str,
+    action_id: str,
+    merge_request: dict,
+    cwd: Path | None = None,
+    switcher: Callable[[str, Path], subprocess.CompletedProcess] | None = None,
+    merger: Callable[[str, Path], subprocess.CompletedProcess] | None = None,
+    aborter: Callable[[Path], subprocess.CompletedProcess] | None = None,
+) -> dict:
+    started_at = _now()
+    root = cwd or repo_root()
+    risk = {
+        "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+        "risk_level": HIGH_RISK,
+        "auto_continue": False,
+        "operation": "safe_merge",
+        "operation_type": SAFE_MERGE,
+        "reason": "founder_approved_safe_merge",
+        "approval_action_id": action_id,
+    }
+    task = create_task_asset(
+        title="本地安全合并 feature 到 integration",
+        description=founder_request,
+        conversation_id=conversation_id,
+        source_message_id=source_message_id,
+        scope=_safe_merge_task_scope(
+            founder_request=founder_request,
+            conversation_id=conversation_id,
+            source_message_id=source_message_id,
+            action_id=action_id,
+            merge_request=merge_request,
+        ),
+        status="draft",
+        approval_status="approved",
+        execution_status="not_started",
+    )
+    with SessionLocal() as session:
+        task = session.get(TaskAssetDB, task.id)
+        scope = dict(task.scope or {})
+        prior_start = dict(scope.get("execution_start") or {})
+        if prior_start.get("execution_id") and task.result:
+            existing = dict(task.result)
+            if existing.get("success"):
+                existing = {**existing, "already_merged": True, "reused": True, "failure_type": "MERGE_ALREADY_EXISTS"}
+            return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": prior_start["execution_id"], "created": False, "reused": True, "status": existing.get("status"), "result": existing}
+        execution_id = prior_start.get("execution_id") or _stable_execution_id(task.id, source_message_id)
+        package = _execution_package(task=task, execution_id=execution_id, risk=risk)
+        package.context.update({
+            "operation_type": SAFE_MERGE,
+            "risk_level": HIGH_RISK,
+            "approval_action_id": action_id,
+            "source_branch": merge_request.get("source_branch"),
+            "source_head": merge_request.get("source_head"),
+            "target_branch": merge_request.get("target_branch"),
+            "target_head_before": merge_request.get("target_head_before"),
+            "merge_strategy": "no_ff",
+            "push_after_merge": False,
+            "auto_conflict_resolution": False,
+        })
+        existing_session = get_execution_session(execution_id)
+        if existing_session:
+            execution, _package = existing_session
+            created = False
+        else:
+            execution = ExecutionSession(
+                id=execution_id,
+                task_asset_id=task.id,
+                execution_package_id=f"package-{execution_id}",
+                executor="LOCAL_EXECUTOR",
+                status="queued",
+                approved_at=_now(),
+                queued_at=_now(),
+            )
+            save_execution_session(execution, package)
+            created = True
+        scope["execution_start"] = {
+            "schema_version": "safe-merge-start-v1",
+            "started_from": "founder_approved_safe_merge",
+            "execution_id": execution_id,
+            "task_asset_id": task.id,
+            "task_id": task.id,
+            "status": "queued",
+            "operation_type": SAFE_MERGE,
+            "queued_at": execution.queued_at or _now(),
+            "source_conversation_id": conversation_id,
+            "source_message_refs": [source_message_id],
+            "action_id": action_id,
+        }
+        task.scope = scope
+        task.status = "in_progress"
+        task.execution_status = "queued"
+        session.commit()
+
+    queued_payload = {
+        "status": "queued",
+        "operation_type": SAFE_MERGE,
+        "risk_decision": risk,
+        "task_id": task.id,
+        "execution_id": execution_id,
+        "action_id": action_id,
+        "founder_request": founder_request,
+        "merge_request": merge_request,
+        "message": "已获得合并授权，正在重新检查 source/target 状态。",
+    }
+    _update_brain(conversation_id, queued_payload)
+    _append_assistant_message(conversation_id, queued_payload["message"], message_type="operational_execution", grounding={"operational_runtime": queued_payload})
+
+    current = _safe_merge_preflight(
+        cwd=root,
+        source_branch=str(merge_request.get("source_branch") or ""),
+        target_branch=str(merge_request.get("target_branch") or SAFE_MERGE_TARGET_BRANCH),
+        remote_name=str(merge_request.get("source_remote") or "origin"),
+    )
+    failure = _validate_safe_merge_preconditions(merge_request, current, started_at=started_at, action_id=action_id)
+    if failure:
+        _persist_safe_merge_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"本地安全合并已停止：{failure['summary']}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+
+    target_branch = current["target_branch"]
+    source_branch = current["source_branch"]
+    target_before = current["target_head"]
+    source_head = current["source_head"]
+    if _git_is_ancestor(source_head, target_before, cwd=root):
+        result = {
+            "operation_type": SAFE_MERGE,
+            "status": "completed",
+            "success": True,
+            "approval_action_id": action_id,
+            "source_branch": source_branch,
+            "source_head": source_head,
+            "source_remote": current.get("source_remote"),
+            "source_remote_head": current.get("source_remote_head"),
+            "target_branch": target_branch,
+            "target_head_before": target_before,
+            "target_remote": current.get("target_remote"),
+            "target_remote_head_before": current.get("target_remote_head_before"),
+            "merge_strategy": "no_ff",
+            "merge_commit_created": False,
+            "merge_commit_head": target_before,
+            "merge_parent_count": _merge_parent_count(target_before, cwd=root),
+            "source_ancestor_verified": True,
+            "target_ancestor_verified": True,
+            "working_tree_clean_after": current.get("working_tree_clean"),
+            "push_performed": False,
+            "conflict": False,
+            "conflict_files": [],
+            "already_merged": True,
+            "summary": "source branch 已经包含在 target 中；无需重复 merge。",
+            "stdout_excerpt": "",
+            "stderr_excerpt": "",
+            "started_at": started_at,
+            "completed_at": _now(),
+            "real_executor_used": "LOCAL_EXECUTOR",
+        }
+        _persist_safe_merge_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=result, queue_status="completed")
+        _append_assistant_message(conversation_id, result["summary"], message_type="operational_result", grounding={"operational_runtime": result, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "completed", "result": result}
+
+    _update_brain(conversation_id, {**queued_payload, "status": "running", "message": "正在执行本地安全合并…"})
+    switch = (switcher or (lambda selected_branch, selected_root: _git_safe_switch(selected_branch, cwd=selected_root)))(target_branch, root)
+    if switch.returncode != 0:
+        failure = _safe_merge_failure("MERGE_FAILED", _excerpt(switch.stderr or switch.stdout, 1000), started_at=started_at, approval_action_id=action_id, preflight=current)
+        _persist_safe_merge_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"本地安全合并失败：{failure['summary']}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+    post_switch_head = _git_output(["rev-parse", "HEAD"], cwd=root).stdout.strip()
+    if post_switch_head != target_before or _git_status_short(cwd=root):
+        failure = _safe_merge_failure("TARGET_HEAD_CHANGED", "target HEAD or working tree changed after switch", started_at=started_at, approval_action_id=action_id, preflight=current)
+        _persist_safe_merge_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"本地安全合并已停止：{failure['summary']}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+    merge = (merger or (lambda selected_source, selected_root: _git_safe_merge_no_ff(selected_source, cwd=selected_root)))(source_branch, root)
+    if merge.returncode != 0:
+        conflict_files = sorted(_git_output(["diff", "--name-only", "--diff-filter=U"], cwd=root, check=False).stdout.splitlines())
+        abort = (aborter or (lambda selected_root: _git_safe_merge_abort(cwd=selected_root)))(root)
+        failure_type = "MERGE_CONFLICT" if conflict_files else "MERGE_FAILED"
+        failure = _safe_merge_failure(failure_type, _excerpt(merge.stderr or merge.stdout, 1000), started_at=started_at, approval_action_id=action_id, preflight=current)
+        failure.update({
+            "conflict": bool(conflict_files),
+            "conflict_files": conflict_files,
+            "merge_abort_success": abort.returncode == 0,
+            "merge_abort_failure": _excerpt(abort.stderr or abort.stdout, 1000) if abort.returncode != 0 else None,
+        })
+        if abort.returncode != 0:
+            failure["failure_type"] = "MERGE_ABORT_FAILED"
+        _persist_safe_merge_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"合并检测到冲突，已停止自动处理。\n冲突文件：{', '.join(conflict_files) or '未知'}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+
+    merge_head = _git_output(["rev-parse", "HEAD"], cwd=root).stdout.strip()
+    parent_count = _merge_parent_count(merge_head, cwd=root)
+    source_ancestor = _git_is_ancestor(source_head, merge_head, cwd=root)
+    target_ancestor = _git_is_ancestor(target_before, merge_head, cwd=root)
+    status_after = _git_status_short(cwd=root)
+    success = merge_head != target_before and parent_count == 2 and source_ancestor and target_ancestor and not status_after
+    if not success:
+        failure = _safe_merge_failure("POST_MERGE_VERIFICATION_FAILED", "merge commit verification failed", started_at=started_at, approval_action_id=action_id, preflight=current)
+        failure.update({
+            "merge_commit_head": merge_head,
+            "merge_parent_count": parent_count,
+            "source_ancestor_verified": source_ancestor,
+            "target_ancestor_verified": target_ancestor,
+            "working_tree_clean_after": not status_after,
+        })
+        _persist_safe_merge_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"本地安全合并后验证失败：{failure['summary']}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+    result = {
+        "operation_type": SAFE_MERGE,
+        "status": "completed",
+        "success": True,
+        "approval_action_id": action_id,
+        "source_branch": source_branch,
+        "source_head": source_head,
+        "source_remote": current.get("source_remote"),
+        "source_remote_head": current.get("source_remote_head"),
+        "target_branch": target_branch,
+        "target_head_before": target_before,
+        "target_remote": current.get("target_remote"),
+        "target_remote_head_before": current.get("target_remote_head_before"),
+        "merge_strategy": "no_ff",
+        "merge_commit_created": True,
+        "merge_commit_head": merge_head,
+        "merge_parent_count": parent_count,
+        "source_ancestor_verified": source_ancestor,
+        "target_ancestor_verified": target_ancestor,
+        "working_tree_clean_after": True,
+        "push_performed": False,
+        "conflict": False,
+        "conflict_files": [],
+        "already_merged": False,
+        "summary": f"本地安全合并完成：{source_branch} → {target_branch}，merge HEAD: {merge_head}，尚未 push。",
+        "stdout_excerpt": _excerpt(merge.stdout or ""),
+        "stderr_excerpt": _excerpt(merge.stderr or ""),
+        "started_at": started_at,
+        "completed_at": _now(),
+        "real_executor_used": "LOCAL_EXECUTOR",
+    }
+    _persist_safe_merge_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=result, queue_status="completed")
+    _append_assistant_message(
+        conversation_id,
+        (
+            "本地安全合并完成：\n"
+            f"source: {source_branch}\n"
+            f"target: {target_branch}\n"
+            f"merge HEAD: {merge_head}\n"
+            "工作区：clean\n"
+            "尚未 push。"
+        ),
+        message_type="operational_result",
+        grounding={"operational_runtime": result, "task_id": task.id, "execution_id": execution_id},
+    )
+    return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "completed", "result": result}
+
+
 def decide_bounded_code_change_action(action_id: str, decision: str) -> dict:
     if decision not in {"approve", "reject", "continue_discussion"}:
         raise ValueError("unsupported_bounded_code_change_decision")
@@ -1995,6 +2630,60 @@ def decide_safe_push_action(action_id: str, decision: str) -> dict:
     )
 
 
+def decide_safe_merge_action(action_id: str, decision: str) -> dict:
+    if decision not in {"approve", "reject", "continue_discussion"}:
+        raise ValueError("unsupported_safe_merge_decision")
+    state, action = _find_action(action_id)
+    if action.get("action_type") != SAFE_MERGE_QUEUE_TYPE:
+        raise ValueError("not_safe_merge_action")
+    conversation_id = action.get("conversation_id") or state.conversation_id
+    source_message_id = action.get("source_id")
+    metadata = dict(action.get("metadata") or {})
+    founder_request = metadata.get("founder_request") or action.get("summary") or ""
+    merge_request = dict(metadata.get("merge_request") or {})
+    existing_result = dict(action.get("result") or {})
+    if decision == "continue_discussion":
+        _append_assistant_message(
+            conversation_id,
+            "继续讨论本地安全合并；该 Action Queue item 保持 pending，批准前不会执行 git switch 或 git merge。",
+            message_type="operational_discussion",
+            grounding={"action_id": action_id, "operation_type": SAFE_MERGE},
+        )
+        return {"handled": True, "action_id": action_id, "decision": "continue_discussion", "status": "pending", "merge_performed": False}
+    if decision == "reject":
+        now = _now()
+        _mark_bounded_action(conversation_id, action_id, {"status": "rejected", "decision": "rejected", "decided_at": now})
+        _update_brain(conversation_id, {"status": "rejected", "operation_type": SAFE_MERGE, "action_id": action_id, "message": "本地安全合并已拒绝；不会切换分支或 merge。"})
+        _append_assistant_message(
+            conversation_id,
+            "本地安全合并已拒绝；不会切换分支或 merge。",
+            message_type="operational_result",
+            grounding={"action_id": action_id, "operation_type": SAFE_MERGE, "decision": "rejected"},
+        )
+        return {"handled": True, "action_id": action_id, "decision": "rejected", "status": "rejected", "merge_performed": False}
+    if existing_result.get("success") and action.get("status") == "completed":
+        reused = {**existing_result, "already_merged": True, "reused": True, "failure_type": "MERGE_ALREADY_EXISTS"}
+        _update_brain(conversation_id, {"status": "completed", "operation_type": SAFE_MERGE, "action_id": action_id, "result": reused, "message": reused.get("summary")})
+        return {
+            "handled": True,
+            "action_id": action_id,
+            "decision": "approved",
+            "status": "completed",
+            "task_id": action.get("task_id"),
+            "execution_id": action.get("execution_id"),
+            "result": reused,
+            "reused": True,
+        }
+    _mark_bounded_action(conversation_id, action_id, {"status": "approved", "decision": "approved", "decided_at": _now()})
+    return execute_safe_merge(
+        conversation_id=conversation_id,
+        founder_request=founder_request,
+        source_message_id=source_message_id,
+        action_id=action_id,
+        merge_request=merge_request,
+    )
+
+
 def decide_operational_action_by_type(action_id: str, decision: str) -> dict:
     _state, action = _find_action(action_id)
     action_type = action.get("action_type") or action.get("type")
@@ -2002,6 +2691,8 @@ def decide_operational_action_by_type(action_id: str, decision: str) -> dict:
         return decide_bounded_code_change_action(action_id, decision)
     if action_type == SAFE_PUSH_QUEUE_TYPE:
         return decide_safe_push_action(action_id, decision)
+    if action_type == SAFE_MERGE_QUEUE_TYPE:
+        return decide_safe_merge_action(action_id, decision)
     raise ValueError("unsupported_operational_action_type")
 
 
@@ -2011,6 +2702,15 @@ def handle_operational_conversation_request(
     risk = classify_operational_risk(founder_request)
     if risk.get("work_type") != CONTROLLED_LOCAL_DEVELOPMENT_TASK:
         return {"handled": False, "risk_decision": risk}
+    if risk.get("risk_level") == HIGH_RISK and risk.get("operation_type") == SAFE_MERGE:
+        action_id = _append_safe_merge_queue_item(conversation_id, founder_request, source_message_id, risk)
+        _append_assistant_message(
+            conversation_id,
+            "这是 HIGH risk 本地安全合并请求，已进入 Founder Action Queue。批准前不会执行 git switch 或 git merge。",
+            message_type="operational_approval_required",
+            grounding={"operational_runtime": {"status": "approval_required", "risk_decision": risk, "action_id": action_id}},
+        )
+        return {"handled": True, "risk_decision": risk, "status": "approval_required", "action_id": action_id}
     if risk.get("risk_level") == HIGH_RISK and risk.get("operation_type") == SAFE_PUSH:
         action_id = _append_safe_push_queue_item(conversation_id, founder_request, source_message_id, risk)
         _append_assistant_message(
