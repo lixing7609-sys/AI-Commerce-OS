@@ -179,6 +179,61 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText("backend/app/secret.py")).toBeTruthy();
   });
 
+  it("shows safe push success details in the same conversation", () => {
+    const value = {
+      ...snapshot("conv-safe-push", [{ message_id: "m1", role: "founder", content: "推送当前 checkpoint" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "completed", task_id: "task-push", execution_id: "execution-push", operation_type: "SAFE_PUSH", result: {
+        operation_type: "SAFE_PUSH",
+        summary: "安全推送完成：feature/sino-safe-push-v1 → origin/feature/sino-safe-push-v1",
+        local_branch: "feature/sino-safe-push-v1",
+        local_head: "head-local",
+        remote_name: "origin",
+        remote_branch: "feature/sino-safe-push-v1",
+        new_remote_head: "head-local",
+        ahead_before: 1,
+        behind_before: 0,
+        push_performed: true,
+        already_up_to_date: false,
+        force_used: false,
+        tags_pushed: false,
+      } } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("SAFE_PUSH")).toBeTruthy();
+    expect(screen.getAllByText("feature/sino-safe-push-v1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("head-local").length).toBeGreaterThan(0);
+    expect(screen.getByText("origin")).toBeTruthy();
+    expect(screen.getByText("Remote HEAD")).toBeTruthy();
+    expect(screen.getByText("Commits pushed")).toBeTruthy();
+    expect(screen.getByText("Tags pushed")).toBeTruthy();
+    expect(screen.getAllByText("NO").length).toBeGreaterThan(0);
+  });
+
+  it("shows safe push blocked reason in the same conversation", () => {
+    const value = {
+      ...snapshot("conv-safe-push-blocked", [{ message_id: "m1", role: "founder", content: "推送当前 checkpoint" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "failed", task_id: "task-push", execution_id: "execution-push", operation_type: "SAFE_PUSH", result: {
+        operation_type: "SAFE_PUSH",
+        summary: "remote branch is ahead",
+        failure_type: "REMOTE_AHEAD_BLOCKED",
+        local_branch: "feature/sino-safe-push-v1",
+        local_head: "head-local",
+        remote_name: "origin",
+        remote_branch: "feature/sino-safe-push-v1",
+        ahead_before: 0,
+        behind_before: 1,
+        push_performed: false,
+        force_used: false,
+        tags_pushed: false,
+      } } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("执行失败")).toBeTruthy();
+    expect(screen.getByText("REMOTE_AHEAD_BLOCKED")).toBeTruthy();
+    expect(screen.getByText("remote branch is ahead")).toBeTruthy();
+    expect(screen.getAllByText("feature/sino-safe-push-v1").length).toBeGreaterThan(0);
+  });
+
   it("keeps operational runtime isolated by conversation snapshot", () => {
     const convA = {
       ...snapshot("conv-a", [{ message_id: "m1", role: "founder", content: "检查状态" }]),

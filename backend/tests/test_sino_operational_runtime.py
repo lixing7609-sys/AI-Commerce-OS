@@ -16,7 +16,7 @@ from app.founder_ai import execution_registry
 
 
 LOW_REQUEST = "检查当前 AI-Commerce-OS 工程状态，告诉我当前 branch、HEAD 和是否有未提交文件。"
-HIGH_REQUEST = "把当前分支直接 push 到远程"
+HIGH_REQUEST = "部署到生产环境并写 production db"
 FOCUSED_TEST_REQUEST = "运行 Sino Operational Runtime 的测试，告诉我结果。"
 FRONTEND_BUILD_REQUEST = "检查一下前端现在能不能正常构建。"
 BOUNDED_CHANGE_REQUEST = "请把 Sino Operational Runtime 状态卡标题改成 Sino Controlled Runtime，并运行相关前端测试和构建。"
@@ -595,3 +595,184 @@ def test_conversation_api_short_circuits_low_operational_request_before_provider
     assert task.approval_status == "approved"
     assert task.execution_status == "completed"
     assert any("当前 branch" in item.content for item in messages)
+
+
+def _safe_push_request(**overrides):
+    value = {
+        "local_branch": "feature/sino-safe-push-v1",
+        "local_head": "head-approved",
+        "checkpoint_head": "head-approved",
+        "remote_name": "origin",
+        "remote_branch": "feature/sino-safe-push-v1",
+        "remote_url": "/tmp/origin.git",
+        "remote_branch_head": "head-remote",
+        "remote_exists": True,
+        "remote_allowed": True,
+        "ahead_count": 1,
+        "behind_count": 0,
+        "working_tree_clean": True,
+        "staged_files": [],
+        "untracked_files": [],
+        "status_short": [],
+        "detached_head": False,
+        "protected_branch": False,
+        "state_blocker": None,
+        "force_allowed": False,
+        "tags_allowed": False,
+        "delete_allowed": False,
+        "deployment_allowed": False,
+    }
+    value.update(overrides)
+    return value
+
+
+def test_safe_push_request_is_high_and_specific():
+    decision = runtime.classify_operational_risk("请把当前 checkpoint push 到 origin 同名远程分支。")
+    assert decision["operation_type"] == "SAFE_PUSH"
+    assert decision["risk_level"] == "HIGH"
+    assert decision["approval_required"] is True
+    assert decision["auto_continue"] is False
+
+
+def test_safe_push_enters_action_queue_and_push_unreachable_before_approval(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-push")
+    monkeypatch.setattr(runtime, "_safe_push_preflight", lambda **_kwargs: _safe_push_request())
+    monkeypatch.setattr(runtime, "_git_safe_push", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("push must not run before approval")))
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-safe-push",
+        founder_request="请安全 push 当前 checkpoint。",
+        source_message_id="message-safe-push",
+    )
+    assert result["status"] == "approval_required"
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-safe-push").one()
+        assert db.query(TaskAssetDB).count() == 0
+    queue = state.discovery["founder_action_queue"]
+    items = [item for item in queue if item["action_type"] == "SAFE_PUSH_APPROVAL" and item["status"] == "pending"]
+    assert len(items) == 1
+    assert items[0]["metadata"]["checkpoint_head"] == "head-approved"
+    assert items[0]["metadata"]["remote_name"] == "origin"
+    assert len(execution_registry._sessions) == 0
+
+
+def test_safe_push_reject_and_continue_do_not_push(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-push-reject")
+    monkeypatch.setattr(runtime, "_safe_push_preflight", lambda **_kwargs: _safe_push_request())
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-safe-push-reject",
+        founder_request="请安全 push 当前 checkpoint。",
+        source_message_id="message-safe-push-reject",
+    )
+    monkeypatch.setattr(runtime, "_git_safe_push", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("push must not run")))
+    continued = runtime.decide_operational_action_by_type(result["action_id"], "continue_discussion")
+    assert continued["status"] == "pending"
+    rejected = runtime.decide_operational_action_by_type(result["action_id"], "reject")
+    assert rejected["push_performed"] is False
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-safe-push-reject").one()
+        assert db.query(TaskAssetDB).count() == 0
+    item = next(item for item in state.discovery["founder_action_queue"] if item["action_id"] == result["action_id"])
+    assert item["status"] == "rejected"
+    assert len(execution_registry._sessions) == 0
+
+
+def test_safe_push_approval_creates_task_execution_and_pushes_once(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-push-approve")
+    preflights = [
+        _safe_push_request(),
+        _safe_push_request(),
+        _safe_push_request(remote_branch_head="head-approved", ahead_count=0),
+    ]
+    monkeypatch.setattr(runtime, "_safe_push_preflight", lambda **_kwargs: preflights.pop(0))
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-safe-push-approve",
+        founder_request="请安全 push 当前 checkpoint。",
+        source_message_id="message-safe-push-approve",
+    )
+    calls = []
+
+    def fake_push(remote, branch, root):
+        calls.append((remote, branch, root))
+        return SimpleNamespace(returncode=0, stdout="", stderr="pushed")
+
+    approved = runtime.execute_safe_push(
+        conversation_id="conv-safe-push-approve",
+        founder_request="请安全 push 当前 checkpoint。",
+        source_message_id="message-safe-push-approve",
+        action_id=result["action_id"],
+        push_request=_safe_push_request(),
+        cwd=tmp_path,
+        push_runner=fake_push,
+    )
+    assert approved["status"] == "completed"
+    assert approved["result"]["push_performed"] is True
+    assert approved["result"]["force_used"] is False
+    assert approved["result"]["tags_pushed"] is False
+    assert calls == [("origin", "feature/sino-safe-push-v1", tmp_path)]
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-safe-push-approve").all()
+    assert task.scope["operational_runtime"]["checkpoint_head"] == "head-approved"
+    assert task.execution_status == "completed"
+    assert task.result["operation_type"] == "SAFE_PUSH"
+    assert any("安全推送完成" in item.content for item in messages)
+    assert len(execution_registry._sessions) == 1
+
+
+def test_safe_push_blocks_dirty_staged_untracked_and_remote_ahead(monkeypatch, tmp_path):
+    base = _safe_push_request()
+    dirty = runtime._validate_safe_push_preconditions(base, _safe_push_request(working_tree_clean=False, status_short=[" M a.txt"]), started_at="now", action_id="safe-push:1")
+    staged = runtime._validate_safe_push_preconditions(base, _safe_push_request(working_tree_clean=False, staged_files=["a.txt"]), started_at="now", action_id="safe-push:1")
+    untracked = runtime._validate_safe_push_preconditions(base, _safe_push_request(working_tree_clean=False, untracked_files=["a.txt"]), started_at="now", action_id="safe-push:1")
+    remote_ahead = runtime._validate_safe_push_preconditions(base, _safe_push_request(behind_count=1), started_at="now", action_id="safe-push:1")
+    assert dirty["failure_type"] == "WORKING_TREE_NOT_CLEAN"
+    assert staged["failure_type"] == "STAGED_FILES_PRESENT"
+    assert untracked["failure_type"] == "UNTRACKED_FILES_PRESENT"
+    assert remote_ahead["failure_type"] == "REMOTE_AHEAD_BLOCKED"
+
+
+def test_safe_push_blocks_changed_head_branch_remote_and_protected_branch():
+    base = _safe_push_request()
+    assert runtime._validate_safe_push_preconditions(base, _safe_push_request(local_head="head-new", checkpoint_head="head-new"), started_at="now", action_id="safe-push:1")["failure_type"] == "HEAD_CHANGED_AFTER_APPROVAL"
+    assert runtime._validate_safe_push_preconditions(base, _safe_push_request(local_branch="feature/other", remote_branch="feature/other"), started_at="now", action_id="safe-push:1")["failure_type"] == "BRANCH_CHANGED_AFTER_APPROVAL"
+    assert runtime._validate_safe_push_preconditions(base, _safe_push_request(remote_name="upstream"), started_at="now", action_id="safe-push:1")["failure_type"] == "REMOTE_STATE_CHANGED"
+    assert runtime._validate_safe_push_preconditions(base, _safe_push_request(local_branch="main", remote_branch="main", protected_branch=True), started_at="now", action_id="safe-push:1")["failure_type"] == "PROTECTED_BRANCH_BLOCKED"
+    assert runtime._validate_safe_push_preconditions(base, _safe_push_request(local_branch="feature/foundation-reset-integration", remote_branch="feature/foundation-reset-integration", protected_branch=True), started_at="now", action_id="safe-push:1")["failure_type"] == "PROTECTED_BRANCH_BLOCKED"
+
+
+def test_safe_push_argv_uses_shell_false_and_rejects_unsafe_ref(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        captured["shell"] = kwargs.get("shell")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime.subprocess, "run", fake_run)
+    runtime._git_safe_push("origin", "feature/sino-safe-push-v1", cwd=tmp_path)
+    assert captured["argv"] == ["git", "push", "origin", "feature/sino-safe-push-v1"]
+    assert captured["shell"] is False
+    assert "--force" not in captured["argv"]
+    assert "--tags" not in captured["argv"]
+    assert "--delete" not in captured["argv"]
+    with pytest.raises(ValueError):
+        runtime._git_safe_push("origin", "HEAD:main", cwd=tmp_path)
+
+
+def test_safe_push_already_up_to_date_is_idempotent_without_push(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-push-up-to-date")
+    preflights = [_safe_push_request(ahead_count=0, remote_branch_head="head-approved"), _safe_push_request(ahead_count=0, remote_branch_head="head-approved")]
+    monkeypatch.setattr(runtime, "_safe_push_preflight", lambda **_kwargs: preflights.pop(0))
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-safe-push-up-to-date",
+        founder_request="请安全 push 当前 checkpoint。",
+        source_message_id="message-safe-push-up-to-date",
+    )
+    monkeypatch.setattr(runtime, "_git_safe_push", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("already up to date must not push")))
+    approved = runtime.decide_operational_action_by_type(result["action_id"], "approve")
+    repeated = runtime.decide_operational_action_by_type(result["action_id"], "approve")
+    assert approved["result"]["already_up_to_date"] is True
+    assert repeated["result"]["already_up_to_date"] is True
+    with factory() as db:
+        assert db.query(TaskAssetDB).count() == 1
+    assert len(execution_registry._sessions) == 1

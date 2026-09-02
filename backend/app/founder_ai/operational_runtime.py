@@ -31,11 +31,15 @@ MEDIUM_RISK = "MEDIUM"
 HIGH_RISK = "HIGH"
 OPERATIONAL_QUEUE_TYPE = "HIGH_RISK_OPERATIONAL_TASK"
 BOUNDED_CODE_CHANGE_QUEUE_TYPE = "BOUNDED_CODE_CHANGE_APPROVAL"
+SAFE_PUSH_QUEUE_TYPE = "SAFE_PUSH_APPROVAL"
 REPO_INSPECTION = "REPO_INSPECTION"
 FOCUSED_TEST = "FOCUSED_TEST"
 FRONTEND_BUILD = "FRONTEND_BUILD"
 BOUNDED_CODE_CHANGE = "BOUNDED_CODE_CHANGE"
 SAFE_CHECKPOINT_COMMIT = "SAFE_CHECKPOINT_COMMIT"
+SAFE_PUSH = "SAFE_PUSH"
+SAFE_PUSH_ALLOWED_REMOTES = {"origin"}
+SAFE_PUSH_PROTECTED_BRANCHES = {"main", "master", "develop", "feature/foundation-reset-integration"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +152,17 @@ def classify_operational_risk(content: str) -> dict:
     bounded_change_terms = ("改成", "修改", "更新", "调整", "改一下", "change", "update")
     bounded_status_title_terms = ("sino controlled runtime", "sino operational runtime", "状态卡标题", "runtime 状态卡")
     safe_checkpoint_fixture_terms = ("safe checkpoint e2e fixture", "safe checkpoint", "checkpoint 验证", "本地 checkpoint")
+    safe_push_terms = ("push", "推送", "推到远程", "远程分支", "origin", "safe push")
+    if any(term in lowered for term in safe_push_terms):
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": HIGH_RISK,
+            "auto_continue": False,
+            "operation": "safe_push",
+            "operation_type": SAFE_PUSH,
+            "reason": "safe_push_requires_separate_founder_approval",
+            "approval_required": True,
+        }
     if any(term in lowered for term in high_terms):
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
@@ -411,6 +426,147 @@ def _git_state_blocker(root: Path) -> str | None:
     if (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists():
         return "repository_in_rebase_state"
     return None
+
+
+def _untracked_files_from_status(status_lines: list[str]) -> set[str]:
+    return {line[3:].strip() for line in status_lines if line.startswith("?? ")}
+
+
+def _safe_git_ref(value: str, *, field: str) -> str:
+    ref = (value or "").strip()
+    if not ref or ref.startswith("-") or ":" in ref or ".." in ref or any(token in ref for token in ("~", "^", " ", "\n", "\r", "\t")):
+        raise ValueError(f"unsafe_{field}")
+    return ref
+
+
+def _safe_push_action_id(source_message_id: str) -> str:
+    return f"safe-push:{source_message_id}"
+
+
+def _parse_ahead_behind(output: str) -> tuple[int, int]:
+    parts = (output or "").strip().split()
+    if len(parts) != 2:
+        return 0, 0
+    behind, ahead = int(parts[0]), int(parts[1])
+    return ahead, behind
+
+
+def _safe_push_preflight(*, cwd: Path | None = None, remote_name: str = "origin") -> dict:
+    root = cwd or repo_root()
+    started_at = _now()
+    state_blocker = _git_state_blocker(root)
+    status_lines = _git_status_short(cwd=root)
+    staged = sorted(_staged_files_from_status(status_lines))
+    untracked = sorted(_untracked_files_from_status(status_lines))
+    branch = _git_output(["branch", "--show-current"], cwd=root).stdout.strip()
+    head = _git_output(["rev-parse", "HEAD"], cwd=root).stdout.strip()
+    remotes = set(_git_output(["remote"], cwd=root).stdout.splitlines())
+    remote_url = None
+    remote_branch_head = None
+    ahead = 0
+    behind = 0
+    if remote_name in remotes:
+        remote_url = _git_output(["remote", "get-url", remote_name], cwd=root).stdout.strip()
+        remote_branch = branch
+        remote_ref = f"refs/heads/{remote_branch}"
+        ls_remote = _git_output(["ls-remote", remote_name, remote_ref], cwd=root, check=False, timeout=20)
+        if ls_remote.returncode == 0 and ls_remote.stdout.strip():
+            remote_branch_head = ls_remote.stdout.split()[0]
+            counts_result = _git_output(["rev-list", "--left-right", "--count", f"{remote_branch_head}...HEAD"], cwd=root, check=False)
+            if counts_result.returncode == 0:
+                ahead, behind = _parse_ahead_behind(counts_result.stdout)
+            elif remote_branch_head != head:
+                behind = 1
+        elif branch:
+            ahead = int(_git_output(["rev-list", "--count", "HEAD"], cwd=root).stdout.strip() or "0")
+    return {
+        "local_branch": branch,
+        "local_head": head,
+        "checkpoint_head": head,
+        "remote_name": remote_name,
+        "remote_branch": branch,
+        "remote_url": remote_url,
+        "remote_branch_head": remote_branch_head,
+        "remote_exists": remote_name in remotes,
+        "remote_allowed": remote_name in SAFE_PUSH_ALLOWED_REMOTES,
+        "ahead_count": ahead,
+        "behind_count": behind,
+        "working_tree_clean": not status_lines,
+        "staged_files": staged,
+        "untracked_files": untracked,
+        "status_short": status_lines,
+        "detached_head": not bool(branch),
+        "protected_branch": branch in SAFE_PUSH_PROTECTED_BRANCHES,
+        "state_blocker": state_blocker,
+        "force_allowed": False,
+        "tags_allowed": False,
+        "delete_allowed": False,
+        "deployment_allowed": False,
+        "checked_at": started_at,
+    }
+
+
+def _safe_push_failure(failure_type: str, summary: str, *, started_at: str, approval_action_id: str | None = None, preflight: dict | None = None) -> dict:
+    return {
+        "operation_type": SAFE_PUSH,
+        "status": "failed",
+        "success": False,
+        "failure_type": failure_type,
+        "summary": summary,
+        "approval_action_id": approval_action_id,
+        "push_performed": False,
+        "force_used": False,
+        "tags_pushed": False,
+        "remote_delete": False,
+        "preflight": dict(preflight or {}),
+        "started_at": started_at,
+        "completed_at": _now(),
+        "real_executor_used": "LOCAL_EXECUTOR",
+    }
+
+
+def _validate_safe_push_preconditions(approved_request: dict, current: dict, *, started_at: str, action_id: str) -> dict | None:
+    if current.get("state_blocker"):
+        return _safe_push_failure("PUSH_PRECONDITION_FAILED", str(current["state_blocker"]), started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("detached_head"):
+        return _safe_push_failure("BRANCH_CHANGED_AFTER_APPROVAL", "detached HEAD blocks safe push", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("protected_branch"):
+        return _safe_push_failure("PROTECTED_BRANCH_BLOCKED", "protected branch cannot be pushed by Safe Push V1", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("remote_exists"):
+        return _safe_push_failure("REMOTE_NOT_ALLOWED", "approved remote does not exist", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("remote_allowed"):
+        return _safe_push_failure("REMOTE_NOT_ALLOWED", "remote is not in Safe Push allowlist", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("local_head") != approved_request.get("checkpoint_head"):
+        return _safe_push_failure("HEAD_CHANGED_AFTER_APPROVAL", "current HEAD changed after push approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("local_branch") != approved_request.get("local_branch"):
+        return _safe_push_failure("BRANCH_CHANGED_AFTER_APPROVAL", "current branch changed after push approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("remote_name") != approved_request.get("remote_name"):
+        return _safe_push_failure("REMOTE_STATE_CHANGED", "remote changed after push approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("remote_branch") != approved_request.get("remote_branch") or current.get("remote_branch") != current.get("local_branch"):
+        return _safe_push_failure("REMOTE_BRANCH_MISMATCH", "Safe Push V1 only allows same branch push", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("staged_files"):
+        return _safe_push_failure("STAGED_FILES_PRESENT", "staged files block safe push", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("untracked_files"):
+        return _safe_push_failure("UNTRACKED_FILES_PRESENT", "untracked files block safe push", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("working_tree_clean"):
+        return _safe_push_failure("WORKING_TREE_NOT_CLEAN", "working tree must be clean before push", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if int(current.get("behind_count") or 0) > 0:
+        return _safe_push_failure("REMOTE_AHEAD_BLOCKED", "remote branch is ahead; Safe Push will not pull, merge, rebase, or force", started_at=started_at, approval_action_id=action_id, preflight=current)
+    return None
+
+
+def _git_safe_push(remote_name: str, branch: str, *, cwd: Path, timeout: int = 60) -> subprocess.CompletedProcess:
+    remote = _safe_git_ref(remote_name, field="remote")
+    local_branch = _safe_git_ref(branch, field="branch")
+    return subprocess.run(
+        ["git", "push", remote, local_branch],
+        cwd=str(cwd),
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+        shell=False,
+    )
 
 
 def safe_checkpoint_commit(
@@ -786,6 +942,78 @@ def _append_bounded_code_change_queue_item(conversation_id: str, founder_request
             "action_id": action_id,
             "plan": plan,
             "message": "这是一个受控代码修改，风险为 MEDIUM；我已放入 Founder Action Queue，批准后会自动执行并验证。",
+        }
+        state.discovery = discovery
+        state.stage = "operational_runtime"
+        state.updated_at = datetime.now(timezone.utc)
+        session.commit()
+    return action_id
+
+
+def _append_safe_push_queue_item(conversation_id: str, founder_request: str, source_message_id: str, risk: dict) -> str:
+    now = _now()
+    action_id = _safe_push_action_id(source_message_id)
+    push_request = _safe_push_preflight()
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("sino_brain_session_not_found")
+        discovery = dict(state.discovery or {})
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]
+        existing = next((item for item in queue if item.get("action_id") == action_id), None)
+        payload = {
+            "action_id": action_id,
+            "action_type": SAFE_PUSH_QUEUE_TYPE,
+            "type": SAFE_PUSH_QUEUE_TYPE,
+            "title": "批准安全推送",
+            "summary": founder_request[:300],
+            "risk_level": HIGH_RISK,
+            "risk": "high",
+            "status": "pending",
+            "conversation_id": conversation_id,
+            "source_type": "conversation_message",
+            "source_id": source_message_id,
+            "created_at": existing.get("created_at") if existing else now,
+            "updated_at": now,
+            "decision": existing.get("decision") if existing else None,
+            "decided_at": existing.get("decided_at") if existing else None,
+            "reason": risk.get("reason"),
+            "metadata": {
+                "queue_schema": "sino-safe-push-v1",
+                "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+                "operation_type": SAFE_PUSH,
+                "founder_request": founder_request,
+                "push_request": push_request,
+                "checkpoint_head": push_request.get("checkpoint_head"),
+                "local_branch": push_request.get("local_branch"),
+                "remote_name": push_request.get("remote_name"),
+                "remote_branch": push_request.get("remote_branch"),
+                "ahead_count": push_request.get("ahead_count"),
+                "behind_count": push_request.get("behind_count"),
+                "force_allowed": False,
+                "tags_allowed": False,
+                "delete_allowed": False,
+                "deployment_allowed": False,
+            },
+        }
+        if existing:
+            for index, item in enumerate(queue):
+                if item.get("action_id") == action_id:
+                    queue[index] = {**item, **payload, "status": item.get("status") or "pending"}
+                    break
+        else:
+            queue.append(payload)
+        discovery["founder_action_queue"] = queue
+        discovery["founder_action_required"] = True
+        discovery["operational_runtime"] = {
+            "status": "approval_required",
+            "risk_decision": risk,
+            "founder_request": founder_request,
+            "source_message_id": source_message_id,
+            "operation_type": SAFE_PUSH,
+            "action_id": action_id,
+            "push_request": push_request,
+            "message": "这是 HIGH risk 推送请求；已进入 Founder Action Queue。批准前不会执行 git push。",
         }
         state.discovery = discovery
         state.stage = "operational_runtime"
@@ -1375,6 +1603,291 @@ def execute_bounded_code_change(
         return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
 
 
+def _safe_push_task_scope(*, founder_request: str, conversation_id: str, source_message_id: str, action_id: str, push_request: dict) -> dict:
+    return {
+        "operational_runtime": {
+            "schema_version": "sino-safe-push-v1",
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "operation": "safe_push",
+            "operation_type": SAFE_PUSH,
+            "founder_request": founder_request,
+            "conversation_id": conversation_id,
+            "source_message_id": source_message_id,
+            "action_id": action_id,
+            "repo_path": str(repo_root()),
+            "risk_level": HIGH_RISK,
+            "approval_required": True,
+            "approval_action_id": action_id,
+            "push_request": push_request,
+            "checkpoint_head": push_request.get("checkpoint_head"),
+            "local_branch": push_request.get("local_branch"),
+            "remote_name": push_request.get("remote_name"),
+            "remote_branch": push_request.get("remote_branch"),
+            "expected_ahead_count": push_request.get("ahead_count"),
+            "expected_behind_count": push_request.get("behind_count"),
+            "force_allowed": False,
+            "tags_allowed": False,
+            "delete_allowed": False,
+            "deployment_allowed": False,
+            "auto_continue_policy": "HIGH risk Safe Push only after separate Founder queue approval",
+        }
+    }
+
+
+def _persist_safe_push_result(
+    *,
+    conversation_id: str,
+    task: TaskAssetDB,
+    execution_id: str,
+    execution: ExecutionSession,
+    action_id: str,
+    queued_payload: dict,
+    result: dict,
+    queue_status: str,
+) -> None:
+    completed_at = result.get("completed_at") or _now()
+    with SessionLocal() as session:
+        record = session.get(TaskAssetDB, task.id)
+        if record is not None:
+            record.result = result
+            record.status = result["status"]
+            record.execution_status = result["status"]
+            scope = dict(record.scope or {})
+            start = dict(scope.get("execution_start") or {})
+            start.update({"status": result["status"], "completed_at": completed_at})
+            scope["execution_start"] = start
+            record.scope = scope
+            session.commit()
+    registry_record = get_execution_session(execution_id)
+    if registry_record:
+        registry_session, package = registry_record
+        registry_session.status = result["status"]
+        registry_session.completed_at = completed_at
+        registry_session.result = result
+        if result.get("failure_type"):
+            registry_session.error_message = result.get("summary")
+        save_execution_session(registry_session, package)
+    _mark_bounded_action(conversation_id, action_id, {
+        "status": queue_status,
+        "decision": "approved",
+        "decided_at": completed_at,
+        "task_id": task.id,
+        "execution_id": execution_id,
+        "result": result,
+    })
+    _update_brain(conversation_id, {**queued_payload, "status": result["status"], "result": result, "message": result.get("summary")})
+
+
+def execute_safe_push(
+    *,
+    conversation_id: str,
+    founder_request: str,
+    source_message_id: str,
+    action_id: str,
+    push_request: dict,
+    cwd: Path | None = None,
+    push_runner: Callable[[str, str, Path], subprocess.CompletedProcess] | None = None,
+) -> dict:
+    started_at = _now()
+    root = cwd or repo_root()
+    risk = {
+        "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+        "risk_level": HIGH_RISK,
+        "auto_continue": False,
+        "operation": "safe_push",
+        "operation_type": SAFE_PUSH,
+        "reason": "founder_approved_safe_push",
+        "approval_action_id": action_id,
+    }
+    task = create_task_asset(
+        title="安全推送当前 checkpoint",
+        description=founder_request,
+        conversation_id=conversation_id,
+        source_message_id=source_message_id,
+        scope=_safe_push_task_scope(
+            founder_request=founder_request,
+            conversation_id=conversation_id,
+            source_message_id=source_message_id,
+            action_id=action_id,
+            push_request=push_request,
+        ),
+        status="draft",
+        approval_status="approved",
+        execution_status="not_started",
+    )
+    with SessionLocal() as session:
+        task = session.get(TaskAssetDB, task.id)
+        scope = dict(task.scope or {})
+        prior_start = dict(scope.get("execution_start") or {})
+        if prior_start.get("execution_id") and task.result:
+            existing = dict(task.result)
+            if existing.get("success"):
+                existing = {**existing, "already_up_to_date": True, "push_performed": False, "reused": True, "failure_type": "PUSH_ALREADY_UP_TO_DATE"}
+            return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": prior_start["execution_id"], "created": False, "reused": True, "status": existing.get("status"), "result": existing}
+        execution_id = prior_start.get("execution_id") or _stable_execution_id(task.id, source_message_id)
+        package = _execution_package(task=task, execution_id=execution_id, risk=risk)
+        package.context.update({
+            "operation_type": SAFE_PUSH,
+            "risk_level": HIGH_RISK,
+            "approval_action_id": action_id,
+            "checkpoint_head": push_request.get("checkpoint_head"),
+            "local_branch": push_request.get("local_branch"),
+            "remote_name": push_request.get("remote_name"),
+            "remote_branch": push_request.get("remote_branch"),
+            "expected_ahead_count": push_request.get("ahead_count"),
+            "expected_behind_count": push_request.get("behind_count"),
+            "force_allowed": False,
+            "tags_allowed": False,
+            "delete_allowed": False,
+            "deployment_allowed": False,
+        })
+        existing_session = get_execution_session(execution_id)
+        if existing_session:
+            execution, _package = existing_session
+            created = False
+        else:
+            execution = ExecutionSession(
+                id=execution_id,
+                task_asset_id=task.id,
+                execution_package_id=f"package-{execution_id}",
+                executor="LOCAL_EXECUTOR",
+                status="queued",
+                approved_at=_now(),
+                queued_at=_now(),
+            )
+            save_execution_session(execution, package)
+            created = True
+        scope["execution_start"] = {
+            "schema_version": "safe-push-start-v1",
+            "started_from": "founder_approved_safe_push",
+            "execution_id": execution_id,
+            "task_asset_id": task.id,
+            "task_id": task.id,
+            "status": "queued",
+            "operation_type": SAFE_PUSH,
+            "queued_at": execution.queued_at or _now(),
+            "source_conversation_id": conversation_id,
+            "source_message_refs": [source_message_id],
+            "action_id": action_id,
+        }
+        task.scope = scope
+        task.status = "in_progress"
+        task.execution_status = "queued"
+        session.commit()
+
+    queued_payload = {
+        "status": "queued",
+        "operation_type": SAFE_PUSH,
+        "risk_decision": risk,
+        "task_id": task.id,
+        "execution_id": execution_id,
+        "action_id": action_id,
+        "founder_request": founder_request,
+        "push_request": push_request,
+        "message": "已获得推送授权，正在进行远程状态检查。",
+    }
+    _update_brain(conversation_id, queued_payload)
+    _append_assistant_message(conversation_id, queued_payload["message"], message_type="operational_execution", grounding={"operational_runtime": queued_payload})
+
+    current = _safe_push_preflight(cwd=root, remote_name=str(push_request.get("remote_name") or "origin"))
+    failure = _validate_safe_push_preconditions(push_request, current, started_at=started_at, action_id=action_id)
+    if failure:
+        _persist_safe_push_result(conversation_id=conversation_id, task=task, execution_id=execution_id, execution=execution, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"安全推送已停止：{failure['summary']}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+
+    remote_name = current["remote_name"]
+    branch = current["local_branch"]
+    if int(current.get("ahead_count") or 0) == 0:
+        result = {
+            "operation_type": SAFE_PUSH,
+            "status": "completed",
+            "success": True,
+            "approval_action_id": action_id,
+            "previous_remote_head": current.get("remote_branch_head"),
+            "local_head": current.get("local_head"),
+            "new_remote_head": current.get("remote_branch_head") or current.get("local_head"),
+            "local_branch": branch,
+            "remote_name": remote_name,
+            "remote_branch": current.get("remote_branch"),
+            "ahead_before": 0,
+            "behind_before": int(current.get("behind_count") or 0),
+            "push_performed": False,
+            "already_up_to_date": True,
+            "force_used": False,
+            "tags_pushed": False,
+            "remote_delete": False,
+            "summary": "远程分支已是当前 checkpoint；无需重复 push。",
+            "stdout_excerpt": "",
+            "stderr_excerpt": "",
+            "started_at": started_at,
+            "completed_at": _now(),
+            "real_executor_used": "LOCAL_EXECUTOR",
+            "preflight": current,
+        }
+        _persist_safe_push_result(conversation_id=conversation_id, task=task, execution_id=execution_id, execution=execution, action_id=action_id, queued_payload=queued_payload, result=result, queue_status="completed")
+        _append_assistant_message(conversation_id, result["summary"], message_type="operational_result", grounding={"operational_runtime": result, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "completed", "result": result}
+
+    _update_brain(conversation_id, {**queued_payload, "status": "running", "message": "正在安全推送当前 checkpoint…"})
+    push = (push_runner or (lambda remote, selected_branch, selected_root: _git_safe_push(remote, selected_branch, cwd=selected_root)))(remote_name, branch, root)
+    after = _safe_push_preflight(cwd=root, remote_name=remote_name)
+    if push.returncode != 0:
+        failure_type = "NON_FAST_FORWARD_BLOCKED" if "non-fast-forward" in (push.stderr or push.stdout).lower() else "PUSH_FAILED"
+        failure = _safe_push_failure(failure_type, _excerpt(push.stderr or push.stdout, 1000), started_at=started_at, approval_action_id=action_id, preflight=after)
+        failure.update({"stdout_excerpt": _excerpt(push.stdout or ""), "stderr_excerpt": _excerpt(push.stderr or "")})
+        _persist_safe_push_result(conversation_id=conversation_id, task=task, execution_id=execution_id, execution=execution, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"安全推送失败：{failure['summary']}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+    remote_matches = after.get("remote_branch_head") == current.get("local_head")
+    if not remote_matches:
+        failure = _safe_push_failure("REMOTE_STATE_CHANGED", "remote HEAD did not match approved local HEAD after push", started_at=started_at, approval_action_id=action_id, preflight=after)
+        _persist_safe_push_result(conversation_id=conversation_id, task=task, execution_id=execution_id, execution=execution, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"安全推送结果异常：{failure['summary']}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+    result = {
+        "operation_type": SAFE_PUSH,
+        "status": "completed",
+        "success": True,
+        "approval_action_id": action_id,
+        "previous_remote_head": current.get("remote_branch_head"),
+        "local_head": current.get("local_head"),
+        "new_remote_head": after.get("remote_branch_head"),
+        "local_branch": branch,
+        "remote_name": remote_name,
+        "remote_branch": current.get("remote_branch"),
+        "ahead_before": int(current.get("ahead_count") or 0),
+        "behind_before": int(current.get("behind_count") or 0),
+        "push_performed": True,
+        "already_up_to_date": False,
+        "force_used": False,
+        "tags_pushed": False,
+        "remote_delete": False,
+        "summary": f"安全推送完成：{branch} → {remote_name}/{branch}，推送 {int(current.get('ahead_count') or 0)} 个本地 checkpoint，未使用 force。",
+        "stdout_excerpt": _excerpt(push.stdout or ""),
+        "stderr_excerpt": _excerpt(push.stderr or ""),
+        "started_at": started_at,
+        "completed_at": _now(),
+        "real_executor_used": "LOCAL_EXECUTOR",
+        "preflight": current,
+        "postflight": after,
+    }
+    _persist_safe_push_result(conversation_id=conversation_id, task=task, execution_id=execution_id, execution=execution, action_id=action_id, queued_payload=queued_payload, result=result, queue_status="completed")
+    _append_assistant_message(
+        conversation_id,
+        (
+            "安全推送完成：\n"
+            f"{branch} → {remote_name}/{branch}\n"
+            f"HEAD：{result['local_head']}\n"
+            f"推送 {result['ahead_before']} 个本地 checkpoint\n"
+            "force：NO"
+        ),
+        message_type="operational_result",
+        grounding={"operational_runtime": result, "task_id": task.id, "execution_id": execution_id},
+    )
+    return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "completed", "result": result}
+
+
 def decide_bounded_code_change_action(action_id: str, decision: str) -> dict:
     if decision not in {"approve", "reject", "continue_discussion"}:
         raise ValueError("unsupported_bounded_code_change_decision")
@@ -1427,12 +1940,86 @@ def decide_bounded_code_change_action(action_id: str, decision: str) -> dict:
     )
 
 
+def _find_action(action_id: str) -> tuple[SinoBrainSessionDB, dict]:
+    with SessionLocal() as session:
+        states = list(session.scalars(select(SinoBrainSessionDB)))
+        for candidate_state in states:
+            for item in (candidate_state.discovery or {}).get("founder_action_queue") or []:
+                if isinstance(item, dict) and item.get("action_id") == action_id:
+                    return candidate_state, dict(item)
+    raise LookupError("operational_action_not_found")
+
+
+def decide_safe_push_action(action_id: str, decision: str) -> dict:
+    if decision not in {"approve", "reject", "continue_discussion"}:
+        raise ValueError("unsupported_safe_push_decision")
+    state, action = _find_action(action_id)
+    if action.get("action_type") != SAFE_PUSH_QUEUE_TYPE:
+        raise ValueError("not_safe_push_action")
+    conversation_id = action.get("conversation_id") or state.conversation_id
+    source_message_id = action.get("source_id")
+    metadata = dict(action.get("metadata") or {})
+    founder_request = metadata.get("founder_request") or action.get("summary") or ""
+    push_request = dict(metadata.get("push_request") or {})
+    existing_result = dict(action.get("result") or {})
+    if decision == "continue_discussion":
+        _append_assistant_message(
+            conversation_id,
+            "继续讨论安全推送；该 Action Queue item 保持 pending，批准前不会执行 git push。",
+            message_type="operational_discussion",
+            grounding={"action_id": action_id, "operation_type": SAFE_PUSH},
+        )
+        return {"handled": True, "action_id": action_id, "decision": "continue_discussion", "status": "pending", "push_performed": False}
+    if decision == "reject":
+        now = _now()
+        _mark_bounded_action(conversation_id, action_id, {"status": "rejected", "decision": "rejected", "decided_at": now})
+        _update_brain(conversation_id, {"status": "rejected", "operation_type": SAFE_PUSH, "action_id": action_id, "message": "安全推送已拒绝；不会执行 git push。"})
+        _append_assistant_message(
+            conversation_id,
+            "安全推送已拒绝；不会执行 git push。",
+            message_type="operational_result",
+            grounding={"action_id": action_id, "operation_type": SAFE_PUSH, "decision": "rejected"},
+        )
+        return {"handled": True, "action_id": action_id, "decision": "rejected", "status": "rejected", "push_performed": False}
+    if existing_result.get("success") and action.get("status") == "completed":
+        reused = {**existing_result, "already_up_to_date": True, "push_performed": False, "reused": True, "failure_type": "PUSH_ALREADY_UP_TO_DATE"}
+        _update_brain(conversation_id, {"status": "completed", "operation_type": SAFE_PUSH, "action_id": action_id, "result": reused, "message": reused.get("summary")})
+        return {"handled": True, "action_id": action_id, "decision": "approved", "status": "completed", "result": reused, "reused": True}
+    _mark_bounded_action(conversation_id, action_id, {"status": "approved", "decision": "approved", "decided_at": _now()})
+    return execute_safe_push(
+        conversation_id=conversation_id,
+        founder_request=founder_request,
+        source_message_id=source_message_id,
+        action_id=action_id,
+        push_request=push_request,
+    )
+
+
+def decide_operational_action_by_type(action_id: str, decision: str) -> dict:
+    _state, action = _find_action(action_id)
+    action_type = action.get("action_type") or action.get("type")
+    if action_type == BOUNDED_CODE_CHANGE_QUEUE_TYPE:
+        return decide_bounded_code_change_action(action_id, decision)
+    if action_type == SAFE_PUSH_QUEUE_TYPE:
+        return decide_safe_push_action(action_id, decision)
+    raise ValueError("unsupported_operational_action_type")
+
+
 def handle_operational_conversation_request(
     *, conversation_id: str, founder_request: str, source_message_id: str,
 ) -> dict:
     risk = classify_operational_risk(founder_request)
     if risk.get("work_type") != CONTROLLED_LOCAL_DEVELOPMENT_TASK:
         return {"handled": False, "risk_decision": risk}
+    if risk.get("risk_level") == HIGH_RISK and risk.get("operation_type") == SAFE_PUSH:
+        action_id = _append_safe_push_queue_item(conversation_id, founder_request, source_message_id, risk)
+        _append_assistant_message(
+            conversation_id,
+            "这是 HIGH risk 安全推送请求，已进入 Founder Action Queue。批准前不会执行 git push。",
+            message_type="operational_approval_required",
+            grounding={"operational_runtime": {"status": "approval_required", "risk_decision": risk, "action_id": action_id}},
+        )
+        return {"handled": True, "risk_decision": risk, "status": "approval_required", "action_id": action_id}
     if risk.get("risk_level") == HIGH_RISK:
         _append_high_risk_queue_item(conversation_id, founder_request, source_message_id, risk)
         _append_assistant_message(

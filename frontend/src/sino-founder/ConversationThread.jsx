@@ -99,6 +99,7 @@ function OperationalRuntimeStatus({ runtime }) {
   const buildStatus = runtime.result?.build_status || result?.build_status;
   const workingTreeStatus = runtime.result?.working_tree_status || result?.working_tree_status;
   const checkpoint = runtime.result?.checkpoint || result?.checkpoint;
+  const pushResult = operationType === "SAFE_PUSH" ? (runtime.result || result || {}) : null;
   return <aside className="sino-operational-runtime-status" aria-label="Operational Runtime Status">
     <span>Sino Controlled Runtime</span>
     <h3>{labels[runtime.status] || runtime.status}</h3>
@@ -122,6 +123,16 @@ function OperationalRuntimeStatus({ runtime }) {
       {checkpoint?.commit_file_count != null ? <div><dt>Commit files</dt><dd>{checkpoint.commit_file_count}</dd></div> : null}
       {checkpoint?.new_head ? <div><dt>New HEAD</dt><dd>{checkpoint.new_head}</dd></div> : null}
       {checkpoint?.failure_type ? <div><dt>Checkpoint blocked</dt><dd>{checkpoint.failure_type}</dd></div> : null}
+      {pushResult?.local_branch ? <div><dt>Push branch</dt><dd>{pushResult.local_branch}</dd></div> : null}
+      {pushResult?.local_head ? <div><dt>Push HEAD</dt><dd>{pushResult.local_head}</dd></div> : null}
+      {pushResult?.remote_name ? <div><dt>Remote</dt><dd>{pushResult.remote_name}</dd></div> : null}
+      {pushResult?.remote_branch ? <div><dt>Remote branch</dt><dd>{pushResult.remote_branch}</dd></div> : null}
+      {pushResult?.new_remote_head ? <div><dt>Remote HEAD</dt><dd>{pushResult.new_remote_head}</dd></div> : null}
+      {pushResult?.ahead_before != null ? <div><dt>Commits pushed</dt><dd>{pushResult.push_performed ? pushResult.ahead_before : 0}</dd></div> : null}
+      {pushResult?.already_up_to_date ? <div><dt>Push state</dt><dd>already up to date</dd></div> : null}
+      {pushResult?.failure_type ? <div><dt>Push blocked</dt><dd>{pushResult.failure_type}</dd></div> : null}
+      {pushResult ? <div><dt>Force</dt><dd>{pushResult.force_used ? "YES" : "NO"}</dd></div> : null}
+      {pushResult ? <div><dt>Tags pushed</dt><dd>{pushResult.tags_pushed ? "YES" : "NO"}</dd></div> : null}
       {typeof result?.working_tree_clean === "boolean" ? <div><dt>Working tree</dt><dd>{result.working_tree_clean ? "clean" : "dirty"}</dd></div> : null}
       {workingTreeStatus ? <div><dt>Working tree status</dt><dd>{workingTreeStatus}</dd></div> : null}
       {runtime.retryable != null ? <div><dt>Retryable</dt><dd>{runtime.retryable ? "YES" : "NO"}</dd></div> : null}
