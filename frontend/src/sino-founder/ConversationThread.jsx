@@ -101,6 +101,7 @@ function OperationalRuntimeStatus({ runtime }) {
   const checkpoint = runtime.result?.checkpoint || result?.checkpoint;
   const pushResult = operationType === "SAFE_PUSH" ? (runtime.result || result || {}) : null;
   const mergeResult = operationType === "SAFE_MERGE" ? (runtime.result || result || {}) : null;
+  const integrationPushResult = operationType === "SAFE_INTEGRATION_PUSH" ? (runtime.result || result || {}) : null;
   return <aside className="sino-operational-runtime-status" aria-label="Operational Runtime Status">
     <span>Sino Controlled Runtime</span>
     <h3>{labels[runtime.status] || runtime.status}</h3>
@@ -134,6 +135,16 @@ function OperationalRuntimeStatus({ runtime }) {
       {pushResult?.failure_type ? <div><dt>Push blocked</dt><dd>{pushResult.failure_type}</dd></div> : null}
       {pushResult ? <div><dt>Force</dt><dd>{pushResult.force_used ? "YES" : "NO"}</dd></div> : null}
       {pushResult ? <div><dt>Tags pushed</dt><dd>{pushResult.tags_pushed ? "YES" : "NO"}</dd></div> : null}
+      {integrationPushResult?.integration_branch ? <div><dt>Integration branch</dt><dd>{integrationPushResult.integration_branch}</dd></div> : null}
+      {integrationPushResult?.integration_head ? <div><dt>Integration HEAD</dt><dd>{integrationPushResult.integration_head}</dd></div> : null}
+      {integrationPushResult?.remote_name ? <div><dt>Integration remote</dt><dd>{integrationPushResult.remote_name}</dd></div> : null}
+      {integrationPushResult?.remote_branch ? <div><dt>Integration remote branch</dt><dd>{integrationPushResult.remote_branch}</dd></div> : null}
+      {integrationPushResult?.remote_head_after ? <div><dt>Integration remote HEAD</dt><dd>{integrationPushResult.remote_head_after}</dd></div> : null}
+      {integrationPushResult?.ahead_before != null ? <div><dt>Integration commits pushed</dt><dd>{integrationPushResult.push_performed ? integrationPushResult.ahead_before : 0}</dd></div> : null}
+      {integrationPushResult?.already_up_to_date ? <div><dt>Integration push state</dt><dd>already up to date</dd></div> : null}
+      {integrationPushResult?.failure_type ? <div><dt>Integration push blocked</dt><dd>{integrationPushResult.failure_type}</dd></div> : null}
+      {integrationPushResult ? <div><dt>Integration force</dt><dd>{integrationPushResult.force_used ? "YES" : "NO"}</dd></div> : null}
+      {integrationPushResult ? <div><dt>Integration tags pushed</dt><dd>{integrationPushResult.tags_pushed ? "YES" : "NO"}</dd></div> : null}
       {mergeResult?.source_branch ? <div><dt>Source branch</dt><dd>{mergeResult.source_branch}</dd></div> : null}
       {mergeResult?.source_head ? <div><dt>Source HEAD</dt><dd>{mergeResult.source_head}</dd></div> : null}
       {mergeResult?.target_branch ? <div><dt>Target branch</dt><dd>{mergeResult.target_branch}</dd></div> : null}

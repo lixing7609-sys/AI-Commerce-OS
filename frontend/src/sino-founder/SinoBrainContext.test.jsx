@@ -290,6 +290,66 @@ describe("SinoBrainContext", () => {
     expect(resolved).not.toHaveBeenCalled();
   });
 
+  it("displays SAFE_INTEGRATION_PUSH approval with branch remote and no-force details", async () => {
+    const resolved = vi.fn();
+    render(<SinoBrainContext conversationId="conv-1" onFounderActionResolved={resolved} brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
+      action_id: "safe-integration-push:message-1",
+      action_type: "SAFE_INTEGRATION_PUSH_APPROVAL",
+      type: "SAFE_INTEGRATION_PUSH_APPROVAL",
+      status: "pending",
+      title: "批准 Integration 安全推送",
+      summary: "推送 integration branch",
+      risk_level: "HIGH",
+      metadata: {
+        push_request: {
+          integration_branch: "feature/foundation-reset-integration",
+          integration_head: "merge-head",
+          remote_name: "origin",
+          remote_branch: "feature/foundation-reset-integration",
+          ahead_count: 1,
+          behind_count: 0,
+          working_tree_clean: true,
+          merged_source_branch: "feature/source",
+          merge_commit_head: "merge-head",
+        },
+      },
+    }] } }} />);
+    const action = screen.getByRole("article", { name: "Safe Integration Push Approval" });
+    expect(action.textContent).toContain("SAFE INTEGRATION PUSH");
+    expect(action.textContent).toContain("HIGH");
+    expect(action.textContent).toContain("feature/foundation-reset-integration");
+    expect(action.textContent).toContain("merge-head");
+    expect(action.textContent).toContain("origin");
+    expect(action.textContent).toContain("1 / 0");
+    expect(action.textContent).toContain("Force");
+    expect(action.textContent).toContain("不会 push tags");
+    expect(action.textContent).toContain("不会 deploy");
+    fireEvent.click(screen.getByRole("button", { name: "批准推送 Integration" }));
+    await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("safe-integration-push:message-1", "approve"));
+    expect(resolved).toHaveBeenCalled();
+  });
+
+  it("rejects and continues SAFE_INTEGRATION_PUSH without resolving incorrectly", async () => {
+    const discuss = vi.fn();
+    const resolved = vi.fn();
+    render(<SinoBrainContext conversationId="conv-1" onContinueDiscussion={discuss} onFounderActionResolved={resolved} brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
+      action_id: "safe-integration-push:message-2",
+      action_type: "SAFE_INTEGRATION_PUSH_APPROVAL",
+      type: "SAFE_INTEGRATION_PUSH_APPROVAL",
+      status: "pending",
+      title: "批准 Integration 安全推送",
+      summary: "推送 integration branch",
+      risk_level: "HIGH",
+      metadata: { push_request: { integration_branch: "feature/foundation-reset-integration", integration_head: "merge-head", remote_name: "origin", remote_branch: "feature/foundation-reset-integration" } },
+    }] } }} />);
+    fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
+    await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("safe-integration-push:message-2", "continue_discussion"));
+    expect(discuss).toHaveBeenCalled();
+    expect(resolved).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("safe-integration-push:message-2", "reject"));
+  });
+
   it("keeps Candidate Confirm and Create Task out of the Founder Action Queue", () => {
     render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [
       { action_id: "candidate:candidate-1", action_type: "CANDIDATE_CONFIRM", type: "CANDIDATE_CONFIRM", status: "pending", title: "确认候选" },
