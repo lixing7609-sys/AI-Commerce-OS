@@ -129,6 +129,47 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText("FAIL")).toBeTruthy();
   });
 
+  it("shows bounded code change result, changed files and verification state", () => {
+    const value = {
+      ...snapshot("conv-bounded", [{ message_id: "m1", role: "founder", content: "修改状态卡标题" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "completed", task_id: "task-bounded", execution_id: "execution-bounded", result: {
+        operation_type: "BOUNDED_CODE_CHANGE",
+        check_result: "PASS",
+        summary: "受控代码修改完成，验证通过。",
+        changed_files: ["frontend/src/sino-founder/ConversationThread.jsx"],
+        boundary_check: "PASS",
+        build_status: "PASS",
+        working_tree_status: "dirty",
+        result: { operation_type: "BOUNDED_CODE_CHANGE", tests_passed: 3, tests_failed: 0, working_tree_clean: false },
+      } } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("BOUNDED_CODE_CHANGE")).toBeTruthy();
+    expect(screen.getByText("frontend/src/sino-founder/ConversationThread.jsx")).toBeTruthy();
+    expect(screen.getByText("Boundary check")).toBeTruthy();
+    expect(screen.getAllByText("PASS").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("dirty").length).toBeGreaterThan(0);
+  });
+
+  it("shows bounded code change boundary violation in the same conversation", () => {
+    const value = {
+      ...snapshot("conv-boundary", [{ message_id: "m1", role: "founder", content: "修改状态卡标题" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "failed", task_id: "task-boundary", execution_id: "execution-boundary", result: {
+        operation_type: "BOUNDED_CODE_CHANGE",
+        check_result: "FAILED_BOUNDARY",
+        summary: "检测到超出授权范围的修改，已停止。",
+        changed_files: ["backend/app/secret.py"],
+        boundary_check: "FAILED_BOUNDARY",
+        working_tree_status: "dirty",
+        result: { operation_type: "BOUNDED_CODE_CHANGE", changed_files: ["backend/app/secret.py"] },
+      } } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("执行失败")).toBeTruthy();
+    expect(screen.getAllByText("FAILED_BOUNDARY").length).toBeGreaterThan(0);
+    expect(screen.getByText("backend/app/secret.py")).toBeTruthy();
+  });
+
   it("keeps operational runtime isolated by conversation snapshot", () => {
     const convA = {
       ...snapshot("conv-a", [{ message_id: "m1", role: "founder", content: "检查状态" }]),

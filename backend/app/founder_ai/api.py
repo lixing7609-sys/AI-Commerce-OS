@@ -53,7 +53,7 @@ from app.core.founder_object.service import approve_object, archive_object, atta
 from app.core.founder_intent.service import attach_candidate_context, get_conversation_candidate_context, list_candidates, review_candidate
 from app.founder_ai.action_queue import list_founder_action_queue, sync_founder_action_queue
 from app.founder_ai.brain_runtime import brain_runtime
-from app.founder_ai.operational_runtime import handle_operational_conversation_request
+from app.founder_ai.operational_runtime import decide_bounded_code_change_action, handle_operational_conversation_request
 from app.core.asset_lifecycle.service import (
     LifecycleConflict,
     approve_ready,
@@ -107,6 +107,10 @@ class TaskExecutionApprovalDecisionIn(BaseModel):
 
 
 class TaskAssetExecutionApprovalIn(BaseModel):
+    decision: str
+
+
+class OperationalActionDecisionIn(BaseModel):
     decision: str
 
 
@@ -530,6 +534,16 @@ def founder_objects():
 @router.get("/action-queue", response_model=list[dict[str, Any]])
 def founder_action_queue(conversation_id: str | None = None):
     return list_founder_action_queue(conversation_id)
+
+
+@router.post("/operational-actions/{action_id}/decision", response_model=dict[str, Any])
+def decide_operational_action(action_id: str, request: OperationalActionDecisionIn):
+    try:
+        return decide_bounded_code_change_action(action_id, request.decision)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 @router.get("/conversations/{conversation_id}/candidates", response_model=list[dict[str, Any]])
 def founder_candidates(conversation_id: str): return list_candidates(conversation_id)

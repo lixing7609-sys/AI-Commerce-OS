@@ -90,6 +90,13 @@ export function getFounderActionQueue(conversationId) {
   const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : "";
   return request(`/founder-ai/action-queue${query}`, undefined, "获取 Founder Action Queue 失败");
 }
+export function decideOperationalAction(actionId, decision) {
+  return request(`/founder-ai/operational-actions/${encodeURIComponent(actionId)}/decision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision }),
+  }, "处理受控本地操作失败");
+}
 export function continueFounderObjectDiscussion(objectId, conversationId) { return request(`/founder-ai/objects/${encodeURIComponent(objectId)}/continue-discussion`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversation_id: conversationId }) }, "挂载 Founder Object 失败"); }
 export async function clearFounderObjectDiscussion(conversationId) {
   const response = await fetch(`${BASE_URL}/founder-ai/conversations/${encodeURIComponent(conversationId)}/context-object`, { method: "DELETE" });

@@ -1,7 +1,7 @@
 import { FounderActionCard } from "./FounderActionCard.jsx";
 import { ContextSourcesDebug } from "./ContextSourcesDebug.jsx";
 import { projectMaturityProjection } from "./projectMaturityProjection.js";
-import { approveFounderObject, approveTaskForExecution, cancelFounderExecution, rejectTaskForExecution, startTaskExecution } from "../services/founderAiApi.js";
+import { approveFounderObject, approveTaskForExecution, cancelFounderExecution, decideOperationalAction, rejectTaskForExecution, startTaskExecution } from "../services/founderAiApi.js";
 import { acceptFounderTaskResult } from "../services/founderAiApi.js";
 import { decideCodexAuthorization } from "../services/founderAiApi.js";
 import { decideFounderClarification } from "../services/founderAiApi.js";
@@ -84,7 +84,7 @@ export function FounderWorkQueue({ tasks = [], focusedTaskId, conversationId, bu
   </section>;
 }
 
-const UNIFIED_QUEUE_TYPES = ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START", "HIGH_RISK_OPERATIONAL_TASK"];
+const UNIFIED_QUEUE_TYPES = ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START", "HIGH_RISK_OPERATIONAL_TASK", "BOUNDED_CODE_CHANGE_APPROVAL"];
 
 function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDiscussion }) {
   const mvpActions = actions.filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
@@ -109,6 +109,21 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
         <span>高风险操作 · {risk}</span><h3>{item.title || "需要 Founder 确认"}</h3><p>{item.summary}</p>
         <footer><button type="button" disabled={busy} onClick={onContinueDiscussion}>继续讨论</button></footer>
       </article>;
+      if (type === "BOUNDED_CODE_CHANGE_APPROVAL") {
+        const metadata = item.metadata || {};
+        const plannedFiles = metadata.planned_files || metadata.allowed_files || [];
+        const criteria = metadata.acceptance_criteria || [];
+        const nonGoals = metadata.explicit_non_goals || [];
+        return <article className="sino-founder-action-item" aria-label="Bounded Code Change Approval" key={item.action_id}>
+          <span>受控代码修改 · {risk}</span><h3>{item.title || "批准受控代码修改"}</h3><p>{item.summary}</p>
+          <dl>
+            <div><dt>计划文件</dt><dd>{plannedFiles.length ? plannedFiles.join(" · ") : "等待 Sino 明确边界"}</dd></div>
+            <div><dt>验收标准</dt><dd>{criteria.length ? criteria.join(" · ") : "按当前讨论"}</dd></div>
+            <div><dt>不做</dt><dd>{nonGoals.length ? nonGoals.join(" · ") : "不越过授权边界"}</dd></div>
+          </dl>
+          <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准修改</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>驳回</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
+        </article>;
+      }
       return <article className="sino-founder-action-item" aria-label="Execution Start" key={item.action_id}>
         <span>开始执行 · {risk}</span><h3>{item.title || "开始执行"}</h3><p>{item.summary}</p>
         <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => startTaskExecution(item.task_id || item.source_id))}>开始执行</button><button type="button" disabled={busy} onClick={onContinueDiscussion}>稍后 / 继续讨论</button></footer>
