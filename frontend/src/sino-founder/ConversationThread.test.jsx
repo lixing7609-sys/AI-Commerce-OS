@@ -361,26 +361,54 @@ describe("ConversationThread layout", () => {
       ...snapshot("conv-mission", [{ message_id: "m1", role: "founder", content: "完成一个小型开发目标" }]),
       sino_brain: {
         discovery: {
-          autonomous_development_mission: {
+          autonomous_development_mission_view: {
             mission_id: "mission-1",
-            founder_request: "把状态卡文案改清楚并验证",
+            goal: "把状态卡文案改清楚并验证",
             status: "WAITING_CHANGE_APPROVAL",
-            current_stage: "WAITING_CHANGE_APPROVAL",
+            stage: "WAITING_CHANGE_APPROVAL",
+            stage_label: "等待你批准代码修改",
+            progress: { completed: 1, total: 7, label: "1 / 7 completed" },
             working_branch: "feature/sino-mission-status-card-copy",
-            baseline_head: "baseline-head",
-            last_completed_step: "MISSION_BRANCH_CREATED",
-            next_required_action: "BOUNDED_CODE_CHANGE_APPROVAL",
+            baseline: { branch: "feature/foundation-reset-integration", head: "baseline-head" },
+            current_head: "baseline-head",
+            risk_level: "MEDIUM",
+            last_completed_step: "已创建工作分支",
+            next_required_action: "批准代码修改",
+            timeline: [
+              { key: "planning", label: "规划", status: "completed" },
+              { key: "change", label: "修改", status: "waiting_approval" },
+              { key: "verification", label: "验证", status: "pending" },
+            ],
+            current_work_summary: ["目标：把状态卡文案改清楚并验证", "工作分支：feature/sino-mission-status-card-copy", "接下来：批准代码修改"],
+            pending_approval: {
+              action_id: "bounded-code-change:mission-1",
+              action_type: "BOUNDED_CODE_CHANGE_APPROVAL",
+              label: "批准代码修改",
+              risk_level: "MEDIUM",
+              scope: ["frontend/src/sino-founder/ConversationThread.jsx"],
+              will_do: ["修改明确授权文件", "自动运行 focused test / build", "自动创建本地 checkpoint"],
+              will_not_do: ["不会 push", "不会 merge", "不会 deploy"],
+            },
           },
         },
       },
     };
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
     expect(screen.getByRole("complementary", { name: "Mission Status" })).toBeTruthy();
-    expect(screen.getByText("WAITING_CHANGE_APPROVAL")).toBeTruthy();
+    expect(screen.getByText("等待你批准代码修改")).toBeTruthy();
+    expect(screen.queryByText("WAITING_CHANGE_APPROVAL")).toBeNull();
     expect(screen.getByText("把状态卡文案改清楚并验证")).toBeTruthy();
     expect(screen.getByText("feature/sino-mission-status-card-copy")).toBeTruthy();
-    expect(screen.getByText("MISSION_BRANCH_CREATED")).toBeTruthy();
-    expect(screen.getByText("BOUNDED_CODE_CHANGE_APPROVAL")).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Mission Timeline" })).toBeTruthy();
+    expect(screen.getByText("1 / 7 completed")).toBeTruthy();
+    expect(screen.getByText("已创建工作分支")).toBeTruthy();
+    expect(screen.getAllByText("批准代码修改").length).toBeGreaterThan(0);
+    expect(screen.getByRole("region", { name: "Current Work Summary" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Mission Approval Summary" })).toBeTruthy();
+    expect(screen.getByText("What Sino WILL do")).toBeTruthy();
+    expect(screen.getByText("What Sino WILL NOT do")).toBeTruthy();
+    expect(screen.getByText("自动创建本地 checkpoint")).toBeTruthy();
+    expect(screen.getByText("不会 deploy")).toBeTruthy();
   });
 
   it("shows autonomous mission checkpoint, merge and completed integration result", () => {
@@ -388,25 +416,51 @@ describe("ConversationThread layout", () => {
       ...snapshot("conv-mission-complete", [{ message_id: "m1", role: "founder", content: "完成一个小型开发目标" }]),
       sino_brain: {
         discovery: {
-          autonomous_development_mission: {
+          autonomous_development_mission_view: {
             mission_id: "mission-2",
-            founder_request: "完成完整开发任务",
+            goal: "完成完整开发任务",
             status: "COMPLETED",
-            current_stage: "COMPLETED",
+            stage: "COMPLETED",
+            stage_label: "已完成",
+            progress: { completed: 7, total: 7, label: "7 / 7 completed" },
             working_branch: "feature/sino-mission-status-card-copy",
-            checkpoint_head: "checkpoint-head",
-            merge_head: "merge-head",
-            final_integration_head: "merge-head",
-            last_completed_step: "PUSHING_INTEGRATION",
+            current_head: "merge-head",
+            last_completed_step: "已推送 integration branch",
+            timeline: [
+              { key: "planning", label: "规划", status: "completed" },
+              { key: "change", label: "修改", status: "completed" },
+              { key: "verification", label: "验证", status: "completed" },
+              { key: "checkpoint", label: "Checkpoint", status: "completed" },
+              { key: "feature_push", label: "Feature Push", status: "completed" },
+              { key: "merge", label: "Merge", status: "completed" },
+              { key: "integration_push", label: "Integration Push", status: "completed" },
+            ],
+            changed_files: { items: [{ path: "frontend/src/sino-founder/ConversationThread.jsx", boundary: "approved" }], total: 1, more: 0 },
+            verification_summary: { status: "PASS", passed: 36, failed: 0, errors: 0, build_status: "PASS" },
+            checkpoint_summary: { commit_message: "fix: mission copy", commit_head: "checkpoint-head", commit_file_count: 1, working_tree_clean_after: true },
+            feature_push_summary: { branch: "feature/sino-mission-status-card-copy", remote: "origin", remote_branch: "feature/sino-mission-status-card-copy", head: "checkpoint-head", commits_pushed: 1, force: "NO" },
+            merge_summary: { source_branch: "feature/sino-mission-status-card-copy", target_branch: "feature/foundation-reset-integration", merge_head: "merge-head", strategy: "--no-ff", conflict: "NO", pushed: "NO" },
+            integration_push_summary: { branch: "feature/foundation-reset-integration", remote: "origin", remote_head: "merge-head", force: "NO", tags: "NO", remote_updated: "YES" },
+            completion_summary: { goal: "完成完整开发任务", feature_branch: "feature/sino-mission-status-card-copy", final_integration_head: "merge-head" },
           },
         },
       },
     };
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
-    expect(screen.getByText("COMPLETED")).toBeTruthy();
-    expect(screen.getByText("checkpoint-head")).toBeTruthy();
+    expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
+    expect(screen.queryByText("COMPLETED")).toBeNull();
+    expect(screen.getByRole("region", { name: "Changed Files" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Verification Summary" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Checkpoint Summary" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Feature Push Summary" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Merge Summary" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Integration Push Summary" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Mission Completion Summary" })).toBeTruthy();
+    expect(screen.getAllByText("checkpoint-head").length).toBeGreaterThan(0);
     expect(screen.getAllByText("merge-head").length).toBeGreaterThan(0);
-    expect(screen.getByText("PUSHING_INTEGRATION")).toBeTruthy();
+    expect(screen.getByText("已推送 integration branch")).toBeTruthy();
+    expect(screen.getByText("Remote integration updated")).toBeTruthy();
+    expect(screen.getByText("YES")).toBeTruthy();
   });
 
   it("shows autonomous mission failed stage and restores from snapshot reload", () => {
@@ -414,24 +468,46 @@ describe("ConversationThread layout", () => {
       ...snapshot("conv-mission-failed", [{ message_id: "m1", role: "founder", content: "完成一个小型开发目标" }]),
       sino_brain: {
         discovery: {
-          autonomous_development_mission: {
+          autonomous_development_mission_view: {
             mission_id: "mission-3",
-            founder_request: "完成完整开发任务",
+            goal: "完成完整开发任务",
             status: "FAILED",
-            current_stage: "FAILED",
-            failed_stage: "VERIFYING",
-            failure_type: "VERIFICATION_FAILED",
-            failure_summary: "2 tests failed",
+            stage: "FAILED",
+            stage_label: "失败",
             next_required_action: "REVIEW_FAILURE",
+            timeline: [{ key: "verification", label: "验证", status: "failed" }],
+            failure_summary: { failed_stage: "正在验证", failure_type: "VERIFICATION_FAILED", summary: "2 tests failed", last_successful_stage: "CHANGING", safe_next_action: "继续讨论并修复测试" },
           },
         },
       },
     };
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
-    expect(screen.getByText("FAILED")).toBeTruthy();
-    expect(screen.getByText("VERIFYING")).toBeTruthy();
+    expect(screen.getAllByText("失败").length).toBeGreaterThan(0);
+    expect(screen.queryByText("FAILED")).toBeNull();
+    expect(screen.getByText("正在验证")).toBeTruthy();
     expect(screen.getByText("VERIFICATION_FAILED")).toBeTruthy();
     expect(screen.getByText("REVIEW_FAILURE")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Failed Mission Summary" })).toBeTruthy();
+    expect(screen.getByText("继续讨论并修复测试")).toBeTruthy();
+  });
+
+  it("shows autonomous mission blocked summary", () => {
+    const value = {
+      ...snapshot("conv-mission-blocked", [{ message_id: "m1", role: "founder", content: "完成一个小型开发目标" }]),
+      sino_brain: { discovery: { autonomous_development_mission_view: {
+        mission_id: "mission-blocked",
+        goal: "推送 integration",
+        status: "BLOCKED",
+        stage: "BLOCKED",
+        stage_label: "已阻塞",
+        failure_summary: { failed_stage: "正在推送 integration", failure_type: "REMOTE_STATE_CHANGED", summary: "远程分支在批准后发生变化", last_successful_stage: "MERGING", safe_next_action: "重新确认远程状态后再决定。" },
+      } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("已阻塞")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Blocked Mission Summary" })).toBeTruthy();
+    expect(screen.getByText("REMOTE_STATE_CHANGED")).toBeTruthy();
+    expect(screen.getByText("重新确认远程状态后再决定。")).toBeTruthy();
   });
 
   it("keeps operational runtime isolated by conversation snapshot", () => {
@@ -449,7 +525,7 @@ describe("ConversationThread layout", () => {
   it("keeps autonomous mission isolated by conversation snapshot", () => {
     const convA = {
       ...snapshot("conv-mission-a", [{ message_id: "m1", role: "founder", content: "开发目标 A" }]),
-      sino_brain: { discovery: { autonomous_development_mission: { mission_id: "mission-a", founder_request: "开发目标 A", current_stage: "WAITING_MERGE_APPROVAL", working_branch: "feature/sino-mission-a" } } },
+      sino_brain: { discovery: { autonomous_development_mission_view: { mission_id: "mission-a", goal: "开发目标 A", stage_label: "等待你批准合并到 integration", working_branch: "feature/sino-mission-a" } } },
     };
     const convB = snapshot("conv-mission-b", [{ message_id: "m2", role: "founder", content: "开发目标 B" }]);
     const { rerender } = render(<ConversationThread snapshot={convA} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);

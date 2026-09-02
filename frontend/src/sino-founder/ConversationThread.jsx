@@ -164,21 +164,58 @@ function OperationalRuntimeStatus({ runtime }) {
 
 function MissionStatus({ mission }) {
   if (!mission?.mission_id) return null;
+  const timelineStatusLabel = { pending: "未开始", active: "进行中", waiting_approval: "等待批准", completed: "已完成", failed: "失败", blocked: "已阻塞", skipped: "跳过" };
+  const timeline = Array.isArray(mission.timeline) ? mission.timeline : [];
+  const currentWork = Array.isArray(mission.current_work_summary) ? mission.current_work_summary.filter(Boolean) : [];
+  const pendingApproval = mission.pending_approval;
+  const changedFiles = mission.changed_files?.items || [];
+  const verification = mission.verification_summary;
+  const checkpoint = mission.checkpoint_summary;
+  const featurePush = mission.feature_push_summary;
+  const merge = mission.merge_summary;
+  const integrationPush = mission.integration_push_summary;
+  const completion = mission.completion_summary;
+  const failure = mission.failure_summary;
   return <aside className="sino-operational-runtime-status" aria-label="Mission Status">
     <span>Mission Status</span>
-    <h3>{mission.current_stage || mission.status}</h3>
-    <p>{mission.founder_request || mission.failure_summary || "Mission state has been recorded."}</p>
+    <h3>{mission.stage_label || mission.current_stage || mission.status}</h3>
+    <p>{mission.goal || mission.founder_request || failure?.summary || "Mission state has been recorded."}</p>
+    {mission.progress?.label ? <p>{mission.progress.label}</p> : null}
+    {timeline.length ? <ol aria-label="Mission Timeline">
+      {timeline.map((item) => <li key={item.key} data-status={item.status}><strong>{item.label}</strong><span>{timelineStatusLabel[item.status] || item.status}</span>{item.summary ? <small>{item.summary}</small> : null}</li>)}
+    </ol> : null}
+    {currentWork.length ? <section aria-label="Current Work Summary">
+      <h4>Current Work Summary</h4>
+      <ul>{currentWork.map((item) => <li key={item}>{item}</li>)}</ul>
+    </section> : null}
+    {pendingApproval ? <section aria-label="Mission Approval Summary">
+      <h4>{pendingApproval.label || pendingApproval.title || "需要 Founder 批准"}</h4>
+      <dl>
+        {pendingApproval.risk_level ? <div><dt>Risk</dt><dd>{pendingApproval.risk_level}</dd></div> : null}
+        {pendingApproval.action_id ? <div><dt>Canonical Action</dt><dd>{pendingApproval.action_id}</dd></div> : null}
+        {pendingApproval.scope ? <div><dt>Scope</dt><dd>{Array.isArray(pendingApproval.scope) ? pendingApproval.scope.join(" · ") : pendingApproval.scope}</dd></div> : null}
+      </dl>
+      {pendingApproval.will_do?.length ? <div><strong>What Sino WILL do</strong><ul>{pendingApproval.will_do.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
+      {pendingApproval.will_not_do?.length ? <div><strong>What Sino WILL NOT do</strong><ul>{pendingApproval.will_not_do.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
+    </section> : null}
     <dl>
-      {mission.working_branch ? <div><dt>Working branch</dt><dd>{mission.working_branch}</dd></div> : null}
-      {mission.baseline_head ? <div><dt>Baseline HEAD</dt><dd>{mission.baseline_head}</dd></div> : null}
-      {mission.checkpoint_head ? <div><dt>Checkpoint HEAD</dt><dd>{mission.checkpoint_head}</dd></div> : null}
-      {mission.merge_head ? <div><dt>Merge HEAD</dt><dd>{mission.merge_head}</dd></div> : null}
-      {mission.final_integration_head ? <div><dt>Integration HEAD</dt><dd>{mission.final_integration_head}</dd></div> : null}
-      {mission.last_completed_step ? <div><dt>Last completed step</dt><dd>{mission.last_completed_step}</dd></div> : null}
-      {mission.next_required_action ? <div><dt>Next required action</dt><dd>{mission.next_required_action}</dd></div> : null}
-      {mission.failed_stage ? <div><dt>Failed stage</dt><dd>{mission.failed_stage}</dd></div> : null}
-      {mission.failure_type ? <div><dt>Failure type</dt><dd>{mission.failure_type}</dd></div> : null}
+      {mission.working_branch ? <div><dt>Working Branch</dt><dd>{mission.working_branch}</dd></div> : null}
+      {mission.baseline?.head || mission.baseline_head ? <div><dt>Baseline</dt><dd>{mission.baseline?.branch ? `${mission.baseline.branch} @ ` : ""}{mission.baseline?.head || mission.baseline_head}</dd></div> : null}
+      {mission.current_head ? <div><dt>Current HEAD</dt><dd>{mission.current_head}</dd></div> : null}
+      {mission.risk_level ? <div><dt>Risk Level</dt><dd>{mission.risk_level}</dd></div> : null}
+      {mission.last_completed_step ? <div><dt>Last Completed Step</dt><dd>{mission.last_completed_step}</dd></div> : null}
+      {mission.next_required_action ? <div><dt>Next Required Founder Action</dt><dd>{mission.next_required_action}</dd></div> : null}
+      {mission.started_at ? <div><dt>Started At</dt><dd>{mission.started_at}</dd></div> : null}
+      {mission.updated_at ? <div><dt>Updated At</dt><dd>{mission.updated_at}</dd></div> : null}
     </dl>
+    {changedFiles.length ? <section aria-label="Changed Files"><h4>Changed Files</h4><ul>{changedFiles.map((item) => <li key={item.path}>{item.path} · {item.boundary}</li>)}</ul>{mission.changed_files?.more ? <p>+ {mission.changed_files.more} more</p> : null}</section> : null}
+    {verification ? <section aria-label="Verification Summary"><h4>Verification</h4><dl><div><dt>Tests</dt><dd>{verification.status}</dd></div><div><dt>Passed</dt><dd>{verification.passed}</dd></div><div><dt>Failed</dt><dd>{verification.failed}</dd></div><div><dt>Build</dt><dd>{verification.build_status}</dd></div></dl>{verification.failure_summary?.length ? <ul>{verification.failure_summary.map((item) => <li key={item}>{item}</li>)}</ul> : null}</section> : null}
+    {checkpoint ? <section aria-label="Checkpoint Summary"><h4>Checkpoint</h4><dl>{checkpoint.commit_message ? <div><dt>Commit message</dt><dd>{checkpoint.commit_message}</dd></div> : null}{checkpoint.commit_head ? <div><dt>Commit HEAD</dt><dd>{checkpoint.commit_head}</dd></div> : null}{checkpoint.commit_file_count != null ? <div><dt>Commit files</dt><dd>{checkpoint.commit_file_count}</dd></div> : null}{checkpoint.working_tree_clean_after != null ? <div><dt>Working tree</dt><dd>{checkpoint.working_tree_clean_after ? "clean" : "dirty"}</dd></div> : null}</dl></section> : null}
+    {featurePush ? <section aria-label="Feature Push Summary"><h4>Feature Push</h4><dl>{featurePush.branch ? <div><dt>Branch</dt><dd>{featurePush.branch}</dd></div> : null}{featurePush.remote ? <div><dt>Remote</dt><dd>{featurePush.remote}</dd></div> : null}{featurePush.remote_branch ? <div><dt>Remote branch</dt><dd>{featurePush.remote_branch}</dd></div> : null}{featurePush.head ? <div><dt>HEAD</dt><dd>{featurePush.head}</dd></div> : null}{featurePush.commits_pushed != null ? <div><dt>Commits pushed</dt><dd>{featurePush.commits_pushed}</dd></div> : null}<div><dt>Force</dt><dd>{featurePush.force || "NO"}</dd></div></dl></section> : null}
+    {merge ? <section aria-label="Merge Summary"><h4>Merge</h4><dl>{merge.source_branch ? <div><dt>Source</dt><dd>{merge.source_branch}</dd></div> : null}{merge.target_branch ? <div><dt>Target</dt><dd>{merge.target_branch}</dd></div> : null}{merge.merge_head ? <div><dt>Merge HEAD</dt><dd>{merge.merge_head}</dd></div> : null}<div><dt>Strategy</dt><dd>{merge.strategy || "--no-ff"}</dd></div><div><dt>Conflict</dt><dd>{merge.conflict || "NO"}</dd></div><div><dt>Pushed</dt><dd>{merge.pushed || "NO"}</dd></div></dl>{merge.conflict_files?.length ? <ul>{merge.conflict_files.map((item) => <li key={item}>{item}</li>)}</ul> : null}</section> : null}
+    {integrationPush ? <section aria-label="Integration Push Summary"><h4>Integration Push</h4><dl>{integrationPush.branch ? <div><dt>Branch</dt><dd>{integrationPush.branch}</dd></div> : null}{integrationPush.remote ? <div><dt>Remote</dt><dd>{integrationPush.remote}</dd></div> : null}{integrationPush.remote_head ? <div><dt>Remote HEAD</dt><dd>{integrationPush.remote_head}</dd></div> : null}<div><dt>Force</dt><dd>{integrationPush.force || "NO"}</dd></div><div><dt>Tags</dt><dd>{integrationPush.tags || "NO"}</dd></div><div><dt>Remote integration updated</dt><dd>{integrationPush.remote_updated || "NO"}</dd></div></dl></section> : null}
+    {completion ? <section aria-label="Mission Completion Summary"><h4>开发任务已完成</h4><p>{completion.goal}</p><dl>{completion.feature_branch ? <div><dt>Feature branch</dt><dd>{completion.feature_branch}</dd></div> : null}{completion.final_integration_head ? <div><dt>Final Integration HEAD</dt><dd>{completion.final_integration_head}</dd></div> : null}</dl></section> : null}
+    {failure ? <section aria-label={mission.status === "BLOCKED" ? "Blocked Mission Summary" : "Failed Mission Summary"}><h4>{mission.status === "BLOCKED" ? "任务已阻塞" : "任务失败"}</h4><dl>{failure.failed_stage ? <div><dt>Failed Stage</dt><dd>{failure.failed_stage}</dd></div> : null}{failure.failure_type ? <div><dt>Failure Type</dt><dd>{failure.failure_type}</dd></div> : null}{failure.summary ? <div><dt>Failure Summary</dt><dd>{failure.summary}</dd></div> : null}{failure.last_successful_stage ? <div><dt>Last successful stage</dt><dd>{failure.last_successful_stage}</dd></div> : null}<div><dt>Safe next action</dt><dd>{failure.safe_next_action}</dd></div></dl></section> : null}
   </aside>;
 }
 
@@ -423,7 +460,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const reviewableProjectDraft = drafts?.some((item) => item.source_conversation_id === snapshot?.conversation?.id && item.status === "ready_for_review" && item.draft_type === "project_definition");
   const implementationPlan = snapshot?.sino_brain?.discovery?.implementation_planning;
   const operationalRuntime = snapshot?.sino_brain?.discovery?.operational_runtime;
-  const autonomousMission = snapshot?.sino_brain?.discovery?.autonomous_development_mission;
+  const autonomousMission = snapshot?.sino_brain?.discovery?.autonomous_development_mission_view || snapshot?.sino_brain?.discovery?.autonomous_development_mission;
   const isImplementationPlanning = snapshot?.sino_brain?.stage === "implementation_planning";
   const executionPackage = snapshot?.sino_brain?.discovery?.execution_package;
   const autonomousLoop = snapshot?.sino_brain?.discovery?.autonomous_main_loop;
