@@ -529,6 +529,251 @@ def _git_safe_create_branch(branch: str, *, cwd: Path, timeout: int = 30) -> sub
     return subprocess.run(["git", "switch", "-c", target], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False, shell=False)
 
 
+MISSION_STAGE_LABELS = {
+    "PLANNING": "正在规划",
+    "WAITING_CHANGE_APPROVAL": "等待你批准代码修改",
+    "CHANGING": "正在修改代码",
+    "VERIFYING": "正在验证",
+    "CHECKPOINTING": "正在创建本地 checkpoint",
+    "WAITING_FEATURE_PUSH_APPROVAL": "等待你批准推送 feature branch",
+    "PUSHING_FEATURE": "正在推送 feature branch",
+    "WAITING_MERGE_APPROVAL": "等待你批准合并到 integration",
+    "MERGING": "正在本地合并",
+    "WAITING_INTEGRATION_PUSH_APPROVAL": "等待你批准推送 integration branch",
+    "PUSHING_INTEGRATION": "正在推送 integration",
+    "COMPLETED": "已完成",
+    "FAILED": "失败",
+    "BLOCKED": "已阻塞",
+}
+
+MISSION_TIMELINE = [
+    ("planning", "规划"),
+    ("change", "修改"),
+    ("verification", "验证"),
+    ("checkpoint", "Checkpoint"),
+    ("feature_push", "Feature Push"),
+    ("merge", "Merge"),
+    ("integration_push", "Integration Push"),
+]
+
+MISSION_STAGE_TO_TIMELINE = {
+    "PLANNING": "planning",
+    "WAITING_CHANGE_APPROVAL": "change",
+    "CHANGING": "change",
+    "VERIFYING": "verification",
+    "CHECKPOINTING": "checkpoint",
+    "WAITING_FEATURE_PUSH_APPROVAL": "feature_push",
+    "PUSHING_FEATURE": "feature_push",
+    "WAITING_MERGE_APPROVAL": "merge",
+    "MERGING": "merge",
+    "WAITING_INTEGRATION_PUSH_APPROVAL": "integration_push",
+    "PUSHING_INTEGRATION": "integration_push",
+}
+
+MISSION_WAITING_STAGES = {
+    "WAITING_CHANGE_APPROVAL",
+    "WAITING_FEATURE_PUSH_APPROVAL",
+    "WAITING_MERGE_APPROVAL",
+    "WAITING_INTEGRATION_PUSH_APPROVAL",
+}
+
+MISSION_APPROVAL_SUMMARIES = {
+    "BOUNDED_CODE_CHANGE_APPROVAL": {
+        "label": "批准代码修改",
+        "will_do": ["修改明确授权文件", "自动运行 focused test / build", "自动创建本地 checkpoint"],
+        "will_not_do": ["不会 push", "不会 merge", "不会 deploy"],
+    },
+    "SAFE_PUSH_APPROVAL": {
+        "label": "批准推送 feature branch",
+        "will_do": ["push 当前 feature branch 到同名 remote branch"],
+        "will_not_do": ["不会 force", "不会 push tags", "不会 merge", "不会 deploy"],
+    },
+    "SAFE_MERGE_APPROVAL": {
+        "label": "批准本地合并",
+        "will_do": ["feature → integration", "执行本地 --no-ff merge"],
+        "will_not_do": ["不会自动解决冲突", "不会 push integration", "不会 merge main/master/develop"],
+    },
+    "SAFE_INTEGRATION_PUSH_APPROVAL": {
+        "label": "批准推送 integration branch",
+        "will_do": ["push integration 到配置的同名远程分支"],
+        "will_not_do": ["不会 force", "不会 push tags", "不会 deploy", "不会 merge main/master/develop"],
+    },
+}
+
+MISSION_STEP_LABELS = {
+    "MISSION_BRANCH_CREATED": "已创建工作分支",
+    "CHECKPOINTING": "已创建本地 checkpoint",
+    "PUSHING_FEATURE": "已推送 feature branch",
+    "MERGING": "已本地合并到 integration",
+    "PUSHING_INTEGRATION": "已推送 integration branch",
+    "CHANGING": "已完成代码修改",
+    "VERIFYING": "已完成验证",
+}
+
+
+def _mission_core_stage(stage: str | None) -> str:
+    return MISSION_STAGE_TO_TIMELINE.get(stage or "", "planning")
+
+
+def _mission_stage_position(stage: str | None) -> int:
+    key = _mission_core_stage(stage)
+    keys = [item[0] for item in MISSION_TIMELINE]
+    return keys.index(key) if key in keys else 0
+
+
+def _mission_completed_count(mission: dict) -> int:
+    stage = mission.get("current_stage") or mission.get("status")
+    if stage == "COMPLETED":
+        return len(MISSION_TIMELINE)
+    if stage in {"FAILED", "BLOCKED"}:
+        failed_key = _mission_core_stage(mission.get("failed_stage") or mission.get("blocked_stage"))
+        return max(0, [item[0] for item in MISSION_TIMELINE].index(failed_key))
+    pos = _mission_stage_position(stage)
+    if stage in MISSION_WAITING_STAGES or stage in {"PLANNING", "CHANGING", "VERIFYING", "CHECKPOINTING", "PUSHING_FEATURE", "MERGING", "PUSHING_INTEGRATION"}:
+        return pos
+    return pos
+
+
+def _mission_timeline(mission: dict) -> list[dict]:
+    stage = mission.get("current_stage") or mission.get("status") or "PLANNING"
+    active_key = _mission_core_stage(mission.get("failed_stage") or mission.get("blocked_stage") or stage)
+    completed_count = _mission_completed_count(mission)
+    items = []
+    for index, (key, label) in enumerate(MISSION_TIMELINE):
+        status = "pending"
+        if index < completed_count:
+            status = "completed"
+        if key == active_key:
+            if stage in MISSION_WAITING_STAGES:
+                status = "waiting_approval"
+            elif stage == "FAILED":
+                status = "failed"
+            elif stage == "BLOCKED":
+                status = "blocked"
+            elif stage == "COMPLETED":
+                status = "completed"
+            else:
+                status = "active"
+        items.append({"key": key, "label": label, "status": status})
+    if stage == "COMPLETED":
+        items = [{**item, "status": "completed"} for item in items]
+    return items
+
+
+def _mission_pending_approval(mission: dict, action_queue: list[dict] | None) -> dict | None:
+    mission_id = mission.get("mission_id")
+    if not mission_id:
+        return None
+    for item in action_queue or []:
+        metadata = dict(item.get("metadata") or {})
+        if item.get("status") == "pending" and (metadata.get("mission_id") == mission_id or item.get("mission_id") == mission_id):
+            action_type = item.get("action_type") or item.get("type")
+            summary = dict(MISSION_APPROVAL_SUMMARIES.get(action_type) or {})
+            scope = metadata.get("planned_files") or metadata.get("allowed_files") or metadata.get("local_branch") or metadata.get("source_branch") or metadata.get("integration_branch") or item.get("summary")
+            return {
+                "action_id": item.get("action_id"),
+                "action_type": action_type,
+                "title": item.get("title"),
+                "risk_level": item.get("risk_level"),
+                "label": summary.get("label") or item.get("title"),
+                "scope": scope,
+                "will_do": summary.get("will_do") or [],
+                "will_not_do": summary.get("will_not_do") or [],
+            }
+    return None
+
+
+def _verification_summary(change_result: dict) -> dict | None:
+    steps = list(change_result.get("verification_steps") or [])
+    if not steps:
+        return None
+    passed = sum(int(step.get("passed") or 0) for step in steps)
+    failed = sum(int(step.get("failed") or 0) for step in steps)
+    errors = sum(int(step.get("errors") or 0) for step in steps)
+    build_steps = [step for step in steps if "build" in " ".join(step.get("argv") or []).lower()]
+    build_status = build_steps[-1].get("check_result") if build_steps else change_result.get("build_status") or "NOT_REQUIRED"
+    failures = [step.get("summary") or step.get("stderr_excerpt") for step in steps if not step.get("success")]
+    return {
+        "status": change_result.get("check_result") or ("FAIL" if failed or errors else "PASS"),
+        "passed": passed,
+        "failed": failed,
+        "errors": errors,
+        "build_status": build_status,
+        "failure_summary": [item for item in failures if item][:3],
+    }
+
+
+def build_mission_view(mission: dict, action_queue: list[dict] | None = None) -> dict:
+    """Project canonical Mission state into a Founder-facing conversation view."""
+    mission = dict(mission or {})
+    stage = mission.get("current_stage") or mission.get("status") or "PLANNING"
+    change_result = dict(mission.get("change_result") or {})
+    checkpoint = dict(change_result.get("checkpoint") or {})
+    feature_push = dict(mission.get("feature_push_result") or {})
+    merge = dict(mission.get("merge_result") or {})
+    integration_push = dict(mission.get("integration_push_result") or {})
+    changed_files = list(change_result.get("changed_files") or [])
+    timeline = _mission_timeline(mission)
+    completed = len([item for item in timeline if item["status"] == "completed"])
+    pending_approval = _mission_pending_approval(mission, action_queue)
+    failure_summary = None
+    if stage in {"FAILED", "BLOCKED"} or mission.get("failure_type"):
+        failure_summary = {
+            "failed_stage": MISSION_STAGE_LABELS.get(mission.get("failed_stage"), mission.get("failed_stage")),
+            "failure_type": mission.get("failure_type"),
+            "summary": mission.get("failure_summary"),
+            "last_successful_stage": mission.get("last_completed_step"),
+            "safe_next_action": "继续讨论并决定是否调整范围或重新生成审批。",
+        }
+    completion_summary = None
+    if stage == "COMPLETED":
+        verification = _verification_summary(change_result) or {}
+        completion_summary = {
+            "goal": mission.get("founder_request"),
+            "final_status": "已完成",
+            "feature_branch": mission.get("working_branch"),
+            "changed_files": changed_files,
+            "verification": verification,
+            "checkpoint": checkpoint,
+            "feature_push": feature_push,
+            "merge": merge,
+            "integration_push": integration_push,
+            "final_integration_head": mission.get("final_integration_head"),
+        }
+    return {
+        "mission_id": mission.get("mission_id"),
+        "goal": mission.get("founder_request"),
+        "status": mission.get("status"),
+        "stage": stage,
+        "stage_label": MISSION_STAGE_LABELS.get(stage, stage),
+        "risk_level": mission.get("risk_level"),
+        "progress": {"completed": completed, "total": len(timeline), "label": f"{completed} / {len(timeline)} completed"},
+        "working_branch": mission.get("working_branch"),
+        "baseline": {"branch": mission.get("baseline_branch"), "head": mission.get("baseline_head")},
+        "current_head": mission.get("final_integration_head") or mission.get("merge_head") or mission.get("checkpoint_head") or mission.get("baseline_head"),
+        "last_completed_step": MISSION_STEP_LABELS.get(mission.get("last_completed_step"), mission.get("last_completed_step")),
+        "next_step": MISSION_STAGE_LABELS.get(stage, stage),
+        "next_required_action": pending_approval.get("label") if pending_approval else mission.get("next_required_action"),
+        "timeline": timeline,
+        "current_work_summary": [item for item in [
+            f"目标：{mission.get('founder_request')}" if mission.get("founder_request") else None,
+            f"工作分支：{mission.get('working_branch')}" if mission.get("working_branch") else None,
+            f"接下来：{pending_approval.get('label') if pending_approval else MISSION_STAGE_LABELS.get(stage, stage)}",
+        ] if item][:3],
+        "pending_approval": pending_approval,
+        "changed_files": {"items": [{"path": path, "boundary": "approved"} for path in changed_files[:5]], "total": len(changed_files), "more": max(0, len(changed_files) - 5)},
+        "verification_summary": _verification_summary(change_result),
+        "checkpoint_summary": {"commit_message": checkpoint.get("commit_message"), "commit_head": checkpoint.get("new_head"), "commit_file_count": checkpoint.get("commit_file_count"), "working_tree_clean_after": checkpoint.get("working_tree_clean_after")} if checkpoint else None,
+        "feature_push_summary": {"branch": feature_push.get("local_branch"), "remote": feature_push.get("remote_name"), "remote_branch": feature_push.get("remote_branch"), "head": feature_push.get("new_remote_head") or feature_push.get("local_head"), "commits_pushed": feature_push.get("ahead_before"), "force": "NO"} if feature_push else None,
+        "merge_summary": {"source_branch": merge.get("source_branch"), "target_branch": merge.get("target_branch"), "merge_head": merge.get("merge_commit_head"), "strategy": "--no-ff", "conflict": "YES" if merge.get("conflict") else "NO", "pushed": "YES" if merge.get("push_performed") else "NO", "conflict_files": merge.get("conflict_files") or []} if merge else None,
+        "integration_push_summary": {"branch": integration_push.get("integration_branch"), "remote": integration_push.get("remote_name"), "remote_head": integration_push.get("remote_head_after"), "force": "NO", "tags": "NO", "remote_updated": "YES" if integration_push.get("success") else "NO"} if integration_push else None,
+        "failure_summary": failure_summary,
+        "completion_summary": completion_summary,
+        "started_at": mission.get("created_at"),
+        "updated_at": mission.get("updated_at"),
+    }
+
+
 def _mission_from_discovery(discovery: dict, mission_id: str | None = None) -> dict | None:
     missions = discovery.get("autonomous_development_missions") or {}
     if mission_id and isinstance(missions, dict) and isinstance(missions.get(mission_id), dict):
@@ -546,8 +791,14 @@ def _persist_mission(conversation_id: str, mission: dict) -> None:
         mission = {**mission, "updated_at": _now()}
         missions = dict(discovery.get("autonomous_development_missions") or {})
         missions[mission["mission_id"]] = mission
+        action_queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]
+        mission_view = build_mission_view(mission, action_queue)
+        mission_views = dict(discovery.get("autonomous_development_mission_views") or {})
+        mission_views[mission["mission_id"]] = mission_view
         discovery["autonomous_development_missions"] = missions
         discovery["autonomous_development_mission"] = mission
+        discovery["autonomous_development_mission_views"] = mission_views
+        discovery["autonomous_development_mission_view"] = mission_view
         state.discovery = discovery
         state.stage = "operational_runtime"
         state.updated_at = datetime.now(timezone.utc)
@@ -581,6 +832,13 @@ def _attach_mission_to_action(conversation_id: str, action_id: str, mission: dic
                 queue[index] = {**item, "mission_id": mission["mission_id"], "metadata": metadata, "updated_at": _now()}
                 break
         discovery["founder_action_queue"] = queue
+        missions = dict(discovery.get("autonomous_development_missions") or {})
+        raw_mission = dict(missions.get(mission["mission_id"]) or mission)
+        mission_view = build_mission_view(raw_mission, queue)
+        mission_views = dict(discovery.get("autonomous_development_mission_views") or {})
+        mission_views[mission["mission_id"]] = mission_view
+        discovery["autonomous_development_mission_views"] = mission_views
+        discovery["autonomous_development_mission_view"] = mission_view
         state.discovery = discovery
         state.updated_at = datetime.now(timezone.utc)
         session.commit()

@@ -1231,6 +1231,104 @@ def _pending_action(discovery, action_type):
     )
 
 
+@pytest.mark.parametrize(
+    ("stage", "label"),
+    [
+        ("PLANNING", "正在规划"),
+        ("WAITING_CHANGE_APPROVAL", "等待你批准代码修改"),
+        ("CHANGING", "正在修改代码"),
+        ("VERIFYING", "正在验证"),
+        ("CHECKPOINTING", "正在创建本地 checkpoint"),
+        ("WAITING_FEATURE_PUSH_APPROVAL", "等待你批准推送 feature branch"),
+        ("PUSHING_FEATURE", "正在推送 feature branch"),
+        ("WAITING_MERGE_APPROVAL", "等待你批准合并到 integration"),
+        ("MERGING", "正在本地合并"),
+        ("WAITING_INTEGRATION_PUSH_APPROVAL", "等待你批准推送 integration branch"),
+        ("PUSHING_INTEGRATION", "正在推送 integration"),
+        ("COMPLETED", "已完成"),
+        ("FAILED", "失败"),
+        ("BLOCKED", "已阻塞"),
+    ],
+)
+def test_mission_projection_returns_founder_friendly_stage_labels(stage, label):
+    view = runtime.build_mission_view({"mission_id": "mission-view", "founder_request": "Goal", "status": stage, "current_stage": stage})
+    assert view["stage_label"] == label
+    assert view["stage"] == stage
+    assert view["timeline"]
+
+
+def test_mission_projection_timeline_progress_and_pending_approval_reference():
+    mission = {
+        "mission_id": "mission-view",
+        "founder_request": "Goal",
+        "status": "WAITING_FEATURE_PUSH_APPROVAL",
+        "current_stage": "WAITING_FEATURE_PUSH_APPROVAL",
+        "working_branch": "feature/sino-mission-goal",
+        "baseline_branch": "feature/foundation-reset-integration",
+        "baseline_head": "baseline-head",
+        "checkpoint_head": "checkpoint-head",
+        "risk_level": "MEDIUM",
+    }
+    queue = [{
+        "action_id": "safe-push:mission-view",
+        "action_type": runtime.SAFE_PUSH_QUEUE_TYPE,
+        "status": "pending",
+        "risk_level": "HIGH",
+        "title": "批准推送",
+        "metadata": {"mission_id": "mission-view", "local_branch": "feature/sino-mission-goal"},
+    }]
+    view = runtime.build_mission_view(mission, queue)
+    assert view["stage_label"] == "等待你批准推送 feature branch"
+    assert view["progress"]["completed"] == 4
+    assert view["progress"]["total"] == 7
+    assert view["timeline"][4]["status"] == "waiting_approval"
+    assert view["pending_approval"]["action_id"] == "safe-push:mission-view"
+    assert view["pending_approval"]["label"] == "批准推送 feature branch"
+    assert "不会 force" in view["pending_approval"]["will_not_do"]
+    assert view["current_work_summary"][0] == "目标：Goal"
+
+
+def test_mission_projection_summaries_completion_failure_and_blocked():
+    mission = {
+        "mission_id": "mission-summary",
+        "founder_request": "Improve mission card",
+        "status": "COMPLETED",
+        "current_stage": "COMPLETED",
+        "working_branch": "feature/sino-mission-card",
+        "baseline_head": "baseline-head",
+        "last_completed_step": "PUSHING_INTEGRATION",
+        "change_result": {
+            "changed_files": ["frontend/src/sino-founder/ConversationThread.jsx"],
+            "check_result": "PASS",
+            "verification_steps": [
+                {"argv": ["npm", "test"], "success": True, "check_result": "PASS", "passed": 36, "failed": 0, "errors": 0},
+                {"argv": ["npm", "run", "build"], "success": True, "check_result": "PASS"},
+            ],
+            "checkpoint": {"commit_message": "fix: copy", "new_head": "checkpoint-head", "commit_file_count": 1, "working_tree_clean_after": True},
+        },
+        "feature_push_result": {"local_branch": "feature/sino-mission-card", "remote_name": "origin", "remote_branch": "feature/sino-mission-card", "new_remote_head": "checkpoint-head", "ahead_before": 1, "force_used": False},
+        "merge_result": {"source_branch": "feature/sino-mission-card", "target_branch": "feature/foundation-reset-integration", "merge_commit_head": "merge-head", "conflict": False, "push_performed": False},
+        "integration_push_result": {"integration_branch": "feature/foundation-reset-integration", "remote_name": "origin", "remote_head_after": "merge-head", "success": True},
+        "final_integration_head": "merge-head",
+    }
+    view = runtime.build_mission_view(mission)
+    assert view["changed_files"]["items"][0]["boundary"] == "approved"
+    assert view["verification_summary"]["passed"] == 36
+    assert view["verification_summary"]["build_status"] == "PASS"
+    assert view["checkpoint_summary"]["commit_head"] == "checkpoint-head"
+    assert view["feature_push_summary"]["force"] == "NO"
+    assert view["merge_summary"]["strategy"] == "--no-ff"
+    assert view["integration_push_summary"]["remote_updated"] == "YES"
+    assert view["completion_summary"]["final_integration_head"] == "merge-head"
+
+    failed = runtime.build_mission_view({**mission, "status": "FAILED", "current_stage": "FAILED", "failed_stage": "VERIFYING", "failure_type": "VERIFICATION_FAILED", "failure_summary": "2 tests failed"})
+    assert failed["failure_summary"]["failed_stage"] == "正在验证"
+    assert failed["failure_summary"]["failure_type"] == "VERIFICATION_FAILED"
+    blocked = runtime.build_mission_view({**mission, "status": "BLOCKED", "current_stage": "BLOCKED", "failed_stage": "PUSHING_INTEGRATION", "failure_type": "REMOTE_STATE_CHANGED", "failure_summary": "remote changed"})
+    assert blocked["stage_label"] == "已阻塞"
+    assert blocked["failure_summary"]["failure_type"] == "REMOTE_STATE_CHANGED"
+
+
 def test_autonomous_development_mission_creates_branch_and_waits_for_change_approval(monkeypatch, tmp_path):
     factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission")
     branch_created = _prepare_mission_start(monkeypatch)
@@ -1255,6 +1353,8 @@ def test_autonomous_development_mission_creates_branch_and_waits_for_change_appr
     assert action["metadata"]["mission_id"] == mission["mission_id"]
     assert action["metadata"]["working_branch"] == mission["working_branch"]
     assert action["metadata"]["plan"]["auto_checkpoint"] is True
+    assert discovery["autonomous_development_mission_view"]["stage_label"] == "等待你批准代码修改"
+    assert discovery["autonomous_development_mission_view"]["pending_approval"]["action_id"] == action["action_id"]
     assert len(execution_registry._sessions) == 0
 
 
