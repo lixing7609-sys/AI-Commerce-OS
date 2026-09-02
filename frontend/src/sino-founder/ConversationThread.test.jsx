@@ -306,6 +306,56 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText("changed-source")).toBeTruthy();
   });
 
+  it("shows safe integration push success and already-up-to-date details", () => {
+    const value = {
+      ...snapshot("conv-integration-push", [{ message_id: "m1", role: "founder", content: "推送 integration branch" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "completed", task_id: "task-push", execution_id: "execution-push", operation_type: "SAFE_INTEGRATION_PUSH", result: {
+        operation_type: "SAFE_INTEGRATION_PUSH",
+        summary: "Integration 安全推送完成",
+        integration_branch: "feature/foundation-reset-integration",
+        integration_head: "merge-head",
+        remote_name: "origin",
+        remote_branch: "feature/foundation-reset-integration",
+        remote_head_after: "merge-head",
+        ahead_before: 1,
+        push_performed: true,
+        force_used: false,
+        tags_pushed: false,
+      } } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("SAFE_INTEGRATION_PUSH")).toBeTruthy();
+    expect(screen.getAllByText("feature/foundation-reset-integration").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("merge-head").length).toBeGreaterThan(0);
+    expect(screen.getByText("Integration commits pushed")).toBeTruthy();
+    expect(screen.getByText("Integration force")).toBeTruthy();
+    expect(screen.getByText("Integration tags pushed")).toBeTruthy();
+  });
+
+  it("shows safe integration push block reasons for remote and local HEAD changes", () => {
+    const value = {
+      ...snapshot("conv-integration-push-blocked", [{ message_id: "m1", role: "founder", content: "推送 integration branch" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "failed", task_id: "task-push", execution_id: "execution-push", operation_type: "SAFE_INTEGRATION_PUSH", result: {
+        operation_type: "SAFE_INTEGRATION_PUSH",
+        summary: "remote integration branch changed after approval",
+        integration_branch: "feature/foundation-reset-integration",
+        integration_head: "merge-head",
+        remote_name: "origin",
+        remote_branch: "feature/foundation-reset-integration",
+        failure_type: "REMOTE_STATE_CHANGED",
+        push_performed: false,
+        force_used: false,
+        tags_pushed: false,
+      } } } },
+    };
+    const { rerender } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("REMOTE_STATE_CHANGED")).toBeTruthy();
+    expect(screen.getByText("remote integration branch changed after approval")).toBeTruthy();
+    rerender(<ConversationThread snapshot={{ ...value, sino_brain: { discovery: { operational_runtime: { ...value.sino_brain.discovery.operational_runtime, result: { ...value.sino_brain.discovery.operational_runtime.result, failure_type: "HEAD_CHANGED_AFTER_APPROVAL", summary: "integration HEAD changed after approval" } } } } }} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("HEAD_CHANGED_AFTER_APPROVAL")).toBeTruthy();
+    expect(screen.getByText("integration HEAD changed after approval")).toBeTruthy();
+  });
+
   it("keeps operational runtime isolated by conversation snapshot", () => {
     const convA = {
       ...snapshot("conv-a", [{ message_id: "m1", role: "founder", content: "检查状态" }]),

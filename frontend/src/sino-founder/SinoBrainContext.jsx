@@ -84,7 +84,7 @@ export function FounderWorkQueue({ tasks = [], focusedTaskId, conversationId, bu
   </section>;
 }
 
-const UNIFIED_QUEUE_TYPES = ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START", "HIGH_RISK_OPERATIONAL_TASK", "BOUNDED_CODE_CHANGE_APPROVAL", "SAFE_PUSH_APPROVAL", "SAFE_MERGE_APPROVAL"];
+const UNIFIED_QUEUE_TYPES = ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START", "HIGH_RISK_OPERATIONAL_TASK", "BOUNDED_CODE_CHANGE_APPROVAL", "SAFE_PUSH_APPROVAL", "SAFE_MERGE_APPROVAL", "SAFE_INTEGRATION_PUSH_APPROVAL"];
 
 function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDiscussion }) {
   const mvpActions = actions.filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
@@ -164,6 +164,28 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
             <div><dt>方向</dt><dd>source → target；不会 merge main/master/develop，不会 force，不会 deploy。</dd></div>
           </dl>
           <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准合并</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
+        </article>;
+      }
+      if (type === "SAFE_INTEGRATION_PUSH_APPROVAL") {
+        const metadata = item.metadata || {};
+        const pushRequest = metadata.push_request || {};
+        return <article className="sino-founder-action-item" aria-label="Safe Integration Push Approval" key={item.action_id}>
+          <span>SAFE INTEGRATION PUSH · {risk}</span><h3>{item.title || "批准 Integration 安全推送"}</h3><p>{item.summary}</p>
+          <dl>
+            <div><dt>Integration branch</dt><dd>{pushRequest.integration_branch || metadata.integration_branch || "feature/foundation-reset-integration"}</dd></div>
+            <div><dt>Integration HEAD</dt><dd>{pushRequest.integration_head || metadata.integration_head || "—"}</dd></div>
+            <div><dt>Remote</dt><dd>{pushRequest.remote_name || metadata.remote_name || "origin"}</dd></div>
+            <div><dt>Remote branch</dt><dd>{pushRequest.remote_branch || metadata.remote_branch || "—"}</dd></div>
+            <div><dt>Ahead / Behind</dt><dd>{pushRequest.ahead_count ?? metadata.ahead_count ?? 0} / {pushRequest.behind_count ?? metadata.behind_count ?? 0}</dd></div>
+            <div><dt>Working tree</dt><dd>{pushRequest.working_tree_clean ? "clean" : "dirty"}</dd></div>
+            <div><dt>Source merge</dt><dd>{pushRequest.merged_source_branch || metadata.merged_source_branch || "已记录"}</dd></div>
+            <div><dt>Merge commit</dt><dd>{pushRequest.merge_commit_head || metadata.merge_commit_head || "—"}</dd></div>
+            <div><dt>Force</dt><dd>NO</dd></div>
+            <div><dt>Tags</dt><dd>不会 push tags</dd></div>
+            <div><dt>Deploy</dt><dd>NO，不会 deploy</dd></div>
+            <div><dt>范围</dt><dd>只会把当前已完成本地安全合并的 integration branch 正常 push 到配置的同名远程 integration branch；不会 force push，不会 push tag，不会 deploy，不会 merge main/master/develop。</dd></div>
+          </dl>
+          <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准推送 Integration</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
         </article>;
       }
       return <article className="sino-founder-action-item" aria-label="Execution Start" key={item.action_id}>

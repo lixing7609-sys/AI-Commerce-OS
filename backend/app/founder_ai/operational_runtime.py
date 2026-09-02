@@ -33,6 +33,7 @@ OPERATIONAL_QUEUE_TYPE = "HIGH_RISK_OPERATIONAL_TASK"
 BOUNDED_CODE_CHANGE_QUEUE_TYPE = "BOUNDED_CODE_CHANGE_APPROVAL"
 SAFE_PUSH_QUEUE_TYPE = "SAFE_PUSH_APPROVAL"
 SAFE_MERGE_QUEUE_TYPE = "SAFE_MERGE_APPROVAL"
+SAFE_INTEGRATION_PUSH_QUEUE_TYPE = "SAFE_INTEGRATION_PUSH_APPROVAL"
 REPO_INSPECTION = "REPO_INSPECTION"
 FOCUSED_TEST = "FOCUSED_TEST"
 FRONTEND_BUILD = "FRONTEND_BUILD"
@@ -40,10 +41,12 @@ BOUNDED_CODE_CHANGE = "BOUNDED_CODE_CHANGE"
 SAFE_CHECKPOINT_COMMIT = "SAFE_CHECKPOINT_COMMIT"
 SAFE_PUSH = "SAFE_PUSH"
 SAFE_MERGE = "SAFE_MERGE"
+SAFE_INTEGRATION_PUSH = "SAFE_INTEGRATION_PUSH"
 SAFE_PUSH_ALLOWED_REMOTES = {"origin"}
 SAFE_PUSH_PROTECTED_BRANCHES = {"main", "master", "develop", "feature/foundation-reset-integration"}
 SAFE_MERGE_TARGET_BRANCH = "feature/foundation-reset-integration"
 SAFE_MERGE_PROTECTED_BRANCHES = {"main", "master", "develop"}
+SAFE_INTEGRATION_PUSH_BRANCH = "feature/foundation-reset-integration"
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,8 +159,19 @@ def classify_operational_risk(content: str) -> dict:
     bounded_change_terms = ("改成", "修改", "更新", "调整", "改一下", "change", "update")
     bounded_status_title_terms = ("sino controlled runtime", "sino operational runtime", "状态卡标题", "runtime 状态卡")
     safe_checkpoint_fixture_terms = ("safe checkpoint e2e fixture", "safe checkpoint", "checkpoint 验证", "本地 checkpoint")
+    safe_integration_push_terms = ("integration push", "integration branch push", "推送 integration", "推送集成", "推送 integration branch", "推送集成分支")
     safe_merge_terms = ("merge", "合并", "--no-ff", "no-ff", "integration baseline", "integration branch", "集成分支")
     safe_push_terms = ("push", "推送", "推到远程", "远程分支", "origin", "safe push")
+    if any(term in lowered for term in safe_integration_push_terms):
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": HIGH_RISK,
+            "auto_continue": False,
+            "operation": "safe_integration_push",
+            "operation_type": SAFE_INTEGRATION_PUSH,
+            "reason": "safe_integration_push_requires_separate_founder_approval",
+            "approval_required": True,
+        }
     if any(term in lowered for term in safe_merge_terms):
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
@@ -586,6 +600,109 @@ def _git_safe_push(remote_name: str, branch: str, *, cwd: Path, timeout: int = 6
 
 def _safe_merge_action_id(source_message_id: str) -> str:
     return f"safe-merge:{source_message_id}"
+
+
+def _safe_integration_push_action_id(source_message_id: str) -> str:
+    return f"safe-integration-push:{source_message_id}"
+
+
+def _safe_integration_push_failure(failure_type: str, summary: str, *, started_at: str, approval_action_id: str | None = None, preflight: dict | None = None) -> dict:
+    return {
+        "operation_type": SAFE_INTEGRATION_PUSH,
+        "status": "failed",
+        "success": False,
+        "failure_type": failure_type,
+        "summary": summary,
+        "approval_action_id": approval_action_id,
+        "push_performed": False,
+        "already_up_to_date": False,
+        "force_used": False,
+        "tags_pushed": False,
+        "remote_delete": False,
+        "preflight": dict(preflight or {}),
+        "started_at": started_at,
+        "completed_at": _now(),
+        "real_executor_used": "LOCAL_EXECUTOR",
+    }
+
+
+def _safe_integration_push_merge_evidence(integration_head: str, *, cwd: Path) -> dict:
+    evidence_path = cwd / ".sino-safe-integration-push-evidence.json"
+    if not evidence_path.exists():
+        return {"safe_merge_evidence_status": "MISSING", "safe_merge_verified": False}
+    try:
+        import json
+        payload = json.loads(evidence_path.read_text())
+    except Exception:
+        return {"safe_merge_evidence_status": "MISSING", "safe_merge_verified": False}
+    records = payload.get("records") if isinstance(payload, dict) else None
+    if isinstance(records, dict):
+        record = dict(records.get(integration_head) or records.get("CURRENT_HEAD") or {})
+    elif isinstance(payload, dict):
+        record = dict(payload)
+    else:
+        record = {}
+    raw_merge_head = record.get("merge_commit_head") or record.get("integration_head")
+    merge_head = integration_head if raw_merge_head in {integration_head, "CURRENT_HEAD"} else raw_merge_head
+    safe_merge_status = record.get("safe_merge_status") or record.get("merge_status") or "MISSING"
+    return {
+        "safe_merge_evidence_status": safe_merge_status,
+        "safe_merge_verified": safe_merge_status == "PASS" and merge_head == integration_head,
+        "safe_merge_action_id": record.get("safe_merge_action_id"),
+        "merge_commit_head": merge_head,
+        "merged_source_branch": record.get("source_branch"),
+        "merged_source_head": record.get("source_head"),
+        "safe_merge_evidence": record,
+    }
+
+
+def _safe_integration_push_preflight(*, cwd: Path | None = None, remote_name: str = "origin") -> dict:
+    root = cwd or repo_root()
+    current = _safe_push_preflight(cwd=root, remote_name=remote_name)
+    integration_head = current.get("local_head")
+    evidence = _safe_integration_push_merge_evidence(integration_head or "", cwd=root) if integration_head else {"safe_merge_verified": False, "safe_merge_evidence_status": "MISSING"}
+    return {
+        **current,
+        "operation_type": SAFE_INTEGRATION_PUSH,
+        "integration_branch": current.get("local_branch"),
+        "integration_head": integration_head,
+        "remote_head_at_approval": current.get("remote_branch_head"),
+        "integration_branch_allowed": current.get("local_branch") == SAFE_INTEGRATION_PUSH_BRANCH,
+        "protected_branch": current.get("local_branch") in SAFE_MERGE_PROTECTED_BRANCHES,
+        **evidence,
+    }
+
+
+def _validate_safe_integration_push_preconditions(approved_request: dict, current: dict, *, started_at: str, action_id: str) -> dict | None:
+    if current.get("state_blocker"):
+        return _safe_integration_push_failure("INTEGRATION_PUSH_PRECONDITION_FAILED", str(current["state_blocker"]), started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("detached_head"):
+        return _safe_integration_push_failure("BRANCH_CHANGED_AFTER_APPROVAL", "detached HEAD blocks integration push", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("integration_branch_allowed") or current.get("integration_branch") in {"main", "master", "develop"}:
+        return _safe_integration_push_failure("INTEGRATION_BRANCH_NOT_ALLOWED", "only the configured integration branch can use Safe Integration Push V1", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("remote_exists") or not current.get("remote_allowed"):
+        return _safe_integration_push_failure("REMOTE_NOT_ALLOWED", "approved remote is missing or not allowed", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("integration_head") != approved_request.get("integration_head"):
+        return _safe_integration_push_failure("HEAD_CHANGED_AFTER_APPROVAL", "integration HEAD changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("integration_branch") != approved_request.get("integration_branch"):
+        return _safe_integration_push_failure("BRANCH_CHANGED_AFTER_APPROVAL", "integration branch changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("remote_name") != approved_request.get("remote_name"):
+        return _safe_integration_push_failure("REMOTE_NOT_ALLOWED", "remote changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("remote_branch") != approved_request.get("remote_branch") or current.get("remote_branch") != current.get("integration_branch"):
+        return _safe_integration_push_failure("REMOTE_BRANCH_MISMATCH", "integration push only allows same remote branch", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("remote_branch_head") != approved_request.get("remote_head_at_approval"):
+        return _safe_integration_push_failure("REMOTE_STATE_CHANGED", "remote integration branch changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("staged_files"):
+        return _safe_integration_push_failure("STAGED_FILES_PRESENT", "staged files block integration push", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if current.get("untracked_files"):
+        return _safe_integration_push_failure("UNTRACKED_FILES_PRESENT", "untracked files block integration push", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("working_tree_clean"):
+        return _safe_integration_push_failure("WORKING_TREE_NOT_CLEAN", "working tree must be clean before integration push", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if int(current.get("behind_count") or 0) > 0:
+        return _safe_integration_push_failure("REMOTE_AHEAD_BLOCKED", "remote integration branch is ahead; will not pull, merge, rebase, or force", started_at=started_at, approval_action_id=action_id, preflight=current)
+    if not current.get("safe_merge_verified"):
+        return _safe_integration_push_failure("SAFE_MERGE_EVIDENCE_MISSING", "safe merge evidence is missing for the integration HEAD", started_at=started_at, approval_action_id=action_id, preflight=current)
+    return None
 
 
 def _git_branch_exists(branch: str, *, cwd: Path) -> bool:
@@ -1320,6 +1437,84 @@ def _append_safe_merge_queue_item(conversation_id: str, founder_request: str, so
             "action_id": action_id,
             "merge_request": merge_request,
             "message": "这是 HIGH risk 本地合并请求；已进入 Founder Action Queue。批准前不会执行 git switch 或 git merge。",
+        }
+        state.discovery = discovery
+        state.stage = "operational_runtime"
+        state.updated_at = datetime.now(timezone.utc)
+        session.commit()
+    return action_id
+
+
+def _append_safe_integration_push_queue_item(conversation_id: str, founder_request: str, source_message_id: str, risk: dict) -> str:
+    now = _now()
+    action_id = _safe_integration_push_action_id(source_message_id)
+    push_request = _safe_integration_push_preflight()
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("sino_brain_session_not_found")
+        discovery = dict(state.discovery or {})
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]
+        existing = next((item for item in queue if item.get("action_id") == action_id), None)
+        payload = {
+            "action_id": action_id,
+            "action_type": SAFE_INTEGRATION_PUSH_QUEUE_TYPE,
+            "type": SAFE_INTEGRATION_PUSH_QUEUE_TYPE,
+            "title": "批准 Integration 安全推送",
+            "summary": founder_request[:300],
+            "risk_level": HIGH_RISK,
+            "risk": "high",
+            "status": "pending",
+            "conversation_id": conversation_id,
+            "source_type": "conversation_message",
+            "source_id": source_message_id,
+            "created_at": existing.get("created_at") if existing else now,
+            "updated_at": now,
+            "decision": existing.get("decision") if existing else None,
+            "decided_at": existing.get("decided_at") if existing else None,
+            "reason": risk.get("reason"),
+            "metadata": {
+                "queue_schema": "sino-safe-integration-push-v1",
+                "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+                "operation_type": SAFE_INTEGRATION_PUSH,
+                "founder_request": founder_request,
+                "push_request": push_request,
+                "integration_branch": push_request.get("integration_branch"),
+                "integration_head": push_request.get("integration_head"),
+                "remote_name": push_request.get("remote_name"),
+                "remote_branch": push_request.get("remote_branch"),
+                "remote_head_at_approval": push_request.get("remote_head_at_approval"),
+                "ahead_count": push_request.get("ahead_count"),
+                "behind_count": push_request.get("behind_count"),
+                "working_tree_clean": push_request.get("working_tree_clean"),
+                "force_allowed": False,
+                "tags_allowed": False,
+                "delete_allowed": False,
+                "deployment_allowed": False,
+                "safe_merge_action_id": push_request.get("safe_merge_action_id"),
+                "merge_commit_head": push_request.get("merge_commit_head"),
+                "merged_source_branch": push_request.get("merged_source_branch"),
+                "merged_source_head": push_request.get("merged_source_head"),
+            },
+        }
+        if existing:
+            for index, item in enumerate(queue):
+                if item.get("action_id") == action_id:
+                    queue[index] = {**item, **payload, "status": item.get("status") or "pending"}
+                    break
+        else:
+            queue.append(payload)
+        discovery["founder_action_queue"] = queue
+        discovery["founder_action_required"] = True
+        discovery["operational_runtime"] = {
+            "status": "approval_required",
+            "risk_decision": risk,
+            "founder_request": founder_request,
+            "source_message_id": source_message_id,
+            "operation_type": SAFE_INTEGRATION_PUSH,
+            "action_id": action_id,
+            "push_request": push_request,
+            "message": "这是 HIGH risk Integration Push 请求；已进入 Founder Action Queue。批准前不会执行 git push。",
         }
         state.discovery = discovery
         state.stage = "operational_runtime"
@@ -2194,6 +2389,285 @@ def execute_safe_push(
     return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "completed", "result": result}
 
 
+def _safe_integration_push_task_scope(*, founder_request: str, conversation_id: str, source_message_id: str, action_id: str, push_request: dict) -> dict:
+    return {
+        "operational_runtime": {
+            "schema_version": "sino-safe-integration-push-v1",
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "operation": "safe_integration_push",
+            "operation_type": SAFE_INTEGRATION_PUSH,
+            "founder_request": founder_request,
+            "conversation_id": conversation_id,
+            "source_message_id": source_message_id,
+            "action_id": action_id,
+            "repo_path": str(repo_root()),
+            "risk_level": HIGH_RISK,
+            "approval_required": True,
+            "approval_action_id": action_id,
+            "push_request": push_request,
+            "integration_branch": push_request.get("integration_branch"),
+            "integration_head": push_request.get("integration_head"),
+            "remote_name": push_request.get("remote_name"),
+            "remote_branch": push_request.get("remote_branch"),
+            "remote_head_at_approval": push_request.get("remote_head_at_approval"),
+            "safe_merge_action_id": push_request.get("safe_merge_action_id"),
+            "merge_commit_head": push_request.get("merge_commit_head"),
+            "force_allowed": False,
+            "tags_allowed": False,
+            "delete_allowed": False,
+            "deployment_allowed": False,
+            "auto_continue_policy": "HIGH risk Integration Push only after separate Founder queue approval",
+        }
+    }
+
+
+def _persist_safe_integration_push_result(
+    *,
+    conversation_id: str,
+    task: TaskAssetDB,
+    execution_id: str,
+    action_id: str,
+    queued_payload: dict,
+    result: dict,
+    queue_status: str,
+) -> None:
+    completed_at = result.get("completed_at") or _now()
+    with SessionLocal() as session:
+        record = session.get(TaskAssetDB, task.id)
+        if record is not None:
+            record.result = result
+            record.status = result["status"]
+            record.execution_status = result["status"]
+            scope = dict(record.scope or {})
+            start = dict(scope.get("execution_start") or {})
+            start.update({"status": result["status"], "completed_at": completed_at})
+            scope["execution_start"] = start
+            record.scope = scope
+            session.commit()
+    registry_record = get_execution_session(execution_id)
+    if registry_record:
+        registry_session, package = registry_record
+        registry_session.status = result["status"]
+        registry_session.completed_at = completed_at
+        registry_session.result = result
+        if result.get("failure_type"):
+            registry_session.error_message = result.get("summary")
+        save_execution_session(registry_session, package)
+    _mark_bounded_action(conversation_id, action_id, {
+        "status": queue_status,
+        "decision": "approved",
+        "decided_at": completed_at,
+        "task_id": task.id,
+        "execution_id": execution_id,
+        "result": result,
+    })
+    _update_brain(conversation_id, {**queued_payload, "status": result["status"], "result": result, "message": result.get("summary")})
+
+
+def execute_safe_integration_push(
+    *,
+    conversation_id: str,
+    founder_request: str,
+    source_message_id: str,
+    action_id: str,
+    push_request: dict,
+    cwd: Path | None = None,
+    push_runner: Callable[[str, str, Path], subprocess.CompletedProcess] | None = None,
+) -> dict:
+    started_at = _now()
+    root = cwd or repo_root()
+    risk = {
+        "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+        "risk_level": HIGH_RISK,
+        "auto_continue": False,
+        "operation": "safe_integration_push",
+        "operation_type": SAFE_INTEGRATION_PUSH,
+        "reason": "founder_approved_safe_integration_push",
+        "approval_action_id": action_id,
+    }
+    task = create_task_asset(
+        title="Integration 安全推送",
+        description=founder_request,
+        conversation_id=conversation_id,
+        source_message_id=source_message_id,
+        scope=_safe_integration_push_task_scope(
+            founder_request=founder_request,
+            conversation_id=conversation_id,
+            source_message_id=source_message_id,
+            action_id=action_id,
+            push_request=push_request,
+        ),
+        status="draft",
+        approval_status="approved",
+        execution_status="not_started",
+    )
+    with SessionLocal() as session:
+        task = session.get(TaskAssetDB, task.id)
+        scope = dict(task.scope or {})
+        prior_start = dict(scope.get("execution_start") or {})
+        if prior_start.get("execution_id") and task.result:
+            existing = dict(task.result)
+            if existing.get("success"):
+                existing = {**existing, "already_up_to_date": True, "push_performed": False, "reused": True, "failure_type": "PUSH_ALREADY_UP_TO_DATE"}
+            return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": prior_start["execution_id"], "created": False, "reused": True, "status": existing.get("status"), "result": existing}
+        execution_id = prior_start.get("execution_id") or _stable_execution_id(task.id, source_message_id)
+        package = _execution_package(task=task, execution_id=execution_id, risk=risk)
+        package.context.update({
+            "operation_type": SAFE_INTEGRATION_PUSH,
+            "risk_level": HIGH_RISK,
+            "approval_action_id": action_id,
+            "integration_branch": push_request.get("integration_branch"),
+            "integration_head": push_request.get("integration_head"),
+            "remote_name": push_request.get("remote_name"),
+            "remote_branch": push_request.get("remote_branch"),
+            "remote_head_at_approval": push_request.get("remote_head_at_approval"),
+            "safe_merge_action_id": push_request.get("safe_merge_action_id"),
+            "merge_commit_head": push_request.get("merge_commit_head"),
+        })
+        existing_session = get_execution_session(execution_id)
+        if existing_session:
+            execution, _package = existing_session
+            created = False
+        else:
+            execution = ExecutionSession(id=execution_id, task_asset_id=task.id, execution_package_id=f"package-{execution_id}", executor="LOCAL_EXECUTOR", status="queued", approved_at=_now(), queued_at=_now())
+            save_execution_session(execution, package)
+            created = True
+        scope["execution_start"] = {
+            "schema_version": "safe-integration-push-start-v1",
+            "started_from": "founder_approved_safe_integration_push",
+            "execution_id": execution_id,
+            "task_asset_id": task.id,
+            "task_id": task.id,
+            "status": "queued",
+            "operation_type": SAFE_INTEGRATION_PUSH,
+            "queued_at": execution.queued_at or _now(),
+            "source_conversation_id": conversation_id,
+            "source_message_refs": [source_message_id],
+            "action_id": action_id,
+        }
+        task.scope = scope
+        task.status = "in_progress"
+        task.execution_status = "queued"
+        session.commit()
+
+    queued_payload = {
+        "status": "queued",
+        "operation_type": SAFE_INTEGRATION_PUSH,
+        "risk_decision": risk,
+        "task_id": task.id,
+        "execution_id": execution_id,
+        "action_id": action_id,
+        "founder_request": founder_request,
+        "push_request": push_request,
+        "message": "已获得 Integration Push 授权，正在重新检查远程状态。",
+    }
+    _update_brain(conversation_id, queued_payload)
+    _append_assistant_message(conversation_id, queued_payload["message"], message_type="operational_execution", grounding={"operational_runtime": queued_payload})
+    current = _safe_integration_push_preflight(cwd=root, remote_name=str(push_request.get("remote_name") or "origin"))
+    failure = _validate_safe_integration_push_preconditions(push_request, current, started_at=started_at, action_id=action_id)
+    if failure:
+        _persist_safe_integration_push_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"Integration 安全推送已停止：{failure['summary']}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+
+    remote_name = current["remote_name"]
+    branch = current["integration_branch"]
+    if int(current.get("ahead_count") or 0) == 0:
+        result = {
+            "operation_type": SAFE_INTEGRATION_PUSH,
+            "status": "completed",
+            "success": True,
+            "approval_action_id": action_id,
+            "integration_branch": branch,
+            "integration_head": current.get("integration_head"),
+            "remote_name": remote_name,
+            "remote_branch": current.get("remote_branch"),
+            "remote_head_before": current.get("remote_branch_head"),
+            "remote_head_after": current.get("remote_branch_head") or current.get("integration_head"),
+            "ahead_before": 0,
+            "behind_before": int(current.get("behind_count") or 0),
+            "push_performed": False,
+            "already_up_to_date": True,
+            "force_used": False,
+            "tags_pushed": False,
+            "remote_delete": False,
+            "safe_merge_action_id": current.get("safe_merge_action_id"),
+            "merge_commit_head": current.get("merge_commit_head"),
+            "summary": "远程已包含当前 Integration HEAD，无需再次 push。",
+            "stdout_excerpt": "",
+            "stderr_excerpt": "",
+            "started_at": started_at,
+            "completed_at": _now(),
+            "real_executor_used": "LOCAL_EXECUTOR",
+            "preflight": current,
+        }
+        _persist_safe_integration_push_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=result, queue_status="completed")
+        _append_assistant_message(conversation_id, result["summary"], message_type="operational_result", grounding={"operational_runtime": result, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "completed", "result": result}
+
+    _update_brain(conversation_id, {**queued_payload, "status": "running", "message": "正在安全推送 Integration branch…"})
+    push = (push_runner or (lambda remote, selected_branch, selected_root: _git_safe_push(remote, selected_branch, cwd=selected_root)))(remote_name, branch, root)
+    after = _safe_integration_push_preflight(cwd=root, remote_name=remote_name)
+    if push.returncode != 0:
+        failure_type = "NON_FAST_FORWARD_BLOCKED" if "non-fast-forward" in (push.stderr or push.stdout).lower() else "PUSH_FAILED"
+        failure = _safe_integration_push_failure(failure_type, _excerpt(push.stderr or push.stdout, 1000), started_at=started_at, approval_action_id=action_id, preflight=after)
+        failure.update({"stdout_excerpt": _excerpt(push.stdout or ""), "stderr_excerpt": _excerpt(push.stderr or "")})
+        _persist_safe_integration_push_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"Integration 安全推送失败：{failure['summary']}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+    remote_matches = after.get("remote_branch_head") == current.get("integration_head")
+    if not remote_matches:
+        failure = _safe_integration_push_failure("REMOTE_STATE_CHANGED", "remote integration HEAD did not match approved local HEAD after push", started_at=started_at, approval_action_id=action_id, preflight=after)
+        _persist_safe_integration_push_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=failure, queue_status="pending")
+        _append_assistant_message(conversation_id, f"Integration 安全推送结果异常：{failure['summary']}", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+    result = {
+        "operation_type": SAFE_INTEGRATION_PUSH,
+        "status": "completed",
+        "success": True,
+        "approval_action_id": action_id,
+        "integration_branch": branch,
+        "integration_head": current.get("integration_head"),
+        "remote_name": remote_name,
+        "remote_branch": current.get("remote_branch"),
+        "remote_head_before": current.get("remote_branch_head"),
+        "remote_head_after": after.get("remote_branch_head"),
+        "ahead_before": int(current.get("ahead_count") or 0),
+        "behind_before": int(current.get("behind_count") or 0),
+        "push_performed": True,
+        "already_up_to_date": False,
+        "force_used": False,
+        "tags_pushed": False,
+        "remote_delete": False,
+        "safe_merge_action_id": current.get("safe_merge_action_id"),
+        "merge_commit_head": current.get("merge_commit_head"),
+        "summary": f"Integration 安全推送完成：{branch} → {remote_name}/{branch}，推送 {int(current.get('ahead_count') or 0)} 个本地 commit，未使用 force。",
+        "stdout_excerpt": _excerpt(push.stdout or ""),
+        "stderr_excerpt": _excerpt(push.stderr or ""),
+        "started_at": started_at,
+        "completed_at": _now(),
+        "real_executor_used": "LOCAL_EXECUTOR",
+        "preflight": current,
+        "postflight": after,
+    }
+    _persist_safe_integration_push_result(conversation_id=conversation_id, task=task, execution_id=execution_id, action_id=action_id, queued_payload=queued_payload, result=result, queue_status="completed")
+    _append_assistant_message(
+        conversation_id,
+        (
+            "Integration 安全推送完成：\n"
+            f"branch: {branch}\n"
+            f"remote: {remote_name}/{branch}\n"
+            f"HEAD: {result['integration_head']}\n"
+            f"推送 commits: {result['ahead_before']}\n"
+            "force: NO\n"
+            "tags: NO"
+        ),
+        message_type="operational_result",
+        grounding={"operational_runtime": result, "task_id": task.id, "execution_id": execution_id},
+    )
+    return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "completed", "result": result}
+
+
 def _safe_merge_task_scope(*, founder_request: str, conversation_id: str, source_message_id: str, action_id: str, merge_request: dict) -> dict:
     return {
         "operational_runtime": {
@@ -2684,6 +3158,51 @@ def decide_safe_merge_action(action_id: str, decision: str) -> dict:
     )
 
 
+def decide_safe_integration_push_action(action_id: str, decision: str) -> dict:
+    if decision not in {"approve", "reject", "continue_discussion"}:
+        raise ValueError("unsupported_safe_integration_push_decision")
+    state, action = _find_action(action_id)
+    if action.get("action_type") != SAFE_INTEGRATION_PUSH_QUEUE_TYPE:
+        raise ValueError("not_safe_integration_push_action")
+    conversation_id = action.get("conversation_id") or state.conversation_id
+    source_message_id = action.get("source_id")
+    metadata = dict(action.get("metadata") or {})
+    founder_request = metadata.get("founder_request") or action.get("summary") or ""
+    push_request = dict(metadata.get("push_request") or {})
+    existing_result = dict(action.get("result") or {})
+    if decision == "continue_discussion":
+        _append_assistant_message(
+            conversation_id,
+            "继续讨论 Integration Push；该 Action Queue item 保持 pending，批准前不会执行 git push。",
+            message_type="operational_discussion",
+            grounding={"action_id": action_id, "operation_type": SAFE_INTEGRATION_PUSH},
+        )
+        return {"handled": True, "action_id": action_id, "decision": "continue_discussion", "status": "pending", "push_performed": False}
+    if decision == "reject":
+        now = _now()
+        _mark_bounded_action(conversation_id, action_id, {"status": "rejected", "decision": "rejected", "decided_at": now})
+        _update_brain(conversation_id, {"status": "rejected", "operation_type": SAFE_INTEGRATION_PUSH, "action_id": action_id, "message": "Integration Push 已拒绝；不会执行 git push。"})
+        _append_assistant_message(
+            conversation_id,
+            "Integration Push 已拒绝；不会执行 git push。",
+            message_type="operational_result",
+            grounding={"action_id": action_id, "operation_type": SAFE_INTEGRATION_PUSH, "decision": "rejected"},
+        )
+        return {"handled": True, "action_id": action_id, "decision": "rejected", "status": "rejected", "push_performed": False}
+    if existing_result.get("success") and action.get("status") == "completed":
+        reused = {**existing_result, "already_up_to_date": True, "push_performed": False, "reused": True, "failure_type": "PUSH_ALREADY_UP_TO_DATE"}
+        _update_brain(conversation_id, {"status": "completed", "operation_type": SAFE_INTEGRATION_PUSH, "action_id": action_id, "result": reused, "message": reused.get("summary")})
+        return {"handled": True, "action_id": action_id, "decision": "approved", "status": "completed", "task_id": action.get("task_id"), "execution_id": action.get("execution_id"), "result": reused, "reused": True}
+    _mark_bounded_action(conversation_id, action_id, {"status": "approved", "decision": "approved", "decided_at": _now()})
+    return execute_safe_integration_push(
+        conversation_id=conversation_id,
+        founder_request=founder_request,
+        source_message_id=source_message_id,
+        action_id=action_id,
+        push_request=push_request,
+    )
+
+
 def decide_operational_action_by_type(action_id: str, decision: str) -> dict:
     _state, action = _find_action(action_id)
     action_type = action.get("action_type") or action.get("type")
@@ -2693,6 +3212,8 @@ def decide_operational_action_by_type(action_id: str, decision: str) -> dict:
         return decide_safe_push_action(action_id, decision)
     if action_type == SAFE_MERGE_QUEUE_TYPE:
         return decide_safe_merge_action(action_id, decision)
+    if action_type == SAFE_INTEGRATION_PUSH_QUEUE_TYPE:
+        return decide_safe_integration_push_action(action_id, decision)
     raise ValueError("unsupported_operational_action_type")
 
 
@@ -2702,6 +3223,15 @@ def handle_operational_conversation_request(
     risk = classify_operational_risk(founder_request)
     if risk.get("work_type") != CONTROLLED_LOCAL_DEVELOPMENT_TASK:
         return {"handled": False, "risk_decision": risk}
+    if risk.get("risk_level") == HIGH_RISK and risk.get("operation_type") == SAFE_INTEGRATION_PUSH:
+        action_id = _append_safe_integration_push_queue_item(conversation_id, founder_request, source_message_id, risk)
+        _append_assistant_message(
+            conversation_id,
+            "这是 HIGH risk Integration Push 请求，已进入 Founder Action Queue。批准前不会执行 git push。",
+            message_type="operational_approval_required",
+            grounding={"operational_runtime": {"status": "approval_required", "risk_decision": risk, "action_id": action_id}},
+        )
+        return {"handled": True, "risk_decision": risk, "status": "approval_required", "action_id": action_id}
     if risk.get("risk_level") == HIGH_RISK and risk.get("operation_type") == SAFE_MERGE:
         action_id = _append_safe_merge_queue_item(conversation_id, founder_request, source_message_id, risk)
         _append_assistant_message(

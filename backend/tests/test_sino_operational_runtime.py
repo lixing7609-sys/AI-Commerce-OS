@@ -21,6 +21,7 @@ FOCUSED_TEST_REQUEST = "运行 Sino Operational Runtime 的测试，告诉我结
 FRONTEND_BUILD_REQUEST = "检查一下前端现在能不能正常构建。"
 BOUNDED_CHANGE_REQUEST = "请把 Sino Operational Runtime 状态卡标题改成 Sino Controlled Runtime，并运行相关前端测试和构建。"
 SAFE_MERGE_REQUEST = "请把当前 feature 分支本地 --no-ff 合并到 integration branch。"
+SAFE_INTEGRATION_PUSH_REQUEST = "请推送 integration branch 到远程。"
 
 
 def _runtime(monkeypatch, tmp_path, *, conversation_id="conv-operational"):
@@ -1040,5 +1041,154 @@ def test_safe_merge_duplicate_callback_returns_existing_merge(monkeypatch, tmp_p
     second = runtime.decide_operational_action_by_type(result["action_id"], "approve")
     assert first["execution_id"] == second["execution_id"]
     assert second["result"]["already_merged"] is True
+    with factory() as db:
+        assert db.query(TaskAssetDB).count() == 1
+
+
+def _safe_integration_push_request(**overrides):
+    base = {
+        "local_branch": "feature/foundation-reset-integration",
+        "local_head": "merge-head",
+        "checkpoint_head": "merge-head",
+        "integration_branch": "feature/foundation-reset-integration",
+        "integration_head": "merge-head",
+        "remote_name": "origin",
+        "remote_branch": "feature/foundation-reset-integration",
+        "remote_branch_head": "old-remote",
+        "remote_head_at_approval": "old-remote",
+        "remote_exists": True,
+        "remote_allowed": True,
+        "ahead_count": 1,
+        "behind_count": 0,
+        "working_tree_clean": True,
+        "staged_files": [],
+        "untracked_files": [],
+        "status_short": [],
+        "detached_head": False,
+        "state_blocker": None,
+        "integration_branch_allowed": True,
+        "safe_merge_verified": True,
+        "safe_merge_action_id": "safe-merge:1",
+        "merge_commit_head": "merge-head",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_safe_integration_push_request_is_high_and_enters_queue(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-integration-push")
+    decision = runtime.classify_operational_risk(SAFE_INTEGRATION_PUSH_REQUEST)
+    assert decision["operation_type"] == "SAFE_INTEGRATION_PUSH"
+    assert decision["risk_level"] == "HIGH"
+    assert decision["auto_continue"] is False
+    monkeypatch.setattr(runtime, "_safe_integration_push_preflight", lambda **_kwargs: _safe_integration_push_request())
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-integration-push",
+        founder_request=SAFE_INTEGRATION_PUSH_REQUEST,
+        source_message_id="message-integration-push",
+    )
+    assert result["status"] == "approval_required"
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-integration-push").one()
+    items = [item for item in state.discovery["founder_action_queue"] if item["action_type"] == "SAFE_INTEGRATION_PUSH_APPROVAL"]
+    assert len(items) == 1
+    assert items[0]["metadata"]["integration_head"] == "merge-head"
+
+
+def test_safe_integration_push_reject_and_continue_do_not_push(monkeypatch, tmp_path):
+    _runtime(monkeypatch, tmp_path, conversation_id="conv-integration-push-decisions")
+    monkeypatch.setattr(runtime, "_safe_integration_push_preflight", lambda **_kwargs: _safe_integration_push_request())
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-integration-push-decisions",
+        founder_request=SAFE_INTEGRATION_PUSH_REQUEST,
+        source_message_id="message-integration-push-decisions",
+    )
+    calls = []
+    monkeypatch.setattr(runtime, "_git_safe_push", lambda *_args, **_kwargs: calls.append(_args))
+    continued = runtime.decide_operational_action_by_type(result["action_id"], "continue_discussion")
+    rejected = runtime.decide_operational_action_by_type(result["action_id"], "reject")
+    assert continued["push_performed"] is False
+    assert rejected["push_performed"] is False
+    assert calls == []
+
+
+def test_safe_integration_push_preconditions_block_policy_dirty_remote_and_evidence():
+    base = _safe_integration_push_request()
+    assert runtime._validate_safe_integration_push_preconditions(base, _safe_integration_push_request(integration_branch="main", integration_branch_allowed=False), started_at="now", action_id="a")["failure_type"] == "INTEGRATION_BRANCH_NOT_ALLOWED"
+    assert runtime._validate_safe_integration_push_preconditions(base, _safe_integration_push_request(staged_files=["x.py"]), started_at="now", action_id="a")["failure_type"] == "STAGED_FILES_PRESENT"
+    assert runtime._validate_safe_integration_push_preconditions(base, _safe_integration_push_request(untracked_files=["x.py"]), started_at="now", action_id="a")["failure_type"] == "UNTRACKED_FILES_PRESENT"
+    assert runtime._validate_safe_integration_push_preconditions(base, _safe_integration_push_request(working_tree_clean=False), started_at="now", action_id="a")["failure_type"] == "WORKING_TREE_NOT_CLEAN"
+    assert runtime._validate_safe_integration_push_preconditions(base, _safe_integration_push_request(integration_head="new-head"), started_at="now", action_id="a")["failure_type"] == "HEAD_CHANGED_AFTER_APPROVAL"
+    assert runtime._validate_safe_integration_push_preconditions(base, _safe_integration_push_request(remote_branch_head="new-remote"), started_at="now", action_id="a")["failure_type"] == "REMOTE_STATE_CHANGED"
+    assert runtime._validate_safe_integration_push_preconditions(base, _safe_integration_push_request(behind_count=1), started_at="now", action_id="a")["failure_type"] == "REMOTE_AHEAD_BLOCKED"
+    assert runtime._validate_safe_integration_push_preconditions(base, _safe_integration_push_request(safe_merge_verified=False), started_at="now", action_id="a")["failure_type"] == "SAFE_MERGE_EVIDENCE_MISSING"
+
+
+def test_safe_integration_push_reuses_safe_push_argv_and_blocks_unsafe_refs(monkeypatch, tmp_path):
+    calls = []
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs.get("shell")))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    monkeypatch.setattr(runtime.subprocess, "run", fake_run)
+    runtime._git_safe_push("origin", "feature/foundation-reset-integration", cwd=tmp_path)
+    assert calls == [(["git", "push", "origin", "feature/foundation-reset-integration"], False)]
+    with pytest.raises(ValueError):
+        runtime._git_safe_push("origin", "feature/foundation-reset-integration:main", cwd=tmp_path)
+
+
+def test_safe_integration_push_approval_pushes_once_and_persists(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-integration-push-approve")
+    preflight = _safe_integration_push_request()
+    states = [preflight, preflight, _safe_integration_push_request(remote_branch_head="merge-head", ahead_count=0)]
+    monkeypatch.setattr(runtime, "_safe_integration_push_preflight", lambda **_kwargs: states.pop(0))
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-integration-push-approve",
+        founder_request=SAFE_INTEGRATION_PUSH_REQUEST,
+        source_message_id="message-integration-push-approve",
+    )
+    calls = []
+    approved = runtime.execute_safe_integration_push(
+        conversation_id="conv-integration-push-approve",
+        founder_request=SAFE_INTEGRATION_PUSH_REQUEST,
+        source_message_id="message-integration-push-approve",
+        action_id=result["action_id"],
+        push_request=preflight,
+        cwd=tmp_path,
+        push_runner=lambda remote, branch, root: calls.append((remote, branch, root)) or SimpleNamespace(returncode=0, stdout="pushed", stderr=""),
+    )
+    assert approved["result"]["operation_type"] == "SAFE_INTEGRATION_PUSH"
+    assert approved["result"]["push_performed"] is True
+    assert approved["result"]["remote_head_after"] == "merge-head"
+    assert calls == [("origin", "feature/foundation-reset-integration", tmp_path)]
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-integration-push-approve").all()
+    assert task.result["operation_type"] == "SAFE_INTEGRATION_PUSH"
+    assert any("Integration 安全推送完成" in item.content for item in messages)
+
+
+def test_safe_integration_push_already_up_to_date_and_duplicate_are_idempotent(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-integration-push-idempotent")
+    preflight = _safe_integration_push_request(remote_branch_head="merge-head", remote_head_at_approval="merge-head", ahead_count=0)
+    monkeypatch.setattr(runtime, "_safe_integration_push_preflight", lambda **_kwargs: preflight)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-integration-push-idempotent",
+        founder_request=SAFE_INTEGRATION_PUSH_REQUEST,
+        source_message_id="message-integration-push-idempotent",
+    )
+    calls = []
+    first = runtime.execute_safe_integration_push(
+        conversation_id="conv-integration-push-idempotent",
+        founder_request=SAFE_INTEGRATION_PUSH_REQUEST,
+        source_message_id="message-integration-push-idempotent",
+        action_id=result["action_id"],
+        push_request=preflight,
+        cwd=tmp_path,
+        push_runner=lambda *_args: calls.append(_args),
+    )
+    second = runtime.decide_operational_action_by_type(result["action_id"], "approve")
+    assert first["result"]["already_up_to_date"] is True
+    assert second["result"]["already_up_to_date"] is True
+    assert calls == []
     with factory() as db:
         assert db.query(TaskAssetDB).count() == 1
