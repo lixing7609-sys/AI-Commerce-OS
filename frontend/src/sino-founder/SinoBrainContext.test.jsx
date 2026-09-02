@@ -140,6 +140,81 @@ describe("SinoBrainContext", () => {
     expect(resolved).not.toHaveBeenCalled();
   });
 
+  it("displays SAFE_PUSH approval with protected push details and precise actions", async () => {
+    const resolved = vi.fn();
+    render(<SinoBrainContext conversationId="conv-1" onFounderActionResolved={resolved} brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
+      action_id: "safe-push:message-1",
+      action_type: "SAFE_PUSH_APPROVAL",
+      type: "SAFE_PUSH_APPROVAL",
+      status: "pending",
+      title: "批准安全推送",
+      summary: "推送当前 checkpoint",
+      risk_level: "HIGH",
+      source_type: "conversation_message",
+      source_id: "message-1",
+      conversation_id: "conv-1",
+      metadata: {
+        push_request: {
+          local_branch: "feature/sino-safe-push-v1",
+          local_head: "head-local",
+          remote_name: "origin",
+          remote_branch: "feature/sino-safe-push-v1",
+          ahead_count: 1,
+          behind_count: 0,
+          working_tree_clean: true,
+        },
+      },
+    }] } }} />);
+    const action = screen.getByRole("article", { name: "Safe Push Approval" });
+    expect(action.textContent).toContain("安全推送");
+    expect(action.textContent).toContain("HIGH");
+    expect(action.textContent).toContain("feature/sino-safe-push-v1");
+    expect(action.textContent).toContain("head-local");
+    expect(action.textContent).toContain("origin");
+    expect(action.textContent).toContain("Force");
+    expect(action.textContent).toContain("NO");
+    expect(action.textContent).toContain("不会 push tags");
+    expect(action.textContent).toContain("不会 force push");
+    fireEvent.click(screen.getByRole("button", { name: "批准推送" }));
+    await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("safe-push:message-1", "approve"));
+    expect(resolved).toHaveBeenCalled();
+  });
+
+  it("rejects SAFE_PUSH without using execution start", async () => {
+    render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
+      action_id: "safe-push:message-2",
+      action_type: "SAFE_PUSH_APPROVAL",
+      type: "SAFE_PUSH_APPROVAL",
+      status: "pending",
+      title: "批准安全推送",
+      summary: "推送当前 checkpoint",
+      risk_level: "HIGH",
+      metadata: { push_request: { local_branch: "feature/x", local_head: "head", remote_name: "origin", remote_branch: "feature/x", working_tree_clean: true } },
+    }] } }} />);
+    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("safe-push:message-2", "reject"));
+    expect(startTaskExecution).not.toHaveBeenCalled();
+  });
+
+  it("continues SAFE_PUSH discussion without resolving the queue item", async () => {
+    const discuss = vi.fn();
+    const resolved = vi.fn();
+    render(<SinoBrainContext conversationId="conv-1" onContinueDiscussion={discuss} onFounderActionResolved={resolved} brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
+      action_id: "safe-push:message-3",
+      action_type: "SAFE_PUSH_APPROVAL",
+      type: "SAFE_PUSH_APPROVAL",
+      status: "pending",
+      title: "批准安全推送",
+      summary: "推送当前 checkpoint",
+      risk_level: "HIGH",
+      metadata: { push_request: { local_branch: "feature/x", local_head: "head", remote_name: "origin", remote_branch: "feature/x", working_tree_clean: true } },
+    }] } }} />);
+    fireEvent.click(screen.getByRole("button", { name: "继续讨论" }));
+    await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("safe-push:message-3", "continue_discussion"));
+    expect(discuss).toHaveBeenCalled();
+    expect(resolved).not.toHaveBeenCalled();
+  });
+
   it("keeps Candidate Confirm and Create Task out of the Founder Action Queue", () => {
     render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [
       { action_id: "candidate:candidate-1", action_type: "CANDIDATE_CONFIRM", type: "CANDIDATE_CONFIRM", status: "pending", title: "确认候选" },

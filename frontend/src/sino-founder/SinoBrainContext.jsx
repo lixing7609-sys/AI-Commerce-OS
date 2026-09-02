@@ -84,7 +84,7 @@ export function FounderWorkQueue({ tasks = [], focusedTaskId, conversationId, bu
   </section>;
 }
 
-const UNIFIED_QUEUE_TYPES = ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START", "HIGH_RISK_OPERATIONAL_TASK", "BOUNDED_CODE_CHANGE_APPROVAL"];
+const UNIFIED_QUEUE_TYPES = ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START", "HIGH_RISK_OPERATIONAL_TASK", "BOUNDED_CODE_CHANGE_APPROVAL", "SAFE_PUSH_APPROVAL"];
 
 function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDiscussion }) {
   const mvpActions = actions.filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
@@ -123,6 +123,25 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
             <div><dt>不做</dt><dd>{nonGoals.length ? nonGoals.join(" · ") : "不越过授权边界"}</dd></div>
           </dl>
           <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准修改</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>驳回</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
+        </article>;
+      }
+      if (type === "SAFE_PUSH_APPROVAL") {
+        const metadata = item.metadata || {};
+        const pushRequest = metadata.push_request || {};
+        return <article className="sino-founder-action-item" aria-label="Safe Push Approval" key={item.action_id}>
+          <span>安全推送 · {risk}</span><h3>{item.title || "批准安全推送"}</h3><p>{item.summary}</p>
+          <dl>
+            <div><dt>Local branch</dt><dd>{pushRequest.local_branch || metadata.local_branch || "—"}</dd></div>
+            <div><dt>Local HEAD</dt><dd>{pushRequest.local_head || metadata.checkpoint_head || "—"}</dd></div>
+            <div><dt>Remote</dt><dd>{pushRequest.remote_name || metadata.remote_name || "origin"}</dd></div>
+            <div><dt>Remote branch</dt><dd>{pushRequest.remote_branch || metadata.remote_branch || "—"}</dd></div>
+            <div><dt>Ahead / Behind</dt><dd>{pushRequest.ahead_count ?? metadata.ahead_count ?? 0} / {pushRequest.behind_count ?? metadata.behind_count ?? 0}</dd></div>
+            <div><dt>Working tree</dt><dd>{pushRequest.working_tree_clean ? "clean" : "dirty"}</dd></div>
+            <div><dt>Force</dt><dd>NO</dd></div>
+            <div><dt>Tags</dt><dd>不会 push tags</dd></div>
+            <div><dt>范围</dt><dd>只会把当前分支的已验证本地 commit 正常 push 到同名远程分支；不会 force push，不会 push tags，不会 merge，不会 deploy。</dd></div>
+          </dl>
+          <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准推送</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
         </article>;
       }
       return <article className="sino-founder-action-item" aria-label="Execution Start" key={item.action_id}>
