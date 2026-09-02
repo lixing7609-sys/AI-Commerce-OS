@@ -100,6 +100,7 @@ function OperationalRuntimeStatus({ runtime }) {
   const workingTreeStatus = runtime.result?.working_tree_status || result?.working_tree_status;
   const checkpoint = runtime.result?.checkpoint || result?.checkpoint;
   const pushResult = operationType === "SAFE_PUSH" ? (runtime.result || result || {}) : null;
+  const mergeResult = operationType === "SAFE_MERGE" ? (runtime.result || result || {}) : null;
   return <aside className="sino-operational-runtime-status" aria-label="Operational Runtime Status">
     <span>Sino Controlled Runtime</span>
     <h3>{labels[runtime.status] || runtime.status}</h3>
@@ -133,6 +134,16 @@ function OperationalRuntimeStatus({ runtime }) {
       {pushResult?.failure_type ? <div><dt>Push blocked</dt><dd>{pushResult.failure_type}</dd></div> : null}
       {pushResult ? <div><dt>Force</dt><dd>{pushResult.force_used ? "YES" : "NO"}</dd></div> : null}
       {pushResult ? <div><dt>Tags pushed</dt><dd>{pushResult.tags_pushed ? "YES" : "NO"}</dd></div> : null}
+      {mergeResult?.source_branch ? <div><dt>Source branch</dt><dd>{mergeResult.source_branch}</dd></div> : null}
+      {mergeResult?.source_head ? <div><dt>Source HEAD</dt><dd>{mergeResult.source_head}</dd></div> : null}
+      {mergeResult?.target_branch ? <div><dt>Target branch</dt><dd>{mergeResult.target_branch}</dd></div> : null}
+      {mergeResult?.target_head_before ? <div><dt>Target HEAD before</dt><dd>{mergeResult.target_head_before}</dd></div> : null}
+      {mergeResult?.merge_strategy ? <div><dt>Merge strategy</dt><dd>{mergeResult.merge_strategy}</dd></div> : null}
+      {mergeResult?.merge_commit_head ? <div><dt>Merge HEAD</dt><dd>{mergeResult.merge_commit_head}</dd></div> : null}
+      {mergeResult?.merge_parent_count != null ? <div><dt>Merge parents</dt><dd>{mergeResult.merge_parent_count}</dd></div> : null}
+      {mergeResult?.conflict_files?.length ? <div><dt>Conflict files</dt><dd>{mergeResult.conflict_files.join(" · ")}</dd></div> : null}
+      {mergeResult?.failure_type ? <div><dt>Merge blocked</dt><dd>{mergeResult.failure_type}</dd></div> : null}
+      {mergeResult ? <div><dt>Target pushed</dt><dd>{mergeResult.push_performed ? "YES" : "NO"}</dd></div> : null}
       {typeof result?.working_tree_clean === "boolean" ? <div><dt>Working tree</dt><dd>{result.working_tree_clean ? "clean" : "dirty"}</dd></div> : null}
       {workingTreeStatus ? <div><dt>Working tree status</dt><dd>{workingTreeStatus}</dd></div> : null}
       {runtime.retryable != null ? <div><dt>Retryable</dt><dd>{runtime.retryable ? "YES" : "NO"}</dd></div> : null}

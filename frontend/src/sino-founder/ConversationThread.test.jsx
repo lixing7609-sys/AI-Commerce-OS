@@ -234,6 +234,78 @@ describe("ConversationThread layout", () => {
     expect(screen.getAllByText("feature/sino-safe-push-v1").length).toBeGreaterThan(0);
   });
 
+  it("shows safe merge success details and no target push in the same conversation", () => {
+    const value = {
+      ...snapshot("conv-safe-merge", [{ message_id: "m1", role: "founder", content: "合并 feature 到 integration" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "completed", task_id: "task-merge", execution_id: "execution-merge", operation_type: "SAFE_MERGE", result: {
+        operation_type: "SAFE_MERGE",
+        summary: "本地安全合并完成：feature/sino-safe-merge-v1 → feature/foundation-reset-integration，merge HEAD: merge-head，尚未 push。",
+        source_branch: "feature/sino-safe-merge-v1",
+        source_head: "source-head",
+        target_branch: "feature/foundation-reset-integration",
+        target_head_before: "target-head",
+        merge_strategy: "no_ff",
+        merge_commit_head: "merge-head",
+        merge_parent_count: 2,
+        source_ancestor_verified: true,
+        target_ancestor_verified: true,
+        working_tree_clean_after: true,
+        push_performed: false,
+      } } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("SAFE_MERGE")).toBeTruthy();
+    expect(screen.getByText("feature/sino-safe-merge-v1")).toBeTruthy();
+    expect(screen.getByText("source-head")).toBeTruthy();
+    expect(screen.getByText("feature/foundation-reset-integration")).toBeTruthy();
+    expect(screen.getByText("target-head")).toBeTruthy();
+    expect(screen.getByText("merge-head")).toBeTruthy();
+    expect(screen.getByText("Merge parents")).toBeTruthy();
+    expect(screen.getByText("Target pushed")).toBeTruthy();
+    expect(screen.getByText("NO")).toBeTruthy();
+  });
+
+  it("shows safe merge conflict files and blocked reason", () => {
+    const value = {
+      ...snapshot("conv-safe-merge-conflict", [{ message_id: "m1", role: "founder", content: "合并 feature 到 integration" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "failed", task_id: "task-merge", execution_id: "execution-merge", operation_type: "SAFE_MERGE", result: {
+        operation_type: "SAFE_MERGE",
+        summary: "合并检测到冲突，已停止自动处理。",
+        source_branch: "feature/sino-safe-merge-v1",
+        source_head: "source-head",
+        target_branch: "feature/foundation-reset-integration",
+        target_head_before: "target-head",
+        failure_type: "MERGE_CONFLICT",
+        conflict: true,
+        conflict_files: ["frontend/src/App.jsx"],
+        push_performed: false,
+      } } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("执行失败")).toBeTruthy();
+    expect(screen.getByText("MERGE_CONFLICT")).toBeTruthy();
+    expect(screen.getByText("frontend/src/App.jsx")).toBeTruthy();
+  });
+
+  it("shows safe merge changed-head block reason", () => {
+    const value = {
+      ...snapshot("conv-safe-merge-head", [{ message_id: "m1", role: "founder", content: "合并 feature 到 integration" }]),
+      sino_brain: { discovery: { operational_runtime: { status: "failed", task_id: "task-merge", execution_id: "execution-merge", operation_type: "SAFE_MERGE", result: {
+        operation_type: "SAFE_MERGE",
+        summary: "source HEAD changed after approval",
+        source_branch: "feature/sino-safe-merge-v1",
+        source_head: "changed-source",
+        target_branch: "feature/foundation-reset-integration",
+        target_head_before: "target-head",
+        failure_type: "SOURCE_HEAD_CHANGED",
+        push_performed: false,
+      } } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("SOURCE_HEAD_CHANGED")).toBeTruthy();
+    expect(screen.getByText("changed-source")).toBeTruthy();
+  });
+
   it("keeps operational runtime isolated by conversation snapshot", () => {
     const convA = {
       ...snapshot("conv-a", [{ message_id: "m1", role: "founder", content: "检查状态" }]),

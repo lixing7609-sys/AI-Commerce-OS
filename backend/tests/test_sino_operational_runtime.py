@@ -20,6 +20,7 @@ HIGH_REQUEST = "部署到生产环境并写 production db"
 FOCUSED_TEST_REQUEST = "运行 Sino Operational Runtime 的测试，告诉我结果。"
 FRONTEND_BUILD_REQUEST = "检查一下前端现在能不能正常构建。"
 BOUNDED_CHANGE_REQUEST = "请把 Sino Operational Runtime 状态卡标题改成 Sino Controlled Runtime，并运行相关前端测试和构建。"
+SAFE_MERGE_REQUEST = "请把当前 feature 分支本地 --no-ff 合并到 integration branch。"
 
 
 def _runtime(monkeypatch, tmp_path, *, conversation_id="conv-operational"):
@@ -776,3 +777,268 @@ def test_safe_push_already_up_to_date_is_idempotent_without_push(monkeypatch, tm
     with factory() as db:
         assert db.query(TaskAssetDB).count() == 1
     assert len(execution_registry._sessions) == 1
+
+
+def _safe_merge_request(**overrides):
+    value = {
+        "current_branch": "feature/sino-safe-merge-v1",
+        "source_branch": "feature/sino-safe-merge-v1",
+        "source_head": "source-head",
+        "source_remote": "origin",
+        "source_remote_head": "source-head",
+        "source_exists": True,
+        "source_allowed": True,
+        "source_ahead_remote": 0,
+        "source_behind_remote": 0,
+        "target_branch": "feature/foundation-reset-integration",
+        "target_head": "target-head",
+        "target_head_before": "target-head",
+        "target_remote": "origin",
+        "target_remote_head": "target-head",
+        "target_remote_head_before": "target-head",
+        "target_exists": True,
+        "target_allowed": True,
+        "target_ahead_remote": 0,
+        "target_behind_remote": 0,
+        "remote_exists": True,
+        "remote_name": "origin",
+        "working_tree_clean": True,
+        "staged_files": [],
+        "untracked_files": [],
+        "status_short": [],
+        "detached_head": False,
+        "state_blocker": None,
+        "merge_strategy": "no_ff",
+        "push_after_merge": False,
+        "auto_conflict_resolution": False,
+        "source_verification_status": "PASS",
+        "source_safe_push_status": "PASS",
+        "checkpoint_head": "source-head",
+        "pushed_remote_head": "source-head",
+        "source_verified": True,
+        "source_pushed": True,
+        "conflict_prediction": {"checked": True, "conflict_predicted": False, "conflict_files": []},
+    }
+    value.update(overrides)
+    return value
+
+
+def test_safe_merge_request_is_high_and_specific():
+    decision = runtime.classify_operational_risk(SAFE_MERGE_REQUEST)
+    assert decision["operation_type"] == "SAFE_MERGE"
+    assert decision["risk_level"] == "HIGH"
+    assert decision["approval_required"] is True
+    assert decision["auto_continue"] is False
+
+
+def test_safe_merge_enters_action_queue_and_merge_unreachable_before_approval(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge")
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: _safe_merge_request())
+    monkeypatch.setattr(runtime, "_git_safe_merge_no_ff", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("merge must not run before approval")))
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-safe-merge",
+        founder_request=SAFE_MERGE_REQUEST,
+        source_message_id="message-safe-merge",
+    )
+    assert result["status"] == "approval_required"
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-safe-merge").one()
+        assert db.query(TaskAssetDB).count() == 0
+    items = [item for item in state.discovery["founder_action_queue"] if item["action_type"] == "SAFE_MERGE_APPROVAL" and item["status"] == "pending"]
+    assert len(items) == 1
+    assert items[0]["metadata"]["source_head"] == "source-head"
+    assert items[0]["metadata"]["target_head_before"] == "target-head"
+    assert len(execution_registry._sessions) == 0
+
+
+def test_safe_merge_reject_and_continue_do_not_switch_or_merge(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-reject")
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: _safe_merge_request())
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-safe-merge-reject",
+        founder_request=SAFE_MERGE_REQUEST,
+        source_message_id="message-safe-merge-reject",
+    )
+    monkeypatch.setattr(runtime, "_git_safe_switch", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("switch must not run")))
+    monkeypatch.setattr(runtime, "_git_safe_merge_no_ff", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("merge must not run")))
+    continued = runtime.decide_operational_action_by_type(result["action_id"], "continue_discussion")
+    assert continued["status"] == "pending"
+    rejected = runtime.decide_operational_action_by_type(result["action_id"], "reject")
+    assert rejected["merge_performed"] is False
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-safe-merge-reject").one()
+        assert db.query(TaskAssetDB).count() == 0
+    item = next(item for item in state.discovery["founder_action_queue"] if item["action_id"] == result["action_id"])
+    assert item["status"] == "rejected"
+
+
+def test_safe_merge_preconditions_block_policy_sync_evidence_and_conflict():
+    base = _safe_merge_request()
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(source_allowed=False), started_at="now", action_id="safe-merge:1")["failure_type"] == "SOURCE_BRANCH_NOT_ALLOWED"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(source_branch="main", source_allowed=False), started_at="now", action_id="safe-merge:1")["failure_type"] == "SOURCE_BRANCH_NOT_ALLOWED"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(target_branch="main", target_allowed=False), started_at="now", action_id="safe-merge:1")["failure_type"] == "TARGET_BRANCH_NOT_ALLOWED"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(target_branch="master", target_allowed=False), started_at="now", action_id="safe-merge:1")["failure_type"] == "TARGET_BRANCH_NOT_ALLOWED"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(target_branch="develop", target_allowed=False), started_at="now", action_id="safe-merge:1")["failure_type"] == "TARGET_BRANCH_NOT_ALLOWED"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(source_head="changed"), started_at="now", action_id="safe-merge:1")["failure_type"] == "SOURCE_HEAD_CHANGED"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(target_head="changed", target_head_before="changed"), started_at="now", action_id="safe-merge:1")["failure_type"] == "TARGET_HEAD_CHANGED"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(source_remote_head="other"), started_at="now", action_id="safe-merge:1")["failure_type"] == "SOURCE_REMOTE_NOT_SYNCED"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(target_remote_head="other", target_remote_head_before="other"), started_at="now", action_id="safe-merge:1")["failure_type"] == "TARGET_REMOTE_NOT_SYNCED"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(source_verified=False), started_at="now", action_id="safe-merge:1")["failure_type"] == "SOURCE_NOT_VERIFIED"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(source_pushed=False), started_at="now", action_id="safe-merge:1")["failure_type"] == "SOURCE_NOT_PUSHED"
+    conflict = runtime._validate_safe_merge_preconditions(base, _safe_merge_request(conflict_prediction={"checked": True, "conflict_predicted": True, "conflict_files": ["app.py"]}), started_at="now", action_id="safe-merge:1")
+    assert conflict["failure_type"] == "MERGE_CONFLICT_PREDICTED"
+    assert conflict["conflict_files"] == ["app.py"]
+
+
+def test_safe_merge_blocks_dirty_staged_untracked_and_repo_state():
+    base = _safe_merge_request()
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(working_tree_clean=False, status_short=[" M a.txt"]), started_at="now", action_id="safe-merge:1")["failure_type"] == "WORKING_TREE_NOT_CLEAN"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(working_tree_clean=False, staged_files=["a.txt"]), started_at="now", action_id="safe-merge:1")["failure_type"] == "STAGED_FILES_PRESENT"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(working_tree_clean=False, untracked_files=["a.txt"]), started_at="now", action_id="safe-merge:1")["failure_type"] == "UNTRACKED_FILES_PRESENT"
+    assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(state_blocker="repository_in_merge_state"), started_at="now", action_id="safe-merge:1")["failure_type"] == "REPO_OPERATION_IN_PROGRESS"
+
+
+def test_safe_merge_argv_uses_shell_false_and_no_squash_rebase_or_push(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs.get("shell")))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime.subprocess, "run", fake_run)
+    runtime._git_safe_switch("feature/foundation-reset-integration", cwd=tmp_path)
+    runtime._git_safe_merge_no_ff("feature/sino-safe-merge-v1", cwd=tmp_path)
+    runtime._git_safe_merge_abort(cwd=tmp_path)
+    assert (["git", "switch", "feature/foundation-reset-integration"], False) in calls
+    assert (["git", "merge", "--no-ff", "feature/sino-safe-merge-v1"], False) in calls
+    assert (["git", "merge", "--abort"], False) in calls
+    flat = [token for argv, _shell in calls for token in argv]
+    assert "push" not in flat
+    assert "--squash" not in flat
+    assert "--rebase" not in flat
+    assert "-X" not in flat
+    with pytest.raises(ValueError):
+        runtime._git_safe_merge_no_ff("feature/a:main", cwd=tmp_path)
+
+
+def test_safe_merge_approval_executes_switch_and_no_ff_merge(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-approve")
+    preflight = _safe_merge_request()
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: preflight)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-safe-merge-approve",
+        founder_request=SAFE_MERGE_REQUEST,
+        source_message_id="message-safe-merge-approve",
+    )
+    calls = []
+    monkeypatch.setattr(runtime, "_git_is_ancestor", lambda ancestor, descendant, **_kwargs: False if descendant == "target-head" else ancestor in {"source-head", "target-head"} and descendant == "merge-head")
+    monkeypatch.setattr(runtime, "_merge_parent_count", lambda _head, **_kwargs: 2)
+    monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: [])
+
+    def fake_git(args, **_kwargs):
+        if args == ["rev-parse", "HEAD"]:
+            return SimpleNamespace(returncode=0, stdout="target-head\n" if len(calls) == 1 else "merge-head\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime, "_git_output", fake_git)
+
+    def switcher(branch, root):
+        calls.append(("switch", branch, root))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def merger(branch, root):
+        calls.append(("merge", branch, root))
+        return SimpleNamespace(returncode=0, stdout="Merge made by ort", stderr="")
+
+    approved = runtime.execute_safe_merge(
+        conversation_id="conv-safe-merge-approve",
+        founder_request=SAFE_MERGE_REQUEST,
+        source_message_id="message-safe-merge-approve",
+        action_id=result["action_id"],
+        merge_request=preflight,
+        cwd=tmp_path,
+        switcher=switcher,
+        merger=merger,
+    )
+    assert approved["status"] == "completed"
+    assert approved["result"]["merge_commit_created"] is True
+    assert approved["result"]["merge_parent_count"] == 2
+    assert approved["result"]["source_ancestor_verified"] is True
+    assert approved["result"]["target_ancestor_verified"] is True
+    assert approved["result"]["push_performed"] is False
+    assert calls == [("switch", "feature/foundation-reset-integration", tmp_path), ("merge", "feature/sino-safe-merge-v1", tmp_path)]
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-safe-merge-approve").all()
+    assert task.result["operation_type"] == "SAFE_MERGE"
+    assert task.result["merge_commit_head"] == "merge-head"
+    assert any("本地安全合并完成" in item.content for item in messages)
+
+
+def test_safe_merge_conflict_aborts_and_persists_failure(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-conflict")
+    preflight = _safe_merge_request()
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: preflight)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-safe-merge-conflict",
+        founder_request=SAFE_MERGE_REQUEST,
+        source_message_id="message-safe-merge-conflict",
+    )
+    monkeypatch.setattr(runtime, "_git_is_ancestor", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: [])
+
+    def fake_git(args, **_kwargs):
+        if args == ["rev-parse", "HEAD"]:
+            return SimpleNamespace(returncode=0, stdout="target-head\n", stderr="")
+        if args == ["diff", "--name-only", "--diff-filter=U"]:
+            return SimpleNamespace(returncode=0, stdout="app.py\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime, "_git_output", fake_git)
+    approved = runtime.execute_safe_merge(
+        conversation_id="conv-safe-merge-conflict",
+        founder_request=SAFE_MERGE_REQUEST,
+        source_message_id="message-safe-merge-conflict",
+        action_id=result["action_id"],
+        merge_request=preflight,
+        cwd=tmp_path,
+        switcher=lambda _branch, _root: SimpleNamespace(returncode=0, stdout="", stderr=""),
+        merger=lambda _branch, _root: SimpleNamespace(returncode=1, stdout="", stderr="CONFLICT"),
+        aborter=lambda _root: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    assert approved["result"]["failure_type"] == "MERGE_CONFLICT"
+    assert approved["result"]["conflict_files"] == ["app.py"]
+    assert approved["result"]["merge_abort_success"] is True
+    with factory() as db:
+        assert db.query(TaskAssetDB).one().execution_status == "failed"
+
+
+def test_safe_merge_duplicate_callback_returns_existing_merge(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-duplicate")
+    preflight = _safe_merge_request()
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: preflight)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-safe-merge-duplicate",
+        founder_request=SAFE_MERGE_REQUEST,
+        source_message_id="message-safe-merge-duplicate",
+    )
+    monkeypatch.setattr(runtime, "_git_is_ancestor", lambda ancestor, descendant, **_kwargs: False if descendant == "target-head" else True)
+    monkeypatch.setattr(runtime, "_merge_parent_count", lambda _head, **_kwargs: 2)
+    monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: [])
+    revs = ["target-head\n", "merge-head\n"]
+    monkeypatch.setattr(runtime, "_git_output", lambda args, **_kwargs: SimpleNamespace(returncode=0, stdout=revs.pop(0) if args == ["rev-parse", "HEAD"] else "", stderr=""))
+    first = runtime.execute_safe_merge(
+        conversation_id="conv-safe-merge-duplicate",
+        founder_request=SAFE_MERGE_REQUEST,
+        source_message_id="message-safe-merge-duplicate",
+        action_id=result["action_id"],
+        merge_request=preflight,
+        cwd=tmp_path,
+        switcher=lambda _branch, _root: SimpleNamespace(returncode=0, stdout="", stderr=""),
+        merger=lambda _branch, _root: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    second = runtime.decide_operational_action_by_type(result["action_id"], "approve")
+    assert first["execution_id"] == second["execution_id"]
+    assert second["result"]["already_merged"] is True
+    with factory() as db:
+        assert db.query(TaskAssetDB).count() == 1
