@@ -98,6 +98,7 @@ function OperationalRuntimeStatus({ runtime }) {
   const boundaryCheck = runtime.result?.boundary_check || result?.boundary_check;
   const buildStatus = runtime.result?.build_status || result?.build_status;
   const workingTreeStatus = runtime.result?.working_tree_status || result?.working_tree_status;
+  const checkpoint = runtime.result?.checkpoint || result?.checkpoint;
   return <aside className="sino-operational-runtime-status" aria-label="Operational Runtime Status">
     <span>Sino Controlled Runtime</span>
     <h3>{labels[runtime.status] || runtime.status}</h3>
@@ -117,6 +118,10 @@ function OperationalRuntimeStatus({ runtime }) {
       {changedFiles.length ? <div><dt>Changed files</dt><dd>{changedFiles.join(" · ")}</dd></div> : null}
       {boundaryCheck ? <div><dt>Boundary check</dt><dd>{boundaryCheck}</dd></div> : null}
       {buildStatus ? <div><dt>Build</dt><dd>{buildStatus}</dd></div> : null}
+      {checkpoint?.commit_message ? <div><dt>Checkpoint</dt><dd>{checkpoint.commit_message}</dd></div> : null}
+      {checkpoint?.commit_file_count != null ? <div><dt>Commit files</dt><dd>{checkpoint.commit_file_count}</dd></div> : null}
+      {checkpoint?.new_head ? <div><dt>New HEAD</dt><dd>{checkpoint.new_head}</dd></div> : null}
+      {checkpoint?.failure_type ? <div><dt>Checkpoint blocked</dt><dd>{checkpoint.failure_type}</dd></div> : null}
       {typeof result?.working_tree_clean === "boolean" ? <div><dt>Working tree</dt><dd>{result.working_tree_clean ? "clean" : "dirty"}</dd></div> : null}
       {workingTreeStatus ? <div><dt>Working tree status</dt><dd>{workingTreeStatus}</dd></div> : null}
       {runtime.retryable != null ? <div><dt>Retryable</dt><dd>{runtime.retryable ? "YES" : "NO"}</dd></div> : null}

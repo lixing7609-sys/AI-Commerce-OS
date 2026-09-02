@@ -97,6 +97,8 @@ describe("SinoBrainContext", () => {
     expect(action.textContent).toContain("受控代码修改");
     expect(action.textContent).toContain("frontend/src/sino-founder/ConversationThread.jsx");
     expect(action.textContent).toContain("focused test passes");
+    expect(action.textContent).toContain("创建本地 checkpoint");
+    expect(action.textContent).toContain("不会 push");
     expect(screen.getByRole("button", { name: "批准修改" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "批准修改" }));
     await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("bounded-code-change:message-1", "approve"));

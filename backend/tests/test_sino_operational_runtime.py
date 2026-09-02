@@ -365,6 +365,16 @@ def test_bounded_code_change_approval_auto_continues_and_persists_result(monkeyp
 
     monkeypatch.setattr(runtime, "run_bounded_code_change", code_runner)
     monkeypatch.setattr(runtime, "run_verification_commands", verifier)
+    monkeypatch.setattr(runtime, "safe_checkpoint_commit", lambda **kwargs: {
+        "operation_type": "SAFE_CHECKPOINT_COMMIT",
+        "success": True,
+        "commit_created": True,
+        "commit_message": "fix(sino-runtime): align controlled runtime status label",
+        "commit_files": ["frontend/src/sino-founder/ConversationThread.jsx"],
+        "commit_file_count": 1,
+        "new_head": "head-checkpoint",
+        "working_tree_clean_after": True,
+    })
     approved = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
     assert approved["status"] == "completed"
     assert calls == {"code": 1, "verify": 1}
@@ -377,6 +387,8 @@ def test_bounded_code_change_approval_auto_continues_and_persists_result(monkeyp
     assert task.scope["operational_runtime"]["allowed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
     assert task.result["operation_type"] == "BOUNDED_CODE_CHANGE"
     assert task.result["boundary_check"] == "PASS"
+    assert task.result["checkpoint"]["commit_created"] is True
+    assert task.result["checkpoint"]["commit_file_count"] == 1
     assert task.result["changed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
     assert state.discovery["operational_runtime"]["result"]["changed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
     assert any("受控代码修改完成" in item.content for item in messages)
@@ -392,6 +404,7 @@ def test_bounded_code_change_retry_reuses_completed_execution(monkeypatch, tmp_p
     )
     monkeypatch.setattr(runtime, "run_bounded_code_change", lambda _plan: {"changed_files": ["frontend/src/sino-founder/ConversationThread.jsx"], "diff_summary": "changed title"})
     monkeypatch.setattr(runtime, "run_verification_commands", lambda _commands: [{"argv": ["test"], "shell": False, "success": True, "check_result": "PASS"}])
+    monkeypatch.setattr(runtime, "safe_checkpoint_commit", lambda **_kwargs: {"operation_type": "SAFE_CHECKPOINT_COMMIT", "success": True, "commit_created": True, "new_head": "head-once", "commit_files": ["frontend/src/sino-founder/ConversationThread.jsx"], "commit_file_count": 1})
     first = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
     monkeypatch.setattr(runtime, "run_bounded_code_change", lambda _plan: (_ for _ in ()).throw(AssertionError("retry must not run code executor")))
     second = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
@@ -435,6 +448,139 @@ def test_bounded_code_change_verification_failure_persists_check_failure(monkeyp
         task = db.query(TaskAssetDB).one()
     assert task.result["tests_failed"] == 1
     assert task.execution_status == "completed"
+
+
+def _checkpoint_execution_result(**overrides):
+    value = {
+        "operation_type": "BOUNDED_CODE_CHANGE",
+        "status": "completed",
+        "success": True,
+        "check_result": "PASS",
+        "boundary_check": "PASS",
+        "unexpected_files": [],
+        "changed_files": ["frontend/src/sino-founder/ConversationThread.jsx"],
+        "verification_steps": [
+            {"argv": ["npm", "--prefix", "frontend", "test", "--", "--run", "src/sino-founder/ConversationThread.test.jsx"], "success": True, "check_result": "PASS"},
+            {"argv": ["npm", "--prefix", "frontend", "run", "build"], "success": True, "check_result": "PASS"},
+        ],
+    }
+    value.update(overrides)
+    return value
+
+
+def test_safe_checkpoint_stages_only_explicit_allowed_files(monkeypatch, tmp_path):
+    calls = []
+    plan = dict(runtime.BOUNDED_CODE_CHANGE_PLANS[runtime.BOUNDED_STATUS_CARD_TITLE_CHANGE])
+    monkeypatch.setattr(runtime, "_git_state_blocker", lambda _root: None)
+    monkeypatch.setattr(runtime, "_git_diff_check", lambda **_kwargs: {"success": True})
+    statuses = [
+        [" M frontend/src/sino-founder/ConversationThread.jsx"],
+        [],
+    ]
+    monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: statuses.pop(0))
+
+    def fake_git(args, **_kwargs):
+        calls.append(args)
+        if args == ["rev-parse", "HEAD"]:
+            return SimpleNamespace(stdout="head-before\n", stderr="", returncode=0)
+        if args == ["diff", "--cached", "--name-only"]:
+            return SimpleNamespace(stdout="frontend/src/sino-founder/ConversationThread.jsx\n", stderr="", returncode=0)
+        if args[:1] == ["commit"]:
+            return SimpleNamespace(stdout="[branch head-after] ok", stderr="", returncode=0)
+        if args == ["show", "--stat", "--oneline", "HEAD"]:
+            return SimpleNamespace(stdout="head-after commit", stderr="", returncode=0)
+        if args[:1] == ["add"]:
+            return SimpleNamespace(stdout="", stderr="", returncode=0)
+        return SimpleNamespace(stdout="head-after\n", stderr="", returncode=0)
+
+    monkeypatch.setattr(runtime, "_git_output", fake_git)
+    result = runtime.safe_checkpoint_commit(
+        plan=plan,
+        execution_result=_checkpoint_execution_result(),
+        task_id="task-1",
+        execution_id="execution-1",
+        action_id="bounded-code-change:message-1",
+        cwd=tmp_path,
+    )
+    assert result["success"] is True
+    assert ["add", "frontend/src/sino-founder/ConversationThread.jsx"] in calls
+    assert ["add", "."] not in calls
+    assert ["add", "-A"] not in calls
+    assert not any(call and call[0] in {"push", "merge", "rebase"} for call in calls)
+
+
+def test_safe_checkpoint_blocks_preexisting_staged_file(monkeypatch, tmp_path):
+    plan = dict(runtime.BOUNDED_CODE_CHANGE_PLANS[runtime.BOUNDED_STATUS_CARD_TITLE_CHANGE])
+    monkeypatch.setattr(runtime, "_git_state_blocker", lambda _root: None)
+    monkeypatch.setattr(runtime, "_git_diff_check", lambda **_kwargs: {"success": True})
+    monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: ["M  backend/app/founder_ai/api.py", " M frontend/src/sino-founder/ConversationThread.jsx"])
+    result = runtime.safe_checkpoint_commit(
+        plan=plan,
+        execution_result=_checkpoint_execution_result(),
+        task_id="task-1",
+        execution_id="execution-1",
+        action_id="bounded-code-change:message-1",
+        cwd=tmp_path,
+    )
+    assert result["success"] is False
+    assert result["failure_type"] == "STAGED_BOUNDARY_MISMATCH"
+
+
+def test_safe_checkpoint_blocks_unexpected_dirty_file(monkeypatch, tmp_path):
+    plan = dict(runtime.BOUNDED_CODE_CHANGE_PLANS[runtime.BOUNDED_STATUS_CARD_TITLE_CHANGE])
+    monkeypatch.setattr(runtime, "_git_state_blocker", lambda _root: None)
+    monkeypatch.setattr(runtime, "_git_diff_check", lambda **_kwargs: {"success": True})
+    monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: [" M frontend/src/sino-founder/ConversationThread.jsx", " M backend/app/founder_ai/api.py"])
+    result = runtime.safe_checkpoint_commit(
+        plan=plan,
+        execution_result=_checkpoint_execution_result(),
+        task_id="task-1",
+        execution_id="execution-1",
+        action_id="bounded-code-change:message-1",
+        cwd=tmp_path,
+    )
+    assert result["success"] is False
+    assert result["failure_type"] == "UNEXPECTED_DIRTY_FILE"
+
+
+def test_safe_checkpoint_requires_verification_and_build_pass(monkeypatch, tmp_path):
+    plan = dict(runtime.BOUNDED_CODE_CHANGE_PLANS[runtime.BOUNDED_STATUS_CARD_TITLE_CHANGE])
+    result = runtime.safe_checkpoint_commit(
+        plan=plan,
+        execution_result=_checkpoint_execution_result(check_result="FAIL"),
+        task_id="task-1",
+        execution_id="execution-1",
+        action_id="bounded-code-change:message-1",
+        cwd=tmp_path,
+    )
+    assert result["success"] is False
+    assert result["failure_type"] == "VERIFICATION_NOT_PASSED"
+    result = runtime.safe_checkpoint_commit(
+        plan=plan,
+        execution_result=_checkpoint_execution_result(verification_steps=[{"argv": ["npm", "--prefix", "frontend", "run", "build"], "success": False, "check_result": "FAIL"}]),
+        task_id="task-1",
+        execution_id="execution-1",
+        action_id="bounded-code-change:message-1",
+        cwd=tmp_path,
+    )
+    assert result["success"] is False
+    assert result["failure_type"] == "BUILD_NOT_PASSED"
+
+
+def test_git_output_uses_shell_false_and_rejects_push(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        captured["shell"] = kwargs.get("shell")
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(runtime.subprocess, "run", fake_run)
+    runtime._git_output(["status", "--short"], cwd=tmp_path)
+    assert captured["argv"] == ["git", "status", "--short"]
+    assert captured["shell"] is False
+    with pytest.raises(ValueError):
+        runtime._git_output(["push"], cwd=tmp_path)
 
 
 def test_conversation_api_short_circuits_low_operational_request_before_provider(monkeypatch, tmp_path):

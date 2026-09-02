@@ -140,6 +140,11 @@ describe("ConversationThread layout", () => {
         boundary_check: "PASS",
         build_status: "PASS",
         working_tree_status: "dirty",
+        checkpoint: {
+          commit_message: "fix(sino-runtime): align controlled runtime status label",
+          commit_file_count: 1,
+          new_head: "head-checkpoint",
+        },
         result: { operation_type: "BOUNDED_CODE_CHANGE", tests_passed: 3, tests_failed: 0, working_tree_clean: false },
       } } } },
     };
@@ -148,6 +153,8 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText("frontend/src/sino-founder/ConversationThread.jsx")).toBeTruthy();
     expect(screen.getByText("Boundary check")).toBeTruthy();
     expect(screen.getAllByText("PASS").length).toBeGreaterThan(0);
+    expect(screen.getByText("fix(sino-runtime): align controlled runtime status label")).toBeTruthy();
+    expect(screen.getByText("head-checkpoint")).toBeTruthy();
     expect(screen.getAllByText("dirty").length).toBeGreaterThan(0);
   });
 
@@ -160,6 +167,7 @@ describe("ConversationThread layout", () => {
         summary: "检测到超出授权范围的修改，已停止。",
         changed_files: ["backend/app/secret.py"],
         boundary_check: "FAILED_BOUNDARY",
+        checkpoint: { failure_type: "BOUNDARY_VIOLATION" },
         working_tree_status: "dirty",
         result: { operation_type: "BOUNDED_CODE_CHANGE", changed_files: ["backend/app/secret.py"] },
       } } } },
@@ -167,6 +175,7 @@ describe("ConversationThread layout", () => {
     render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
     expect(screen.getByText("执行失败")).toBeTruthy();
     expect(screen.getAllByText("FAILED_BOUNDARY").length).toBeGreaterThan(0);
+    expect(screen.getByText("BOUNDARY_VIOLATION")).toBeTruthy();
     expect(screen.getByText("backend/app/secret.py")).toBeTruthy();
   });
 
