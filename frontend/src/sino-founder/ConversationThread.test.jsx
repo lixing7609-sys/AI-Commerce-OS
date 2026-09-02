@@ -356,6 +356,84 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText("integration HEAD changed after approval")).toBeTruthy();
   });
 
+  it("shows autonomous mission status, goal, branch and next required action", () => {
+    const value = {
+      ...snapshot("conv-mission", [{ message_id: "m1", role: "founder", content: "完成一个小型开发目标" }]),
+      sino_brain: {
+        discovery: {
+          autonomous_development_mission: {
+            mission_id: "mission-1",
+            founder_request: "把状态卡文案改清楚并验证",
+            status: "WAITING_CHANGE_APPROVAL",
+            current_stage: "WAITING_CHANGE_APPROVAL",
+            working_branch: "feature/sino-mission-status-card-copy",
+            baseline_head: "baseline-head",
+            last_completed_step: "MISSION_BRANCH_CREATED",
+            next_required_action: "BOUNDED_CODE_CHANGE_APPROVAL",
+          },
+        },
+      },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByRole("complementary", { name: "Mission Status" })).toBeTruthy();
+    expect(screen.getByText("WAITING_CHANGE_APPROVAL")).toBeTruthy();
+    expect(screen.getByText("把状态卡文案改清楚并验证")).toBeTruthy();
+    expect(screen.getByText("feature/sino-mission-status-card-copy")).toBeTruthy();
+    expect(screen.getByText("MISSION_BRANCH_CREATED")).toBeTruthy();
+    expect(screen.getByText("BOUNDED_CODE_CHANGE_APPROVAL")).toBeTruthy();
+  });
+
+  it("shows autonomous mission checkpoint, merge and completed integration result", () => {
+    const value = {
+      ...snapshot("conv-mission-complete", [{ message_id: "m1", role: "founder", content: "完成一个小型开发目标" }]),
+      sino_brain: {
+        discovery: {
+          autonomous_development_mission: {
+            mission_id: "mission-2",
+            founder_request: "完成完整开发任务",
+            status: "COMPLETED",
+            current_stage: "COMPLETED",
+            working_branch: "feature/sino-mission-status-card-copy",
+            checkpoint_head: "checkpoint-head",
+            merge_head: "merge-head",
+            final_integration_head: "merge-head",
+            last_completed_step: "PUSHING_INTEGRATION",
+          },
+        },
+      },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("COMPLETED")).toBeTruthy();
+    expect(screen.getByText("checkpoint-head")).toBeTruthy();
+    expect(screen.getAllByText("merge-head").length).toBeGreaterThan(0);
+    expect(screen.getByText("PUSHING_INTEGRATION")).toBeTruthy();
+  });
+
+  it("shows autonomous mission failed stage and restores from snapshot reload", () => {
+    const value = {
+      ...snapshot("conv-mission-failed", [{ message_id: "m1", role: "founder", content: "完成一个小型开发目标" }]),
+      sino_brain: {
+        discovery: {
+          autonomous_development_mission: {
+            mission_id: "mission-3",
+            founder_request: "完成完整开发任务",
+            status: "FAILED",
+            current_stage: "FAILED",
+            failed_stage: "VERIFYING",
+            failure_type: "VERIFICATION_FAILED",
+            failure_summary: "2 tests failed",
+            next_required_action: "REVIEW_FAILURE",
+          },
+        },
+      },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("FAILED")).toBeTruthy();
+    expect(screen.getByText("VERIFYING")).toBeTruthy();
+    expect(screen.getByText("VERIFICATION_FAILED")).toBeTruthy();
+    expect(screen.getByText("REVIEW_FAILURE")).toBeTruthy();
+  });
+
   it("keeps operational runtime isolated by conversation snapshot", () => {
     const convA = {
       ...snapshot("conv-a", [{ message_id: "m1", role: "founder", content: "检查状态" }]),
@@ -367,6 +445,19 @@ describe("ConversationThread layout", () => {
     rerender(<ConversationThread snapshot={convB} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
     expect(screen.queryByText("branch-a")).toBeNull();
   });
+
+  it("keeps autonomous mission isolated by conversation snapshot", () => {
+    const convA = {
+      ...snapshot("conv-mission-a", [{ message_id: "m1", role: "founder", content: "开发目标 A" }]),
+      sino_brain: { discovery: { autonomous_development_mission: { mission_id: "mission-a", founder_request: "开发目标 A", current_stage: "WAITING_MERGE_APPROVAL", working_branch: "feature/sino-mission-a" } } },
+    };
+    const convB = snapshot("conv-mission-b", [{ message_id: "m2", role: "founder", content: "开发目标 B" }]);
+    const { rerender } = render(<ConversationThread snapshot={convA} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("feature/sino-mission-a")).toBeTruthy();
+    rerender(<ConversationThread snapshot={convB} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.queryByText("feature/sino-mission-a")).toBeNull();
+  });
+
 
   it("wires approve, reject and revision feedback to real proposal actions", async () => {
     const onDecision = vi.fn().mockResolvedValue(undefined);

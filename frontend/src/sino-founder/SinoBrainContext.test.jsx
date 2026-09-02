@@ -88,6 +88,8 @@ describe("SinoBrainContext", () => {
       source_id: "message-1",
       conversation_id: "conv-1",
       metadata: {
+        mission_id: "mission-1",
+        working_branch: "feature/sino-mission-status-card-copy",
         planned_files: ["frontend/src/sino-founder/ConversationThread.jsx"],
         acceptance_criteria: ["focused test passes"],
         explicit_non_goals: ["Do not push"],
@@ -96,9 +98,11 @@ describe("SinoBrainContext", () => {
     const action = screen.getByRole("article", { name: "Bounded Code Change Approval" });
     expect(action.textContent).toContain("受控代码修改");
     expect(action.textContent).toContain("frontend/src/sino-founder/ConversationThread.jsx");
+    expect(action.textContent).toContain("feature/sino-mission-status-card-copy");
     expect(action.textContent).toContain("focused test passes");
     expect(action.textContent).toContain("创建本地 checkpoint");
     expect(action.textContent).toContain("不会 push");
+    expect(action.textContent).toContain("Feature Push、Safe Merge、Integration Push 会分别进入独立 Founder approval");
     expect(screen.getByRole("button", { name: "批准修改" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "批准修改" }));
     await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("bounded-code-change:message-1", "approve"));

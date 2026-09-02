@@ -118,8 +118,10 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
           <span>受控代码修改 · {risk}</span><h3>{item.title || "批准受控代码修改"}</h3><p>{item.summary}</p>
           <dl>
             <div><dt>计划文件</dt><dd>{plannedFiles.length ? plannedFiles.join(" · ") : "等待 Sino 明确边界"}</dd></div>
+            {metadata.mission_id ? <div><dt>Mission branch</dt><dd>{metadata.working_branch || "—"}</dd></div> : null}
             <div><dt>验收标准</dt><dd>{criteria.length ? criteria.join(" · ") : "按当前讨论"}</dd></div>
             <div><dt>批准后</dt><dd>修改 → 自动验证 → 创建本地 checkpoint；不会 push</dd></div>
+            {metadata.mission_id ? <div><dt>后续审批</dt><dd>Feature Push、Safe Merge、Integration Push 会分别进入独立 Founder approval。</dd></div> : null}
             <div><dt>不做</dt><dd>{nonGoals.length ? nonGoals.join(" · ") : "不越过授权边界"}</dd></div>
           </dl>
           <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准修改</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>驳回</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
