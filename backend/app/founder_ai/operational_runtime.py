@@ -1,7 +1,8 @@
-"""Controlled local operational runtime for Sino Founder AI.
+"""Controlled operational runtime for Sino Founder AI.
 
-The flow records TaskAsset and ExecutionSession lineage while using bounded
-local executors instead of invoking Codex or any external provider directly.
+The flow records TaskAsset and ExecutionSession lineage. Deterministic local
+work stays on the local executor; bounded code changes are handed to the
+existing Codex execution adapter after Founder approval.
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSe
 from app.core.task_asset.model import TaskAssetDB
 from app.core.task_asset.service import create_task_asset
 from app.database.db import SessionLocal
+from app.founder_ai.codex_adapter import CodexExecutionTimeout, SubprocessCodexAdapter
 from app.founder_ai.execution_loop import ExecutionSession
 from app.founder_ai.execution_registry import get_execution_session, save_execution_session
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
@@ -43,6 +45,9 @@ SAFE_PUSH = "SAFE_PUSH"
 SAFE_MERGE = "SAFE_MERGE"
 SAFE_INTEGRATION_PUSH = "SAFE_INTEGRATION_PUSH"
 AUTONOMOUS_DEVELOPMENT_MISSION = "AUTONOMOUS_DEVELOPMENT_MISSION"
+LOCAL_EXECUTOR = "LOCAL_EXECUTOR"
+CODEX_EXECUTOR = "CODEX_EXECUTOR"
+BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE = "codex_bridge_e2e_fixture_change"
 SAFE_PUSH_ALLOWED_REMOTES = {"origin"}
 SAFE_PUSH_PROTECTED_BRANCHES = {"main", "master", "develop", "feature/foundation-reset-integration"}
 SAFE_MERGE_TARGET_BRANCH = "feature/foundation-reset-integration"
@@ -161,6 +166,28 @@ BOUNDED_CODE_CHANGE_PLANS: dict[str, dict] = {
         "commit_message": "fix(sino-runtime): clarify mission runtime status copy",
         "rollback_boundary": "Only the mission-approved status card and local evidence files may be changed.",
     },
+    BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE: {
+        "plan_id": BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE,
+        "title": "更新 Codex Bridge E2E fixture",
+        "allowed_files": ["frontend/src/sino-founder/codex-bridge-e2e-fixture.txt"],
+        "allowed_directories": [],
+        "acceptance_criteria": [
+            "Codex Bridge E2E fixture contains CODEX_BRIDGE_OK",
+            "ConversationThread focused frontend test passes",
+        ],
+        "explicit_non_goals": [
+            "Do not modify files outside the allowed fixture file",
+            "Do not modify DB schema or production data",
+            "Do not install packages",
+            "Do not git add, commit, push, merge, rebase, tag, deploy, or delete files",
+            "Do not modify secrets or files outside the repository",
+        ],
+        "verification_commands": [
+            ["npm", "--prefix", "frontend", "test", "--", "--run", "src/sino-founder/ConversationThread.test.jsx"],
+        ],
+        "auto_checkpoint": False,
+        "rollback_boundary": "Only the Codex Bridge E2E fixture file may be changed.",
+    },
 }
 
 
@@ -189,6 +216,7 @@ def classify_operational_risk(content: str) -> dict:
     bounded_change_terms = ("改成", "修改", "更新", "调整", "改一下", "改", "change", "update")
     bounded_status_title_terms = ("sino controlled runtime", "sino operational runtime", "状态卡标题", "runtime 状态卡")
     safe_checkpoint_fixture_terms = ("safe checkpoint e2e fixture", "safe checkpoint", "checkpoint 验证", "本地 checkpoint")
+    codex_bridge_fixture_terms = ("codex bridge e2e fixture", "codex_bridge_ok", "codex bridge")
     safe_integration_push_terms = ("integration push", "integration branch push", "推送 integration", "推送集成", "推送 integration branch", "推送集成分支")
     mission_terms = ("autonomous development mission", "完整开发任务", "开发任务", "开发目标", "自动完成整个", "一条龙")
     safe_merge_terms = ("merge", "合并", "--no-ff", "no-ff", "integration baseline", "integration branch", "集成分支")
@@ -239,6 +267,18 @@ def classify_operational_risk(content: str) -> dict:
             "risk_level": HIGH_RISK,
             "auto_continue": False,
             "reason": "request_crosses_high_risk_operational_boundary",
+        }
+    if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in codex_bridge_fixture_terms):
+        plan = BOUNDED_CODE_CHANGE_PLANS[BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE]
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": MEDIUM_RISK,
+            "auto_continue": False,
+            "operation": "bounded_code_change",
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "reason": "bounded_code_change_requires_founder_approval",
+            "approval_required": True,
+            "plan": plan,
         }
     if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in bounded_status_title_terms):
         plan = BOUNDED_CODE_CHANGE_PLANS[BOUNDED_STATUS_CARD_TITLE_CHANGE]
@@ -467,6 +507,10 @@ def _dirty_files_from_status(status_lines: list[str]) -> set[str]:
     return {line[3:].strip() for line in status_lines if line.strip()}
 
 
+def _git_changed_or_untracked_names(*, cwd: Path) -> set[str]:
+    return _git_diff_names(cwd=cwd) | _untracked_files_from_status(_git_status_short(cwd=cwd))
+
+
 def _git_diff_check(*, cwd: Path, cached: bool = False) -> dict:
     args = ["diff", "--check"]
     if cached:
@@ -527,6 +571,23 @@ def _mission_branch_name(founder_request: str, mission_id: str) -> str:
 def _git_safe_create_branch(branch: str, *, cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess:
     target = _safe_git_ref(branch, field="branch")
     return subprocess.run(["git", "switch", "-c", target], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False, shell=False)
+
+
+def executor_for_operation(operation_type: str) -> str:
+    """Backend-owned executor routing for controlled development operations."""
+    if operation_type == BOUNDED_CODE_CHANGE:
+        return CODEX_EXECUTOR
+    if operation_type in {
+        REPO_INSPECTION,
+        FOCUSED_TEST,
+        FRONTEND_BUILD,
+        SAFE_CHECKPOINT_COMMIT,
+        SAFE_PUSH,
+        SAFE_MERGE,
+        SAFE_INTEGRATION_PUSH,
+    }:
+        return LOCAL_EXECUTOR
+    return LOCAL_EXECUTOR
 
 
 MISSION_STAGE_LABELS = {
@@ -1385,7 +1446,148 @@ def _is_allowed_change(path: str, plan: dict) -> bool:
     return path in allowed_files or any(path.startswith(prefix) for prefix in allowed_dirs)
 
 
-def run_bounded_code_change(plan: dict, *, cwd: Path | None = None) -> dict:
+def _codex_constraints(plan: dict) -> list[str]:
+    allowed_files = ", ".join(plan.get("allowed_files") or []) or "none"
+    allowed_dirs = ", ".join(plan.get("allowed_directories") or []) or "none"
+    return [
+        f"Allowed files: {allowed_files}",
+        f"Allowed directories: {allowed_dirs}",
+        "Modify only files inside the approved allowed boundary.",
+        "Return a concise summary of changed files and any notes.",
+        "Do not run git add, git commit, git push, git merge, git rebase, git tag, deploy, package install, production DB changes, secret changes, or repo-external writes.",
+    ]
+
+
+def _codex_execution_package_for_bounded_change(plan: dict, *, cwd: Path) -> ExecutionPackage:
+    context = {
+        "mission_id": plan.get("mission_id"),
+        "conversation_id": plan.get("conversation_id"),
+        "task_id": plan.get("task_id"),
+        "execution_id": plan.get("execution_id"),
+        "founder_request": plan.get("founder_request") or plan.get("title"),
+        "operation_type": BOUNDED_CODE_CHANGE,
+        "repo_path": str(cwd),
+        "working_branch": plan.get("working_branch"),
+        "baseline_head": plan.get("baseline_head"),
+        "allowed_files": list(plan.get("allowed_files") or []),
+        "allowed_directories": list(plan.get("allowed_directories") or []),
+        "acceptance_criteria": list(plan.get("acceptance_criteria") or []),
+        "verification_plan": [list(argv) for argv in plan.get("verification_commands") or []],
+        "explicit_non_goals": list(plan.get("explicit_non_goals") or []),
+        "risk_level": MEDIUM_RISK,
+        "approval_action_id": plan.get("approval_action_id"),
+        "founder_authorization_boundary": {
+            "allowed_files": list(plan.get("allowed_files") or []),
+            "allowed_directories": list(plan.get("allowed_directories") or []),
+            "acceptance_criteria": list(plan.get("acceptance_criteria") or []),
+            "explicit_non_goals": list(plan.get("explicit_non_goals") or []),
+        },
+        "codex_executor_policy": {
+            "executor": CODEX_EXECUTOR,
+            "git_commit_allowed": False,
+            "git_push_allowed": False,
+            "git_merge_allowed": False,
+            "deployment_allowed": False,
+            "package_install_allowed": False,
+        },
+        "code_context": {
+            "relevant_files": [{"path": path, "reason": "approved allowed file"} for path in plan.get("allowed_files") or []],
+        },
+        "invocation_source": "sino_autonomous_development_mission" if plan.get("mission_id") else "sino_bounded_code_change",
+        "executor": CODEX_EXECUTOR,
+    }
+    draft = TaskAssetDraft(
+        title=plan.get("title") or "Bounded Code Change",
+        description=plan.get("founder_request") or plan.get("title") or "Bounded Code Change",
+        conversation_id=plan.get("conversation_id"),
+        scope={"goal_type": "development", "context": context},
+        constraints=_codex_constraints(plan) + list(plan.get("explicit_non_goals") or []),
+        risk="medium",
+        approval_required=False,
+    )
+    return ExecutionPackage(
+        goal=(
+            f"{plan.get('founder_request') or plan.get('title')}\n\n"
+            "Complete only the requested bounded code modification. "
+            "After editing, stop and report; verification/checkpoint/push/merge are handled by Sino."
+        ),
+        context=context,
+        task_asset=draft,
+        constraints=list(draft.constraints),
+        verification=list(plan.get("acceptance_criteria") or []),
+        commit_requirement="Do not commit. Sino Safe Checkpoint owns local commits after verification.",
+        approval_required=False,
+        execution_allowed=True,
+    )
+
+
+def run_bounded_code_change(
+    plan: dict,
+    *,
+    cwd: Path | None = None,
+    adapter: SubprocessCodexAdapter | None = None,
+) -> dict:
+    """Run an approved bounded code change through the existing Codex adapter."""
+    root = cwd or repo_root()
+    started_at = _now()
+    package = _codex_execution_package_for_bounded_change(dict(plan or {}), cwd=root)
+    executor = adapter or SubprocessCodexAdapter(timeout_seconds=float(plan.get("codex_timeout_seconds") or 900))
+    try:
+        result = executor.execute(package, cwd=root)
+    except CodexExecutionTimeout as error:
+        return {
+            "executor": "CODEX",
+            "real_executor_used": CODEX_EXECUTOR,
+            "success": False,
+            "failure_type": "TIMEOUT",
+            "errors": [str(error)],
+            "stdout_excerpt": _excerpt(error.stdout or ""),
+            "stderr_excerpt": _excerpt(error.stderr or ""),
+            "started_at": started_at,
+            "completed_at": _now(),
+        }
+    except Exception as error:
+        return {
+            "executor": "CODEX",
+            "real_executor_used": CODEX_EXECUTOR,
+            "success": False,
+            "failure_type": "CODEX_EXECUTION_FAILED",
+            "errors": [str(error)],
+            "started_at": started_at,
+            "completed_at": _now(),
+        }
+    return {
+        "executor": "CODEX",
+        "real_executor_used": CODEX_EXECUTOR,
+        "success": result.exit_code == 0,
+        "changed_files": list(result.changed_files or []),
+        "changed_files_claimed": list(result.changed_files or []),
+        "summary": _excerpt(result.stdout or "Codex completed bounded code modification.", 1000),
+        "notes": _excerpt(result.stderr or "", 1000),
+        "errors": [] if result.exit_code == 0 else [_excerpt(result.stderr or "Codex execution failed.", 1000)],
+        "diff_summary": _excerpt(result.stdout or "Codex completed bounded code modification.", 1000),
+        "codex_session_id": result.codex_run_id,
+        "codex_invocation": {
+            "provider": "CODEX",
+            "executor": "CODEX",
+            "consumer_type": "founder_ai",
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "conversation_id": plan.get("conversation_id"),
+            "mission_id": plan.get("mission_id"),
+            "task_id": plan.get("task_id"),
+            "execution_id": plan.get("execution_id"),
+            "invocation_source": "sino_autonomous_development_mission" if plan.get("mission_id") else "sino_bounded_code_change",
+            "status": "completed" if result.exit_code == 0 else "failed",
+            "started_at": started_at,
+            "completed_at": _now(),
+            "codex_run_id": result.codex_run_id,
+        },
+        "started_at": started_at,
+        "completed_at": _now(),
+    }
+
+
+def run_local_bounded_code_change(plan: dict, *, cwd: Path | None = None) -> dict:
     """Apply one allowlisted bounded code change; no raw shell or user command execution."""
     root = cwd or repo_root()
     if plan.get("plan_id") == AUTONOMOUS_MISSION_STATUS_CARD_CHANGE:
@@ -1520,26 +1722,59 @@ def _stable_execution_id(task_id: str, source_message_id: str) -> str:
 
 def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> ExecutionPackage:
     operational = dict((task.scope or {}).get("operational_runtime") or {})
+    operation_type = operational.get("operation_type") or risk.get("operation_type") or REPO_INSPECTION
+    executor = executor_for_operation(operation_type)
+    allowed_files = list(operational.get("allowed_files") or [])
+    allowed_directories = list(operational.get("allowed_directories") or [])
+    verification_commands = [list(argv) for argv in operational.get("verification_commands") or []]
+    explicit_non_goals = list(operational.get("explicit_non_goals") or [])
+    codex_prohibitions = [
+        "DO NOT modify files outside allowed_files or allowed_directories.",
+        "DO NOT git add, git commit, git push, git merge, git rebase, or git tag.",
+        "DO NOT deploy, modify production DB, modify secrets, install packages, or modify files outside repo_path.",
+    ] if operation_type == BOUNDED_CODE_CHANGE else []
     context = {
         "founder_request": operational.get("founder_request") or task.description,
         "conversation_id": task.conversation_id,
+        "mission_id": operational.get("mission_id"),
+        "approval_action_id": operational.get("action_id"),
         "task_id": task.id,
         "execution_id": execution_id,
         "repo_path": operational.get("repo_path") or str(repo_root()),
+        "working_branch": operational.get("working_branch"),
+        "baseline_head": operational.get("baseline_head"),
         "risk_level": risk.get("risk_level", LOW_RISK),
-        "operation_type": operational.get("operation_type") or risk.get("operation_type") or REPO_INSPECTION,
+        "operation_type": operation_type,
         "allowed_scope": operational.get("allowed_scope"),
+        "allowed_files": allowed_files,
+        "allowed_directories": allowed_directories,
         "acceptance_criteria": operational.get("acceptance_criteria"),
-        "explicit_non_goals": operational.get("explicit_non_goals"),
-        "invocation_source": "sino_operational_runtime_v1",
-        "executor": "LOCAL_EXECUTOR",
+        "verification_plan": verification_commands,
+        "verification_commands": verification_commands,
+        "explicit_non_goals": explicit_non_goals,
+        "codex_execution_package": operation_type == BOUNDED_CODE_CHANGE,
+        "codex_executor_policy": {
+            "executor": CODEX_EXECUTOR,
+            "may_modify_code": operation_type == BOUNDED_CODE_CHANGE,
+            "git_commit_allowed": False,
+            "git_push_allowed": False,
+            "git_merge_allowed": False,
+            "deployment_allowed": False,
+            "package_install_allowed": False,
+        } if operation_type == BOUNDED_CODE_CHANGE else None,
+        "code_context": {
+            "relevant_files": [{"path": path, "reason": "approved allowed file"} for path in allowed_files],
+        },
+        "invocation_source": "sino_autonomous_development_mission" if operational.get("mission_id") else "sino_operational_runtime_v1",
+        "executor": executor,
     }
+    constraints = explicit_non_goals + codex_prohibitions
     draft = TaskAssetDraft(
         title=task.title,
         description=task.description or task.title,
         conversation_id=task.conversation_id,
         scope={"goal_type": "development", "context": context},
-        constraints=list(operational.get("explicit_non_goals") or []),
+        constraints=constraints,
         risk=str(risk.get("risk_level", LOW_RISK)).lower(),
         approval_required=False,
     )
@@ -1994,6 +2229,9 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
         return {"handled": True, "status": "failed", "mission_id": mission_id, "mission": mission}
     plan = dict(BOUNDED_CODE_CHANGE_PLANS[AUTONOMOUS_MISSION_STATUS_CARD_CHANGE])
     plan["working_branch"] = working_branch
+    plan["mission_id"] = mission_id
+    plan["conversation_id"] = conversation_id
+    plan["baseline_head"] = baseline_head
     risk = {
         "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
         "risk_level": MEDIUM_RISK,
@@ -2428,6 +2666,9 @@ def _bounded_task_scope(*, founder_request: str, conversation_id: str, source_me
             "source_message_id": source_message_id,
             "action_id": action_id,
             "repo_path": str(repo_root()),
+            "mission_id": plan.get("mission_id"),
+            "working_branch": plan.get("working_branch"),
+            "baseline_head": plan.get("baseline_head"),
             "risk_decision": risk,
             "risk_level": MEDIUM_RISK,
             "allowed_files": list(plan.get("allowed_files") or []),
@@ -2470,6 +2711,7 @@ def execute_bounded_code_change(
     verifier: Callable[[list[list[str]]], list[dict]] | None = None,
     checkpointer: Callable[..., dict] | None = None,
 ) -> dict:
+    plan = dict(plan or {})
     risk = {
         "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
         "risk_level": MEDIUM_RISK,
@@ -2483,7 +2725,13 @@ def execute_bounded_code_change(
     if not (plan.get("allowed_files") or plan.get("allowed_directories")):
         raise ValueError("bounded_code_change_requires_file_boundary")
     root = repo_root()
-    before_diff = _git_diff_names(cwd=root)
+    current_branch = _git_output(["branch", "--show-current"], cwd=root).stdout.strip()
+    baseline_head = _git_output(["rev-parse", "HEAD"], cwd=root).stdout.strip()
+    plan.setdefault("working_branch", current_branch)
+    plan.setdefault("baseline_head", baseline_head)
+    plan.setdefault("approval_action_id", action_id)
+    plan.setdefault("founder_request", founder_request)
+    before_diff = _git_changed_or_untracked_names(cwd=root)
     task = create_task_asset(
         title=plan.get("title") or "受控代码修改",
         description=founder_request,
@@ -2517,6 +2765,9 @@ def execute_bounded_code_change(
                 "result": task.result,
             }
         execution_id = prior_start.get("execution_id") or _stable_execution_id(task.id, source_message_id)
+        plan.setdefault("task_id", task.id)
+        plan.setdefault("execution_id", execution_id)
+        plan.setdefault("conversation_id", conversation_id)
         package = _execution_package(task=task, execution_id=execution_id, risk=risk)
         package.context.update({
             "operation_type": BOUNDED_CODE_CHANGE,
@@ -2537,7 +2788,7 @@ def execute_bounded_code_change(
                 id=execution_id,
                 task_asset_id=task.id,
                 execution_package_id=f"package-{execution_id}",
-                executor="LOCAL_EXECUTOR",
+                executor=executor_for_operation(BOUNDED_CODE_CHANGE),
                 status="queued",
                 approved_at=_now(),
                 queued_at=_now(),
@@ -2571,15 +2822,18 @@ def execute_bounded_code_change(
         "action_id": action_id,
         "founder_request": founder_request,
         "plan": plan,
-        "message": "受控代码修改已批准，我会自动执行并验证。正在准备执行…",
+        "message": "受控代码修改已批准，我会自动执行并验证。正在准备 Codex 执行…",
     }
     _update_brain(conversation_id, queued_payload)
     _append_assistant_message(conversation_id, queued_payload["message"], message_type="operational_execution", grounding={"operational_runtime": queued_payload})
     try:
-        running_payload = {**queued_payload, "status": "running", "message": "正在执行受控代码修改…"}
+        running_payload = {**queued_payload, "status": "running", "message": "Sino 正在通过 Codex 处理授权范围内的代码修改…"}
         _update_brain(conversation_id, running_payload)
         code_result = (code_runner or (lambda selected_plan: run_bounded_code_change(selected_plan)))(plan)
-        after_change_diff = _git_diff_names(cwd=root)
+        if code_result.get("success") is False:
+            failure_type = code_result.get("failure_type") or "CODEX_EXECUTION_FAILED"
+            raise RuntimeError(f"{failure_type}: {', '.join(code_result.get('errors') or []) or code_result.get('summary') or 'Codex execution failed'}")
+        after_change_diff = _git_changed_or_untracked_names(cwd=root)
         new_or_changed = sorted(after_change_diff - before_diff | set(code_result.get("changed_files") or []))
         unexpected = [item for item in new_or_changed if not _is_allowed_change(item, plan)]
         verification_steps: list[dict] = []
@@ -2607,7 +2861,7 @@ def execute_bounded_code_change(
             "success": success,
             "check_result": check_result,
             "summary": summary,
-            "changed_files": list(code_result.get("changed_files") or []),
+            "changed_files": new_or_changed,
             "diff_summary": code_result.get("diff_summary"),
             "verification_steps": verification_steps,
             "build_status": build_step.get("check_result") if build_step else None,
@@ -2616,11 +2870,16 @@ def execute_bounded_code_change(
             "working_tree_status": "dirty" if after_change_diff else "clean",
             "started_at": queued_payload.get("queued_at"),
             "completed_at": completed_at,
-            "real_executor_used": "LOCAL_EXECUTOR",
+            "real_executor_used": code_result.get("real_executor_used") or executor_for_operation(BOUNDED_CODE_CHANGE),
+            "executor": code_result.get("executor") or "CODEX",
+            "codex_invocation": code_result.get("codex_invocation"),
+            "codex_session_id": code_result.get("codex_session_id"),
+            "changed_files_claimed": list(code_result.get("changed_files_claimed") or code_result.get("changed_files") or []),
+            "changed_files_observed": new_or_changed,
             **test_counts,
             "result": {
                 "operation_type": BOUNDED_CODE_CHANGE,
-                "changed_files": list(code_result.get("changed_files") or []),
+                "changed_files": new_or_changed,
                 "boundary_check": boundary_status,
                 "build_status": build_step.get("check_result") if build_step else None,
                 "working_tree_clean": not bool(after_change_diff),
@@ -2691,7 +2950,8 @@ def execute_bounded_code_change(
             "summary": f"受控代码修改执行失败：{error}",
             "failed_at": failed_at,
             "retryable": True,
-            "real_executor_used": "LOCAL_EXECUTOR",
+            "real_executor_used": executor_for_operation(BOUNDED_CODE_CHANGE),
+            "executor": "CODEX",
         }
         with SessionLocal() as session:
             record = session.get(TaskAssetDB, task.id)

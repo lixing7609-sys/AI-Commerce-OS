@@ -98,6 +98,8 @@ function OperationalRuntimeStatus({ runtime }) {
   const boundaryCheck = runtime.result?.boundary_check || result?.boundary_check;
   const buildStatus = runtime.result?.build_status || result?.build_status;
   const workingTreeStatus = runtime.result?.working_tree_status || result?.working_tree_status;
+  const executor = runtime.result?.real_executor_used || runtime.result?.executor || result?.real_executor_used || result?.executor;
+  const codexStatus = operationType === "BOUNDED_CODE_CHANGE" && executor === "CODEX_EXECUTOR";
   const checkpoint = runtime.result?.checkpoint || result?.checkpoint;
   const pushResult = operationType === "SAFE_PUSH" ? (runtime.result || result || {}) : null;
   const mergeResult = operationType === "SAFE_MERGE" ? (runtime.result || result || {}) : null;
@@ -111,6 +113,8 @@ function OperationalRuntimeStatus({ runtime }) {
       {runtime.execution_id ? <div><dt>Execution</dt><dd>{runtime.execution_id}</dd></div> : null}
       {runtime.risk_decision?.risk_level ? <div><dt>Risk</dt><dd>{runtime.risk_decision.risk_level}</dd></div> : null}
       {operationType ? <div><dt>Operation</dt><dd>{operationType}</dd></div> : null}
+      {executor ? <div><dt>Executor</dt><dd>{executor}</dd></div> : null}
+      {codexStatus ? <div><dt>Development executor</dt><dd>Sino is using Codex for the approved code change.</dd></div> : null}
       {checkResult ? <div><dt>Check result</dt><dd>{checkResult}</dd></div> : null}
       {Number.isFinite(result?.passed) ? <div><dt>Passed</dt><dd>{result.passed}</dd></div> : null}
       {Number.isFinite(result?.failed) ? <div><dt>Failed</dt><dd>{result.failed}</dd></div> : null}

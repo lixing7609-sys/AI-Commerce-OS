@@ -179,6 +179,25 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText("backend/app/secret.py")).toBeTruthy();
   });
 
+  it("shows Codex-backed bounded change status without raw copy-paste instructions", () => {
+    const value = {
+      ...snapshot("conv-codex-change", [{ message_id: "m1", role: "founder", content: "把 Codex Bridge E2E fixture 改成 CODEX_BRIDGE_OK" }]),
+      sino_brain: { discovery: { operational_runtime: {
+        status: "running",
+        message: "Sino 正在通过 Codex 处理授权范围内的代码修改…",
+        task_id: "task-codex",
+        execution_id: "execution-codex",
+        operation_type: "BOUNDED_CODE_CHANGE",
+        risk_decision: { risk_level: "MEDIUM" },
+        result: { operation_type: "BOUNDED_CODE_CHANGE", real_executor_used: "CODEX_EXECUTOR" },
+      } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("CODEX_EXECUTOR")).toBeTruthy();
+    expect(screen.getByText("Sino is using Codex for the approved code change.")).toBeTruthy();
+    expect(screen.queryByText(/复制.*Codex|copy.*Codex|codex exec/iu)).toBeNull();
+  });
+
   it("shows safe push success details in the same conversation", () => {
     const value = {
       ...snapshot("conv-safe-push", [{ message_id: "m1", role: "founder", content: "推送当前 checkpoint" }]),
