@@ -22,6 +22,7 @@ FRONTEND_BUILD_REQUEST = "检查一下前端现在能不能正常构建。"
 BOUNDED_CHANGE_REQUEST = "请把 Sino Operational Runtime 状态卡标题改成 Sino Controlled Runtime，并运行相关前端测试和构建。"
 SAFE_MERGE_REQUEST = "请把当前 feature 分支本地 --no-ff 合并到 integration branch。"
 SAFE_INTEGRATION_PUSH_REQUEST = "请推送 integration branch 到远程。"
+MISSION_REQUEST = "请执行一个完整开发任务：把 Sino Operational Runtime 状态卡文案改得更清楚一点，并验证。"
 
 
 def _runtime(monkeypatch, tmp_path, *, conversation_id="conv-operational"):
@@ -1192,3 +1193,212 @@ def test_safe_integration_push_already_up_to_date_and_duplicate_are_idempotent(m
     assert calls == []
     with factory() as db:
         assert db.query(TaskAssetDB).count() == 1
+
+
+def _prepare_mission_start(monkeypatch, *, branch_created=None):
+    branch_created = branch_created if branch_created is not None else []
+    monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: [])
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda _branch, **_kwargs: False)
+
+    def git_output(args, **_kwargs):
+        if args == ["branch", "--show-current"]:
+            return SimpleNamespace(returncode=0, stdout="feature/foundation-reset-integration\n", stderr="")
+        if args == ["rev-parse", "HEAD"]:
+            return SimpleNamespace(returncode=0, stdout="baseline-head\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime, "_git_output", git_output)
+
+    def create_branch(branch, *, cwd, timeout=30):
+        branch_created.append((branch, cwd, timeout))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime, "_git_safe_create_branch", create_branch)
+    return branch_created
+
+
+def _latest_mission(factory, conversation_id):
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id=conversation_id).one()
+        discovery = dict(state.discovery or {})
+        return discovery["autonomous_development_mission"], discovery
+
+
+def _pending_action(discovery, action_type):
+    return next(
+        item for item in discovery.get("founder_action_queue", [])
+        if item.get("action_type") == action_type and item.get("status") == "pending"
+    )
+
+
+def test_autonomous_development_mission_creates_branch_and_waits_for_change_approval(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission")
+    branch_created = _prepare_mission_start(monkeypatch)
+    monkeypatch.setattr(runtime, "run_bounded_code_change", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("code executor must wait for approval")))
+    decision = runtime.classify_operational_risk(MISSION_REQUEST)
+    assert decision["operation_type"] == runtime.AUTONOMOUS_DEVELOPMENT_MISSION
+    assert decision["risk_level"] == "MEDIUM"
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-mission",
+        founder_request=MISSION_REQUEST,
+        source_message_id="message-mission",
+    )
+    mission, discovery = _latest_mission(factory, "conv-mission")
+    action = _pending_action(discovery, runtime.BOUNDED_CODE_CHANGE_QUEUE_TYPE)
+    assert result["status"] == "approval_required"
+    assert mission["current_stage"] == "WAITING_CHANGE_APPROVAL"
+    assert mission["status"] == "WAITING_CHANGE_APPROVAL"
+    assert mission["mission_type"] == "CONTROLLED_DEVELOPMENT"
+    assert mission["baseline_head"] == "baseline-head"
+    assert mission["working_branch"].startswith("feature/sino-mission-")
+    assert branch_created[0][0] == mission["working_branch"]
+    assert action["metadata"]["mission_id"] == mission["mission_id"]
+    assert action["metadata"]["working_branch"] == mission["working_branch"]
+    assert action["metadata"]["plan"]["auto_checkpoint"] is True
+    assert len(execution_registry._sessions) == 0
+
+
+def test_mission_continue_discussion_keeps_waiting(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-discuss")
+    _prepare_mission_start(monkeypatch)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-mission-discuss",
+        founder_request=MISSION_REQUEST,
+        source_message_id="message-mission-discuss",
+    )
+    continued = runtime.decide_operational_action_by_type(result["action_id"], "continue_discussion")
+    mission, discovery = _latest_mission(factory, "conv-mission-discuss")
+    action = _pending_action(discovery, runtime.BOUNDED_CODE_CHANGE_QUEUE_TYPE)
+    assert continued["status"] == "pending"
+    assert mission["current_stage"] == "WAITING_CHANGE_APPROVAL"
+    assert action["status"] == "pending"
+
+
+def test_mission_change_approval_auto_generates_safe_push_without_manual_next(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-chain")
+    _prepare_mission_start(monkeypatch)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-mission-chain",
+        founder_request=MISSION_REQUEST,
+        source_message_id="message-mission-chain",
+    )
+    monkeypatch.setattr(runtime, "execute_bounded_code_change", lambda **_kwargs: {
+        "handled": True,
+        "status": "completed",
+        "result": {
+            "operation_type": runtime.BOUNDED_CODE_CHANGE,
+            "success": True,
+            "checkpoint": {"success": True, "new_head": "checkpoint-head"},
+            "changed_files": ["frontend/src/sino-founder/ConversationThread.jsx"],
+            "verification_steps": [{"success": True, "check_result": "PASS"}],
+        },
+    })
+    monkeypatch.setattr(runtime, "_safe_push_preflight", lambda **_kwargs: _safe_push_request(
+        local_branch="feature/sino-mission-test",
+        remote_branch="feature/sino-mission-test",
+        local_head="checkpoint-head",
+        checkpoint_head="checkpoint-head",
+        remote_branch_head=None,
+        ahead_count=1,
+    ))
+    approved = runtime.decide_operational_action_by_type(result["action_id"], "approve")
+    mission, discovery = _latest_mission(factory, "conv-mission-chain")
+    push_action = _pending_action(discovery, runtime.SAFE_PUSH_QUEUE_TYPE)
+    assert approved["status"] == "completed"
+    assert mission["current_stage"] == "WAITING_FEATURE_PUSH_APPROVAL"
+    assert mission["checkpoint_head"] == "checkpoint-head"
+    assert mission["next_required_action"] == "SAFE_PUSH_APPROVAL"
+    assert push_action["metadata"]["mission_id"] == mission["mission_id"]
+    assert push_action["metadata"]["mission_stage"] == "WAITING_FEATURE_PUSH_APPROVAL"
+
+
+def test_mission_approval_chain_reaches_completed_without_manual_next(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-complete")
+    _prepare_mission_start(monkeypatch)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-mission-complete",
+        founder_request=MISSION_REQUEST,
+        source_message_id="message-mission-complete",
+    )
+    monkeypatch.setattr(runtime, "execute_bounded_code_change", lambda **_kwargs: {
+        "status": "completed",
+        "result": {"operation_type": runtime.BOUNDED_CODE_CHANGE, "success": True, "checkpoint": {"success": True, "new_head": "checkpoint-head"}},
+    })
+    monkeypatch.setattr(runtime, "_safe_push_preflight", lambda **_kwargs: _safe_push_request(local_branch="feature/sino-mission-complete", remote_branch="feature/sino-mission-complete", local_head="checkpoint-head", checkpoint_head="checkpoint-head"))
+    runtime.decide_operational_action_by_type(result["action_id"], "approve")
+    mission, discovery = _latest_mission(factory, "conv-mission-complete")
+    push_action = _pending_action(discovery, runtime.SAFE_PUSH_QUEUE_TYPE)
+
+    monkeypatch.setattr(runtime, "execute_safe_push", lambda **_kwargs: {
+        "status": "completed",
+        "result": {"operation_type": runtime.SAFE_PUSH, "success": True, "local_branch": mission["working_branch"], "local_head": "checkpoint-head", "new_remote_head": "checkpoint-head", "push_performed": True},
+    })
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: _safe_merge_request(source_branch=mission["working_branch"], source_head="checkpoint-head", source_remote_head="checkpoint-head", checkpoint_head="checkpoint-head"))
+    runtime.decide_operational_action_by_type(push_action["action_id"], "approve")
+    mission, discovery = _latest_mission(factory, "conv-mission-complete")
+    merge_action = _pending_action(discovery, runtime.SAFE_MERGE_QUEUE_TYPE)
+
+    monkeypatch.setattr(runtime, "execute_safe_merge", lambda **_kwargs: {
+        "status": "completed",
+        "result": {"operation_type": runtime.SAFE_MERGE, "success": True, "source_branch": mission["working_branch"], "source_head": "checkpoint-head", "merge_commit_head": "merge-head", "merge_parent_count": 2, "push_performed": False},
+    })
+    monkeypatch.setattr(runtime, "_safe_integration_push_preflight", lambda **_kwargs: _safe_integration_push_request(integration_head="merge-head", local_head="merge-head", checkpoint_head="merge-head"))
+    runtime.decide_operational_action_by_type(merge_action["action_id"], "approve")
+    mission, discovery = _latest_mission(factory, "conv-mission-complete")
+    integration_push_action = _pending_action(discovery, runtime.SAFE_INTEGRATION_PUSH_QUEUE_TYPE)
+
+    monkeypatch.setattr(runtime, "execute_safe_integration_push", lambda **_kwargs: {
+        "status": "completed",
+        "result": {"operation_type": runtime.SAFE_INTEGRATION_PUSH, "success": True, "integration_head": "merge-head", "remote_head_after": "merge-head", "push_performed": True},
+    })
+    runtime.decide_operational_action_by_type(integration_push_action["action_id"], "approve")
+    mission, discovery = _latest_mission(factory, "conv-mission-complete")
+    with factory() as db:
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-mission-complete").all()
+    assert mission["status"] == "COMPLETED"
+    assert mission["current_stage"] == "COMPLETED"
+    assert mission["final_integration_head"] == "merge-head"
+    assert any("开发任务已完成并进入 integration baseline" in item.content for item in messages)
+
+
+def test_mission_failure_stops_before_push_and_is_persisted(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-fail")
+    _prepare_mission_start(monkeypatch)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-mission-fail",
+        founder_request=MISSION_REQUEST,
+        source_message_id="message-mission-fail",
+    )
+    monkeypatch.setattr(runtime, "execute_bounded_code_change", lambda **_kwargs: {
+        "status": "failed",
+        "result": {"operation_type": runtime.BOUNDED_CODE_CHANGE, "success": False, "failure_type": "VERIFICATION_FAILED", "summary": "2 tests failed"},
+    })
+    runtime.decide_operational_action_by_type(result["action_id"], "approve")
+    mission, discovery = _latest_mission(factory, "conv-mission-fail")
+    with factory() as db:
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-mission-fail").all()
+    assert mission["status"] == "FAILED"
+    assert mission["failed_stage"] == "WAITING_CHANGE_APPROVAL"
+    assert mission["failure_type"] == "VERIFICATION_FAILED"
+    assert not [item for item in discovery.get("founder_action_queue", []) if item.get("action_type") == runtime.SAFE_PUSH_QUEUE_TYPE]
+    assert any("Mission 在 WAITING_CHANGE_APPROVAL 阶段停止" in item.content for item in messages)
+
+
+def test_mission_reload_and_cross_conversation_isolation(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-a")
+    with factory() as db:
+        db.add(ConversationDB(id="conv-mission-b", system_id="founder_ai", title="B"))
+        db.add(SinoBrainSessionDB(conversation_id="conv-mission-b", discovery={}))
+        db.commit()
+    _prepare_mission_start(monkeypatch)
+    runtime.handle_operational_conversation_request(
+        conversation_id="conv-mission-a",
+        founder_request=MISSION_REQUEST,
+        source_message_id="message-mission-a",
+    )
+    with factory() as db:
+        a = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-mission-a").one()
+        b = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-mission-b").one()
+    assert a.discovery["autonomous_development_mission"]["current_stage"] == "WAITING_CHANGE_APPROVAL"
+    assert "autonomous_development_mission" not in (b.discovery or {})
+    assert not (b.discovery or {}).get("founder_action_queue")

@@ -162,6 +162,26 @@ function OperationalRuntimeStatus({ runtime }) {
   </aside>;
 }
 
+function MissionStatus({ mission }) {
+  if (!mission?.mission_id) return null;
+  return <aside className="sino-operational-runtime-status" aria-label="Mission Status">
+    <span>Mission Status</span>
+    <h3>{mission.current_stage || mission.status}</h3>
+    <p>{mission.founder_request || mission.failure_summary || "Mission state has been recorded."}</p>
+    <dl>
+      {mission.working_branch ? <div><dt>Working branch</dt><dd>{mission.working_branch}</dd></div> : null}
+      {mission.baseline_head ? <div><dt>Baseline HEAD</dt><dd>{mission.baseline_head}</dd></div> : null}
+      {mission.checkpoint_head ? <div><dt>Checkpoint HEAD</dt><dd>{mission.checkpoint_head}</dd></div> : null}
+      {mission.merge_head ? <div><dt>Merge HEAD</dt><dd>{mission.merge_head}</dd></div> : null}
+      {mission.final_integration_head ? <div><dt>Integration HEAD</dt><dd>{mission.final_integration_head}</dd></div> : null}
+      {mission.last_completed_step ? <div><dt>Last completed step</dt><dd>{mission.last_completed_step}</dd></div> : null}
+      {mission.next_required_action ? <div><dt>Next required action</dt><dd>{mission.next_required_action}</dd></div> : null}
+      {mission.failed_stage ? <div><dt>Failed stage</dt><dd>{mission.failed_stage}</dd></div> : null}
+      {mission.failure_type ? <div><dt>Failure type</dt><dd>{mission.failure_type}</dd></div> : null}
+    </dl>
+  </aside>;
+}
+
 function CouncilConversation({ run }) {
   const modelRuns = Array.isArray(run?.model_runs) ? run.model_runs.filter((item) => item && typeof item === "object") : [];
   const identityKey = (item) => `${item?.provider || ""}::${item?.model || ""}`;
@@ -403,6 +423,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const reviewableProjectDraft = drafts?.some((item) => item.source_conversation_id === snapshot?.conversation?.id && item.status === "ready_for_review" && item.draft_type === "project_definition");
   const implementationPlan = snapshot?.sino_brain?.discovery?.implementation_planning;
   const operationalRuntime = snapshot?.sino_brain?.discovery?.operational_runtime;
+  const autonomousMission = snapshot?.sino_brain?.discovery?.autonomous_development_mission;
   const isImplementationPlanning = snapshot?.sino_brain?.stage === "implementation_planning";
   const executionPackage = snapshot?.sino_brain?.discovery?.execution_package;
   const autonomousLoop = snapshot?.sino_brain?.discovery?.autonomous_main_loop;
@@ -415,7 +436,7 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const imageProbeDecisionVisible = ["founder_gate_required", "founder_gate_rejected", "model_probe_authorized", "model_probe_queued"].includes(autonomousLoop?.status);
   const externalProbeGate = quickFixRoute?.founder_gate_contract?.gate_type === "EXTERNAL_MODEL_PROBE" ? quickFixRoute.founder_gate_contract : null;
   return <section className={`sino-conversation-thread${visibleMessages.length ? "" : " is-empty"}`} aria-label="Conversation">
-    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}<OperationalRuntimeStatus runtime={operationalRuntime} />{visibleMessages.length ? visibleMessages.map((item) => {
+    <div ref={logRef} className="sino-conversation-log" aria-label="讨论记录" tabIndex={0}><div className="sino-conversation-reading-column">{contextObject ? <div className="sino-context-object-banner"><div><small>正在讨论</small><strong>{contextObject.name}</strong><span>{objectTypeLabel(contextObject.object_type, contextObject.type_label)} · V{contextObject.version} · {statusLabel(contextObject.status)}</span></div><button type="button" onClick={onExitObjectDiscussion} aria-label="退出对象讨论">× 退出对象讨论</button></div> : contextCandidate ? <div className="sino-context-object-banner"><div><small>正在讨论候选变更</small><strong>{contextCandidate.proposed_name || "目标对象待确认"}</strong><span>{contextCandidate.intent_type} · {statusLabel(contextCandidate.review_status)}</span></div></div> : null}<MissionStatus mission={autonomousMission} /><OperationalRuntimeStatus runtime={operationalRuntime} />{visibleMessages.length ? visibleMessages.map((item) => {
       if (item.role === "assistant" && ["council", "auto_deliberation"].includes(item.message_type)) return null;
       if (item.role === "assistant" && ["goal_brief", "decision", "discussion_package"].includes(item.message_type)) return null;
       const run = (!hasStageProjection || activeStage === "strategy") && item.role === "founder" && ["council", "auto_deliberation"].includes(item.message_type) ? latestRuns.get(item.content) : null;
