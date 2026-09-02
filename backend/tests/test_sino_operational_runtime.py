@@ -19,6 +19,7 @@ LOW_REQUEST = "检查当前 AI-Commerce-OS 工程状态，告诉我当前 branch
 HIGH_REQUEST = "把当前分支直接 push 到远程"
 FOCUSED_TEST_REQUEST = "运行 Sino Operational Runtime 的测试，告诉我结果。"
 FRONTEND_BUILD_REQUEST = "检查一下前端现在能不能正常构建。"
+BOUNDED_CHANGE_REQUEST = "请把 Sino Operational Runtime 状态卡标题改成 Sino Controlled Runtime，并运行相关前端测试和构建。"
 
 
 def _runtime(monkeypatch, tmp_path, *, conversation_id="conv-operational"):
@@ -293,6 +294,147 @@ def test_high_risk_request_enters_action_queue_and_blocks_executor(monkeypatch, 
     assert len([item for item in queue if item["action_type"] == "HIGH_RISK_OPERATIONAL_TASK" and item["status"] == "pending"]) == 1
     assert any("不会调用 executor" in item.content for item in messages)
     assert len(execution_registry._sessions) == 0
+
+
+def test_bounded_code_change_request_is_medium_and_requires_queue():
+    decision = runtime.classify_operational_risk(BOUNDED_CHANGE_REQUEST)
+    assert decision["operation_type"] == "BOUNDED_CODE_CHANGE"
+    assert decision["risk_level"] == "MEDIUM"
+    assert decision["auto_continue"] is False
+    assert decision["approval_required"] is True
+    assert decision["plan"]["allowed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
+
+
+def test_bounded_code_change_before_approval_creates_queue_and_does_not_execute(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-bounded")
+    monkeypatch.setattr(runtime, "run_bounded_code_change", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("executor must not run before approval")))
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-bounded",
+        founder_request=BOUNDED_CHANGE_REQUEST,
+        source_message_id="message-bounded",
+    )
+    assert result["status"] == "approval_required"
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-bounded").one()
+        assert db.query(TaskAssetDB).count() == 0
+    queue = state.discovery["founder_action_queue"]
+    items = [item for item in queue if item["action_type"] == "BOUNDED_CODE_CHANGE_APPROVAL" and item["status"] == "pending"]
+    assert len(items) == 1
+    assert items[0]["metadata"]["planned_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
+    assert len(execution_registry._sessions) == 0
+
+
+def test_bounded_code_change_reject_and_continue_do_not_execute(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-bounded-reject")
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-bounded-reject",
+        founder_request=BOUNDED_CHANGE_REQUEST,
+        source_message_id="message-bounded-reject",
+    )
+    monkeypatch.setattr(runtime, "run_bounded_code_change", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("executor must not run")))
+    continued = runtime.decide_bounded_code_change_action(result["action_id"], "continue_discussion")
+    assert continued["status"] == "pending"
+    rejected = runtime.decide_bounded_code_change_action(result["action_id"], "reject")
+    assert rejected["executed"] is False
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-bounded-reject").one()
+        assert db.query(TaskAssetDB).count() == 0
+    item = next(item for item in state.discovery["founder_action_queue"] if item["action_id"] == result["action_id"])
+    assert item["status"] == "rejected"
+    assert len(execution_registry._sessions) == 0
+
+
+def test_bounded_code_change_approval_auto_continues_and_persists_result(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-bounded-approve")
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-bounded-approve",
+        founder_request=BOUNDED_CHANGE_REQUEST,
+        source_message_id="message-bounded-approve",
+    )
+    calls = {"code": 0, "verify": 0}
+
+    def code_runner(plan):
+        calls["code"] += 1
+        assert plan["allowed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
+        return {"changed_files": ["frontend/src/sino-founder/ConversationThread.jsx"], "diff_summary": "changed title"}
+
+    def verifier(commands):
+        calls["verify"] += 1
+        assert commands[0] == ["npm", "--prefix", "frontend", "test", "--", "--run", "src/sino-founder/ConversationThread.test.jsx"]
+        return [{"argv": commands[0], "shell": False, "success": True, "check_result": "PASS", "passed": 3, "failed": 0, "errors": 0}]
+
+    monkeypatch.setattr(runtime, "run_bounded_code_change", code_runner)
+    monkeypatch.setattr(runtime, "run_verification_commands", verifier)
+    approved = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
+    assert approved["status"] == "completed"
+    assert calls == {"code": 1, "verify": 1}
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-bounded-approve").one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-bounded-approve").all()
+    assert task.approval_status == "approved"
+    assert task.execution_status == "completed"
+    assert task.scope["operational_runtime"]["allowed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
+    assert task.result["operation_type"] == "BOUNDED_CODE_CHANGE"
+    assert task.result["boundary_check"] == "PASS"
+    assert task.result["changed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
+    assert state.discovery["operational_runtime"]["result"]["changed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
+    assert any("受控代码修改完成" in item.content for item in messages)
+    assert len(execution_registry._sessions) == 1
+
+
+def test_bounded_code_change_retry_reuses_completed_execution(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-bounded-retry")
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-bounded-retry",
+        founder_request=BOUNDED_CHANGE_REQUEST,
+        source_message_id="message-bounded-retry",
+    )
+    monkeypatch.setattr(runtime, "run_bounded_code_change", lambda _plan: {"changed_files": ["frontend/src/sino-founder/ConversationThread.jsx"], "diff_summary": "changed title"})
+    monkeypatch.setattr(runtime, "run_verification_commands", lambda _commands: [{"argv": ["test"], "shell": False, "success": True, "check_result": "PASS"}])
+    first = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
+    monkeypatch.setattr(runtime, "run_bounded_code_change", lambda _plan: (_ for _ in ()).throw(AssertionError("retry must not run code executor")))
+    second = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
+    with factory() as db:
+        assert db.query(TaskAssetDB).count() == 1
+    assert first["execution_id"] == second["execution_id"]
+    assert len(execution_registry._sessions) == 1
+
+
+def test_bounded_code_change_boundary_violation_is_persisted(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-bounded-boundary")
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-bounded-boundary",
+        founder_request=BOUNDED_CHANGE_REQUEST,
+        source_message_id="message-bounded-boundary",
+    )
+    monkeypatch.setattr(runtime, "run_bounded_code_change", lambda _plan: {"changed_files": ["backend/app/secret.py"], "diff_summary": "bad"})
+    monkeypatch.setattr(runtime, "run_verification_commands", lambda _commands: (_ for _ in ()).throw(AssertionError("verification must not run after boundary violation")))
+    approved = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
+    assert approved["result"]["boundary_check"] == "FAILED_BOUNDARY"
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-bounded-boundary").all()
+    assert task.execution_status == "failed"
+    assert task.result["check_result"] == "FAILED_BOUNDARY"
+    assert any("超出授权范围" in item.content for item in messages)
+
+
+def test_bounded_code_change_verification_failure_persists_check_failure(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-bounded-verify-fail")
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-bounded-verify-fail",
+        founder_request=BOUNDED_CHANGE_REQUEST,
+        source_message_id="message-bounded-verify-fail",
+    )
+    monkeypatch.setattr(runtime, "run_bounded_code_change", lambda _plan: {"changed_files": ["frontend/src/sino-founder/ConversationThread.jsx"], "diff_summary": "changed"})
+    monkeypatch.setattr(runtime, "run_verification_commands", lambda _commands: [{"argv": ["test"], "shell": False, "success": False, "check_result": "FAIL", "passed": 1, "failed": 1, "errors": 0}])
+    approved = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
+    assert approved["result"]["check_result"] == "FAIL"
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+    assert task.result["tests_failed"] == 1
+    assert task.execution_status == "completed"
 
 
 def test_conversation_api_short_circuits_low_operational_request_before_provider(monkeypatch, tmp_path):

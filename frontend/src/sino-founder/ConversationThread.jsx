@@ -94,8 +94,12 @@ function OperationalRuntimeStatus({ runtime }) {
   const result = runtime.result?.result || runtime.result;
   const operationType = runtime.operation_type || runtime.result?.operation_type || result?.operation_type;
   const checkResult = runtime.result?.check_result || result?.check_result;
+  const changedFiles = runtime.result?.changed_files || result?.changed_files || [];
+  const boundaryCheck = runtime.result?.boundary_check || result?.boundary_check;
+  const buildStatus = runtime.result?.build_status || result?.build_status;
+  const workingTreeStatus = runtime.result?.working_tree_status || result?.working_tree_status;
   return <aside className="sino-operational-runtime-status" aria-label="Operational Runtime Status">
-    <span>Sino Operational Runtime</span>
+    <span>Sino Controlled Runtime</span>
     <h3>{labels[runtime.status] || runtime.status}</h3>
     <p>{runtime.message || runtime.result?.summary || runtime.error || runtime.reason || "本地任务状态已记录。"}</p>
     {runtime.task_id || runtime.execution_id ? <dl>
@@ -110,7 +114,11 @@ function OperationalRuntimeStatus({ runtime }) {
       {typeof result?.exit_code === "number" ? <div><dt>Exit code</dt><dd>{result.exit_code}</dd></div> : null}
       {result?.branch ? <div><dt>Branch</dt><dd>{result.branch}</dd></div> : null}
       {result?.head ? <div><dt>HEAD</dt><dd>{result.head}</dd></div> : null}
+      {changedFiles.length ? <div><dt>Changed files</dt><dd>{changedFiles.join(" · ")}</dd></div> : null}
+      {boundaryCheck ? <div><dt>Boundary check</dt><dd>{boundaryCheck}</dd></div> : null}
+      {buildStatus ? <div><dt>Build</dt><dd>{buildStatus}</dd></div> : null}
       {typeof result?.working_tree_clean === "boolean" ? <div><dt>Working tree</dt><dd>{result.working_tree_clean ? "clean" : "dirty"}</dd></div> : null}
+      {workingTreeStatus ? <div><dt>Working tree status</dt><dd>{workingTreeStatus}</dd></div> : null}
       {runtime.retryable != null ? <div><dt>Retryable</dt><dd>{runtime.retryable ? "YES" : "NO"}</dd></div> : null}
     </dl> : null}
   </aside>;

@@ -1,9 +1,7 @@
 """Controlled local operational runtime for Sino Founder AI.
 
-V1 intentionally supports only one low-risk vertical slice:
-Founder asks Sino to inspect this repository's branch/HEAD/dirty state.
-The flow still records TaskAsset and ExecutionSession lineage, but it uses a
-bounded local executor instead of invoking Codex or any external provider.
+The flow records TaskAsset and ExecutionSession lineage while using bounded
+local executors instead of invoking Codex or any external provider directly.
 """
 from __future__ import annotations
 
@@ -31,9 +29,11 @@ LOW_RISK = "LOW"
 MEDIUM_RISK = "MEDIUM"
 HIGH_RISK = "HIGH"
 OPERATIONAL_QUEUE_TYPE = "HIGH_RISK_OPERATIONAL_TASK"
+BOUNDED_CODE_CHANGE_QUEUE_TYPE = "BOUNDED_CODE_CHANGE_APPROVAL"
 REPO_INSPECTION = "REPO_INSPECTION"
 FOCUSED_TEST = "FOCUSED_TEST"
 FRONTEND_BUILD = "FRONTEND_BUILD"
+BOUNDED_CODE_CHANGE = "BOUNDED_CODE_CHANGE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +66,32 @@ OPERATION_REGISTRY: dict[str, OperationSpec] = {
     ),
 }
 
+BOUNDED_STATUS_CARD_TITLE_CHANGE = "rename_operational_runtime_status_card"
+BOUNDED_CODE_CHANGE_PLANS: dict[str, dict] = {
+    BOUNDED_STATUS_CARD_TITLE_CHANGE: {
+        "plan_id": BOUNDED_STATUS_CARD_TITLE_CHANGE,
+        "title": "更新 Operational Runtime 状态卡标题",
+        "allowed_files": ["frontend/src/sino-founder/ConversationThread.jsx"],
+        "allowed_directories": [],
+        "acceptance_criteria": [
+            "Operational Runtime 状态卡标题更新为 Sino Controlled Runtime",
+            "ConversationThread focused frontend test passes",
+            "Frontend build passes",
+        ],
+        "explicit_non_goals": [
+            "Do not modify backend code through the bounded executor",
+            "Do not modify DB schema or data",
+            "Do not invoke Provider or Codex directly",
+            "Do not git add, commit, push, deploy, or delete files",
+        ],
+        "verification_commands": [
+            ["npm", "--prefix", "frontend", "test", "--", "--run", "src/sino-founder/ConversationThread.test.jsx"],
+            ["npm", "--prefix", "frontend", "run", "build"],
+        ],
+        "rollback_boundary": "Only the allowed file may be changed; Founder can review/revert via git diff.",
+    }
+}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -89,12 +115,26 @@ def classify_operational_risk(content: str) -> dict:
     )
     focused_test_terms = ("测试", "test", "pytest")
     frontend_build_terms = ("前端", "frontend", "构建", "build")
+    bounded_change_terms = ("改成", "修改", "更新", "调整", "改一下", "change", "update")
+    bounded_status_title_terms = ("sino controlled runtime", "sino operational runtime", "状态卡标题", "runtime 状态卡")
     if any(term in lowered for term in high_terms):
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
             "risk_level": HIGH_RISK,
             "auto_continue": False,
             "reason": "request_crosses_high_risk_operational_boundary",
+        }
+    if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in bounded_status_title_terms):
+        plan = BOUNDED_CODE_CHANGE_PLANS[BOUNDED_STATUS_CARD_TITLE_CHANGE]
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": MEDIUM_RISK,
+            "auto_continue": False,
+            "operation": "bounded_code_change",
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "reason": "bounded_code_change_requires_founder_approval",
+            "approval_required": True,
+            "plan": plan,
         }
     if any(term in lowered for term in focused_test_terms) and (
         "sino operational runtime" in lowered or "operational runtime" in lowered or "运行" in text
@@ -249,6 +289,112 @@ def run_allowlisted_process(spec: OperationSpec, *, cwd: Path | None = None) -> 
         }
 
 
+def _safe_relative_path(value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError("path_outside_repo_boundary")
+    return path
+
+
+def _git_diff_names(*, cwd: Path) -> set[str]:
+    completed = subprocess.run(
+        ["git", "diff", "--name-only"],
+        cwd=str(cwd),
+        text=True,
+        capture_output=True,
+        timeout=10,
+        shell=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or "git_diff_name_only_failed")
+    return {line.strip() for line in completed.stdout.splitlines() if line.strip()}
+
+
+def _is_allowed_change(path: str, plan: dict) -> bool:
+    allowed_files = {str(_safe_relative_path(item)) for item in plan.get("allowed_files") or []}
+    allowed_dirs = [str(_safe_relative_path(item)).rstrip("/") + "/" for item in plan.get("allowed_directories") or []]
+    return path in allowed_files or any(path.startswith(prefix) for prefix in allowed_dirs)
+
+
+def run_bounded_code_change(plan: dict, *, cwd: Path | None = None) -> dict:
+    """Apply one allowlisted bounded code change; no raw shell or user command execution."""
+    root = cwd or repo_root()
+    if plan.get("plan_id") != BOUNDED_STATUS_CARD_TITLE_CHANGE:
+        raise ValueError("unsupported_bounded_code_change_plan")
+    target_rel = "frontend/src/sino-founder/ConversationThread.jsx"
+    if not _is_allowed_change(target_rel, plan):
+        raise ValueError("bounded_code_change_target_not_allowed")
+    target = root / _safe_relative_path(target_rel)
+    original = target.read_text()
+    old = "<span>Sino Operational Runtime</span>"
+    new = "<span>Sino Controlled Runtime</span>"
+    if new in original:
+        return {
+            "changed_files": [],
+            "diff_summary": "No code change required; target title was already updated.",
+            "already_applied": True,
+        }
+    if old not in original:
+        raise ValueError("bounded_code_change_anchor_not_found")
+    target.write_text(original.replace(old, new, 1))
+    return {
+        "changed_files": [target_rel],
+        "diff_summary": "Updated the Operational Runtime status card title to Sino Controlled Runtime.",
+        "already_applied": False,
+    }
+
+
+def run_verification_commands(commands: list[list[str]], *, cwd: Path | None = None) -> list[dict]:
+    root = cwd or repo_root()
+    results: list[dict] = []
+    for argv in commands:
+        if not argv:
+            raise ValueError("verification_command_missing")
+        if any(token in {"bash", "sh", "zsh", "-c", "eval", "exec"} for token in argv):
+            raise ValueError("verification_command_not_allowlisted")
+        started = _now()
+        monotonic = time.monotonic()
+        try:
+            completed = subprocess.run(
+                list(argv),
+                cwd=str(root),
+                text=True,
+                capture_output=True,
+                timeout=120 if argv[:3] == ["npm", "--prefix", "frontend"] and "build" in argv else 90,
+                shell=False,
+            )
+            combined = f"{completed.stdout or ''}\n{completed.stderr or ''}".strip()
+            parsed = _parse_pytest_result(combined)
+            results.append({
+                "argv": list(argv),
+                "shell": False,
+                "exit_code": completed.returncode,
+                "success": completed.returncode == 0,
+                "check_result": "PASS" if completed.returncode == 0 else "FAIL",
+                "stdout_excerpt": _excerpt(completed.stdout or ""),
+                "stderr_excerpt": _excerpt(completed.stderr or ""),
+                "started_at": started,
+                "completed_at": _now(),
+                "duration_seconds": round(time.monotonic() - monotonic, 3),
+                **parsed,
+            })
+        except subprocess.TimeoutExpired as error:
+            results.append({
+                "argv": list(argv),
+                "shell": False,
+                "exit_code": None,
+                "success": False,
+                "check_result": "EXECUTOR_FAILURE",
+                "timeout": True,
+                "stdout_excerpt": _excerpt(error.stdout or ""),
+                "stderr_excerpt": _excerpt(error.stderr or ""),
+                "started_at": started,
+                "completed_at": _now(),
+                "duration_seconds": round(time.monotonic() - monotonic, 3),
+            })
+    return results
+
+
 def _stable_execution_id(task_id: str, source_message_id: str) -> str:
     digest = hashlib.sha256(f"operational-execution:{task_id}:{source_message_id}".encode()).hexdigest()[:20]
     return f"execution-operational-{digest}"
@@ -276,7 +422,7 @@ def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> E
         conversation_id=task.conversation_id,
         scope={"goal_type": "development", "context": context},
         constraints=list(operational.get("explicit_non_goals") or []),
-        risk="low",
+        risk=str(risk.get("risk_level", LOW_RISK)).lower(),
         approval_required=False,
     )
     return ExecutionPackage(
@@ -364,6 +510,79 @@ def _append_high_risk_queue_item(conversation_id: str, founder_request: str, sou
         state.stage = "operational_runtime"
         state.updated_at = datetime.now(timezone.utc)
         session.commit()
+
+
+def _bounded_action_id(source_message_id: str) -> str:
+    return f"bounded-code-change:{source_message_id}"
+
+
+def _append_bounded_code_change_queue_item(conversation_id: str, founder_request: str, source_message_id: str, risk: dict) -> str:
+    now = _now()
+    action_id = _bounded_action_id(source_message_id)
+    plan = dict(risk.get("plan") or BOUNDED_CODE_CHANGE_PLANS[BOUNDED_STATUS_CARD_TITLE_CHANGE])
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("sino_brain_session_not_found")
+        discovery = dict(state.discovery or {})
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]
+        existing = next((item for item in queue if item.get("action_id") == action_id), None)
+        payload = {
+            "action_id": action_id,
+            "action_type": BOUNDED_CODE_CHANGE_QUEUE_TYPE,
+            "type": BOUNDED_CODE_CHANGE_QUEUE_TYPE,
+            "title": "批准受控代码修改",
+            "summary": founder_request[:300],
+            "risk_level": MEDIUM_RISK,
+            "risk": "medium",
+            "status": "pending",
+            "conversation_id": conversation_id,
+            "source_type": "conversation_message",
+            "source_id": source_message_id,
+            "created_at": existing.get("created_at") if existing else now,
+            "updated_at": now,
+            "decision": existing.get("decision") if existing else None,
+            "decided_at": existing.get("decided_at") if existing else None,
+            "reason": risk.get("reason"),
+            "metadata": {
+                "queue_schema": "sino-bounded-code-change-v1",
+                "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+                "operation_type": BOUNDED_CODE_CHANGE,
+                "founder_request": founder_request,
+                "planned_files": list(plan.get("allowed_files") or []),
+                "allowed_files": list(plan.get("allowed_files") or []),
+                "allowed_directories": list(plan.get("allowed_directories") or []),
+                "acceptance_criteria": list(plan.get("acceptance_criteria") or []),
+                "explicit_non_goals": list(plan.get("explicit_non_goals") or []),
+                "verification_commands": [list(argv) for argv in plan.get("verification_commands") or []],
+                "rollback_boundary": plan.get("rollback_boundary"),
+                "plan": plan,
+            },
+        }
+        if existing:
+            for index, item in enumerate(queue):
+                if item.get("action_id") == action_id:
+                    queue[index] = {**item, **payload, "status": item.get("status") or "pending"}
+                    break
+        else:
+            queue.append(payload)
+        discovery["founder_action_queue"] = queue
+        discovery["founder_action_required"] = True
+        discovery["operational_runtime"] = {
+            "status": "approval_required",
+            "risk_decision": risk,
+            "founder_request": founder_request,
+            "source_message_id": source_message_id,
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "action_id": action_id,
+            "plan": plan,
+            "message": "这是一个受控代码修改，风险为 MEDIUM；我已放入 Founder Action Queue，批准后会自动执行并验证。",
+        }
+        state.discovery = discovery
+        state.stage = "operational_runtime"
+        state.updated_at = datetime.now(timezone.utc)
+        session.commit()
+    return action_id
 
 
 def _task_scope(*, founder_request: str, conversation_id: str, source_message_id: str, risk: dict, spec: OperationSpec) -> dict:
@@ -650,6 +869,328 @@ def execute_low_risk_operation(
         }
 
 
+def _bounded_task_scope(*, founder_request: str, conversation_id: str, source_message_id: str, action_id: str, risk: dict, plan: dict) -> dict:
+    return {
+        "operational_runtime": {
+            "schema_version": "sino-bounded-code-change-v1",
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "operation": "bounded_code_change",
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "founder_request": founder_request,
+            "conversation_id": conversation_id,
+            "source_message_id": source_message_id,
+            "action_id": action_id,
+            "repo_path": str(repo_root()),
+            "risk_decision": risk,
+            "risk_level": MEDIUM_RISK,
+            "allowed_files": list(plan.get("allowed_files") or []),
+            "allowed_directories": list(plan.get("allowed_directories") or []),
+            "acceptance_criteria": list(plan.get("acceptance_criteria") or []),
+            "explicit_non_goals": list(plan.get("explicit_non_goals") or []),
+            "verification_commands": [list(argv) for argv in plan.get("verification_commands") or []],
+            "rollback_boundary": plan.get("rollback_boundary"),
+            "auto_continue_policy": "MEDIUM risk bounded code change after one Founder queue approval",
+        }
+    }
+
+
+def _mark_bounded_action(conversation_id: str, action_id: str, updates: dict) -> None:
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            return
+        discovery = dict(state.discovery or {})
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]
+        for index, item in enumerate(queue):
+            if item.get("action_id") == action_id:
+                queue[index] = {**item, **updates, "updated_at": _now()}
+                break
+        discovery["founder_action_queue"] = queue
+        discovery["founder_action_required"] = any(item.get("status") == "pending" for item in queue)
+        state.discovery = discovery
+        state.updated_at = datetime.now(timezone.utc)
+        session.commit()
+
+
+def execute_bounded_code_change(
+    *,
+    conversation_id: str,
+    founder_request: str,
+    source_message_id: str,
+    action_id: str,
+    plan: dict,
+    code_runner: Callable[[dict], dict] | None = None,
+    verifier: Callable[[list[list[str]]], list[dict]] | None = None,
+) -> dict:
+    risk = {
+        "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+        "risk_level": MEDIUM_RISK,
+        "auto_continue": True,
+        "operation": "bounded_code_change",
+        "operation_type": BOUNDED_CODE_CHANGE,
+        "reason": "founder_approved_bounded_code_change",
+        "approval_action_id": action_id,
+        "plan": plan,
+    }
+    if not (plan.get("allowed_files") or plan.get("allowed_directories")):
+        raise ValueError("bounded_code_change_requires_file_boundary")
+    root = repo_root()
+    before_diff = _git_diff_names(cwd=root)
+    task = create_task_asset(
+        title=plan.get("title") or "受控代码修改",
+        description=founder_request,
+        conversation_id=conversation_id,
+        source_message_id=source_message_id,
+        scope=_bounded_task_scope(
+            founder_request=founder_request,
+            conversation_id=conversation_id,
+            source_message_id=source_message_id,
+            action_id=action_id,
+            risk=risk,
+            plan=plan,
+        ),
+        status="draft",
+        approval_status="approved",
+        execution_status="not_started",
+    )
+    with SessionLocal() as session:
+        task = session.get(TaskAssetDB, task.id)
+        scope = dict(task.scope or {})
+        prior_start = dict(scope.get("execution_start") or {})
+        if prior_start.get("execution_id") and task.result:
+            return {
+                "handled": True,
+                "risk_decision": risk,
+                "task_id": task.id,
+                "execution_id": prior_start["execution_id"],
+                "created": False,
+                "reused": True,
+                "status": task.execution_status,
+                "result": task.result,
+            }
+        execution_id = prior_start.get("execution_id") or _stable_execution_id(task.id, source_message_id)
+        package = _execution_package(task=task, execution_id=execution_id, risk=risk)
+        package.context.update({
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "risk_level": MEDIUM_RISK,
+            "allowed_files": list(plan.get("allowed_files") or []),
+            "allowed_directories": list(plan.get("allowed_directories") or []),
+            "acceptance_criteria": list(plan.get("acceptance_criteria") or []),
+            "explicit_non_goals": list(plan.get("explicit_non_goals") or []),
+            "verification_commands": [list(argv) for argv in plan.get("verification_commands") or []],
+            "rollback_boundary": plan.get("rollback_boundary"),
+        })
+        existing = get_execution_session(execution_id)
+        if existing:
+            execution, _package = existing
+            created = False
+        else:
+            execution = ExecutionSession(
+                id=execution_id,
+                task_asset_id=task.id,
+                execution_package_id=f"package-{execution_id}",
+                executor="LOCAL_EXECUTOR",
+                status="queued",
+                approved_at=_now(),
+                queued_at=_now(),
+            )
+            save_execution_session(execution, package)
+            created = True
+        scope["execution_start"] = {
+            "schema_version": "bounded-code-change-start-v1",
+            "started_from": "founder_approved_bounded_code_change",
+            "execution_id": execution_id,
+            "task_asset_id": task.id,
+            "task_id": task.id,
+            "status": "queued",
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "queued_at": execution.queued_at or _now(),
+            "source_conversation_id": conversation_id,
+            "source_message_refs": [source_message_id],
+            "action_id": action_id,
+        }
+        task.scope = scope
+        task.status = "in_progress"
+        task.execution_status = "queued"
+        session.commit()
+
+    queued_payload = {
+        "status": "queued",
+        "operation_type": BOUNDED_CODE_CHANGE,
+        "risk_decision": risk,
+        "task_id": task.id,
+        "execution_id": execution_id,
+        "action_id": action_id,
+        "founder_request": founder_request,
+        "plan": plan,
+        "message": "受控代码修改已批准，我会自动执行并验证。正在准备执行…",
+    }
+    _update_brain(conversation_id, queued_payload)
+    _append_assistant_message(conversation_id, queued_payload["message"], message_type="operational_execution", grounding={"operational_runtime": queued_payload})
+    try:
+        running_payload = {**queued_payload, "status": "running", "message": "正在执行受控代码修改…"}
+        _update_brain(conversation_id, running_payload)
+        code_result = (code_runner or (lambda selected_plan: run_bounded_code_change(selected_plan)))(plan)
+        after_change_diff = _git_diff_names(cwd=root)
+        new_or_changed = sorted(after_change_diff - before_diff | set(code_result.get("changed_files") or []))
+        unexpected = [item for item in new_or_changed if not _is_allowed_change(item, plan)]
+        verification_steps: list[dict] = []
+        boundary_status = "PASS"
+        if unexpected:
+            boundary_status = "FAILED_BOUNDARY"
+            success = False
+            check_result = "FAILED_BOUNDARY"
+            summary = f"检测到超出授权范围的修改，已停止：{', '.join(unexpected)}"
+        else:
+            verification_steps = (verifier or (lambda commands: run_verification_commands(commands)))([list(argv) for argv in plan.get("verification_commands") or []])
+            success = bool(verification_steps) and all(step.get("success") for step in verification_steps)
+            check_result = "PASS" if success else "FAIL"
+            summary = "受控代码修改完成，验证通过。" if success else "受控代码修改完成，但验证失败。"
+        completed_at = _now()
+        test_counts = {
+            "tests_passed": sum(int(step.get("passed") or 0) for step in verification_steps),
+            "tests_failed": sum(int(step.get("failed") or 0) for step in verification_steps),
+            "tests_errors": sum(int(step.get("errors") or 0) for step in verification_steps),
+        }
+        build_step = next((step for step in verification_steps if step.get("argv", [])[:3] == ["npm", "--prefix", "frontend"] and "build" in step.get("argv", [])), None)
+        persisted_result = {
+            "status": "failed" if boundary_status == "FAILED_BOUNDARY" else "completed",
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "success": success,
+            "check_result": check_result,
+            "summary": summary,
+            "changed_files": list(code_result.get("changed_files") or []),
+            "diff_summary": code_result.get("diff_summary"),
+            "verification_steps": verification_steps,
+            "build_status": build_step.get("check_result") if build_step else None,
+            "boundary_check": boundary_status,
+            "unexpected_files": unexpected,
+            "working_tree_status": "dirty" if after_change_diff else "clean",
+            "started_at": queued_payload.get("queued_at"),
+            "completed_at": completed_at,
+            "real_executor_used": "LOCAL_EXECUTOR",
+            **test_counts,
+            "result": {
+                "operation_type": BOUNDED_CODE_CHANGE,
+                "changed_files": list(code_result.get("changed_files") or []),
+                "boundary_check": boundary_status,
+                "build_status": build_step.get("check_result") if build_step else None,
+                "working_tree_clean": not bool(after_change_diff),
+                **test_counts,
+            },
+        }
+        with SessionLocal() as session:
+            record = session.get(TaskAssetDB, task.id)
+            record.result = persisted_result
+            record.status = persisted_result["status"]
+            record.execution_status = persisted_result["status"]
+            scope = dict(record.scope or {})
+            start = dict(scope.get("execution_start") or {})
+            start.update({"status": persisted_result["status"], "completed_at": completed_at})
+            scope["execution_start"] = start
+            record.scope = scope
+            session.commit()
+        registry_record = get_execution_session(execution_id)
+        if registry_record:
+            execution, package = registry_record
+            execution.status = persisted_result["status"]
+            execution.completed_at = completed_at
+            execution.result = persisted_result
+            save_execution_session(execution, package)
+        _mark_bounded_action(conversation_id, action_id, {"status": "completed" if success else "rejected", "decision": "approved", "decided_at": completed_at, "task_id": task.id, "execution_id": execution_id, "result": persisted_result})
+        completed_payload = {**queued_payload, "status": persisted_result["status"], "result": persisted_result, "message": summary}
+        _update_brain(conversation_id, completed_payload)
+        _append_assistant_message(
+            conversation_id,
+            f"{summary}\n\n修改文件：{', '.join(persisted_result['changed_files']) or '无'}\n验证：{check_result}\n工作区：{persisted_result['working_tree_status']}",
+            message_type="operational_result",
+            grounding={"operational_runtime": completed_payload, "task_id": task.id, "execution_id": execution_id},
+        )
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": persisted_result["status"], "result": persisted_result}
+    except Exception as error:
+        failed_at = _now()
+        failure = {
+            "status": "failed",
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "check_result": "EXECUTOR_FAILED",
+            "error": str(error),
+            "summary": f"受控代码修改执行失败：{error}",
+            "failed_at": failed_at,
+            "retryable": True,
+            "real_executor_used": "LOCAL_EXECUTOR",
+        }
+        with SessionLocal() as session:
+            record = session.get(TaskAssetDB, task.id)
+            if record is not None:
+                record.result = failure
+                record.status = "failed"
+                record.execution_status = "failed"
+                session.commit()
+        registry_record = get_execution_session(execution_id)
+        if registry_record:
+            execution, package = registry_record
+            execution.status = "failed"
+            execution.error_message = str(error)
+            execution.completed_at = failed_at
+            execution.result = failure
+            save_execution_session(execution, package)
+        _update_brain(conversation_id, {**queued_payload, **failure, "message": failure["summary"]})
+        _append_assistant_message(conversation_id, f"{failure['summary']}\n\n可重试：是", message_type="operational_result", grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id})
+        return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "failed", "result": failure}
+
+
+def decide_bounded_code_change_action(action_id: str, decision: str) -> dict:
+    if decision not in {"approve", "reject", "continue_discussion"}:
+        raise ValueError("unsupported_bounded_code_change_decision")
+    with SessionLocal() as session:
+        states = list(session.scalars(select(SinoBrainSessionDB)))
+        action = None
+        state = None
+        for candidate_state in states:
+            for item in (candidate_state.discovery or {}).get("founder_action_queue") or []:
+                if isinstance(item, dict) and item.get("action_id") == action_id:
+                    action = dict(item)
+                    state = candidate_state
+                    break
+            if action:
+                break
+        if action is None or state is None:
+            raise LookupError("bounded_code_change_action_not_found")
+        if action.get("action_type") != BOUNDED_CODE_CHANGE_QUEUE_TYPE:
+            raise ValueError("not_bounded_code_change_action")
+        conversation_id = action.get("conversation_id") or state.conversation_id
+        source_message_id = action.get("source_id")
+        founder_request = (action.get("metadata") or {}).get("founder_request") or action.get("summary") or ""
+        plan = ((action.get("metadata") or {}).get("plan") or BOUNDED_CODE_CHANGE_PLANS[BOUNDED_STATUS_CARD_TITLE_CHANGE])
+    if decision == "continue_discussion":
+        _append_assistant_message(
+            conversation_id,
+            "继续讨论受控代码修改；该 Action Queue item 保持 pending，批准前不会执行。",
+            message_type="operational_discussion",
+            grounding={"action_id": action_id, "operation_type": BOUNDED_CODE_CHANGE},
+        )
+        return {"handled": True, "action_id": action_id, "decision": "continue_discussion", "status": "pending", "executed": False}
+    if decision == "reject":
+        now = _now()
+        _mark_bounded_action(conversation_id, action_id, {"status": "rejected", "decision": "rejected", "decided_at": now})
+        _update_brain(conversation_id, {"status": "rejected", "operation_type": BOUNDED_CODE_CHANGE, "action_id": action_id, "message": "受控代码修改已驳回；不会修改代码。"})
+        _append_assistant_message(
+            conversation_id,
+            "受控代码修改已驳回；不会修改代码，也不会创建执行。",
+            message_type="operational_result",
+            grounding={"action_id": action_id, "operation_type": BOUNDED_CODE_CHANGE, "decision": "rejected"},
+        )
+        return {"handled": True, "action_id": action_id, "decision": "rejected", "status": "rejected", "executed": False}
+    _mark_bounded_action(conversation_id, action_id, {"status": "approved", "decision": "approved", "decided_at": _now()})
+    return execute_bounded_code_change(
+        conversation_id=conversation_id,
+        founder_request=founder_request,
+        source_message_id=source_message_id,
+        action_id=action_id,
+        plan=plan,
+    )
+
+
 def handle_operational_conversation_request(
     *, conversation_id: str, founder_request: str, source_message_id: str,
 ) -> dict:
@@ -665,6 +1206,15 @@ def handle_operational_conversation_request(
             grounding={"operational_runtime": {"status": "blocked", "risk_decision": risk}},
         )
         return {"handled": True, "risk_decision": risk, "status": "blocked"}
+    if risk.get("risk_level") == MEDIUM_RISK and risk.get("operation_type") == BOUNDED_CODE_CHANGE:
+        action_id = _append_bounded_code_change_queue_item(conversation_id, founder_request, source_message_id, risk)
+        _append_assistant_message(
+            conversation_id,
+            "这是一个受控代码修改，风险为 MEDIUM；已进入 Founder Action Queue。批准前我不会调用 executor。",
+            message_type="operational_approval_required",
+            grounding={"operational_runtime": {"status": "approval_required", "risk_decision": risk, "action_id": action_id}},
+        )
+        return {"handled": True, "risk_decision": risk, "status": "approval_required", "action_id": action_id}
     if risk.get("risk_level") == LOW_RISK and risk.get("auto_continue"):
         return execute_low_risk_operation(
             conversation_id=conversation_id,
