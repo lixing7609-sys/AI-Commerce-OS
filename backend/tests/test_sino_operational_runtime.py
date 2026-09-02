@@ -10,6 +10,7 @@ from app.database.base import Base
 from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
 from app.core.task_asset.model import TaskAssetDB
+from app.founder_ai.codex_adapter import CodexExecutionResult
 from app.founder_ai import api
 from app.founder_ai import operational_runtime as runtime
 from app.founder_ai import execution_registry
@@ -434,6 +435,157 @@ def test_bounded_code_change_boundary_violation_is_persisted(monkeypatch, tmp_pa
     assert task.execution_status == "failed"
     assert task.result["check_result"] == "FAILED_BOUNDARY"
     assert any("超出授权范围" in item.content for item in messages)
+
+
+def test_bounded_code_change_routes_to_codex_and_local_operations_stay_local():
+    assert runtime.executor_for_operation(runtime.BOUNDED_CODE_CHANGE) == runtime.CODEX_EXECUTOR
+    for operation in (
+        runtime.REPO_INSPECTION,
+        runtime.FOCUSED_TEST,
+        runtime.FRONTEND_BUILD,
+        runtime.SAFE_CHECKPOINT_COMMIT,
+        runtime.SAFE_PUSH,
+        runtime.SAFE_MERGE,
+        runtime.SAFE_INTEGRATION_PUSH,
+    ):
+        assert runtime.executor_for_operation(operation) == runtime.LOCAL_EXECUTOR
+
+
+def test_codex_package_contains_lineage_boundary_and_prohibitions(tmp_path):
+    plan = {
+        **runtime.BOUNDED_CODE_CHANGE_PLANS[runtime.BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE],
+        "founder_request": "把 Codex Bridge E2E fixture 改成 CODEX_BRIDGE_OK",
+        "conversation_id": "conv-codex",
+        "mission_id": "mission-codex",
+        "task_id": "task-codex",
+        "execution_id": "execution-codex",
+        "working_branch": "feature/sino-native-codex-bridge-v1",
+        "baseline_head": "head-before",
+        "approval_action_id": "bounded-code-change:codex",
+    }
+    package = runtime._codex_execution_package_for_bounded_change(plan, cwd=tmp_path)
+    assert package.context["operation_type"] == runtime.BOUNDED_CODE_CHANGE
+    assert package.context["conversation_id"] == "conv-codex"
+    assert package.context["mission_id"] == "mission-codex"
+    assert package.context["task_id"] == "task-codex"
+    assert package.context["execution_id"] == "execution-codex"
+    assert package.context["repo_path"] == str(tmp_path)
+    assert package.context["allowed_files"] == ["frontend/src/sino-founder/codex-bridge-e2e-fixture.txt"]
+    assert package.context["acceptance_criteria"][0] == "Codex Bridge E2E fixture contains CODEX_BRIDGE_OK"
+    assert package.context["verification_plan"]
+    assert package.context["codex_executor_policy"]["git_commit_allowed"] is False
+    assert package.context["codex_executor_policy"]["git_push_allowed"] is False
+    assert package.context["codex_executor_policy"]["git_merge_allowed"] is False
+    assert package.context["codex_executor_policy"]["deployment_allowed"] is False
+    assert any("Do not run git add" in item for item in package.constraints)
+
+
+def test_run_bounded_code_change_uses_existing_codex_adapter_and_isolates_sessions(tmp_path):
+    calls = []
+
+    class FakeCodexAdapter:
+        def execute(self, package, *, cwd):
+            calls.append((package, cwd))
+            return CodexExecutionResult(
+                stdout="updated fixture",
+                stderr="",
+                exit_code=0,
+                changed_files=list(package.context["allowed_files"]),
+                codex_run_id=f"codex-{package.context['execution_id']}",
+            )
+
+    for suffix in ("a", "b"):
+        plan = {
+            **runtime.BOUNDED_CODE_CHANGE_PLANS[runtime.BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE],
+            "founder_request": "把 Codex Bridge E2E fixture 改成 CODEX_BRIDGE_OK",
+            "conversation_id": f"conv-{suffix}",
+            "mission_id": f"mission-{suffix}",
+            "task_id": f"task-{suffix}",
+            "execution_id": f"execution-{suffix}",
+        }
+        result = runtime.run_bounded_code_change(plan, cwd=tmp_path, adapter=FakeCodexAdapter())
+        assert result["real_executor_used"] == runtime.CODEX_EXECUTOR
+        assert result["executor"] == "CODEX"
+        assert result["codex_session_id"] == f"codex-execution-{suffix}"
+        assert result["codex_invocation"]["conversation_id"] == f"conv-{suffix}"
+        assert result["codex_invocation"]["mission_id"] == f"mission-{suffix}"
+    assert calls[0][0].context["conversation_id"] == "conv-a"
+    assert calls[1][0].context["conversation_id"] == "conv-b"
+
+
+def test_codex_timeout_and_adapter_error_return_failures(tmp_path):
+    class TimeoutAdapter:
+        def execute(self, package, *, cwd):
+            raise runtime.CodexExecutionTimeout(1, stdout="partial", stderr="timed out")
+
+    class ErrorAdapter:
+        def execute(self, package, *, cwd):
+            raise RuntimeError("adapter unavailable")
+
+    plan = {
+        **runtime.BOUNDED_CODE_CHANGE_PLANS[runtime.BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE],
+        "conversation_id": "conv-fail",
+        "execution_id": "execution-fail",
+    }
+    timeout = runtime.run_bounded_code_change(plan, cwd=tmp_path, adapter=TimeoutAdapter())
+    assert timeout["failure_type"] == "TIMEOUT"
+    assert timeout["real_executor_used"] == runtime.CODEX_EXECUTOR
+    failed = runtime.run_bounded_code_change(plan, cwd=tmp_path, adapter=ErrorAdapter())
+    assert failed["failure_type"] == "CODEX_EXECUTION_FAILED"
+    assert failed["real_executor_used"] == runtime.CODEX_EXECUTOR
+
+
+def test_codex_boundary_violation_blocks_verification_after_approval(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-codex-boundary")
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-codex-boundary",
+        founder_request="把 Codex Bridge E2E fixture 改成 CODEX_BRIDGE_OK，并验证。",
+        source_message_id="message-codex-boundary",
+    )
+    assert result["status"] == "approval_required"
+    monkeypatch.setattr(runtime, "run_bounded_code_change", lambda _plan: {
+        "executor": "CODEX",
+        "real_executor_used": runtime.CODEX_EXECUTOR,
+        "success": True,
+        "changed_files": ["backend/app/secret.py"],
+        "changed_files_claimed": ["backend/app/secret.py"],
+        "diff_summary": "unexpected file",
+    })
+    monkeypatch.setattr(runtime, "run_verification_commands", lambda _commands: (_ for _ in ()).throw(AssertionError("verification must not run after Codex boundary violation")))
+    approved = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
+    assert approved["result"]["boundary_check"] == "FAILED_BOUNDARY"
+    assert approved["result"]["real_executor_used"] == runtime.CODEX_EXECUTOR
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+    assert task.result["check_result"] == "FAILED_BOUNDARY"
+
+
+def test_valid_codex_modification_proceeds_to_local_verification_and_checkpoint(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-codex-valid")
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-codex-valid",
+        founder_request="把 Codex Bridge E2E fixture 改成 CODEX_BRIDGE_OK，并验证。",
+        source_message_id="message-codex-valid",
+    )
+    monkeypatch.setattr(runtime, "run_bounded_code_change", lambda _plan: {
+        "executor": "CODEX",
+        "real_executor_used": runtime.CODEX_EXECUTOR,
+        "success": True,
+        "changed_files": ["frontend/src/sino-founder/codex-bridge-e2e-fixture.txt"],
+        "changed_files_claimed": ["frontend/src/sino-founder/codex-bridge-e2e-fixture.txt"],
+        "diff_summary": "fixture updated",
+    })
+    monkeypatch.setattr(runtime, "run_verification_commands", lambda commands: [{"argv": commands[0], "shell": False, "success": True, "check_result": "PASS", "passed": 1, "failed": 0, "errors": 0}])
+    monkeypatch.setattr(runtime, "safe_checkpoint_commit", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("codex bridge e2e plan disables checkpoint")))
+    approved = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
+    assert approved["status"] == "completed"
+    assert approved["result"]["real_executor_used"] == runtime.CODEX_EXECUTOR
+    assert approved["result"]["check_result"] == "PASS"
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-codex-valid").all()
+    assert task.result["verification_steps"][0]["shell"] is False
+    assert any("受控代码修改完成" in item.content for item in messages)
 
 
 def test_bounded_code_change_verification_failure_persists_check_failure(monkeypatch, tmp_path):

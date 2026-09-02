@@ -125,6 +125,28 @@ class TaskPackageBuilder:
         for owner in (context, reasoning, _mapping(context.get("repository_context")), _mapping(context.get("code_context"))):
             relevant_files.extend(self._normalize_files(owner.get("relevant_files")))
 
+        if context.get("operation_type") == "BOUNDED_CODE_CHANGE":
+            evidence.append({
+                "source": "sino_bounded_code_change_package",
+                "fact": {
+                    "mission_id": context.get("mission_id"),
+                    "conversation_id": context.get("conversation_id"),
+                    "task_id": context.get("task_id"),
+                    "execution_id": context.get("execution_id"),
+                    "repo_path": context.get("repo_path"),
+                    "working_branch": context.get("working_branch"),
+                    "baseline_head": context.get("baseline_head"),
+                    "allowed_files": list(context.get("allowed_files") or []),
+                    "allowed_directories": list(context.get("allowed_directories") or []),
+                    "acceptance_criteria": list(context.get("acceptance_criteria") or []),
+                    "verification_plan": list(context.get("verification_plan") or []),
+                    "explicit_non_goals": list(context.get("explicit_non_goals") or []),
+                    "codex_executor_policy": _mapping(context.get("codex_executor_policy")),
+                },
+                "relevance": "Canonical Sino package for the approved bounded code change. The allowed boundary and prohibitions are mandatory.",
+            })
+            relevant_files.extend(self._normalize_files(context.get("allowed_files")))
+
         return TaskPackage(
             goal=package.goal,
             evidence=_unique_dicts(item for item in evidence if item),
