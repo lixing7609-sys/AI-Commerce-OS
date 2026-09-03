@@ -1510,14 +1510,14 @@ def test_safe_integration_push_already_up_to_date_and_duplicate_are_idempotent(m
         assert db.query(TaskAssetDB).count() == 1
 
 
-def _prepare_mission_start(monkeypatch, *, branch_created=None):
+def _prepare_mission_start(monkeypatch, *, branch_created=None, baseline_branch="feature/foundation-reset-integration"):
     branch_created = branch_created if branch_created is not None else []
     monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: [])
     monkeypatch.setattr(runtime, "_git_branch_exists", lambda _branch, **_kwargs: False)
 
     def git_output(args, **_kwargs):
         if args == ["branch", "--show-current"]:
-            return SimpleNamespace(returncode=0, stdout="feature/foundation-reset-integration\n", stderr="")
+            return SimpleNamespace(returncode=0, stdout=f"{baseline_branch}\n", stderr="")
         if args == ["rev-parse", "HEAD"]:
             return SimpleNamespace(returncode=0, stdout="baseline-head\n", stderr="")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -1682,6 +1682,197 @@ def test_autonomous_development_mission_creates_branch_and_waits_for_change_appr
     assert [message.id for message in messages][-1] == mission["acknowledgement_message_id"]
     assert messages[-1].role == "assistant"
     assert messages[-1].message_type == "operational_approval_required"
+    assert len(execution_registry._sessions) == 0
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    [
+        "把按钮A改成B并验证。",
+        "修复右侧状态不同步并验证。",
+        "修改这个文件里的状态文案。",
+        "把这个状态卡标题改成更清楚的标题。",
+    ],
+)
+def test_clear_bounded_development_defaults_to_autonomous_mission(monkeypatch, tmp_path, request_text):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id=f"conv-default-{abs(hash(request_text))}")
+    _prepare_mission_start(monkeypatch)
+    decision = runtime.classify_operational_risk(request_text)
+    assert decision["operation_type"] == runtime.AUTONOMOUS_DEVELOPMENT_MISSION
+    assert decision["reason"] == "clear_bounded_development_request"
+    assert decision["approval_required"] is True
+
+    result = runtime.handle_operational_conversation_request(
+        conversation_id=f"conv-default-{abs(hash(request_text))}",
+        founder_request=request_text,
+        source_message_id=f"message-default-{abs(hash(request_text))}",
+    )
+    mission, discovery = _latest_mission(factory, f"conv-default-{abs(hash(request_text))}")
+    action = _pending_action(discovery, runtime.BOUNDED_CODE_CHANGE_QUEUE_TYPE)
+    assert result["status"] == "approval_required"
+    assert mission["current_stage"] == "WAITING_CHANGE_APPROVAL"
+    assert action["metadata"]["mission_id"] == mission["mission_id"]
+    assert discovery["autonomous_development_mission_view"]["pending_approval"]["action_id"] == action["action_id"]
+    assert len(execution_registry._sessions) == 0
+
+
+def test_clear_development_bypasses_legacy_readiness_and_task_confirmation(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-default-api")
+    _prepare_mission_start(monkeypatch)
+    monkeypatch.setattr(api.secretary, "_reply_generator", lambda *_args: (_ for _ in ()).throw(AssertionError("provider must not be called")))
+
+    response = api.discuss_with_sino(
+        "conv-default-api",
+        api.DiscussionMessageIn(content="把按钮A改成B并验证。", client_message_id="client-default-api"),
+    )
+
+    discovery = response["sino_brain"]["discovery"]
+    assert discovery["autonomous_development_mission"]["current_stage"] == "WAITING_CHANGE_APPROVAL"
+    assert "task_candidate" not in discovery
+    assert not discovery.get("task_confirmation")
+    with factory() as db:
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-default-api").order_by(ConversationMessageDB.created_at.asc()).all()
+    assert messages[0].role == "founder"
+    assert messages[-1].message_type == "operational_approval_required"
+
+
+def test_clear_development_requires_approval_and_auto_resume_preserves_codex_scope_verification_and_checkpoint(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-default-auto-resume")
+    _prepare_mission_start(monkeypatch)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-default-auto-resume",
+        founder_request="修复右侧状态不同步并验证。",
+        source_message_id="message-default-auto-resume",
+    )
+    captured = {}
+
+    def execute_change(**kwargs):
+        captured["approval_action_id"] = kwargs["action_id"]
+        captured["operation_type"] = runtime.BOUNDED_CODE_CHANGE
+        return {
+            "handled": True,
+            "status": "completed",
+            "result": {
+                "operation_type": runtime.BOUNDED_CODE_CHANGE,
+                "executor": runtime.CODEX_EXECUTOR,
+                "success": True,
+                "changed_files": ["frontend/src/sino-founder/ConversationThread.jsx"],
+                "changed_files_observed": ["frontend/src/sino-founder/ConversationThread.jsx"],
+                "boundary_check": "PASS",
+                "scope_check": {"expected_scope": ["frontend/src/sino-founder"]},
+                "check_result": "PASS",
+                "verification_steps": [{"success": True, "check_result": "PASS", "passed": 1, "failed": 0, "errors": 0}],
+                "checkpoint": {"new_head": "checkpoint-head", "commit_message": "fix: default path", "commit_file_count": 1, "working_tree_clean_after": True},
+            },
+        }
+
+    monkeypatch.setattr(runtime, "execute_bounded_code_change", execute_change)
+    approved = runtime.decide_operational_action_by_type(result["action_id"], "approve")
+    mission, discovery = _latest_mission(factory, "conv-default-auto-resume")
+    assert approved["status"] == "completed"
+    assert captured["operation_type"] == runtime.BOUNDED_CODE_CHANGE
+    assert mission["current_stage"] == "WAITING_FEATURE_PUSH_APPROVAL"
+    assert mission["checkpoint_head"] == "checkpoint-head"
+    assert _pending_action(discovery, runtime.SAFE_PUSH_QUEUE_TYPE)["metadata"]["mission_id"] == mission["mission_id"]
+
+
+@pytest.mark.parametrize(
+    ("request_text", "expected_reason"),
+    [
+        ("我们讨论一下设置页面应该怎么优化。", "discussion_or_inspection_request_not_development_default"),
+        ("这段代码是什么意思？", "discussion_or_inspection_request_not_development_default"),
+    ],
+)
+def test_non_development_requests_do_not_enter_default_mission(request_text, expected_reason):
+    decision = runtime.classify_operational_risk(request_text)
+    assert decision.get("operation_type") != runtime.AUTONOMOUS_DEVELOPMENT_MISSION
+    assert decision["reason"] == expected_reason
+
+
+def test_ambiguous_development_request_requires_clarification(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-ambiguous-default")
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-ambiguous-default",
+        founder_request="改一下。",
+        source_message_id="message-ambiguous-default",
+    )
+    assert result["status"] == "clarification_required"
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-ambiguous-default").one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-ambiguous-default").all()
+    assert "autonomous_development_mission" not in dict(state.discovery or {})
+    assert any("修改哪个具体目标" in item.content for item in messages)
+
+
+def test_production_and_force_push_do_not_enter_development_default_path():
+    for request_text in ("部署到生产环境。", "force push main。"):
+        decision = runtime.classify_operational_risk(request_text)
+        assert decision.get("operation_type") != runtime.AUTONOMOUS_DEVELOPMENT_MISSION
+        assert decision["risk_level"] == runtime.HIGH_RISK
+
+
+def test_discussion_development_and_failure_repair_requests_transition_to_mission(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-transition-default")
+    _prepare_mission_start(monkeypatch)
+    discussion = runtime.handle_operational_conversation_request(
+        conversation_id="conv-transition-default",
+        founder_request="我们讨论一下右侧栏怎么优化。",
+        source_message_id="message-discussion-default",
+    )
+    assert discussion["status"] == "discussion"
+
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-transition-default",
+        founder_request="就按刚才方案修改，并验证。",
+        source_message_id="message-transition-default",
+    )
+    mission, discovery = _latest_mission(factory, "conv-transition-default")
+    assert result["status"] == "approval_required"
+    assert mission["current_stage"] == "WAITING_CHANGE_APPROVAL"
+    assert _pending_action(discovery, runtime.BOUNDED_CODE_CHANGE_QUEUE_TYPE)
+
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-failure-repair-default")
+    _prepare_mission_start(monkeypatch)
+    repair = runtime.handle_operational_conversation_request(
+        conversation_id="conv-failure-repair-default",
+        founder_request="修复刚才这个问题。",
+        source_message_id="message-failure-repair-default",
+    )
+    mission, _discovery = _latest_mission(factory, "conv-failure-repair-default")
+    assert repair["status"] == "approval_required"
+    assert mission["current_stage"] == "WAITING_CHANGE_APPROVAL"
+
+
+def test_inspection_like_development_request_auto_reaches_mission_without_manual_continue(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-inspection-transition-default")
+    _prepare_mission_start(monkeypatch)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-inspection-transition-default",
+        founder_request="修复这个页面审批状态不同步的问题。",
+        source_message_id="message-inspection-transition-default",
+    )
+    mission, discovery = _latest_mission(factory, "conv-inspection-transition-default")
+    assert result["status"] == "approval_required"
+    assert mission["current_stage"] == "WAITING_CHANGE_APPROVAL"
+    assert mission["working_branch"].startswith("feature/sino-mission-")
+    assert _pending_action(discovery, runtime.BOUNDED_CODE_CHANGE_QUEUE_TYPE)
+
+
+def test_routing_acceptance_fixture_can_start_from_default_path_product_branch(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-routing-acceptance-default")
+    _prepare_mission_start(monkeypatch, baseline_branch="feature/sino-live-development-default-path-v1")
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-routing-acceptance-default",
+        founder_request="把 Live Routing fixture 的内容改成 ROUTING_OK，并验证。",
+        source_message_id="message-routing-acceptance-default",
+    )
+    mission, discovery = _latest_mission(factory, "conv-routing-acceptance-default")
+    action = _pending_action(discovery, runtime.BOUNDED_CODE_CHANGE_QUEUE_TYPE)
+    assert result["status"] == "approval_required"
+    assert mission["current_stage"] == "WAITING_CHANGE_APPROVAL"
+    assert mission["allowed_files"] == ["frontend/src/sino-founder/live-routing-fixture.txt"]
+    assert mission["routing_acceptance_mode"] is True
+    assert action["risk_level"] == "MEDIUM"
     assert len(execution_registry._sessions) == 0
 
 

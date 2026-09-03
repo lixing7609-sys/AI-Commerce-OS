@@ -41,6 +41,7 @@ REPO_INSPECTION = "REPO_INSPECTION"
 FOCUSED_TEST = "FOCUSED_TEST"
 FRONTEND_BUILD = "FRONTEND_BUILD"
 BOUNDED_CODE_CHANGE = "BOUNDED_CODE_CHANGE"
+DISCUSSION = "DISCUSSION"
 SAFE_CHECKPOINT_COMMIT = "SAFE_CHECKPOINT_COMMIT"
 SAFE_PUSH = "SAFE_PUSH"
 SAFE_MERGE = "SAFE_MERGE"
@@ -50,6 +51,8 @@ LOCAL_EXECUTOR = "LOCAL_EXECUTOR"
 CODEX_EXECUTOR = "CODEX_EXECUTOR"
 BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE = "codex_bridge_e2e_fixture_change"
 LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE = "live_founder_acceptance_fixture_change"
+LIVE_ROUTING_FIXTURE_CHANGE = "live_routing_fixture_change"
+GENERIC_LIVE_DEVELOPMENT_CHANGE = "generic_live_development_change"
 SAFE_PUSH_ALLOWED_REMOTES = {"origin"}
 SAFE_PUSH_PROTECTED_BRANCHES = {"main", "master", "develop", "feature/foundation-reset-integration"}
 SAFE_MERGE_TARGET_BRANCH = "feature/foundation-reset-integration"
@@ -227,6 +230,61 @@ BOUNDED_CODE_CHANGE_PLANS: dict[str, dict] = {
         "live_acceptance_mode": True,
         "rollback_boundary": "Only the Live Founder Acceptance fixture file may be changed.",
     },
+    LIVE_ROUTING_FIXTURE_CHANGE: {
+        "plan_id": LIVE_ROUTING_FIXTURE_CHANGE,
+        "title": "更新 Live Routing fixture",
+        "allowed_files": ["frontend/src/sino-founder/live-routing-fixture.txt"],
+        "allowed_directories": [],
+        "expected_mutations": [
+            {
+                "file": "frontend/src/sino-founder/live-routing-fixture.txt",
+                "after": "ROUTING_OK",
+                "reason": "Routing acceptance must stop at approval before any Codex side effect.",
+            }
+        ],
+        "acceptance_criteria": [
+            "Live Routing fixture contains ROUTING_OK",
+            "ConversationThread focused frontend test passes",
+        ],
+        "explicit_non_goals": [
+            "Do not modify product runtime logic through the routing acceptance task",
+            "Do not modify DB schema or production data",
+            "Do not install packages",
+            "Do not git add, commit, push, merge, rebase, tag, deploy, or delete files",
+            "Do not modify secrets or files outside the repository",
+        ],
+        "verification_commands": [
+            ["npm", "--prefix", "frontend", "test", "--", "--run", "src/sino-founder/ConversationThread.test.jsx"],
+        ],
+        "auto_checkpoint": False,
+        "routing_acceptance_mode": True,
+        "rollback_boundary": "Only the Live Routing fixture file may be changed after Founder approval.",
+    },
+    GENERIC_LIVE_DEVELOPMENT_CHANGE: {
+        "plan_id": GENERIC_LIVE_DEVELOPMENT_CHANGE,
+        "title": "执行受控开发修改",
+        "allowed_files": [],
+        "allowed_directories": ["frontend/src/sino-founder"],
+        "acceptance_criteria": [
+            "Requested bounded development change is implemented",
+            "Relevant focused frontend test passes",
+            "Frontend build passes",
+        ],
+        "explicit_non_goals": [
+            "Do not modify files outside the approved Sino Founder UI boundary",
+            "Do not modify DB schema or production data",
+            "Do not install packages",
+            "Do not git add, commit, push, merge, rebase, tag, deploy, or delete files",
+            "Do not modify secrets or files outside the repository",
+        ],
+        "verification_commands": [
+            ["npm", "--prefix", "frontend", "test", "--", "--run", "src/sino-founder/ConversationThread.test.jsx"],
+            ["npm", "--prefix", "frontend", "run", "build"],
+        ],
+        "auto_checkpoint": True,
+        "commit_message": "fix(sino-runtime): complete bounded Founder development request",
+        "rollback_boundary": "Only files in the approved Sino Founder UI boundary may be changed.",
+    },
 }
 
 
@@ -238,6 +296,87 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _contains_any(text: str, terms: tuple[str, ...]) -> bool:
+    return any(term in text for term in terms)
+
+
+def _is_ambiguous_development_request(text: str) -> bool:
+    compact = re.sub(r"\s+", "", (text or "").lower()).strip("。.!！?？")
+    return compact in {"改一下", "优化一下", "修一下", "调整一下", "改改", "优化优化", "fixit", "changeit"}
+
+
+def _is_exploratory_discussion_request(lowered: str) -> bool:
+    discussion_terms = ("讨论", "设计", "方案", "怎么优化", "应该怎么", "架构", "think through", "discuss")
+    execution_terms = ("修改", "改成", "修复", "实现", "增加", "新增", "执行", "验证", "就按", "开始改")
+    return _contains_any(lowered, discussion_terms) and not _contains_any(lowered, execution_terms)
+
+
+def _is_explanation_or_inspection_request(lowered: str) -> bool:
+    explanation_terms = ("什么意思", "解释", "为什么", "what does", "explain", "怎么看", "原因是什么")
+    change_terms = ("修改", "改成", "修复", "更新", "调整", "增加", "新增", "实现")
+    return _contains_any(lowered, explanation_terms) and not _contains_any(lowered, change_terms)
+
+
+def _is_production_or_high_risk_request(lowered: str) -> bool:
+    high_terms = (
+        "push main", "force push", "强推", "deploy", "部署", "上线", "生产环境",
+        "production", "生产库", "production db", "删库", "rm -rf", "secret", "credential", "密钥",
+    )
+    return _contains_any(lowered, high_terms)
+
+
+def _is_clear_development_request(lowered: str) -> bool:
+    if _is_production_or_high_risk_request(lowered):
+        return False
+    if _is_exploratory_discussion_request(lowered) or _is_explanation_or_inspection_request(lowered):
+        return False
+    change_terms = (
+        "改成", "修改", "修复", "更新", "调整", "增加", "新增", "实现",
+        "fix", "change", "update", "add",
+    )
+    target_terms = (
+        "按钮", "文案", "状态", "卡", "页面", "右侧", "侧栏", "组件", "排序", "刷新", "同步",
+        "文件", "fixture", "test", "ui", "frontend", "backend", "live routing", "live founder acceptance",
+    )
+    transition_terms = ("就按", "按刚才", "修复刚才", "刚才这个问题")
+    return (
+        _contains_any(lowered, change_terms)
+        and (_contains_any(lowered, target_terms) or _contains_any(lowered, transition_terms))
+    )
+
+
+def _plan_for_development_request(founder_request: str) -> dict:
+    lowered_request = (founder_request or "").lower()
+    if (
+        "live founder acceptance fixture" in lowered_request
+        or "sino_live_acceptance_ok" in lowered_request
+        or "live acceptance" in lowered_request
+    ):
+        return dict(BOUNDED_CODE_CHANGE_PLANS[LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE])
+    if "live routing fixture" in lowered_request or "routing_ok" in lowered_request:
+        return dict(BOUNDED_CODE_CHANGE_PLANS[LIVE_ROUTING_FIXTURE_CHANGE])
+    if "codex bridge e2e fixture" in lowered_request or "codex_bridge_ok" in lowered_request or "codex bridge" in lowered_request:
+        return dict(BOUNDED_CODE_CHANGE_PLANS[BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE])
+    if "safe checkpoint" in lowered_request or "checkpoint 验证" in lowered_request or "本地 checkpoint" in lowered_request:
+        return dict(BOUNDED_CODE_CHANGE_PLANS[BOUNDED_SAFE_CHECKPOINT_FIXTURE_CHANGE])
+    if (
+        "sino controlled runtime" in lowered_request
+        or "sino operational runtime" in lowered_request
+        or "状态卡标题" in lowered_request
+        or "runtime 状态卡" in lowered_request
+        or "mission 状态卡" in lowered_request
+    ):
+        return dict(BOUNDED_CODE_CHANGE_PLANS[AUTONOMOUS_MISSION_STATUS_CARD_CHANGE])
+    plan = dict(BOUNDED_CODE_CHANGE_PLANS[GENERIC_LIVE_DEVELOPMENT_CHANGE])
+    plan["title"] = "执行受控开发修改"
+    plan["acceptance_criteria"] = [
+        f"实现 Founder 请求：{(founder_request or '').strip()}",
+        "Relevant focused test passes",
+        "Frontend build passes when frontend code is touched",
+    ]
+    return plan
+
+
 def classify_operational_risk(content: str) -> dict:
     """Classify operational requests deterministically; no model call."""
     text = (content or "").strip()
@@ -245,6 +384,7 @@ def classify_operational_risk(content: str) -> dict:
     high_terms = (
         "push", "deploy", "生产库", "production db", "删库", "删除", "rm -rf",
         "force", "强推", "secret", "credential", "密钥", "支付", "publish", "发布到远程",
+        "部署", "上线", "生产环境",
     )
     low_terms = (
         "git status", "当前 branch", "当前分支", "head", "未提交", "工程状态",
@@ -253,7 +393,7 @@ def classify_operational_risk(content: str) -> dict:
     focused_test_terms = ("测试", "test", "pytest")
     frontend_build_terms = ("前端", "frontend", "构建", "build")
     bounded_change_terms = ("改成", "修改", "更新", "调整", "改一下", "改", "change", "update")
-    bounded_status_title_terms = ("sino controlled runtime", "sino operational runtime", "状态卡标题", "runtime 状态卡")
+    bounded_status_title_terms = ("sino controlled runtime", "sino operational runtime", "runtime 状态卡")
     safe_checkpoint_fixture_terms = ("safe checkpoint e2e fixture", "safe checkpoint", "checkpoint 验证", "本地 checkpoint")
     codex_bridge_fixture_terms = ("codex bridge e2e fixture", "codex_bridge_ok", "codex bridge")
     live_acceptance_fixture_terms = ("live founder acceptance fixture", "sino_live_acceptance_ok", "live acceptance")
@@ -261,10 +401,30 @@ def classify_operational_risk(content: str) -> dict:
     mission_terms = ("autonomous development mission", "完整开发任务", "开发任务", "开发目标", "自动完成整个", "一条龙")
     safe_merge_terms = ("merge", "合并", "--no-ff", "no-ff", "integration baseline", "integration branch", "集成分支")
     safe_push_terms = ("push", "推送", "推到远程", "远程分支", "origin", "safe push")
+    if _is_ambiguous_development_request(text):
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": LOW_RISK,
+            "auto_continue": False,
+            "operation": "clarification",
+            "operation_type": "CLARIFICATION",
+            "reason": "target_scope_unresolved",
+            "clarification_required": True,
+        }
+    if _is_exploratory_discussion_request(lowered) or _is_explanation_or_inspection_request(lowered):
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": LOW_RISK,
+            "auto_continue": False,
+            "operation": "discussion",
+            "operation_type": DISCUSSION,
+            "reason": "discussion_or_inspection_request_not_development_default",
+        }
     if (
         any(term in lowered for term in live_acceptance_fixture_terms)
         and any(term in lowered for term in bounded_change_terms)
     ) or (any(term in lowered for term in mission_terms) and any(term in lowered for term in bounded_change_terms)):
+        plan = _plan_for_development_request(text)
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
             "risk_level": MEDIUM_RISK,
@@ -273,7 +433,7 @@ def classify_operational_risk(content: str) -> dict:
             "operation_type": AUTONOMOUS_DEVELOPMENT_MISSION,
             "reason": "autonomous_development_mission_requires_staged_founder_approvals",
             "approval_required": True,
-            "plan": BOUNDED_CODE_CHANGE_PLANS[LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE] if any(term in lowered for term in live_acceptance_fixture_terms) else None,
+            "plan": plan,
         }
     if any(term in lowered for term in safe_integration_push_terms):
         return {
@@ -310,6 +470,8 @@ def classify_operational_risk(content: str) -> dict:
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
             "risk_level": HIGH_RISK,
             "auto_continue": False,
+            "operation": "high_risk_operational_request",
+            "operation_type": "HIGH_RISK_OPERATION",
             "reason": "request_crosses_high_risk_operational_boundary",
         }
     if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in codex_bridge_fixture_terms):
@@ -347,6 +509,22 @@ def classify_operational_risk(content: str) -> dict:
             "reason": "bounded_code_change_requires_founder_approval",
             "approval_required": True,
             "plan": plan,
+        }
+    if _is_clear_development_request(lowered):
+        plan = _plan_for_development_request(text)
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": MEDIUM_RISK,
+            "auto_continue": False,
+            "operation": "autonomous_development_mission",
+            "operation_type": AUTONOMOUS_DEVELOPMENT_MISSION,
+            "reason": "clear_bounded_development_request",
+            "approval_required": True,
+            "plan": plan,
+            "routing_decision": {
+                "route": AUTONOMOUS_DEVELOPMENT_MISSION,
+                "reason": "clear bounded development request",
+            },
         }
     if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in safe_checkpoint_fixture_terms):
         plan = BOUNDED_CODE_CHANGE_PLANS[BOUNDED_SAFE_CHECKPOINT_FIXTURE_CHANGE]
@@ -2453,19 +2631,16 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
     mission_id = _mission_id(source_message_id)
     branch_resolution = _resolve_mission_working_branch(founder_request, mission_id, baseline_head, cwd=root)
     working_branch = branch_resolution["working_branch"]
-    lowered_request = (founder_request or "").lower()
-    plan_key = LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE if (
-        "live founder acceptance fixture" in lowered_request
-        or "sino_live_acceptance_ok" in lowered_request
-        or "live acceptance" in lowered_request
-    ) else AUTONOMOUS_MISSION_STATUS_CARD_CHANGE
-    plan = dict(BOUNDED_CODE_CHANGE_PLANS[plan_key])
+    plan = _plan_for_development_request(founder_request)
     live_acceptance_mode = bool(plan.get("live_acceptance_mode"))
+    routing_acceptance_mode = bool(plan.get("routing_acceptance_mode"))
     status_lines = _git_status_short(cwd=root)
     baseline_allowed = baseline_branch == SAFE_INTEGRATION_PUSH_BRANCH or (
         live_acceptance_mode and baseline_branch == "feature/sino-live-development-loop-v1"
+    ) or (
+        routing_acceptance_mode and baseline_branch == "feature/sino-live-development-default-path-v1"
     )
-    if not baseline_allowed or (status_lines and not live_acceptance_mode):
+    if not baseline_allowed or (status_lines and not (live_acceptance_mode or routing_acceptance_mode)):
         mission = {
             "mission_id": mission_id,
             "conversation_id": conversation_id,
@@ -2537,9 +2712,11 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
         "baseline_branch": baseline_branch,
         "baseline_head": baseline_head,
         "allowed_files": list(plan.get("allowed_files") or []),
+        "allowed_directories": list(plan.get("allowed_directories") or []),
         "acceptance_criteria": list(plan.get("acceptance_criteria") or []),
         "verification_plan": [list(argv) for argv in plan.get("verification_commands") or []],
         "live_acceptance_mode": live_acceptance_mode,
+        "routing_acceptance_mode": routing_acceptance_mode,
         "last_completed_step": "MISSION_BRANCH_CREATED",
         "next_required_action": "BOUNDED_CODE_CHANGE_APPROVAL",
         "created_at": started_at,
@@ -2554,7 +2731,7 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
         (
             "我已理解，这是一个 Autonomous Development Mission。\n\n"
             f"工作分支：{working_branch}\n"
-            f"修改范围：{', '.join(mission['allowed_files'])}\n"
+            f"修改范围：{', '.join(mission['allowed_files'] or mission['allowed_directories'])}\n"
             "验证：focused frontend test + frontend build\n\n"
             "需要你批准本次代码修改。批准后 Sino 会自动修改、验证并创建本地 checkpoint；不会自动 push/merge。"
         ),
@@ -4469,6 +4646,22 @@ def handle_operational_conversation_request(
     risk = classify_operational_risk(founder_request)
     if risk.get("work_type") != CONTROLLED_LOCAL_DEVELOPMENT_TASK:
         return {"handled": False, "risk_decision": risk}
+    if risk.get("operation_type") == "CLARIFICATION":
+        _append_assistant_message(
+            conversation_id,
+            "我还需要确认一个关键点：你想修改哪个具体目标，以及期望改成什么结果？明确后我会进入受控开发任务和审批流程。",
+            message_type="clarification",
+            grounding={"operational_runtime": {"status": "clarification_required", "risk_decision": risk}},
+        )
+        return {"handled": True, "risk_decision": risk, "status": "clarification_required"}
+    if risk.get("operation_type") == DISCUSSION:
+        _append_assistant_message(
+            conversation_id,
+            "我们先讨论方案。当前不会创建开发 Mission、审批项或执行任务；等你明确说要修改并给出目标后，我会进入受控开发流程。",
+            message_type="discussion",
+            grounding={"operational_runtime": {"status": "discussion", "risk_decision": risk}},
+        )
+        return {"handled": True, "risk_decision": risk, "status": "discussion"}
     if risk.get("operation_type") == AUTONOMOUS_DEVELOPMENT_MISSION:
         return start_autonomous_development_mission(conversation_id, founder_request, source_message_id)
     if risk.get("risk_level") == HIGH_RISK and risk.get("operation_type") == SAFE_INTEGRATION_PUSH:
