@@ -35,6 +35,42 @@ def _frontend_tests(contract: dict, changed_files: list[str], repo_root: Path) -
     return [path.removeprefix("frontend/") for path in candidates if path.startswith("frontend/")]
 
 
+def _safe_frontend_test_targets(argv: list[str]) -> bool:
+    if argv[:6] != ["npm", "--prefix", "frontend", "test", "--", "--run"]:
+        return False
+    targets = argv[6:]
+    if not targets:
+        return False
+    unsafe_tokens = {"bash", "sh", "zsh", "-c", "eval", "exec", "&&", "||", ";", "|"}
+    for target in targets:
+        if (
+            not isinstance(target, str)
+            or not target
+            or target.startswith("/")
+            or target.startswith("-")
+            or ".." in Path(target).parts
+            or target in unsafe_tokens
+            or "\\" in target
+        ):
+            return False
+    return True
+
+
+def _canonical_frontend_test_commands(package) -> list[list[str]]:
+    context = dict(package.context or {})
+    raw_commands = context.get("verification_commands")
+    if raw_commands is None:
+        raw_commands = context.get("verification_plan")
+    commands: list[list[str]] = []
+    for item in raw_commands or []:
+        if not isinstance(item, list) or not all(isinstance(part, str) for part in item):
+            continue
+        argv = list(item)
+        if _safe_frontend_test_targets(argv):
+            commands.append(argv)
+    return commands
+
+
 def run_post_implementation_pipeline(*, package, attribution: dict, repo_root: Path,
                                      preferred_browser: dict | None = None,
                                      execution_id: str | None = None,
@@ -52,9 +88,20 @@ def run_post_implementation_pipeline(*, package, attribution: dict, repo_root: P
             "failure_reason": "NO_IMPLEMENTATION_EVIDENCE: implementation task produced no task-owned patch",
         }
 
+    canonical_test_commands = _canonical_frontend_test_commands(package)
     tests = _frontend_tests(contract, changed_files, repo_root)
-    emit("tests_started", "testing", "Targeted tests started", {"tests": tests})
-    if frontend_changed and tests:
+    resolved_test_command = canonical_test_commands[0] if canonical_test_commands else (
+        ["npm", "test", "--", "--run", *tests] if tests else []
+    )
+    emit("tests_started", "testing", "Targeted tests started", {
+        "tests": tests,
+        "canonical_commands": canonical_test_commands,
+        "command": resolved_test_command,
+    })
+    if frontend_changed and canonical_test_commands:
+        test_result = _run(canonical_test_commands[0], cwd=repo_root)
+        test_status = PASS if test_result["exit_code"] == 0 else ACCEPTANCE_FAILED
+    elif frontend_changed and tests:
         test_result = _run(["npm", "test", "--", "--run", *tests], cwd=repo_root / "frontend")
         test_status = PASS if test_result["exit_code"] == 0 else ACCEPTANCE_FAILED
     elif frontend_changed:
@@ -98,7 +145,7 @@ def run_post_implementation_pipeline(*, package, attribution: dict, repo_root: P
         return {"status": "FAILED", "stage": "diff_check", "evidence": checks}
 
     visible = dict(contract.get("visible_artifact_contract") or {})
-    if frontend_changed and not visible.get("required"):
+    if frontend_changed and not visible.get("required") and not canonical_test_commands:
         return {"status": "BLOCKED", "stage": "browser", "evidence": checks,
                 "failure_reason": "UI implementation requires a visible artifact contract and browser evidence"}
     if visible.get("required"):

@@ -102,6 +102,13 @@ def build_execution_progress(route: dict) -> dict | None:
     exhausted = resolution.get("resolution_status") == "exhausted"
     if exhausted:
         founder_required = True
+    active_session = bool(session and session.status in {"queued", "executing", "testing"})
+    if active_session and not codex_boundary and not exhausted:
+        # Historical pre-execution blockers remain in route metadata for audit, but
+        # they must not override the current durable execution lifecycle once the
+        # approved execution has entered the worker queue.
+        blocker = None
+        founder_required = False
     terminal = not founder_required and (route.get("execution_status") == "completed" or bool(session and session.status == "completed" and session.commit_hash and not blocker))
     terminal_failure = route.get("execution_status") in {"blocked", "failed"} and bool(blocker)
     acceptance_pending = terminal and dict(route.get("founder_acceptance") or {}).get("status") != "accepted"
@@ -146,6 +153,12 @@ def build_execution_progress(route: dict) -> dict | None:
         title, next_action = "执行器异常 · 正在自愈", "Founder 无需操作"
     elif terminal:
         title, next_action = ("环境健康检查完成" if route.get("health_check_resumed") else "已完成"), "等待 Founder 验收"
+    elif session and session.status == "queued":
+        title, next_action = "排队中", "Sino 正在准备执行"
+    elif session and session.status == "executing":
+        title, next_action = "执行中", "Sino 正在通过 Codex 执行授权范围内的任务"
+    elif session and session.status == "testing":
+        title, next_action = "正在验证", "Sino 正在验证执行结果"
     else:
         titles = {"inspect": "正在检查", "plan": "正在规划", "execution": "正在实施", "scope_verification": "正在核对任务范围", "correcting_scope": "正在纠正任务范围", "fix": "正在修复", "verification": "正在验证", "verify": "正在验证", "learning": "正在沉淀", "closure": "正在关闭", "issue": "正在理解问题"}
         title, next_action = titles.get(phase, "正在自动执行"), "Founder 无需操作"

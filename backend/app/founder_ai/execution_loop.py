@@ -190,6 +190,17 @@ class FounderExecutionLoop:
         append_event(session, "codex_started", status="executing", message="Codex subprocess started", timestamp=session.started_at)
         self.on_status("executing")
         try:
+            contract = dict(package.context.get("standard_task_contract") or {})
+            bounded_change = package.context.get("operation_type") == "BOUNDED_CODE_CHANGE"
+            has_scope = bool(
+                contract.get("implementation_scope")
+                or contract.get("module_boundary")
+                or (bounded_change and (package.context.get("allowed_files") or package.context.get("allowed_directories")))
+            )
+            if bounded_change and not has_scope:
+                session.result = {"scope_verification": {"status": "MISSING_IMPLEMENTATION_SCOPE"}}
+                session.status = "blocked"
+                raise ExecutionScopeBlocked("MISSING_IMPLEMENTATION_SCOPE: bounded code change has no allowed implementation scope")
             codex_started = time.monotonic()
             try:
                 result = self.adapter.execute(package, cwd=cwd)
@@ -223,7 +234,6 @@ class FounderExecutionLoop:
                 session.subprocess_exit_status = result.exit_code
                 raise RuntimeError(result.stderr or "Codex execution failed")
             from .execution_scope import SCOPE_PASS, rollback_scope_mismatch_patch, verify_execution_scope
-            contract = dict(package.context.get("standard_task_contract") or {})
             scope_result = verify_execution_scope(contract=contract, attribution=dict(result.execution_attribution or {}))
             append_event(session, "scope_verification_started", status="scope_verifying", message="Task-owned patch scope verification started")
             append_event(session, "scope_verification_finished", status="scope_passed" if scope_result["status"] == SCOPE_PASS else "scope_mismatch",

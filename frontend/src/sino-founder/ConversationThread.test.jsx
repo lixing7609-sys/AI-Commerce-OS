@@ -430,6 +430,101 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText("不会 deploy")).toBeTruthy();
   });
 
+  it("renders Founder and Sino acknowledgement before the anchored Mission card", () => {
+    const value = {
+      ...snapshot("conv-mission-order", [
+        { message_id: "founder-source", role: "founder", content: "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。" },
+        { message_id: "assistant-ack", role: "assistant", content: "我已理解，这是一个 Autonomous Development Mission。\n\n需要你批准本次代码修改。", message_type: "operational_approval_required", grounding: { mission: { mission_id: "mission-order", source_message_id: "founder-source" } } },
+      ]),
+      sino_brain: {
+        discovery: {
+          autonomous_development_mission_view: {
+            mission_id: "mission-order",
+            source_message_id: "founder-source",
+            acknowledgement_message_id: "assistant-ack",
+            goal: "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。",
+            status: "WAITING_CHANGE_APPROVAL",
+            stage: "WAITING_CHANGE_APPROVAL",
+            stage_label: "等待你批准代码修改",
+            pending_approval: { action_id: "bounded-code-change:mission-order", label: "批准代码修改", risk_level: "MEDIUM" },
+          },
+        },
+      },
+    };
+    const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const founder = container.querySelector('[data-role="founder"]');
+    const assistant = container.querySelector('[data-role="assistant"]');
+    const mission = screen.getByRole("complementary", { name: "Mission Status" });
+    expect(founder.textContent).toContain("SINO_LIVE_ACCEPTANCE_OK");
+    expect(assistant.textContent).toContain("我已理解");
+    expect(Boolean(founder.compareDocumentPosition(assistant) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(assistant.compareDocumentPosition(mission) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(screen.getAllByRole("complementary", { name: "Mission Status" })).toHaveLength(1);
+  });
+
+  it("uses Mission Status as the primary surface and hides duplicate Controlled Runtime for autonomous missions", () => {
+    const value = {
+      ...snapshot("conv-mission-primary-surface", [
+        { message_id: "founder-source", role: "founder", content: "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。" },
+        { message_id: "assistant-ack", role: "assistant", content: "我已理解，这是一个 Autonomous Development Mission。\n\n需要你批准本次代码修改。", message_type: "operational_approval_required", grounding: { mission: { mission_id: "mission-primary-surface", source_message_id: "founder-source" } } },
+      ]),
+      sino_brain: {
+        discovery: {
+          operational_runtime: {
+            status: "approval_required",
+            message: "需要 Founder approval",
+            risk_decision: { risk_level: "MEDIUM" },
+          },
+          autonomous_development_mission_view: {
+            mission_id: "mission-primary-surface",
+            source_message_id: "founder-source",
+            acknowledgement_message_id: "assistant-ack",
+            goal: "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。",
+            status: "WAITING_CHANGE_APPROVAL",
+            stage: "WAITING_CHANGE_APPROVAL",
+            stage_label: "等待你批准代码修改",
+            pending_approval: { action_id: "bounded-code-change:mission-primary-surface", label: "批准代码修改", risk_level: "MEDIUM" },
+          },
+        },
+      },
+    };
+    const { container } = render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const founder = container.querySelector('[data-role="founder"]');
+    const assistant = container.querySelector('[data-role="assistant"]');
+    const mission = screen.getByRole("complementary", { name: "Mission Status" });
+    expect(screen.queryByRole("complementary", { name: "Operational Runtime Status" })).toBeNull();
+    expect(screen.queryByText("Sino Controlled Runtime")).toBeNull();
+    expect(screen.queryByText("approval_required")).toBeNull();
+    expect(screen.getAllByText("等待你批准代码修改").length).toBeGreaterThan(0);
+    expect(Boolean(founder.compareDocumentPosition(assistant) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(assistant.compareDocumentPosition(mission) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  });
+
+  it("keeps Mission card anchored after acknowledgement when Mission state updates", () => {
+    const base = {
+      ...snapshot("conv-mission-order-reload", [
+        { message_id: "founder-source", role: "founder", content: "Live acceptance" },
+        { message_id: "assistant-ack", role: "assistant", content: "我已理解，这是一个 Autonomous Development Mission。", message_type: "operational_approval_required", grounding: { mission: { mission_id: "mission-order-reload", source_message_id: "founder-source" } } },
+      ]),
+      sino_brain: { discovery: { autonomous_development_mission_view: {
+        mission_id: "mission-order-reload",
+        source_message_id: "founder-source",
+        acknowledgement_message_id: "assistant-ack",
+        goal: "Live acceptance",
+        status: "WAITING_CHANGE_APPROVAL",
+        stage: "WAITING_CHANGE_APPROVAL",
+        stage_label: "等待你批准代码修改",
+      } } },
+    };
+    const { container, rerender } = render(<ConversationThread snapshot={base} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    rerender(<ConversationThread snapshot={{ ...base, sino_brain: { discovery: { autonomous_development_mission_view: { ...base.sino_brain.discovery.autonomous_development_mission_view, status: "VERIFYING", stage: "VERIFYING", stage_label: "正在验证" } } } }} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const assistant = container.querySelector('[data-role="assistant"]');
+    const mission = screen.getByRole("complementary", { name: "Mission Status" });
+    expect(screen.getByText("正在验证")).toBeTruthy();
+    expect(Boolean(assistant.compareDocumentPosition(mission) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(screen.getAllByRole("complementary", { name: "Mission Status" })).toHaveLength(1);
+  });
+
   it("shows autonomous mission checkpoint, merge and completed integration result", () => {
     const value = {
       ...snapshot("conv-mission-complete", [{ message_id: "m1", role: "founder", content: "完成一个小型开发目标" }]),
@@ -527,6 +622,56 @@ describe("ConversationThread layout", () => {
     expect(screen.getByRole("region", { name: "Blocked Mission Summary" })).toBeTruthy();
     expect(screen.getByText("REMOTE_STATE_CHANGED")).toBeTruthy();
     expect(screen.getByText("重新确认远程状态后再决定。")).toBeTruthy();
+  });
+
+  it("does not keep generic thinking visible after mission reaches blocked, failed, waiting or completed states", () => {
+    const terminalOrWaitingViews = [
+      { status: "BLOCKED", stage: "BLOCKED", stage_label: "已阻塞", failure_summary: { failure_type: "BRANCH_COLLISION", summary: "工作分支冲突已停止" } },
+      { status: "FAILED", stage: "FAILED", stage_label: "失败", failure_summary: { failure_type: "CODEX_EXECUTION_FAILED", summary: "Codex 执行失败" } },
+      { status: "WAITING_CHANGE_APPROVAL", stage: "WAITING_CHANGE_APPROVAL", stage_label: "等待你批准代码修改", pending_approval: { action_id: "bounded-code-change:mission-waiting", action_type: "BOUNDED_CODE_CHANGE_APPROVAL", label: "批准代码修改", risk_level: "MEDIUM" } },
+      { status: "COMPLETED", stage: "COMPLETED", stage_label: "已完成", completion_summary: { goal: "完成 live acceptance" } },
+    ];
+    for (const missionView of terminalOrWaitingViews) {
+      cleanup();
+      const value = {
+        ...snapshot(`conv-${missionView.status}`, [{ message_id: "m1", role: "founder", content: "Live acceptance" }]),
+        sino_brain: { discovery: { autonomous_development_mission_view: { mission_id: `mission-${missionView.status}`, goal: "Live acceptance", ...missionView } } },
+      };
+      render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} replyPending={false} />);
+      expect(screen.queryByRole("status", { name: "Sino 正在思考" })).toBeNull();
+      expect(screen.getByText(missionView.stage_label)).toBeTruthy();
+    }
+  });
+
+  it("shows normal approval UX after safe branch collision recovery instead of stale branch block copy", () => {
+    const value = {
+      ...snapshot("conv-branch-recovered", [{ message_id: "m1", role: "founder", content: "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。" }]),
+      sino_brain: { discovery: { autonomous_development_mission_view: {
+        mission_id: "mission-recovered",
+        goal: "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。",
+        status: "WAITING_CHANGE_APPROVAL",
+        stage: "WAITING_CHANGE_APPROVAL",
+        stage_label: "等待你批准代码修改",
+        working_branch: "feature/sino-mission-live-founder-acceptance-fixture-9f3a21b8",
+        current_head: "baseline-head",
+        next_required_action: "批准代码修改",
+        pending_approval: {
+          action_id: "bounded-code-change:mission-recovered",
+          action_type: "BOUNDED_CODE_CHANGE_APPROVAL",
+          label: "批准代码修改",
+          risk_level: "MEDIUM",
+          scope: ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"],
+          will_do: ["修改授权文件", "验证", "创建本地 checkpoint"],
+          will_not_do: ["不会 push", "不会 merge", "不会 deploy"],
+        },
+      } } },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} replyPending={false} />);
+    expect(screen.getByText("等待你批准代码修改")).toBeTruthy();
+    expect(screen.getByText("feature/sino-mission-live-founder-acceptance-fixture-9f3a21b8")).toBeTruthy();
+    expect(screen.getByText("frontend/src/sino-founder/live-founder-acceptance-fixture.txt")).toBeTruthy();
+    expect(screen.queryByText(/分支已存在/)).toBeNull();
+    expect(screen.queryByRole("status", { name: "Sino 正在思考" })).toBeNull();
   });
 
   it("keeps operational runtime isolated by conversation snapshot", () => {

@@ -1,7 +1,8 @@
+import { useEffect, useState } from "react";
 import { FounderActionCard } from "./FounderActionCard.jsx";
 import { ContextSourcesDebug } from "./ContextSourcesDebug.jsx";
 import { projectMaturityProjection } from "./projectMaturityProjection.js";
-import { approveFounderObject, approveTaskForExecution, cancelFounderExecution, decideOperationalAction, rejectTaskForExecution, startTaskExecution } from "../services/founderAiApi.js";
+import { approveFounderObject, approveTaskForExecution, cancelFounderExecution, decideOperationalAction, getFounderActionQueue, rejectTaskForExecution, startTaskExecution } from "../services/founderAiApi.js";
 import { acceptFounderTaskResult } from "../services/founderAiApi.js";
 import { decideCodexAuthorization } from "../services/founderAiApi.js";
 import { decideFounderClarification } from "../services/founderAiApi.js";
@@ -86,24 +87,48 @@ export function FounderWorkQueue({ tasks = [], focusedTaskId, conversationId, bu
 
 const UNIFIED_QUEUE_TYPES = ["OBJECT_APPROVAL", "EXECUTION_APPROVAL", "EXECUTION_START", "HIGH_RISK_OPERATIONAL_TASK", "BOUNDED_CODE_CHANGE_APPROVAL", "SAFE_PUSH_APPROVAL", "SAFE_MERGE_APPROVAL", "SAFE_INTEGRATION_PUSH_APPROVAL"];
 
+function mergeFounderActionQueues(...queues) {
+  const merged = new Map();
+  for (const queue of queues) {
+    for (const item of queue || []) {
+      if (!item?.action_id) continue;
+      merged.set(item.action_id, { ...(merged.get(item.action_id) || {}), ...item });
+    }
+  }
+  return Array.from(merged.values());
+}
+
 function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDiscussion }) {
+  const [submittingActionId, setSubmittingActionId] = useState(null);
+  const [resolvedActionId, setResolvedActionId] = useState(null);
   const mvpActions = actions.filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
   if (!mvpActions.length) return null;
-  const complete = async (handler) => {
-    await handler();
-    await onResolved?.();
+  const complete = async (actionId, handler) => {
+    if (submittingActionId) return;
+    setSubmittingActionId(actionId);
+    try {
+      await handler();
+      setResolvedActionId(actionId);
+      await onResolved?.();
+    } finally {
+      setSubmittingActionId(null);
+    }
   };
   return <>
     {mvpActions.map((item) => {
       const type = item.action_type || item.type;
       const risk = item.risk_level || item.risk || "MEDIUM";
+      const isSubmitting = submittingActionId === item.action_id;
+      const isResolved = resolvedActionId === item.action_id;
+      const disabled = busy || Boolean(submittingActionId) || isResolved;
+      const approveLabel = (label) => isSubmitting ? "批准中…" : isResolved ? "已批准，Sino 正在继续…" : label;
       if (type === "OBJECT_APPROVAL") return <article className="sino-founder-action-item" aria-label="Object Approval" key={item.action_id}>
         <span>对象审批 · {risk}</span><h3>{item.title || "批准对象"}</h3><p>{item.summary}</p>
-        <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => approveFounderObject(item.object_id || item.source_id))}>批准对象</button><button type="button" disabled={busy} onClick={onContinueDiscussion}>继续讨论</button></footer>
+        <footer><button type="button" className="is-primary" disabled={disabled} onClick={() => complete(item.action_id, () => approveFounderObject(item.object_id || item.source_id))}>{approveLabel("批准对象")}</button><button type="button" disabled={disabled} onClick={onContinueDiscussion}>继续讨论</button></footer>
       </article>;
       if (type === "EXECUTION_APPROVAL") return <article className="sino-founder-action-item" aria-label="Execution Approval" key={item.action_id}>
         <span>执行审批 · {risk}</span><h3>{item.title || "批准执行"}</h3><p>{item.summary}</p>
-        <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => approveTaskForExecution(item.task_id || item.source_id))}>批准执行</button><button type="button" disabled={busy} onClick={() => complete(() => rejectTaskForExecution(item.task_id || item.source_id))}>拒绝</button><button type="button" disabled={busy} onClick={onContinueDiscussion}>继续讨论</button></footer>
+        <footer><button type="button" className="is-primary" disabled={disabled} onClick={() => complete(item.action_id, () => approveTaskForExecution(item.task_id || item.source_id))}>{approveLabel("批准执行")}</button><button type="button" disabled={disabled} onClick={() => complete(item.action_id, () => rejectTaskForExecution(item.task_id || item.source_id))}>拒绝</button><button type="button" disabled={disabled} onClick={onContinueDiscussion}>继续讨论</button></footer>
       </article>;
       if (type === "HIGH_RISK_OPERATIONAL_TASK") return <article className="sino-founder-action-item" aria-label="High Risk Operational Action" key={item.action_id}>
         <span>高风险操作 · {risk}</span><h3>{item.title || "需要 Founder 确认"}</h3><p>{item.summary}</p>
@@ -124,7 +149,7 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
             {metadata.mission_id ? <div><dt>后续审批</dt><dd>Feature Push、Safe Merge、Integration Push 会分别进入独立 Founder approval。</dd></div> : null}
             <div><dt>不做</dt><dd>{nonGoals.length ? nonGoals.join(" · ") : "不越过授权边界"}</dd></div>
           </dl>
-          <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准修改</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>驳回</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
+          <footer><button type="button" className="is-primary" disabled={disabled} onClick={() => complete(item.action_id, () => decideOperationalAction(item.action_id, "approve"))}>{approveLabel("批准修改")}</button><button type="button" disabled={disabled} onClick={() => complete(item.action_id, () => decideOperationalAction(item.action_id, "reject"))}>驳回</button><button type="button" disabled={disabled} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button>{isResolved ? <span role="status">已批准，Sino 正在继续…</span> : null}</footer>
         </article>;
       }
       if (type === "SAFE_PUSH_APPROVAL") {
@@ -143,7 +168,7 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
             <div><dt>Tags</dt><dd>不会 push tags</dd></div>
             <div><dt>范围</dt><dd>只会把当前分支的已验证本地 commit 正常 push 到同名远程分支；不会 force push，不会 push tags，不会 merge，不会 deploy。</dd></div>
           </dl>
-          <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准推送</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
+          <footer><button type="button" className="is-primary" disabled={disabled} onClick={() => complete(item.action_id, () => decideOperationalAction(item.action_id, "approve"))}>{approveLabel("批准推送")}</button><button type="button" disabled={disabled} onClick={() => complete(item.action_id, () => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={disabled} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
         </article>;
       }
       if (type === "SAFE_MERGE_APPROVAL") {
@@ -165,7 +190,7 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
             <div><dt>Push after merge</dt><dd>NO，不会 push target branch</dd></div>
             <div><dt>方向</dt><dd>source → target；不会 merge main/master/develop，不会 force，不会 deploy。</dd></div>
           </dl>
-          <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准合并</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
+          <footer><button type="button" className="is-primary" disabled={disabled} onClick={() => complete(item.action_id, () => decideOperationalAction(item.action_id, "approve"))}>{approveLabel("批准合并")}</button><button type="button" disabled={disabled} onClick={() => complete(item.action_id, () => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={disabled} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
         </article>;
       }
       if (type === "SAFE_INTEGRATION_PUSH_APPROVAL") {
@@ -187,12 +212,12 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
             <div><dt>Deploy</dt><dd>NO，不会 deploy</dd></div>
             <div><dt>范围</dt><dd>只会把当前已完成本地安全合并的 integration branch 正常 push 到配置的同名远程 integration branch；不会 force push，不会 push tag，不会 deploy，不会 merge main/master/develop。</dd></div>
           </dl>
-          <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "approve"))}>批准推送 Integration</button><button type="button" disabled={busy} onClick={() => complete(() => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={busy} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
+          <footer><button type="button" className="is-primary" disabled={disabled} onClick={() => complete(item.action_id, () => decideOperationalAction(item.action_id, "approve"))}>{approveLabel("批准推送 Integration")}</button><button type="button" disabled={disabled} onClick={() => complete(item.action_id, () => decideOperationalAction(item.action_id, "reject"))}>拒绝</button><button type="button" disabled={disabled} onClick={() => decideOperationalAction(item.action_id, "continue_discussion").then(() => onContinueDiscussion?.())}>继续讨论</button></footer>
         </article>;
       }
       return <article className="sino-founder-action-item" aria-label="Execution Start" key={item.action_id}>
         <span>开始执行 · {risk}</span><h3>{item.title || "开始执行"}</h3><p>{item.summary}</p>
-        <footer><button type="button" className="is-primary" disabled={busy} onClick={() => complete(() => startTaskExecution(item.task_id || item.source_id))}>开始执行</button><button type="button" disabled={busy} onClick={onContinueDiscussion}>稍后 / 继续讨论</button></footer>
+        <footer><button type="button" className="is-primary" disabled={disabled} onClick={() => complete(item.action_id, () => startTaskExecution(item.task_id || item.source_id))}>开始执行</button><button type="button" disabled={disabled} onClick={onContinueDiscussion}>稍后 / 继续讨论</button></footer>
       </article>;
     })}
   </>;
@@ -206,6 +231,28 @@ export function ExecutionCenterEmpty() {
 }
 
 export function SinoBrainContext({ brain, conversationId, contextGroundings, busy, capabilityAction, capabilityAsset, selectedConstitutionWorkItemId, onReviewConstitutionWorkItem, onReviewConstitutionRouting, onConfirmFormalObject, onOpenProject, onCapabilityAction, onConfirmGoal, onForceReview, onStartStrategy, onAdvanceStage, onContinueDiscussion, onReviewPackage, onViewAssets, onNewGoal, onExternalProbeDecision, onImageProbeDecision, onArchitectureDecision, onTaskAccepted, onClarificationResolved, onTaskCandidateResolved, onFounderActionResolved }) {
+  const [canonicalQueueActions, setCanonicalQueueActions] = useState([]);
+  const brainQueueActions = brain?.discovery?.founder_action_queue || [];
+  const autonomousMissionView = brain?.discovery?.autonomous_development_mission_view;
+  const hasAutonomousMission = Boolean(autonomousMissionView?.mission_id);
+  const queueRefreshKey = [
+    conversationId || "",
+    brainQueueActions.map((item) => `${item.action_id}:${item.status}:${item.updated_at || ""}`).join("|"),
+    autonomousMissionView?.pending_approval?.action_id || "",
+    autonomousMissionView?.stage || "",
+    autonomousMissionView?.status || "",
+  ].join("::");
+  useEffect(() => {
+    let active = true;
+    if (!conversationId) {
+      setCanonicalQueueActions([]);
+      return () => { active = false; };
+    }
+    getFounderActionQueue(conversationId)
+      .then((items) => { if (active) setCanonicalQueueActions(Array.isArray(items) ? items : []); })
+      .catch(() => { if (active) setCanonicalQueueActions([]); });
+    return () => { active = false; };
+  }, [conversationId, queueRefreshKey]);
   if (!brain) return null;
   const brief = brain.goal_brief || {};
   const quickFixRoute = brain.discovery?.task_complexity_route;
@@ -214,7 +261,7 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
     || quickFixRoute?.execution_status
     || quickFixRoute?.standard_task_contract?.task_id
     || quickFixRoute?.architecture_proposal?.proposal_id
-    || brain.execution_progress?.task_id
+    || (!hasAutonomousMission && brain.execution_progress?.task_id)
     || brain.discovery?.autonomous_main_loop?.status
   );
   const isQuickFix = quickFixRoute?.classification === "QUICK_FIX" && routeHasTask;
@@ -252,8 +299,26 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
   const executionPackage = brain.discovery?.execution_package;
   const projectLifecycle = brain.project_lifecycle;
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
-  const mvpQueueActions = (brain.discovery?.founder_action_queue || []).filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
+  const mvpQueueActions = mergeFounderActionQueues(brain.discovery?.founder_action_queue || [], canonicalQueueActions).filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
   const conversationTasks = brain.discovery?.conversation_tasks || [];
+  if (hasAutonomousMission) {
+    if (conversationTasks.length > 0 && !mvpQueueActions.length) return <FounderWorkQueue tasks={conversationTasks} focusedTaskId={brain.discovery?.focused_task_id}
+      conversationId={conversationId} busy={busy} onFocused={onTaskCandidateResolved} onCandidateResolved={onTaskCandidateResolved}
+      onContinueDiscussion={onContinueDiscussion} />;
+    return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Execution Center">
+      <header className="sino-work-queue-heading"><div><h2>执行中心</h2></div></header>
+      <section className="sino-task-status-empty" aria-label="Task Status">
+        <header><h2>任务状态</h2></header>
+        <strong>{autonomousMissionView.stage_label || "Mission 进行中"}</strong>
+        <p>{autonomousMissionView.next_step || autonomousMissionView.next_required_action || "Sino 正在推进当前 Mission。"}</p>
+        <small>{mvpQueueActions.length ? "Founder：需要操作" : "Founder：无需操作"}</small>
+      </section>
+      <section className="sino-founder-action-queue" aria-label="Founder Action Queue"><header><h2>需要你处理</h2><span>{mvpQueueActions.length ? `${mvpQueueActions.length} 项待处理` : "暂无需要你处理的事项"}</span></header>
+        <FounderActionQueueItems actions={mvpQueueActions} busy={busy} onResolved={onFounderActionResolved} onContinueDiscussion={onContinueDiscussion} />
+      </section>
+      <details className="sino-task-technical-details"><summary>查看 Mission 技术详情</summary><dl><div><dt>Mission</dt><dd>{autonomousMissionView.mission_id}</dd></div><div><dt>Stage</dt><dd>{autonomousMissionView.stage_label || autonomousMissionView.stage}</dd></div><div><dt>Working Branch</dt><dd>{autonomousMissionView.working_branch || "—"}</dd></div><div><dt>Current HEAD</dt><dd>{autonomousMissionView.current_head || "—"}</dd></div></dl><ContextSourcesDebug groundings={contextGroundings} /></details>
+    </section>;
+  }
   if (conversationTasks.length > 0 && !mvpQueueActions.length) return <FounderWorkQueue tasks={conversationTasks} focusedTaskId={brain.discovery?.focused_task_id}
     conversationId={conversationId} busy={busy} onFocused={onTaskCandidateResolved} onCandidateResolved={onTaskCandidateResolved}
     onContinueDiscussion={onContinueDiscussion} />;

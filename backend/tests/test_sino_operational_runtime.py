@@ -11,7 +11,9 @@ from app.core.conversation.model import ConversationDB
 from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSessionDB
 from app.core.task_asset.model import TaskAssetDB
 from app.founder_ai.codex_adapter import CodexExecutionResult
+from app.founder_ai.task_package import TaskPackageBuilder
 from app.founder_ai import api
+from app.founder_ai import action_queue
 from app.founder_ai import operational_runtime as runtime
 from app.founder_ai import execution_registry
 
@@ -33,7 +35,7 @@ def _runtime(monkeypatch, tmp_path, *, conversation_id="conv-operational"):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
-    for module in (runtime, task_service, secretary_service):
+    for module in (runtime, task_service, secretary_service, action_queue):
         monkeypatch.setattr(module, "SessionLocal", factory)
     monkeypatch.setenv("FOUNDER_EXECUTION_REGISTRY_PATH", str(tmp_path / f"{conversation_id}-registry.json"))
     execution_registry._sessions.clear()
@@ -452,6 +454,9 @@ def test_bounded_code_change_routes_to_codex_and_local_operations_stay_local():
 
 
 def test_codex_package_contains_lineage_boundary_and_prohibitions(tmp_path):
+    fixture = tmp_path / "frontend/src/sino-founder/codex-bridge-e2e-fixture.txt"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text("CODEX_BRIDGE_PENDING\n", encoding="utf-8")
     plan = {
         **runtime.BOUNDED_CODE_CHANGE_PLANS[runtime.BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE],
         "founder_request": "把 Codex Bridge E2E fixture 改成 CODEX_BRIDGE_OK",
@@ -465,19 +470,110 @@ def test_codex_package_contains_lineage_boundary_and_prohibitions(tmp_path):
     }
     package = runtime._codex_execution_package_for_bounded_change(plan, cwd=tmp_path)
     assert package.context["operation_type"] == runtime.BOUNDED_CODE_CHANGE
+    assert package.context["task_mode"] == "IMPLEMENTATION"
     assert package.context["conversation_id"] == "conv-codex"
     assert package.context["mission_id"] == "mission-codex"
     assert package.context["task_id"] == "task-codex"
     assert package.context["execution_id"] == "execution-codex"
     assert package.context["repo_path"] == str(tmp_path)
     assert package.context["allowed_files"] == ["frontend/src/sino-founder/codex-bridge-e2e-fixture.txt"]
+    assert package.context["standard_task_contract"]["implementation_scope"] == ["frontend/src/sino-founder/codex-bridge-e2e-fixture.txt"]
+    assert package.context["standard_task_contract"]["module_boundary"] == []
+    assert package.context["standard_task_contract"]["scope_source"] == "bounded_code_change_allowed_boundary"
+    assert package.context["expected_mutations"] == [{
+        "file": "frontend/src/sino-founder/codex-bridge-e2e-fixture.txt",
+        "before": "CODEX_BRIDGE_PENDING",
+        "after": "CODEX_BRIDGE_OK",
+        "instruction": "Change frontend/src/sino-founder/codex-bridge-e2e-fixture.txt content to CODEX_BRIDGE_OK.",
+        "reason": "Real Codex bridge E2E must produce an observable single-file implementation patch.",
+    }]
     assert package.context["acceptance_criteria"][0] == "Codex Bridge E2E fixture contains CODEX_BRIDGE_OK"
     assert package.context["verification_plan"]
     assert package.context["codex_executor_policy"]["git_commit_allowed"] is False
     assert package.context["codex_executor_policy"]["git_push_allowed"] is False
     assert package.context["codex_executor_policy"]["git_merge_allowed"] is False
     assert package.context["codex_executor_policy"]["deployment_allowed"] is False
+    assert "TASK MODE: IMPLEMENTATION" in package.goal
+    assert "Do not only explain" in package.goal
+    assert any("TASK MODE: IMPLEMENTATION" in item for item in package.constraints)
+    assert any("You must perform the requested code/file change directly" in item for item in package.constraints)
+    assert any("Do not only explain" in item for item in package.constraints)
     assert any("Do not run git add" in item for item in package.constraints)
+
+
+def test_task_package_render_tells_codex_to_implement_expected_mutation(tmp_path):
+    fixture = tmp_path / "frontend/src/sino-founder/live-founder-acceptance-fixture.txt"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text("SINO_LIVE_ACCEPTANCE_PENDING\n", encoding="utf-8")
+    plan = {
+        **runtime.BOUNDED_CODE_CHANGE_PLANS[runtime.LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE],
+        "founder_request": "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。",
+        "conversation_id": "conv-live",
+        "mission_id": "mission-live",
+        "task_id": "task-live",
+        "execution_id": "execution-live",
+    }
+    package = runtime._codex_execution_package_for_bounded_change(plan, cwd=tmp_path)
+    rendered = TaskPackageBuilder().build(package).render()
+    assert "## Execution Mode\nIMPLEMENTATION" in rendered
+    assert "SINO_LIVE_ACCEPTANCE_PENDING" in rendered
+    assert "SINO_LIVE_ACCEPTANCE_OK" in rendered
+    assert "You must perform the requested code/file change directly" in rendered
+    assert "Do not only explain what should be changed" in rendered
+
+
+def test_worker_execution_package_uses_implementation_contract_for_bounded_change(monkeypatch, tmp_path):
+    fixture = tmp_path / "frontend/src/sino-founder/live-founder-acceptance-fixture.txt"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text("SINO_LIVE_ACCEPTANCE_PENDING\n", encoding="utf-8")
+    monkeypatch.setattr(runtime, "repo_root", lambda: tmp_path)
+    task = TaskAssetDB(
+        id="task-live",
+        conversation_id="conv-live",
+        title="更新 Live Founder Acceptance fixture",
+        description="把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。",
+        status="approved",
+        scope={
+            "operational_runtime": {
+                **runtime.BOUNDED_CODE_CHANGE_PLANS[runtime.LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE],
+                "operation_type": runtime.BOUNDED_CODE_CHANGE,
+                "mission_id": "mission-live",
+                "working_branch": "feature/sino-mission-live-founder-acceptance-fixture",
+            }
+        },
+    )
+    package = runtime._execution_package(task=task, execution_id="execution-live", risk={"risk_level": runtime.MEDIUM_RISK, "operation_type": runtime.BOUNDED_CODE_CHANGE})
+    assert package.context["executor"] == runtime.CODEX_EXECUTOR
+    assert package.context["task_mode"] == "IMPLEMENTATION"
+    assert package.context["standard_task_contract"]["implementation_scope"] == ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"]
+    assert package.context["standard_task_contract"]["module_boundary"] == []
+    assert package.context["expected_mutations"][0]["before"] == "SINO_LIVE_ACCEPTANCE_PENDING"
+    assert package.context["expected_mutations"][0]["after"] == "SINO_LIVE_ACCEPTANCE_OK"
+    assert any("Do not only explain" in item for item in package.constraints)
+    assert package.commit_requirement.startswith("Controlled local operation")
+
+
+def test_bounded_code_change_projects_allowed_directories_into_scope_contract(monkeypatch, tmp_path):
+    monkeypatch.setattr(runtime, "repo_root", lambda: tmp_path)
+    task = TaskAssetDB(
+        id="task-dir",
+        conversation_id="conv-dir",
+        title="Update bounded directory",
+        description="Update bounded directory",
+        status="approved",
+        scope={
+            "operational_runtime": {
+                "operation_type": runtime.BOUNDED_CODE_CHANGE,
+                "allowed_files": [],
+                "allowed_directories": ["frontend/src/sino-founder/fixtures"],
+                "acceptance_criteria": ["fixture updated"],
+                "explicit_non_goals": ["no push"],
+            }
+        },
+    )
+    package = runtime._execution_package(task=task, execution_id="execution-dir", risk={"operation_type": runtime.BOUNDED_CODE_CHANGE})
+    assert package.context["allowed_directories"] == ["frontend/src/sino-founder/fixtures"]
+    assert package.context["standard_task_contract"]["module_boundary"] == ["frontend/src/sino-founder/fixtures"]
 
 
 def test_run_bounded_code_change_uses_existing_codex_adapter_and_isolates_sessions(tmp_path):
@@ -586,6 +682,73 @@ def test_valid_codex_modification_proceeds_to_local_verification_and_checkpoint(
         messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-codex-valid").all()
     assert task.result["verification_steps"][0]["shell"] is False
     assert any("受控代码修改完成" in item.content for item in messages)
+
+
+def test_bounded_code_change_switches_to_mission_branch_before_codex(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-codex-branch")
+    product_branch = "feature/sino-live-development-loop-v1"
+    mission_branch = "feature/sino-mission-live-founder-acceptance-fixture-c3446262"
+    state = {"branch": product_branch, "diff_calls": 0}
+    switched = []
+
+    def git_output(args, **_kwargs):
+        if args == ["branch", "--show-current"]:
+            return SimpleNamespace(stdout=f"{state['branch']}\n", stderr="", returncode=0)
+        if args == ["rev-parse", "HEAD"]:
+            return SimpleNamespace(stdout="baseline-head\n", stderr="", returncode=0)
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    def switch_branch(branch, **_kwargs):
+        switched.append(branch)
+        state["branch"] = branch
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    def changed_files(**_kwargs):
+        state["diff_calls"] += 1
+        return set() if state["diff_calls"] == 1 else {"frontend/src/sino-founder/live-founder-acceptance-fixture.txt"}
+
+    def code_runner(plan):
+        assert state["branch"] == mission_branch
+        assert plan["preexisting_dirty_files"] == []
+        return {
+            "executor": "CODEX",
+            "real_executor_used": runtime.CODEX_EXECUTOR,
+            "success": True,
+            "changed_files": ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"],
+            "changed_files_claimed": ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"],
+            "diff_summary": "fixture updated",
+        }
+
+    monkeypatch.setattr(runtime, "_git_output", git_output)
+    monkeypatch.setattr(runtime, "_git_safe_switch_branch", switch_branch)
+    monkeypatch.setattr(runtime, "_git_changed_or_untracked_names", changed_files)
+    monkeypatch.setattr(runtime, "run_verification_commands", lambda commands: [{"argv": commands[0], "shell": False, "success": True, "check_result": "PASS", "passed": 1, "failed": 0, "errors": 0}])
+
+    result = runtime.execute_bounded_code_change(
+        conversation_id="conv-codex-branch",
+        founder_request="把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。",
+        source_message_id="message-codex-branch",
+        action_id="bounded-code-change:message-codex-branch",
+        plan={
+            "title": "更新 Live Founder Acceptance fixture",
+            "working_branch": mission_branch,
+            "allowed_files": ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"],
+            "acceptance_criteria": ["fixture content becomes SINO_LIVE_ACCEPTANCE_OK"],
+            "explicit_non_goals": ["push", "merge", "deploy"],
+            "verification_commands": [["fixture-check"]],
+            "auto_checkpoint": False,
+            "live_acceptance_mode": True,
+        },
+        code_runner=code_runner,
+    )
+
+    assert switched == [mission_branch]
+    assert result["status"] == "completed"
+    assert result["result"]["real_executor_used"] == runtime.CODEX_EXECUTOR
+    assert result["result"]["changed_files"] == ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"]
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+    assert task.scope["execution_start"]["status"] == "completed"
 
 
 def test_bounded_code_change_verification_failure_persists_check_failure(monkeypatch, tmp_path):
@@ -1499,6 +1662,8 @@ def test_autonomous_development_mission_creates_branch_and_waits_for_change_appr
     assert mission["current_stage"] == "WAITING_CHANGE_APPROVAL"
     assert mission["status"] == "WAITING_CHANGE_APPROVAL"
     assert mission["mission_type"] == "CONTROLLED_DEVELOPMENT"
+    assert mission["source_message_id"] == "message-mission"
+    assert mission["acknowledgement_message_id"]
     assert mission["baseline_head"] == "baseline-head"
     assert mission["working_branch"].startswith("feature/sino-mission-")
     assert branch_created[0][0] == mission["working_branch"]
@@ -1506,8 +1671,199 @@ def test_autonomous_development_mission_creates_branch_and_waits_for_change_appr
     assert action["metadata"]["working_branch"] == mission["working_branch"]
     assert action["metadata"]["plan"]["auto_checkpoint"] is True
     assert discovery["autonomous_development_mission_view"]["stage_label"] == "等待你批准代码修改"
+    assert discovery["autonomous_development_mission_view"]["source_message_id"] == "message-mission"
+    assert discovery["autonomous_development_mission_view"]["acknowledgement_message_id"] == mission["acknowledgement_message_id"]
     assert discovery["autonomous_development_mission_view"]["pending_approval"]["action_id"] == action["action_id"]
+    sidebar_actions = action_queue.list_founder_action_queue("conv-mission")
+    assert [item["action_id"] for item in sidebar_actions] == [action["action_id"]]
+    assert sidebar_actions[0]["metadata"]["mission_id"] == mission["mission_id"]
+    with factory() as db:
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-mission").order_by(ConversationMessageDB.created_at.asc()).all()
+    assert [message.id for message in messages][-1] == mission["acknowledgement_message_id"]
+    assert messages[-1].role == "assistant"
+    assert messages[-1].message_type == "operational_approval_required"
     assert len(execution_registry._sessions) == 0
+
+
+def test_mission_waiting_change_approval_queue_exists_before_natural_language_approval(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-queue-now")
+    _prepare_mission_start(monkeypatch)
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-mission-queue-now",
+        founder_request=MISSION_REQUEST,
+        source_message_id="message-mission-queue-now",
+    )
+    mission, discovery = _latest_mission(factory, "conv-mission-queue-now")
+    action = _pending_action(discovery, runtime.BOUNDED_CODE_CHANGE_QUEUE_TYPE)
+    sidebar_actions = action_queue.list_founder_action_queue("conv-mission-queue-now")
+    assert mission["current_stage"] == "WAITING_CHANGE_APPROVAL"
+    assert action["action_id"] == result["action_id"]
+    assert sidebar_actions[0]["action_id"] == action["action_id"]
+    assert discovery["autonomous_development_mission_view"]["pending_approval"]["action_id"] == action["action_id"]
+
+
+def test_same_mission_retry_reuses_existing_working_branch_without_duplicate_creation(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-retry")
+    mission_id = runtime._mission_id("message-mission-retry")
+    base_branch = runtime._mission_branch_name(MISSION_REQUEST, mission_id)
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-mission-retry").one()
+        state.discovery = {"autonomous_development_missions": {mission_id: {
+            "mission_id": mission_id,
+            "conversation_id": "conv-mission-retry",
+            "founder_request": MISSION_REQUEST,
+            "status": "WAITING_CHANGE_APPROVAL",
+            "current_stage": "WAITING_CHANGE_APPROVAL",
+            "working_branch": base_branch,
+        }}}
+        db.commit()
+    branch_created = _prepare_mission_start(monkeypatch)
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch == base_branch)
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: "baseline-head" if branch == base_branch else None)
+    monkeypatch.setattr(runtime, "_branch_unique_commit_count", lambda branch, baseline_head, **_kwargs: 0)
+    result = runtime.start_autonomous_development_mission("conv-mission-retry", MISSION_REQUEST, "message-mission-retry")
+    mission, discovery = _latest_mission(factory, "conv-mission-retry")
+    assert result["status"] == "approval_required"
+    assert mission["working_branch"] == base_branch
+    assert mission["branch_resolution"]["strategy"] == "same_mission_retry_reuse"
+    assert branch_created == []
+    assert len([item for item in discovery.get("founder_action_queue", []) if item.get("action_type") == runtime.BOUNDED_CODE_CHANGE_QUEUE_TYPE]) == 1
+
+
+def test_new_mission_same_request_gets_unique_branch_and_queue_when_previous_branch_exists(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-collision")
+    mission_id = runtime._mission_id("message-mission-collision")
+    base_branch = runtime._mission_branch_name(MISSION_REQUEST, mission_id)
+    branch_created = _prepare_mission_start(monkeypatch)
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch == base_branch)
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: "baseline-head" if branch == base_branch else None)
+    monkeypatch.setattr(runtime, "_branch_unique_commit_count", lambda branch, baseline_head, **_kwargs: 0)
+    result = runtime.start_autonomous_development_mission("conv-mission-collision", MISSION_REQUEST, "message-mission-collision")
+    mission, discovery = _latest_mission(factory, "conv-mission-collision")
+    action = _pending_action(discovery, runtime.BOUNDED_CODE_CHANGE_QUEUE_TYPE)
+    assert result["status"] == "approval_required"
+    assert mission["working_branch"].startswith(f"{base_branch}-")
+    assert mission["branch_resolution"]["strategy"] == "stale_empty_branch_unique_successor"
+    assert branch_created[0][0] == mission["working_branch"]
+    assert action["metadata"]["mission_id"] == mission["mission_id"]
+    assert [item["action_id"] for item in action_queue.list_founder_action_queue("conv-mission-collision")] == [action["action_id"]]
+
+
+def test_active_mission_branch_collision_gets_unique_branch_without_deleting_active_branch(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-active-collision")
+    with factory() as db:
+        db.add(ConversationDB(id="conv-active-branch-owner", system_id="founder_ai", title="Active"))
+        db.add(SinoBrainSessionDB(conversation_id="conv-active-branch-owner", discovery={}))
+        db.commit()
+    mission_id = runtime._mission_id("message-mission-active-collision")
+    base_branch = runtime._mission_branch_name(MISSION_REQUEST, mission_id)
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-active-branch-owner").one()
+        state.discovery = {"autonomous_development_missions": {"mission-active-owner": {
+            "mission_id": "mission-active-owner",
+            "conversation_id": "conv-active-branch-owner",
+            "status": "WAITING_CHANGE_APPROVAL",
+            "current_stage": "WAITING_CHANGE_APPROVAL",
+            "working_branch": base_branch,
+        }}}
+        db.commit()
+    branch_created = _prepare_mission_start(monkeypatch)
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch == base_branch)
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: "baseline-head" if branch == base_branch else None)
+    monkeypatch.setattr(runtime, "_branch_unique_commit_count", lambda branch, baseline_head, **_kwargs: 0)
+    runtime.start_autonomous_development_mission("conv-mission-active-collision", MISSION_REQUEST, "message-mission-active-collision")
+    mission, _discovery = _latest_mission(factory, "conv-mission-active-collision")
+    assert mission["working_branch"].startswith(f"{base_branch}-")
+    assert mission["branch_resolution"]["strategy"] == "unique_successor"
+    assert mission["branch_resolution"]["active_mission"]["mission_id"] == "mission-active-owner"
+    assert branch_created[0][0] == mission["working_branch"]
+
+
+@pytest.mark.parametrize(
+    ("branch_head", "unique_commits"),
+    [("baseline-head", 2), ("different-head", 0)],
+)
+def test_existing_branch_with_history_or_mismatched_head_gets_unique_successor(monkeypatch, tmp_path, branch_head, unique_commits):
+    _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-history-collision")
+    mission_id = runtime._mission_id("message-mission-history-collision")
+    base_branch = runtime._mission_branch_name(MISSION_REQUEST, mission_id)
+    _prepare_mission_start(monkeypatch)
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch == base_branch)
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: branch_head if branch == base_branch else None)
+    monkeypatch.setattr(runtime, "_branch_unique_commit_count", lambda branch, baseline_head, **_kwargs: unique_commits)
+    resolution = runtime._resolve_mission_working_branch(MISSION_REQUEST, mission_id, "baseline-head", cwd=runtime.repo_root())
+    assert resolution["working_branch"].startswith(f"{base_branch}-")
+    assert resolution["strategy"] == "unique_successor"
+    assert resolution["existing_branch_head"] == branch_head
+    assert resolution["existing_branch_unique_commits"] == unique_commits
+
+
+def test_mission_natural_language_approval_resolves_existing_action_without_duplicate(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-existing-approval")
+    _prepare_mission_start(monkeypatch)
+    request = "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。"
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-mission-existing-approval",
+        founder_request=request,
+        source_message_id="message-mission-existing-approval",
+    )
+    assert len(action_queue.list_founder_action_queue("conv-mission-existing-approval")) == 1
+    monkeypatch.setattr(runtime, "execute_bounded_code_change", lambda **_kwargs: {
+        "handled": True,
+        "status": "completed",
+        "result": {
+            "operation_type": runtime.BOUNDED_CODE_CHANGE,
+            "success": True,
+            "live_acceptance_mode": True,
+            "changed_files": ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"],
+            "boundary_check": "PASS",
+            "check_result": "PASS",
+            "verification_steps": [{"success": True, "check_result": "PASS", "passed": 1, "failed": 0, "errors": 0}],
+        },
+    })
+    approved = runtime.decide_operational_action_by_type(result["action_id"], "approve")
+    with factory() as db:
+        discovery = dict(db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-mission-existing-approval").one().discovery or {})
+    matching = [item for item in discovery.get("founder_action_queue", []) if item.get("action_id") == result["action_id"]]
+    assert approved["status"] == "completed"
+    assert len(matching) == 1
+    assert matching[0]["status"] == "approved"
+    assert action_queue.list_founder_action_queue("conv-mission-existing-approval") == []
+
+
+def test_conversation_approval_shortcut_resolves_existing_action_instead_of_creating_task(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-shortcut")
+    _prepare_mission_start(monkeypatch)
+    mission_request = "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。"
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-mission-shortcut",
+        founder_request=mission_request,
+        source_message_id="message-mission-shortcut",
+    )
+    monkeypatch.setattr(runtime, "execute_bounded_code_change", lambda **_kwargs: {
+        "handled": True,
+        "status": "completed",
+        "result": {
+            "operation_type": runtime.BOUNDED_CODE_CHANGE,
+            "success": True,
+            "live_acceptance_mode": True,
+            "changed_files": ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"],
+            "boundary_check": "PASS",
+            "check_result": "PASS",
+            "verification_steps": [{"success": True, "check_result": "PASS", "passed": 1, "failed": 0, "errors": 0}],
+        },
+    })
+    snapshot = api.discuss_with_sino(
+        "conv-mission-shortcut",
+        api.DiscussionMessageIn(content="批准", client_message_id="client-shortcut-approval"),
+    )
+    mission, discovery = _latest_mission(factory, "conv-mission-shortcut")
+    matching = [item for item in discovery.get("founder_action_queue", []) if item.get("action_id") == result["action_id"]]
+    assert mission["current_stage"] == "COMPLETED"
+    assert len(matching) == 1
+    assert matching[0]["status"] == "approved"
+    assert action_queue.list_founder_action_queue("conv-mission-shortcut") == []
+    assert snapshot["sino_brain"]["discovery"]["autonomous_development_mission"]["current_stage"] == "COMPLETED"
 
 
 def test_mission_continue_discussion_keeps_waiting(monkeypatch, tmp_path):
@@ -1524,6 +1880,45 @@ def test_mission_continue_discussion_keeps_waiting(monkeypatch, tmp_path):
     assert continued["status"] == "pending"
     assert mission["current_stage"] == "WAITING_CHANGE_APPROVAL"
     assert action["status"] == "pending"
+
+
+def test_live_founder_acceptance_request_creates_mission_and_stops_after_verification(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-live-acceptance")
+    _prepare_mission_start(monkeypatch)
+    request = "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。"
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-live-acceptance",
+        founder_request=request,
+        source_message_id="message-live-acceptance",
+    )
+    mission, discovery = _latest_mission(factory, "conv-live-acceptance")
+    action = _pending_action(discovery, runtime.BOUNDED_CODE_CHANGE_QUEUE_TYPE)
+    assert result["status"] == "approval_required"
+    assert result["mission_id"] == mission["mission_id"]
+    assert mission["live_acceptance_mode"] is True
+    assert action["metadata"]["plan"]["allowed_files"] == ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"]
+    assert action["metadata"]["plan"]["auto_checkpoint"] is False
+
+    monkeypatch.setattr(runtime, "execute_bounded_code_change", lambda **_kwargs: {
+        "handled": True,
+        "status": "completed",
+        "result": {
+            "operation_type": runtime.BOUNDED_CODE_CHANGE,
+            "success": True,
+            "live_acceptance_mode": True,
+            "changed_files": ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"],
+            "boundary_check": "PASS",
+            "check_result": "PASS",
+            "verification_steps": [{"success": True, "check_result": "PASS", "passed": 1, "failed": 0, "errors": 0}],
+        },
+    })
+    approved = runtime.decide_operational_action_by_type(result["action_id"], "approve")
+    mission, discovery = _latest_mission(factory, "conv-live-acceptance")
+    assert approved["status"] == "completed"
+    assert mission["current_stage"] == "COMPLETED"
+    assert mission["last_completed_step"] == "VERIFYING"
+    assert mission["live_acceptance_result"]["checkpoint_intentionally_not_requested"] is True
+    assert not [item for item in discovery.get("founder_action_queue", []) if item.get("action_type") == runtime.SAFE_PUSH_QUEUE_TYPE]
 
 
 def test_mission_change_approval_auto_generates_safe_push_without_manual_next(monkeypatch, tmp_path):
@@ -1562,6 +1957,7 @@ def test_mission_change_approval_auto_generates_safe_push_without_manual_next(mo
     assert mission["next_required_action"] == "SAFE_PUSH_APPROVAL"
     assert push_action["metadata"]["mission_id"] == mission["mission_id"]
     assert push_action["metadata"]["mission_stage"] == "WAITING_FEATURE_PUSH_APPROVAL"
+    assert [item["action_id"] for item in action_queue.list_founder_action_queue("conv-mission-chain")] == [push_action["action_id"]]
 
 
 def test_mission_approval_chain_reaches_completed_without_manual_next(monkeypatch, tmp_path):
@@ -1589,6 +1985,7 @@ def test_mission_approval_chain_reaches_completed_without_manual_next(monkeypatc
     runtime.decide_operational_action_by_type(push_action["action_id"], "approve")
     mission, discovery = _latest_mission(factory, "conv-mission-complete")
     merge_action = _pending_action(discovery, runtime.SAFE_MERGE_QUEUE_TYPE)
+    assert [item["action_id"] for item in action_queue.list_founder_action_queue("conv-mission-complete")] == [merge_action["action_id"]]
 
     monkeypatch.setattr(runtime, "execute_safe_merge", lambda **_kwargs: {
         "status": "completed",
@@ -1598,6 +1995,7 @@ def test_mission_approval_chain_reaches_completed_without_manual_next(monkeypatc
     runtime.decide_operational_action_by_type(merge_action["action_id"], "approve")
     mission, discovery = _latest_mission(factory, "conv-mission-complete")
     integration_push_action = _pending_action(discovery, runtime.SAFE_INTEGRATION_PUSH_QUEUE_TYPE)
+    assert [item["action_id"] for item in action_queue.list_founder_action_queue("conv-mission-complete")] == [integration_push_action["action_id"]]
 
     monkeypatch.setattr(runtime, "execute_safe_integration_push", lambda **_kwargs: {
         "status": "completed",
