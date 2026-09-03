@@ -107,6 +107,34 @@ describe("ConversationThread layout", () => {
     expect(Boolean(assistant.compareDocumentPosition(runtimeCard) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
   });
 
+  it("keeps an ungrounded Controlled Runtime with its source turn after later replies arrive", () => {
+    const value = {
+      ...snapshot("conv-operational-source-turn", [
+        { message_id: "founder-runtime", role: "founder", content: "检查当前工程状态" },
+        { message_id: "assistant-runtime", role: "assistant", content: "检查已完成。" },
+        { message_id: "founder-follow-up", role: "founder", content: "顺便解释一下结果" },
+        { message_id: "assistant-follow-up", role: "assistant", content: "这里是结果说明。" },
+      ]),
+      sino_brain: {
+        discovery: {
+          operational_runtime: {
+            status: "completed",
+            source_message_id: "founder-runtime",
+            operation_type: "REPO_INSPECTION",
+            result: { result: { branch: "feature/test", head: "head-test", working_tree_clean: true } },
+          },
+        },
+      },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const sourceReply = screen.getByText("检查已完成。").closest(".sino-message-group");
+    const laterReply = screen.getByText("这里是结果说明。").closest(".sino-message-group");
+    const runtimeCard = screen.getByRole("complementary", { name: "Operational Runtime Status" });
+    expect(sourceReply.contains(runtimeCard)).toBe(true);
+    expect(laterReply.contains(runtimeCard)).toBe(false);
+    expect(Boolean(runtimeCard.compareDocumentPosition(laterReply) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  });
+
   it("does not expose raw approval_required or SAFE MERGE for read-only runtime snapshots", () => {
     const value = {
       ...snapshot("conv-readonly-runtime", [
