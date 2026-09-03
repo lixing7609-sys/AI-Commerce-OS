@@ -24,6 +24,18 @@ from app.founder_ai.sino_memory import SinoMemoryRepository
 
 logger = logging.getLogger(__name__)
 TERMINAL_EXECUTION_STATES = {"completed", "failed", "blocked", "cancelled", "canceled"}
+WORKER_MANAGED_OPERATION_TYPES = {"BOUNDED_CODE_CHANGE"}
+
+
+def _package_operation_type(package) -> str | None:
+    return str(dict(package.context or {}).get("operation_type") or "").strip() or None
+
+
+def _is_worker_managed_execution(package) -> bool:
+    operation_type = _package_operation_type(package)
+    if operation_type is None:
+        return True
+    return operation_type in WORKER_MANAGED_OPERATION_TYPES
 
 
 def _now() -> datetime:
@@ -463,6 +475,13 @@ class ExecutionWorker:
             logger.info("Ignoring duplicate terminal execution callback execution_id=%s status=%s",
                         execution_id, session.status)
             return session
+        if not _is_worker_managed_execution(package):
+            logger.info(
+                "Ignoring deterministic local operation in generic execution worker execution_id=%s operation_type=%s",
+                execution_id,
+                _package_operation_type(package),
+            )
+            return session
         try:
             session.worker_id = "sino-execution-worker"
             from app.founder_ai.execution_state import runtime_revision
@@ -651,7 +670,7 @@ class ExecutionWorker:
                     append_event(session, "execution_resumed", status="queued", message="Runtime revision restored the same execution", metadata={"scope_reconciled": safely_rolled_back_scope_block, "pipeline_recovered": recoverable_pipeline_stall})
                     save_execution_session(session, package)
                     continue
-            if session.status in {"approved", "queued"} and package.execution_allowed:
+            if session.status in {"approved", "queued"} and package.execution_allowed and _is_worker_managed_execution(package):
                 queued_at = _parse_time(session.queued_at)
                 item = self.queue.enqueue(session.id, created_at=queued_at)
                 session.status = "queued"
