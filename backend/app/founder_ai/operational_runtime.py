@@ -1766,7 +1766,17 @@ def _validate_safe_merge_preconditions(approved_request: dict, current: dict, *,
     if current.get("source_head") != approved_request.get("source_head"):
         return _safe_merge_failure("SOURCE_HEAD_CHANGED", "source HEAD changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
     if current.get("target_head") != approved_request.get("target_head_before"):
-        return _safe_merge_failure("TARGET_HEAD_CHANGED", "target HEAD changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
+        summary = (
+            "Integration baseline changed after Mission verification; "
+            "candidate merge revalidation is required before local Safe Merge."
+        ) if local_checkpointed_source else "target HEAD changed after approval"
+        return _safe_merge_failure(
+            "TARGET_BASELINE_DRIFT" if local_checkpointed_source else "TARGET_HEAD_CHANGED",
+            summary,
+            started_at=started_at,
+            approval_action_id=action_id,
+            preflight=current,
+        )
     if current.get("source_branch") != approved_request.get("source_branch") or current.get("target_branch") != approved_request.get("target_branch"):
         return _safe_merge_failure("SAFE_MERGE_PRECONDITION_CHANGED", "source or target branch changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
     if not local_checkpointed_source and (current.get("source_remote_head") != approved_request.get("source_remote_head") or current.get("source_head") != current.get("source_remote_head") or current.get("source_ahead_remote") or current.get("source_behind_remote")):
@@ -2349,7 +2359,7 @@ def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> E
         verification=list(operational.get("acceptance_criteria") or ["Return controlled local execution result."]),
         commit_requirement="Controlled local operation; do not modify files unless the allowlisted operation explicitly requires it.",
         approval_required=False,
-        execution_allowed=True,
+        execution_allowed=operation_type == BOUNDED_CODE_CHANGE,
     )
 
 

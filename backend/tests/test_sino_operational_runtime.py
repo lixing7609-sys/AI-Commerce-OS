@@ -14,6 +14,7 @@ from app.founder_ai.codex_adapter import CodexExecutionResult
 from app.founder_ai.task_package import TaskPackageBuilder
 from app.founder_ai import api
 from app.founder_ai import action_queue
+from app.founder_ai import execution_worker
 from app.founder_ai import operational_runtime as runtime
 from app.founder_ai import execution_registry
 
@@ -1282,6 +1283,22 @@ def test_safe_merge_preconditions_block_policy_sync_evidence_and_conflict():
     assert conflict["conflict_files"] == ["app.py"]
 
 
+def test_safe_merge_target_drift_is_explicit_for_checkpointed_mission_source():
+    approved = _safe_merge_request(
+        source_head="checkpoint-head",
+        target_head="baseline-a",
+        target_head_before="baseline-a",
+        checkpoint_head="checkpoint-head",
+        source_checkpoint_head="checkpoint-head",
+        source_verification_status="PASS",
+        allow_unpushed_source_after_checkpoint=True,
+    )
+    current = _safe_merge_request(source_head="checkpoint-head", target_head="baseline-b", target_head_before="baseline-b")
+    failure = runtime._validate_safe_merge_preconditions(approved, current, started_at="now", action_id="safe-merge:mission")
+    assert failure["failure_type"] == "TARGET_BASELINE_DRIFT"
+    assert "candidate merge revalidation" in failure["summary"]
+
+
 def test_safe_merge_blocks_dirty_staged_untracked_and_repo_state():
     base = _safe_merge_request()
     assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(working_tree_clean=False, status_short=[" M a.txt"]), started_at="now", action_id="safe-merge:1")["failure_type"] == "WORKING_TREE_NOT_CLEAN"
@@ -1400,6 +1417,13 @@ def test_safe_merge_approval_executes_switch_and_no_ff_merge(monkeypatch, tmp_pa
         messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-safe-merge-approve").all()
     assert task.result["operation_type"] == "SAFE_MERGE"
     assert task.result["merge_commit_head"] == "merge-head"
+    execution_record = execution_registry.get_execution_session(approved["execution_id"])
+    assert execution_record is not None
+    execution, package = execution_record
+    assert execution.executor == "LOCAL_EXECUTOR"
+    assert package.context["operation_type"] == runtime.SAFE_MERGE
+    assert package.execution_allowed is False
+    assert execution_worker._is_worker_managed_execution(package) is False
     assert any("本地安全合并完成" in item.content for item in messages)
 
 
