@@ -1290,6 +1290,42 @@ def test_safe_merge_blocks_dirty_staged_untracked_and_repo_state():
     assert runtime._validate_safe_merge_preconditions(base, _safe_merge_request(state_blocker="repository_in_merge_state"), started_at="now", action_id="safe-merge:1")["failure_type"] == "REPO_OPERATION_IN_PROGRESS"
 
 
+def test_safe_merge_allows_local_checkpointed_mission_source_without_remote_push():
+    approved = _safe_merge_request(
+        source_head="checkpoint-head",
+        source_remote_head=None,
+        source_ahead_remote=0,
+        source_behind_remote=0,
+        source_safe_push_status="NOT_REQUIRED_FOR_LOCAL_MISSION_MERGE",
+        pushed_remote_head=None,
+        source_pushed=False,
+        source_verified=False,
+        checkpoint_head="checkpoint-head",
+        source_checkpoint_head="checkpoint-head",
+        source_verification_status="PASS",
+        allow_unpushed_source_after_checkpoint=True,
+    )
+    current = _safe_merge_request(
+        source_head="checkpoint-head",
+        source_remote_head=None,
+        source_ahead_remote=0,
+        source_behind_remote=0,
+        source_safe_push_status="MISSING",
+        pushed_remote_head=None,
+        source_pushed=False,
+        source_verified=False,
+        checkpoint_head=None,
+    )
+    assert runtime._validate_safe_merge_preconditions(approved, current, started_at="now", action_id="safe-merge:mission") is None
+
+
+def test_safe_merge_still_requires_remote_sync_without_mission_checkpoint_evidence():
+    approved = _safe_merge_request(source_head="checkpoint-head", source_remote_head=None, source_pushed=False, source_verified=False)
+    current = _safe_merge_request(source_head="checkpoint-head", source_remote_head=None, source_pushed=False, source_verified=False)
+    failure = runtime._validate_safe_merge_preconditions(approved, current, started_at="now", action_id="safe-merge:plain")
+    assert failure["failure_type"] == "SOURCE_REMOTE_NOT_SYNCED"
+
+
 def test_safe_merge_argv_uses_shell_false_and_no_squash_rebase_or_push(monkeypatch, tmp_path):
     calls = []
 
@@ -1588,19 +1624,21 @@ def test_safe_integration_push_already_up_to_date_and_duplicate_are_idempotent(m
 def _prepare_mission_start(monkeypatch, *, branch_created=None, baseline_branch="feature/foundation-reset-integration"):
     branch_created = branch_created if branch_created is not None else []
     monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: [])
-    monkeypatch.setattr(runtime, "_git_branch_exists", lambda _branch, **_kwargs: False)
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch == runtime.SAFE_MERGE_TARGET_BRANCH)
 
     def git_output(args, **_kwargs):
         if args == ["branch", "--show-current"]:
             return SimpleNamespace(returncode=0, stdout=f"{baseline_branch}\n", stderr="")
+        if args == ["rev-parse", runtime.SAFE_MERGE_TARGET_BRANCH]:
+            return SimpleNamespace(returncode=0, stdout="baseline-head\n", stderr="")
         if args == ["rev-parse", "HEAD"]:
             return SimpleNamespace(returncode=0, stdout="baseline-head\n", stderr="")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(runtime, "_git_output", git_output)
 
-    def create_branch(branch, *, cwd, timeout=30):
-        branch_created.append((branch, cwd, timeout))
+    def create_branch(branch, *, cwd, start_point=None, timeout=30):
+        branch_created.append((branch, cwd, start_point, timeout))
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(runtime, "_git_safe_create_branch", create_branch)
@@ -1740,8 +1778,10 @@ def test_autonomous_development_mission_creates_branch_and_waits_for_change_appr
     assert mission["source_message_id"] == "message-mission"
     assert mission["acknowledgement_message_id"]
     assert mission["baseline_head"] == "baseline-head"
+    assert mission["baseline_branch"] == runtime.SAFE_MERGE_TARGET_BRANCH
     assert mission["working_branch"].startswith("feature/sino-mission-")
     assert branch_created[0][0] == mission["working_branch"]
+    assert branch_created[0][2] == runtime.SAFE_MERGE_TARGET_BRANCH
     assert action["metadata"]["mission_id"] == mission["mission_id"]
     assert action["metadata"]["working_branch"] == mission["working_branch"]
     assert action["metadata"]["plan"]["auto_checkpoint"] is True
@@ -1758,6 +1798,59 @@ def test_autonomous_development_mission_creates_branch_and_waits_for_change_appr
     assert messages[-1].role == "assistant"
     assert messages[-1].message_type == "operational_approval_required"
     assert len(execution_registry._sessions) == 0
+
+
+def test_new_mission_baseline_uses_configured_integration_not_current_shell_branch(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-baseline")
+    branch_created = _prepare_mission_start(monkeypatch, baseline_branch="feature/sino-old-mission")
+    result = runtime.start_autonomous_development_mission("conv-mission-baseline", MISSION_REQUEST, "message-mission-baseline")
+    mission, _discovery = _latest_mission(factory, "conv-mission-baseline")
+    assert result["status"] == "approval_required"
+    assert mission["baseline_branch"] == runtime.SAFE_MERGE_TARGET_BRANCH
+    assert mission["baseline_head"] == "baseline-head"
+    assert mission["working_branch"] != "feature/sino-old-mission"
+    assert branch_created[0][2] == runtime.SAFE_MERGE_TARGET_BRANCH
+
+
+def test_previous_unintegrated_mission_defers_new_development_and_surfaces_merge_guidance(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-next")
+    with factory() as db:
+        db.add(ConversationDB(id="conv-previous-unintegrated", system_id="founder_ai", title="Previous"))
+        db.add(SinoBrainSessionDB(conversation_id="conv-previous-unintegrated", discovery={
+            "autonomous_development_missions": {
+                "mission-prev": {
+                    "mission_id": "mission-prev",
+                    "conversation_id": "conv-previous-unintegrated",
+                    "status": "WAITING_MERGE_APPROVAL",
+                    "current_stage": "WAITING_MERGE_APPROVAL",
+                    "working_branch": "feature/sino-mission-prev",
+                    "baseline_branch": runtime.SAFE_MERGE_TARGET_BRANCH,
+                    "merge_action_id": "safe-merge:mission-prev:safe-merge",
+                    "updated_at": "2026-09-03T00:00:00+00:00",
+                }
+            }
+        }))
+        db.commit()
+    monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: [" M frontend/src/sino-founder/ConversationThread.jsx"])
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch == runtime.SAFE_MERGE_TARGET_BRANCH)
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: "baseline-head" if branch == runtime.SAFE_MERGE_TARGET_BRANCH else None)
+
+    def git_output(args, **_kwargs):
+        if args == ["branch", "--show-current"]:
+            return SimpleNamespace(returncode=0, stdout="feature/sino-mission-prev\n", stderr="")
+        if args == ["rev-parse", runtime.SAFE_MERGE_TARGET_BRANCH]:
+            return SimpleNamespace(returncode=0, stdout="baseline-head\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime, "_git_output", git_output)
+    monkeypatch.setattr(runtime, "_git_safe_create_branch", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("new branch must not be created before previous mission is integrated")))
+    result = runtime.start_autonomous_development_mission("conv-mission-next", MISSION_REQUEST, "message-mission-next")
+    mission, _discovery = _latest_mission(factory, "conv-mission-next")
+    assert result["status"] == "blocked"
+    assert mission["failure_type"] == "PREVIOUS_MISSION_NOT_INTEGRATED"
+    assert mission["baseline_branch"] == runtime.SAFE_MERGE_TARGET_BRANCH
+    assert mission["previous_mission_id"] == "mission-prev"
+    assert mission["previous_merge_action_id"] == "safe-merge:mission-prev:safe-merge"
 
 
 @pytest.mark.parametrize(
@@ -1837,18 +1930,25 @@ def test_clear_development_requires_approval_and_auto_resume_preserves_codex_sco
                 "scope_check": {"expected_scope": ["frontend/src/sino-founder"]},
                 "check_result": "PASS",
                 "verification_steps": [{"success": True, "check_result": "PASS", "passed": 1, "failed": 0, "errors": 0}],
-                "checkpoint": {"new_head": "checkpoint-head", "commit_message": "fix: default path", "commit_file_count": 1, "working_tree_clean_after": True},
+                "checkpoint": {"success": True, "new_head": "checkpoint-head", "commit_message": "fix: default path", "commit_file_count": 1, "working_tree_clean_after": True},
             },
         }
 
     monkeypatch.setattr(runtime, "execute_bounded_code_change", execute_change)
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: _safe_merge_request(
+        source_branch="feature/sino-mission-status-sync",
+        source_head="checkpoint-head",
+        checkpoint_head="checkpoint-head",
+    ))
     approved = runtime.decide_operational_action_by_type(result["action_id"], "approve")
     mission, discovery = _latest_mission(factory, "conv-default-auto-resume")
     assert approved["status"] == "completed"
     assert captured["operation_type"] == runtime.BOUNDED_CODE_CHANGE
-    assert mission["current_stage"] == "WAITING_FEATURE_PUSH_APPROVAL"
+    assert mission["current_stage"] == "WAITING_MERGE_APPROVAL"
     assert mission["checkpoint_head"] == "checkpoint-head"
-    assert _pending_action(discovery, runtime.SAFE_PUSH_QUEUE_TYPE)["metadata"]["mission_id"] == mission["mission_id"]
+    merge_action = _pending_action(discovery, runtime.SAFE_MERGE_QUEUE_TYPE)
+    assert merge_action["metadata"]["mission_id"] == mission["mission_id"]
+    assert merge_action["metadata"]["merge_request"]["allow_unpushed_source_after_checkpoint"] is True
 
 
 @pytest.mark.parametrize(
@@ -1984,8 +2084,8 @@ def test_same_mission_retry_reuses_existing_working_branch_without_duplicate_cre
         }}}
         db.commit()
     branch_created = _prepare_mission_start(monkeypatch)
-    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch == base_branch)
-    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: "baseline-head" if branch == base_branch else None)
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch in {base_branch, runtime.SAFE_MERGE_TARGET_BRANCH})
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: "baseline-head" if branch in {base_branch, runtime.SAFE_MERGE_TARGET_BRANCH} else None)
     monkeypatch.setattr(runtime, "_branch_unique_commit_count", lambda branch, baseline_head, **_kwargs: 0)
     result = runtime.start_autonomous_development_mission("conv-mission-retry", MISSION_REQUEST, "message-mission-retry")
     mission, discovery = _latest_mission(factory, "conv-mission-retry")
@@ -2001,8 +2101,8 @@ def test_new_mission_same_request_gets_unique_branch_and_queue_when_previous_bra
     mission_id = runtime._mission_id("message-mission-collision")
     base_branch = runtime._mission_branch_name(MISSION_REQUEST, mission_id)
     branch_created = _prepare_mission_start(monkeypatch)
-    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch == base_branch)
-    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: "baseline-head" if branch == base_branch else None)
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch in {base_branch, runtime.SAFE_MERGE_TARGET_BRANCH})
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: "baseline-head" if branch in {base_branch, runtime.SAFE_MERGE_TARGET_BRANCH} else None)
     monkeypatch.setattr(runtime, "_branch_unique_commit_count", lambda branch, baseline_head, **_kwargs: 0)
     result = runtime.start_autonomous_development_mission("conv-mission-collision", MISSION_REQUEST, "message-mission-collision")
     mission, discovery = _latest_mission(factory, "conv-mission-collision")
@@ -2034,8 +2134,8 @@ def test_active_mission_branch_collision_gets_unique_branch_without_deleting_act
         }}}
         db.commit()
     branch_created = _prepare_mission_start(monkeypatch)
-    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch == base_branch)
-    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: "baseline-head" if branch == base_branch else None)
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch in {base_branch, runtime.SAFE_MERGE_TARGET_BRANCH})
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: "baseline-head" if branch in {base_branch, runtime.SAFE_MERGE_TARGET_BRANCH} else None)
     monkeypatch.setattr(runtime, "_branch_unique_commit_count", lambda branch, baseline_head, **_kwargs: 0)
     runtime.start_autonomous_development_mission("conv-mission-active-collision", MISSION_REQUEST, "message-mission-active-collision")
     mission, _discovery = _latest_mission(factory, "conv-mission-active-collision")
@@ -2054,8 +2154,8 @@ def test_existing_branch_with_history_or_mismatched_head_gets_unique_successor(m
     mission_id = runtime._mission_id("message-mission-history-collision")
     base_branch = runtime._mission_branch_name(MISSION_REQUEST, mission_id)
     _prepare_mission_start(monkeypatch)
-    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch == base_branch)
-    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: branch_head if branch == base_branch else None)
+    monkeypatch.setattr(runtime, "_git_branch_exists", lambda branch, **_kwargs: branch in {base_branch, runtime.SAFE_MERGE_TARGET_BRANCH})
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda branch, **_kwargs: branch_head if branch == base_branch else ("baseline-head" if branch == runtime.SAFE_MERGE_TARGET_BRANCH else None))
     monkeypatch.setattr(runtime, "_branch_unique_commit_count", lambda branch, baseline_head, **_kwargs: unique_commits)
     resolution = runtime._resolve_mission_working_branch(MISSION_REQUEST, mission_id, "baseline-head", cwd=runtime.repo_root())
     assert resolution["working_branch"].startswith(f"{base_branch}-")
@@ -2187,7 +2287,7 @@ def test_live_founder_acceptance_request_creates_mission_and_stops_after_verific
     assert not [item for item in discovery.get("founder_action_queue", []) if item.get("action_type") == runtime.SAFE_PUSH_QUEUE_TYPE]
 
 
-def test_mission_change_approval_auto_generates_safe_push_without_manual_next(monkeypatch, tmp_path):
+def test_mission_change_approval_auto_generates_safe_merge_without_manual_next(monkeypatch, tmp_path):
     factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-mission-chain")
     _prepare_mission_start(monkeypatch)
     result = runtime.handle_operational_conversation_request(
@@ -2206,24 +2306,24 @@ def test_mission_change_approval_auto_generates_safe_push_without_manual_next(mo
             "verification_steps": [{"success": True, "check_result": "PASS"}],
         },
     })
-    monkeypatch.setattr(runtime, "_safe_push_preflight", lambda **_kwargs: _safe_push_request(
-        local_branch="feature/sino-mission-test",
-        remote_branch="feature/sino-mission-test",
-        local_head="checkpoint-head",
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: _safe_merge_request(
+        source_branch="feature/sino-mission-test",
+        source_head="checkpoint-head",
         checkpoint_head="checkpoint-head",
-        remote_branch_head=None,
-        ahead_count=1,
     ))
     approved = runtime.decide_operational_action_by_type(result["action_id"], "approve")
     mission, discovery = _latest_mission(factory, "conv-mission-chain")
-    push_action = _pending_action(discovery, runtime.SAFE_PUSH_QUEUE_TYPE)
+    merge_action = _pending_action(discovery, runtime.SAFE_MERGE_QUEUE_TYPE)
     assert approved["status"] == "completed"
-    assert mission["current_stage"] == "WAITING_FEATURE_PUSH_APPROVAL"
+    assert mission["current_stage"] == "WAITING_MERGE_APPROVAL"
     assert mission["checkpoint_head"] == "checkpoint-head"
-    assert mission["next_required_action"] == "SAFE_PUSH_APPROVAL"
-    assert push_action["metadata"]["mission_id"] == mission["mission_id"]
-    assert push_action["metadata"]["mission_stage"] == "WAITING_FEATURE_PUSH_APPROVAL"
-    assert [item["action_id"] for item in action_queue.list_founder_action_queue("conv-mission-chain")] == [push_action["action_id"]]
+    assert mission["next_required_action"] == "SAFE_MERGE_APPROVAL"
+    assert merge_action["metadata"]["mission_id"] == mission["mission_id"]
+    assert merge_action["metadata"]["mission_stage"] == "WAITING_MERGE_APPROVAL"
+    assert merge_action["metadata"]["merge_request"]["source_branch"] == mission["working_branch"]
+    assert merge_action["metadata"]["merge_request"]["target_branch"] == runtime.SAFE_MERGE_TARGET_BRANCH
+    assert merge_action["metadata"]["merge_request"]["allow_unpushed_source_after_checkpoint"] is True
+    assert [item["action_id"] for item in action_queue.list_founder_action_queue("conv-mission-chain")] == [merge_action["action_id"]]
 
 
 def test_mission_approval_chain_reaches_completed_without_manual_next(monkeypatch, tmp_path):
@@ -2238,17 +2338,8 @@ def test_mission_approval_chain_reaches_completed_without_manual_next(monkeypatc
         "status": "completed",
         "result": {"operation_type": runtime.BOUNDED_CODE_CHANGE, "success": True, "checkpoint": {"success": True, "new_head": "checkpoint-head"}},
     })
-    monkeypatch.setattr(runtime, "_safe_push_preflight", lambda **_kwargs: _safe_push_request(local_branch="feature/sino-mission-complete", remote_branch="feature/sino-mission-complete", local_head="checkpoint-head", checkpoint_head="checkpoint-head"))
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: _safe_merge_request(source_branch="feature/sino-mission-complete", source_head="checkpoint-head", checkpoint_head="checkpoint-head"))
     runtime.decide_operational_action_by_type(result["action_id"], "approve")
-    mission, discovery = _latest_mission(factory, "conv-mission-complete")
-    push_action = _pending_action(discovery, runtime.SAFE_PUSH_QUEUE_TYPE)
-
-    monkeypatch.setattr(runtime, "execute_safe_push", lambda **_kwargs: {
-        "status": "completed",
-        "result": {"operation_type": runtime.SAFE_PUSH, "success": True, "local_branch": mission["working_branch"], "local_head": "checkpoint-head", "new_remote_head": "checkpoint-head", "push_performed": True},
-    })
-    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: _safe_merge_request(source_branch=mission["working_branch"], source_head="checkpoint-head", source_remote_head="checkpoint-head", checkpoint_head="checkpoint-head"))
-    runtime.decide_operational_action_by_type(push_action["action_id"], "approve")
     mission, discovery = _latest_mission(factory, "conv-mission-complete")
     merge_action = _pending_action(discovery, runtime.SAFE_MERGE_QUEUE_TYPE)
     assert [item["action_id"] for item in action_queue.list_founder_action_queue("conv-mission-complete")] == [merge_action["action_id"]]
@@ -2257,24 +2348,88 @@ def test_mission_approval_chain_reaches_completed_without_manual_next(monkeypatc
         "status": "completed",
         "result": {"operation_type": runtime.SAFE_MERGE, "success": True, "source_branch": mission["working_branch"], "source_head": "checkpoint-head", "merge_commit_head": "merge-head", "merge_parent_count": 2, "push_performed": False},
     })
-    monkeypatch.setattr(runtime, "_safe_integration_push_preflight", lambda **_kwargs: _safe_integration_push_request(integration_head="merge-head", local_head="merge-head", checkpoint_head="merge-head"))
     runtime.decide_operational_action_by_type(merge_action["action_id"], "approve")
-    mission, discovery = _latest_mission(factory, "conv-mission-complete")
-    integration_push_action = _pending_action(discovery, runtime.SAFE_INTEGRATION_PUSH_QUEUE_TYPE)
-    assert [item["action_id"] for item in action_queue.list_founder_action_queue("conv-mission-complete")] == [integration_push_action["action_id"]]
-
-    monkeypatch.setattr(runtime, "execute_safe_integration_push", lambda **_kwargs: {
-        "status": "completed",
-        "result": {"operation_type": runtime.SAFE_INTEGRATION_PUSH, "success": True, "integration_head": "merge-head", "remote_head_after": "merge-head", "push_performed": True},
-    })
-    runtime.decide_operational_action_by_type(integration_push_action["action_id"], "approve")
     mission, discovery = _latest_mission(factory, "conv-mission-complete")
     with factory() as db:
         messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-mission-complete").all()
     assert mission["status"] == "COMPLETED"
     assert mission["current_stage"] == "COMPLETED"
     assert mission["final_integration_head"] == "merge-head"
-    assert any("开发任务已完成并进入 integration baseline" in item.content for item in messages)
+    assert mission["remote_integration_push_required"] is True
+    assert any("开发任务已完成并合并回本地 integration baseline" in item.content for item in messages)
+
+
+def test_isolated_lifecycle_regression_returns_next_mission_to_integration_baseline(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-lifecycle-merge")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        return runtime.subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True, check=True)
+
+    git("init")
+    git("config", "user.email", "sino@example.test")
+    git("config", "user.name", "Sino Test")
+    (repo / "fixture.txt").write_text("PENDING\n")
+    git("add", "fixture.txt")
+    git("commit", "-m", "baseline")
+    git("branch", "-M", runtime.SAFE_MERGE_TARGET_BRANCH)
+    baseline_head = runtime._git_rev_parse(runtime.SAFE_MERGE_TARGET_BRANCH, cwd=repo)
+
+    mission_branch = "feature/sino-mission-isolated-lifecycle"
+    created = runtime._git_safe_create_branch(mission_branch, cwd=repo, start_point=runtime.SAFE_MERGE_TARGET_BRANCH)
+    assert created.returncode == 0
+    (repo / "fixture.txt").write_text("OK\n")
+    checkpoint = runtime.safe_checkpoint_commit(
+        plan={"allowed_files": ["fixture.txt"], "allowed_directories": [], "commit_message": "fix(sino-runtime): apply bounded code change"},
+        execution_result={
+            "status": "completed",
+            "operation_type": runtime.BOUNDED_CODE_CHANGE,
+            "success": True,
+            "boundary_check": "PASS",
+            "check_result": "PASS",
+            "unexpected_files": [],
+            "changed_files": ["fixture.txt"],
+            "verification_steps": [{"argv": ["test"], "success": True, "check_result": "PASS"}],
+        },
+        task_id="task-lifecycle",
+        execution_id="execution-lifecycle",
+        action_id="bounded-code-change:lifecycle",
+        cwd=repo,
+    )
+    assert checkpoint["success"] is True
+
+    mission = {"mission_id": "mission-lifecycle", "working_branch": mission_branch, "baseline_branch": runtime.SAFE_MERGE_TARGET_BRANCH}
+    merge_request = runtime._mission_safe_merge_request(mission, checkpoint, cwd=repo)
+    assert merge_request["target_branch"] == runtime.SAFE_MERGE_TARGET_BRANCH
+    assert merge_request["source_branch"] == mission_branch
+    assert merge_request["allow_unpushed_source_after_checkpoint"] is True
+    assert merge_request["source_checkpoint_head"] == checkpoint["new_head"]
+
+    result = runtime.execute_safe_merge(
+        conversation_id="conv-lifecycle-merge",
+        founder_request="合并 lifecycle fixture",
+        source_message_id="message-lifecycle-merge",
+        action_id="safe-merge:lifecycle",
+        merge_request=merge_request,
+        cwd=repo,
+    )
+    assert result["status"] == "completed"
+    assert runtime._git_output(["branch", "--show-current"], cwd=repo).stdout.strip() == runtime.SAFE_MERGE_TARGET_BRANCH
+    assert runtime._git_status_short(cwd=repo) == []
+    assert runtime._git_is_ancestor(checkpoint["new_head"], runtime._git_rev_parse(runtime.SAFE_MERGE_TARGET_BRANCH, cwd=repo), cwd=repo)
+
+    with factory() as db:
+        db.add(ConversationDB(id="conv-lifecycle-next", system_id="founder_ai", title="Next"))
+        db.add(SinoBrainSessionDB(conversation_id="conv-lifecycle-next", discovery={}))
+        db.commit()
+    monkeypatch.setattr(runtime, "repo_root", lambda: repo)
+    next_result = runtime.start_autonomous_development_mission("conv-lifecycle-next", MISSION_REQUEST, "message-lifecycle-next")
+    next_mission, _discovery = _latest_mission(factory, "conv-lifecycle-next")
+    assert next_result["status"] == "approval_required"
+    assert next_mission["baseline_branch"] == runtime.SAFE_MERGE_TARGET_BRANCH
+    assert next_mission["baseline_head"] == runtime._git_rev_parse(runtime.SAFE_MERGE_TARGET_BRANCH, cwd=repo)
+    assert next_mission["working_branch"] != mission_branch
 
 
 def test_mission_failure_stops_before_push_and_is_persisted(monkeypatch, tmp_path):
