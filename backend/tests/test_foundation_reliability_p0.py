@@ -60,10 +60,46 @@ def test_standard_progress_uses_canonical_phase_and_backend_time():
     session = _session("testing")
     progress = build_execution_progress(_route(session.id, step="verification", status="blocked", blocker={"type": "standard_task_verification_failed"}))
     assert progress["current_phase"] == "verification"
-    assert progress["current_action"] == "验证受阻"
+    assert progress["current_action"] == "正在验证"
     assert progress["progress_percent"] == 80
     assert progress["elapsed_seconds"] >= 0
     assert progress["founder_action_required"] is False
+
+
+@pytest.mark.parametrize(
+    ("session_status", "expected_action", "expected_status"),
+    [
+        ("queued", "排队中", "queued"),
+        ("executing", "执行中", "executing"),
+        ("testing", "正在验证", "testing"),
+    ],
+)
+def test_active_execution_overrides_historical_blocker(session_status, expected_action, expected_status):
+    session = _session(session_status)
+    progress = build_execution_progress(_route(
+        session.id,
+        step="verification",
+        status="blocked",
+        blocker={"type": "standard_task_verification_failed", "reason": "historical blocker"},
+    ))
+    assert progress["current_action"] == expected_action
+    assert progress["execution_status"] == expected_status
+    assert progress["verification_status"] == "PENDING"
+    assert progress["technical_blocker"] is None
+
+
+def test_terminal_blocked_execution_projects_blocker():
+    session = _session("blocked")
+    progress = build_execution_progress(_route(
+        session.id,
+        step="verification",
+        status="blocked",
+        blocker={"type": "standard_task_verification_failed", "reason": "terminal blocker"},
+    ))
+    assert progress["current_action"] == "验证受阻"
+    assert progress["execution_status"] == "blocked"
+    assert progress["verification_status"] == "BLOCKED"
+    assert progress["technical_blocker"]["reason"] == "terminal blocker"
 
 
 @pytest.mark.parametrize("terminal_status,canonical_stage", [("failed", "FAILED"), ("blocked", "BLOCKED")])

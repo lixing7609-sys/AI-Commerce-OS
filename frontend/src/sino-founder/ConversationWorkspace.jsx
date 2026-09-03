@@ -25,6 +25,23 @@ import { ExecutionCenterEmpty, SinoBrainContext } from "./SinoBrainContext.jsx";
 import { founderConversationTitle } from "./founderConversationTitle.js";
 
 export const shouldPollWorkspace = (status) => ["queued", "executing", "testing", "verification", "self_healing", "retrying", "stalled", "waiting_for_founder_authorization", "cancelling"].includes(status);
+export const shouldPollMission = (status) => [
+  "PLANNING",
+  "WAITING_CHANGE_APPROVAL",
+  "CHANGING",
+  "VERIFYING",
+  "CHECKPOINTING",
+  "WAITING_FEATURE_PUSH_APPROVAL",
+  "PUSHING_FEATURE",
+  "WAITING_MERGE_APPROVAL",
+  "MERGING",
+  "WAITING_INTEGRATION_PUSH_APPROVAL",
+  "PUSHING_INTEGRATION",
+  "queued",
+  "running",
+  "approved",
+  "in_progress",
+].includes(status);
 
 const CONVERSATION_KEY = "sino-founder-active-conversation";
 const EXECUTION_KEY = "sino-founder-active-execution";
@@ -366,6 +383,10 @@ export function ConversationWorkspace() {
     return () => window.clearInterval(timer);
   }, [executionId, execution?.status]);
   const liveProgressStatus = snapshot?.sino_brain?.execution_progress?.execution_status;
+  const missionView = snapshot?.sino_brain?.discovery?.autonomous_development_mission_view;
+  const missionPollStatus = missionView?.stage || missionView?.status;
+  const operationalPollStatus = snapshot?.sino_brain?.discovery?.operational_runtime?.status;
+  const shouldPollLiveWorkspace = shouldPollWorkspace(liveProgressStatus) || shouldPollMission(missionPollStatus) || shouldPollMission(operationalPollStatus);
   useEffect(() => {
     if (pendingClientMessageId && pendingClientMessageIdRef.current === pendingClientMessageId && hasConversationReply(snapshot, pendingClientMessageId)) {
       pendingClientMessageIdRef.current = null; setReplyPending(false); setPendingClientMessageId(null); setStreamingReply(null);
@@ -389,14 +410,14 @@ export function ConversationWorkspace() {
     return () => { active = false; window.clearInterval(timer); };
   }, [conversationId, pendingClientMessageId, view]);
   useEffect(() => {
-    if (!conversationId || view !== "conversation" || !shouldPollWorkspace(liveProgressStatus)) return undefined;
+    if (!conversationId || view !== "conversation" || !shouldPollLiveWorkspace) return undefined;
     let active = true;
     const timer = window.setInterval(async () => {
       try { const restored = await getConversationWorkspace(conversationId); if (active && conversationResponseMatches(conversationId, activeConversationRef.current, restored)) setSnapshot((current) => mergeConversationSnapshot(current, restored)); }
       catch { /* retain the last canonical projection while one poll fails */ }
     }, 1500);
     return () => { active = false; window.clearInterval(timer); };
-  }, [conversationId, liveProgressStatus, view]);
+  }, [conversationId, liveProgressStatus, missionPollStatus, operationalPollStatus, shouldPollLiveWorkspace, view]);
   useEffect(() => { const normalized = normalizeFounderView(view); if (normalized !== view) setView(normalized); }, [view]);
 
   const hasExecutionContext = Boolean(goal?.goal_id || execution?.task_asset_id || executionId);
@@ -455,7 +476,7 @@ export function ConversationWorkspace() {
       if (!conversationResponseMatches(id, activeConversationRef.current, nextSnapshot)) return;
       const activatedSnapshot = isFirstSubmit ? { ...nextSnapshot, conversation: { ...nextSnapshot.conversation, ...activatedConversation } } : nextSnapshot;
       if (isFirstSubmit) remember(WORKSPACE_VIEW_KEY, "conversation");
-      setSnapshot((current) => mergeConversationSnapshot(current, activatedSnapshot)); setDiscussionMessage(""); setSinoHealthy(true); rememberConversation(id, founderConversationTitle(activatedSnapshot.conversation?.title || activatedSnapshot.messages?.[0]?.content || submittedContent, activatedSnapshot.sino_brain?.goal_brief?.goal), activatedSnapshot.conversation);
+      setSnapshot((current) => mergeConversationSnapshot(current, activatedSnapshot)); setDiscussionMessage(""); setReplyPending(false); setPendingClientMessageId(null); setStreamingReply(null); pendingClientMessageIdRef.current = null; setSinoHealthy(true); rememberConversation(id, founderConversationTitle(activatedSnapshot.conversation?.title || activatedSnapshot.messages?.[0]?.content || submittedContent, activatedSnapshot.sino_brain?.goal_brief?.goal), activatedSnapshot.conversation);
       setPendingAttachments((items) => { items.forEach((item) => URL.revokeObjectURL(item.preview)); return []; });
       if (activeProjectId) {
         try { setProjectIntelligence(await getProjectIntelligence(activeProjectId)); }
@@ -480,10 +501,10 @@ export function ConversationWorkspace() {
           if (persisted.conversation?.conversation_type === "TEMPORARY_CONVERSATION") {
             setConversationId(null); activeConversationRef.current = null; remember(CONVERSATION_KEY, null); setSnapshot(null); setDiscussionMessage(content); setView("conversation");
           } else {
-            setSnapshot(persisted); setDiscussionMessage(""); setView("conversation");
+            setSnapshot(persisted); setDiscussionMessage(""); setReplyPending(false); setPendingClientMessageId(null); setStreamingReply(null); pendingClientMessageIdRef.current = null; setView("conversation");
             rememberConversation(id, founderConversationTitle(persisted.conversation?.title, persisted.sino_brain?.goal_brief?.goal), persisted.conversation);
           }
-        } catch { setConversationId(null); activeConversationRef.current = null; remember(CONVERSATION_KEY, null); setDiscussionMessage(content); setView("conversation"); }
+        } catch { setConversationId(null); activeConversationRef.current = null; remember(CONVERSATION_KEY, null); setDiscussionMessage(content); setReplyPending(false); setPendingClientMessageId(null); setStreamingReply(null); pendingClientMessageIdRef.current = null; setView("conversation"); }
       }
     }
     finally { sendLockRef.current = false; setConversationInitializing(false); setBusy(false); }

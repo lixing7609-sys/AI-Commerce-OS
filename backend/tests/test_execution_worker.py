@@ -2,6 +2,13 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.core.conversation.model import ConversationDB
+from app.core.conversation_first.model import ConversationMessageDB
+from app.database.base import Base
 import app.founder_ai.execution_worker as worker_module
 from app.founder_ai.codex_adapter import CodexExecutionResult
 from app.founder_ai.execution_events import append_event
@@ -222,6 +229,45 @@ def test_worker_generates_decision_learning_and_execution_memory(monkeypatch, tm
 
     assert [kind for kind, _ in memories.calls] == ["decision", "learning", "execution_result"]
     assert session.memory == {"decision": "memory-decision", "learning": "memory-learning", "execution_result": "memory-execution_result"}
+
+
+def test_bounded_change_terminal_failure_returns_same_conversation(monkeypatch, tmp_path: Path):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr("app.database.db.SessionLocal", factory)
+    with factory() as db:
+        db.add(ConversationDB(id="conv-worker-terminal", system_id="founder_ai", title="Terminal"))
+        db.commit()
+    draft = replace(generate_task_asset_draft("change fixture"), conversation_id="conv-worker-terminal")
+    package = replace(
+        build_execution_package(draft),
+        context={
+            "operation_type": "BOUNDED_CODE_CHANGE",
+            "standard_task_contract": {"implementation_scope": ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"]},
+        },
+    )
+    session = ExecutionSession("execution-terminal", "task-terminal", "package-terminal", status="failed")
+    session.failure_reason = "targeted tests were not executed"
+    session.result = {
+        "changed_files": ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"],
+        "post_implementation_verification": {
+            "status": "BLOCKED",
+            "stage": "tests",
+            "failure_reason": "targeted tests were not executed",
+            "evidence": [{"verifier": "targeted_tests", "status": "UNAVAILABLE"}],
+        },
+    }
+
+    worker_module._append_execution_terminal_message(session, package)
+    worker_module._append_execution_terminal_message(session, package)
+
+    with factory() as db:
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-worker-terminal").all()
+    assert len(messages) == 1
+    assert "受控代码修改在 tests 阶段失败" in messages[0].content
+    assert "测试：UNAVAILABLE" in messages[0].content
+    assert messages[0].grounding["execution_id"] == "execution-terminal"
 
 
 def _run_failed_worker(monkeypatch, tmp_path, *, adapter=None, artifact_writer=None, memory_repository=None):

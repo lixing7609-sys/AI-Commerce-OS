@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 import subprocess
 import time
+from types import SimpleNamespace
 from typing import Callable
 
 from sqlalchemy import select
@@ -48,6 +49,7 @@ AUTONOMOUS_DEVELOPMENT_MISSION = "AUTONOMOUS_DEVELOPMENT_MISSION"
 LOCAL_EXECUTOR = "LOCAL_EXECUTOR"
 CODEX_EXECUTOR = "CODEX_EXECUTOR"
 BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE = "codex_bridge_e2e_fixture_change"
+LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE = "live_founder_acceptance_fixture_change"
 SAFE_PUSH_ALLOWED_REMOTES = {"origin"}
 SAFE_PUSH_PROTECTED_BRANCHES = {"main", "master", "develop", "feature/foundation-reset-integration"}
 SAFE_MERGE_TARGET_BRANCH = "feature/foundation-reset-integration"
@@ -171,6 +173,13 @@ BOUNDED_CODE_CHANGE_PLANS: dict[str, dict] = {
         "title": "更新 Codex Bridge E2E fixture",
         "allowed_files": ["frontend/src/sino-founder/codex-bridge-e2e-fixture.txt"],
         "allowed_directories": [],
+        "expected_mutations": [
+            {
+                "file": "frontend/src/sino-founder/codex-bridge-e2e-fixture.txt",
+                "after": "CODEX_BRIDGE_OK",
+                "reason": "Real Codex bridge E2E must produce an observable single-file implementation patch.",
+            }
+        ],
         "acceptance_criteria": [
             "Codex Bridge E2E fixture contains CODEX_BRIDGE_OK",
             "ConversationThread focused frontend test passes",
@@ -187,6 +196,36 @@ BOUNDED_CODE_CHANGE_PLANS: dict[str, dict] = {
         ],
         "auto_checkpoint": False,
         "rollback_boundary": "Only the Codex Bridge E2E fixture file may be changed.",
+    },
+    LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE: {
+        "plan_id": LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE,
+        "title": "更新 Live Founder Acceptance fixture",
+        "allowed_files": ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"],
+        "allowed_directories": [],
+        "expected_mutations": [
+            {
+                "file": "frontend/src/sino-founder/live-founder-acceptance-fixture.txt",
+                "after": "SINO_LIVE_ACCEPTANCE_OK",
+                "reason": "Founder live acceptance must produce an observable single-file implementation patch.",
+            }
+        ],
+        "acceptance_criteria": [
+            "Live Founder Acceptance fixture contains SINO_LIVE_ACCEPTANCE_OK",
+            "ConversationThread focused frontend test passes",
+        ],
+        "explicit_non_goals": [
+            "Do not modify product runtime logic through the live acceptance task",
+            "Do not modify DB schema or production data",
+            "Do not install packages",
+            "Do not git add, commit, push, merge, rebase, tag, deploy, or delete files",
+            "Do not modify secrets or files outside the repository",
+        ],
+        "verification_commands": [
+            ["npm", "--prefix", "frontend", "test", "--", "--run", "src/sino-founder/ConversationThread.test.jsx"],
+        ],
+        "auto_checkpoint": False,
+        "live_acceptance_mode": True,
+        "rollback_boundary": "Only the Live Founder Acceptance fixture file may be changed.",
     },
 }
 
@@ -217,11 +256,15 @@ def classify_operational_risk(content: str) -> dict:
     bounded_status_title_terms = ("sino controlled runtime", "sino operational runtime", "状态卡标题", "runtime 状态卡")
     safe_checkpoint_fixture_terms = ("safe checkpoint e2e fixture", "safe checkpoint", "checkpoint 验证", "本地 checkpoint")
     codex_bridge_fixture_terms = ("codex bridge e2e fixture", "codex_bridge_ok", "codex bridge")
+    live_acceptance_fixture_terms = ("live founder acceptance fixture", "sino_live_acceptance_ok", "live acceptance")
     safe_integration_push_terms = ("integration push", "integration branch push", "推送 integration", "推送集成", "推送 integration branch", "推送集成分支")
     mission_terms = ("autonomous development mission", "完整开发任务", "开发任务", "开发目标", "自动完成整个", "一条龙")
     safe_merge_terms = ("merge", "合并", "--no-ff", "no-ff", "integration baseline", "integration branch", "集成分支")
     safe_push_terms = ("push", "推送", "推到远程", "远程分支", "origin", "safe push")
-    if any(term in lowered for term in mission_terms) and any(term in lowered for term in bounded_change_terms):
+    if (
+        any(term in lowered for term in live_acceptance_fixture_terms)
+        and any(term in lowered for term in bounded_change_terms)
+    ) or (any(term in lowered for term in mission_terms) and any(term in lowered for term in bounded_change_terms)):
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
             "risk_level": MEDIUM_RISK,
@@ -230,6 +273,7 @@ def classify_operational_risk(content: str) -> dict:
             "operation_type": AUTONOMOUS_DEVELOPMENT_MISSION,
             "reason": "autonomous_development_mission_requires_staged_founder_approvals",
             "approval_required": True,
+            "plan": BOUNDED_CODE_CHANGE_PLANS[LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE] if any(term in lowered for term in live_acceptance_fixture_terms) else None,
         }
     if any(term in lowered for term in safe_integration_push_terms):
         return {
@@ -270,6 +314,18 @@ def classify_operational_risk(content: str) -> dict:
         }
     if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in codex_bridge_fixture_terms):
         plan = BOUNDED_CODE_CHANGE_PLANS[BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE]
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": MEDIUM_RISK,
+            "auto_continue": False,
+            "operation": "bounded_code_change",
+            "operation_type": BOUNDED_CODE_CHANGE,
+            "reason": "bounded_code_change_requires_founder_approval",
+            "approval_required": True,
+            "plan": plan,
+        }
+    if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in live_acceptance_fixture_terms):
+        plan = BOUNDED_CODE_CHANGE_PLANS[LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE]
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
             "risk_level": MEDIUM_RISK,
@@ -499,6 +555,19 @@ def _git_status_short(*, cwd: Path) -> list[str]:
     return [line for line in output.splitlines() if line.strip()]
 
 
+def _git_safe_switch_branch(branch: str, *, cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess:
+    target = _safe_git_ref(branch, field="branch")
+    return subprocess.run(
+        ["git", "switch", target],
+        cwd=str(cwd),
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+        shell=False,
+    )
+
+
 def _staged_files_from_status(status_lines: list[str]) -> set[str]:
     return {line[3:].strip() for line in status_lines if line and line[0] != " " and line[0] != "?"}
 
@@ -566,6 +635,10 @@ def _mission_branch_name(founder_request: str, mission_id: str) -> str:
     slug = "-".join([part for part in slug_source.split("-") if part][:4]) or hashlib.sha1(mission_id.encode()).hexdigest()[:8]
     branch = f"feature/sino-mission-{slug[:36].strip('-')}"
     return _safe_git_ref(branch, field="mission_branch")
+
+
+def _mission_branch_suffix(mission_id: str) -> str:
+    return hashlib.sha1(mission_id.encode()).hexdigest()[:8]
 
 
 def _git_safe_create_branch(branch: str, *, cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess:
@@ -803,6 +876,8 @@ def build_mission_view(mission: dict, action_queue: list[dict] | None = None) ->
         }
     return {
         "mission_id": mission.get("mission_id"),
+        "source_message_id": mission.get("source_message_id"),
+        "acknowledgement_message_id": mission.get("acknowledgement_message_id"),
         "goal": mission.get("founder_request"),
         "status": mission.get("status"),
         "stage": stage,
@@ -841,6 +916,100 @@ def _mission_from_discovery(discovery: dict, mission_id: str | None = None) -> d
         return dict(missions[mission_id])
     mission = discovery.get("autonomous_development_mission")
     return dict(mission) if isinstance(mission, dict) and (mission_id is None or mission.get("mission_id") == mission_id) else None
+
+
+def _mission_is_active(mission: dict) -> bool:
+    return (mission.get("status") or mission.get("current_stage")) not in {
+        "COMPLETED",
+        "FAILED",
+        "BLOCKED",
+        "CANCELLED",
+        "REJECTED",
+    }
+
+
+def _load_mission_for_mission_id(mission_id: str) -> dict | None:
+    with SessionLocal() as session:
+        states = list(session.scalars(select(SinoBrainSessionDB)))
+    for state in states:
+        mission = _mission_from_discovery(dict(state.discovery or {}), mission_id)
+        if mission:
+            return mission
+    return None
+
+
+def _active_mission_using_branch(branch: str, *, excluding_mission_id: str | None = None) -> dict | None:
+    with SessionLocal() as session:
+        states = list(session.scalars(select(SinoBrainSessionDB)))
+    for state in states:
+        discovery = dict(state.discovery or {})
+        missions = dict(discovery.get("autonomous_development_missions") or {})
+        if not missions and isinstance(discovery.get("autonomous_development_mission"), dict):
+            mission = dict(discovery["autonomous_development_mission"])
+            missions[mission.get("mission_id") or "current"] = mission
+        for mission in missions.values():
+            if not isinstance(mission, dict):
+                continue
+            if excluding_mission_id and mission.get("mission_id") == excluding_mission_id:
+                continue
+            if mission.get("working_branch") == branch and _mission_is_active(mission):
+                return {**mission, "conversation_id": mission.get("conversation_id") or state.conversation_id}
+    return None
+
+
+def _branch_unique_commit_count(branch: str, baseline_head: str, *, cwd: Path) -> int | None:
+    result = _git_output(["rev-list", "--count", f"{baseline_head}..{branch}"], cwd=cwd, check=False)
+    if result.returncode != 0:
+        return None
+    try:
+        return int(result.stdout.strip() or "0")
+    except ValueError:
+        return None
+
+
+def _resolve_mission_working_branch(founder_request: str, mission_id: str, baseline_head: str, *, cwd: Path) -> dict:
+    base_branch = _mission_branch_name(founder_request, mission_id)
+    existing_mission = _load_mission_for_mission_id(mission_id)
+    if existing_mission and existing_mission.get("working_branch"):
+        branch = _safe_git_ref(existing_mission["working_branch"], field="mission_branch")
+        return {
+            "working_branch": branch,
+            "base_branch": base_branch,
+            "collision": _git_branch_exists(branch, cwd=cwd),
+            "strategy": "same_mission_retry_reuse",
+            "existing_branch_head": _git_rev_parse(branch, cwd=cwd),
+            "existing_branch_unique_commits": _branch_unique_commit_count(branch, baseline_head, cwd=cwd),
+            "active_mission": None,
+        }
+    if not _git_branch_exists(base_branch, cwd=cwd):
+        return {
+            "working_branch": base_branch,
+            "base_branch": base_branch,
+            "collision": False,
+            "strategy": "base_branch_available",
+            "existing_branch_head": None,
+            "existing_branch_unique_commits": 0,
+            "active_mission": None,
+        }
+    branch_head = _git_rev_parse(base_branch, cwd=cwd)
+    unique_commits = _branch_unique_commit_count(base_branch, baseline_head, cwd=cwd)
+    active_mission = _active_mission_using_branch(base_branch, excluding_mission_id=mission_id)
+    suffix = _mission_branch_suffix(mission_id)
+    candidate = _safe_git_ref(f"{base_branch}-{suffix}", field="mission_branch")
+    counter = 2
+    while _git_branch_exists(candidate, cwd=cwd):
+        candidate = _safe_git_ref(f"{base_branch}-{suffix}-{counter}", field="mission_branch")
+        counter += 1
+    stale_empty = not active_mission and branch_head == baseline_head and unique_commits == 0
+    return {
+        "working_branch": candidate,
+        "base_branch": base_branch,
+        "collision": True,
+        "strategy": "stale_empty_branch_unique_successor" if stale_empty else "unique_successor",
+        "existing_branch_head": branch_head,
+        "existing_branch_unique_commits": unique_commits,
+        "active_mission": active_mission,
+    }
 
 
 def _persist_mission(conversation_id: str, mission: dict) -> None:
@@ -1449,38 +1618,120 @@ def _is_allowed_change(path: str, plan: dict) -> bool:
 def _codex_constraints(plan: dict) -> list[str]:
     allowed_files = ", ".join(plan.get("allowed_files") or []) or "none"
     allowed_dirs = ", ".join(plan.get("allowed_directories") or []) or "none"
+    preexisting_dirty = ", ".join(plan.get("preexisting_dirty_files") or []) or "none"
     return [
+        "TASK MODE: IMPLEMENTATION.",
+        "You are authorized to modify exactly the allowed files below.",
+        "You must perform the requested code/file change directly in the repository.",
+        "Do not only explain what should be changed.",
+        "Do not return a proposed patch without applying it.",
+        "After editing the allowed files, stop and report a concise summary.",
         f"Allowed files: {allowed_files}",
         f"Allowed directories: {allowed_dirs}",
+        f"Pre-existing dirty files before this approved task: {preexisting_dirty}",
         "Modify only files inside the approved allowed boundary.",
+        "Do not alter pre-existing dirty files unless they are also explicitly listed in the approved allowed boundary.",
         "Return a concise summary of changed files and any notes.",
         "Do not run git add, git commit, git push, git merge, git rebase, git tag, deploy, package install, production DB changes, secret changes, or repo-external writes.",
     ]
 
 
+def _expected_mutations_for_plan(plan: dict, *, cwd: Path) -> list[dict]:
+    mutations = []
+    for raw in plan.get("expected_mutations") or []:
+        if not isinstance(raw, dict):
+            continue
+        path = str(_safe_relative_path(raw.get("file") or raw.get("path") or ""))
+        if not path:
+            continue
+        file_path = cwd / path
+        before = "<missing>"
+        try:
+            if file_path.is_file():
+                before = file_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            before = "<unreadable>"
+        mutations.append({
+            "file": path,
+            "before": raw.get("before", before),
+            "after": raw.get("after"),
+            "instruction": raw.get("instruction") or f"Change {path} content to {raw.get('after')}.",
+            "reason": raw.get("reason"),
+        })
+    return mutations
+
+
+def _bounded_code_change_scope_contract(
+    *,
+    task_id: str | None,
+    conversation_id: str | None,
+    founder_request: str | None,
+    allowed_files: list[str],
+    allowed_directories: list[str],
+    acceptance_criteria: list[str],
+    explicit_non_goals: list[str],
+) -> dict:
+    """Project the single bounded-change allowlist into the scope verifier contract."""
+    return {
+        "task_id": task_id,
+        "conversation_id": conversation_id,
+        "task_type": BOUNDED_CODE_CHANGE,
+        "operation_type": BOUNDED_CODE_CHANGE,
+        "objective": founder_request,
+        "source_goal": founder_request,
+        "implementation_scope": list(allowed_files),
+        "module_boundary": list(allowed_directories),
+        "allowed_files": list(allowed_files),
+        "allowed_directories": list(allowed_directories),
+        "acceptance_criteria": list(acceptance_criteria),
+        "prohibited_scope": list(explicit_non_goals),
+        "scope_source": "bounded_code_change_allowed_boundary",
+        "scope_confidence": "HIGH" if allowed_files or allowed_directories else "MISSING",
+    }
+
+
 def _codex_execution_package_for_bounded_change(plan: dict, *, cwd: Path) -> ExecutionPackage:
+    expected_mutations = _expected_mutations_for_plan(plan, cwd=cwd)
+    allowed_files = list(plan.get("allowed_files") or [])
+    allowed_directories = list(plan.get("allowed_directories") or [])
+    acceptance_criteria = list(plan.get("acceptance_criteria") or [])
+    explicit_non_goals = list(plan.get("explicit_non_goals") or [])
+    founder_request = plan.get("founder_request") or plan.get("title")
+    scope_contract = _bounded_code_change_scope_contract(
+        task_id=plan.get("task_id"),
+        conversation_id=plan.get("conversation_id"),
+        founder_request=founder_request,
+        allowed_files=allowed_files,
+        allowed_directories=allowed_directories,
+        acceptance_criteria=acceptance_criteria,
+        explicit_non_goals=explicit_non_goals,
+    )
     context = {
+        "task_mode": "IMPLEMENTATION",
         "mission_id": plan.get("mission_id"),
         "conversation_id": plan.get("conversation_id"),
         "task_id": plan.get("task_id"),
         "execution_id": plan.get("execution_id"),
-        "founder_request": plan.get("founder_request") or plan.get("title"),
+        "founder_request": founder_request,
         "operation_type": BOUNDED_CODE_CHANGE,
         "repo_path": str(cwd),
         "working_branch": plan.get("working_branch"),
         "baseline_head": plan.get("baseline_head"),
-        "allowed_files": list(plan.get("allowed_files") or []),
-        "allowed_directories": list(plan.get("allowed_directories") or []),
-        "acceptance_criteria": list(plan.get("acceptance_criteria") or []),
+        "allowed_files": allowed_files,
+        "allowed_directories": allowed_directories,
+        "acceptance_criteria": acceptance_criteria,
+        "expected_mutations": expected_mutations,
         "verification_plan": [list(argv) for argv in plan.get("verification_commands") or []],
-        "explicit_non_goals": list(plan.get("explicit_non_goals") or []),
+        "explicit_non_goals": explicit_non_goals,
+        "standard_task_contract": scope_contract,
+        "preexisting_dirty_files": list(plan.get("preexisting_dirty_files") or []),
         "risk_level": MEDIUM_RISK,
         "approval_action_id": plan.get("approval_action_id"),
         "founder_authorization_boundary": {
-            "allowed_files": list(plan.get("allowed_files") or []),
-            "allowed_directories": list(plan.get("allowed_directories") or []),
-            "acceptance_criteria": list(plan.get("acceptance_criteria") or []),
-            "explicit_non_goals": list(plan.get("explicit_non_goals") or []),
+            "allowed_files": allowed_files,
+            "allowed_directories": allowed_directories,
+            "acceptance_criteria": acceptance_criteria,
+            "explicit_non_goals": explicit_non_goals,
         },
         "codex_executor_policy": {
             "executor": CODEX_EXECUTOR,
@@ -1491,7 +1742,7 @@ def _codex_execution_package_for_bounded_change(plan: dict, *, cwd: Path) -> Exe
             "package_install_allowed": False,
         },
         "code_context": {
-            "relevant_files": [{"path": path, "reason": "approved allowed file"} for path in plan.get("allowed_files") or []],
+            "relevant_files": [{"path": path, "reason": "approved allowed file"} for path in allowed_files],
         },
         "invocation_source": "sino_autonomous_development_mission" if plan.get("mission_id") else "sino_bounded_code_change",
         "executor": CODEX_EXECUTOR,
@@ -1508,6 +1759,8 @@ def _codex_execution_package_for_bounded_change(plan: dict, *, cwd: Path) -> Exe
     return ExecutionPackage(
         goal=(
             f"{plan.get('founder_request') or plan.get('title')}\n\n"
+            "TASK MODE: IMPLEMENTATION. You must directly modify the allowed file(s) in the repository. "
+            "Do not only explain the change and do not merely propose a patch. "
             "Complete only the requested bounded code modification. "
             "After editing, stop and report; verification/checkpoint/push/merge are handled by Sino."
         ),
@@ -1728,13 +1981,34 @@ def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> E
     allowed_directories = list(operational.get("allowed_directories") or [])
     verification_commands = [list(argv) for argv in operational.get("verification_commands") or []]
     explicit_non_goals = list(operational.get("explicit_non_goals") or [])
+    expected_mutations = _expected_mutations_for_plan(operational, cwd=repo_root()) if operation_type == BOUNDED_CODE_CHANGE else []
+    acceptance_criteria = list(operational.get("acceptance_criteria") or [])
+    founder_request = operational.get("founder_request") or task.description
+    scope_contract = None
+    if operation_type == BOUNDED_CODE_CHANGE:
+        scope_contract = _bounded_code_change_scope_contract(
+            task_id=task.id,
+            conversation_id=task.conversation_id,
+            founder_request=founder_request,
+            allowed_files=allowed_files,
+            allowed_directories=allowed_directories,
+            acceptance_criteria=acceptance_criteria,
+            explicit_non_goals=explicit_non_goals,
+        )
     codex_prohibitions = [
+        "TASK MODE: IMPLEMENTATION.",
+        "You are authorized to modify exactly the allowed files below.",
+        "You must perform the requested code/file change directly in the repository.",
+        "Do not only explain what should be changed.",
+        "Do not return a proposed patch without applying it.",
+        "After editing the allowed files, stop and report a concise summary.",
         "DO NOT modify files outside allowed_files or allowed_directories.",
         "DO NOT git add, git commit, git push, git merge, git rebase, or git tag.",
         "DO NOT deploy, modify production DB, modify secrets, install packages, or modify files outside repo_path.",
     ] if operation_type == BOUNDED_CODE_CHANGE else []
     context = {
-        "founder_request": operational.get("founder_request") or task.description,
+        "task_mode": "IMPLEMENTATION" if operation_type == BOUNDED_CODE_CHANGE else "TECHNICAL_EXECUTION",
+        "founder_request": founder_request,
         "conversation_id": task.conversation_id,
         "mission_id": operational.get("mission_id"),
         "approval_action_id": operational.get("action_id"),
@@ -1748,10 +2022,12 @@ def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> E
         "allowed_scope": operational.get("allowed_scope"),
         "allowed_files": allowed_files,
         "allowed_directories": allowed_directories,
-        "acceptance_criteria": operational.get("acceptance_criteria"),
+        "acceptance_criteria": acceptance_criteria,
+        "expected_mutations": expected_mutations,
         "verification_plan": verification_commands,
         "verification_commands": verification_commands,
         "explicit_non_goals": explicit_non_goals,
+        "standard_task_contract": scope_contract,
         "codex_execution_package": operation_type == BOUNDED_CODE_CHANGE,
         "codex_executor_policy": {
             "executor": CODEX_EXECUTOR,
@@ -1779,7 +2055,11 @@ def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> E
         approval_required=False,
     )
     return ExecutionPackage(
-        goal=task.title,
+        goal=(
+            f"{task.title}\n\n"
+            "TASK MODE: IMPLEMENTATION. You must directly modify the allowed file(s) in the repository. "
+            "Do not only explain the change and do not merely propose a patch."
+        ) if operation_type == BOUNDED_CODE_CHANGE else task.title,
         context=context,
         task_asset=draft,
         constraints=list(draft.constraints),
@@ -1790,21 +2070,25 @@ def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> E
     )
 
 
-def _append_assistant_message(conversation_id: str, content: str, *, message_type: str, grounding: dict | None = None) -> None:
+def _append_assistant_message(conversation_id: str, content: str, *, message_type: str, grounding: dict | None = None) -> str:
     with SessionLocal() as session:
         conversation = session.get(ConversationDB, conversation_id)
         if conversation is None:
             raise LookupError("Founder AI conversation not found")
-        session.add(ConversationMessageDB(
+        message = ConversationMessageDB(
             conversation_id=conversation_id,
             role="assistant",
             content=content,
             message_type=message_type,
             intent="operational_runtime",
             grounding=dict(grounding or {}),
-        ))
+        )
+        session.add(message)
         conversation.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        message_id = message.id
         session.commit()
+        return message_id
 
 
 def _update_brain(conversation_id: str, payload: dict) -> None:
@@ -2167,9 +2451,21 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
     baseline_branch = _git_output(["branch", "--show-current"], cwd=root).stdout.strip()
     baseline_head = _git_output(["rev-parse", "HEAD"], cwd=root).stdout.strip()
     mission_id = _mission_id(source_message_id)
-    working_branch = _mission_branch_name(founder_request, mission_id)
+    branch_resolution = _resolve_mission_working_branch(founder_request, mission_id, baseline_head, cwd=root)
+    working_branch = branch_resolution["working_branch"]
+    lowered_request = (founder_request or "").lower()
+    plan_key = LIVE_FOUNDER_ACCEPTANCE_FIXTURE_CHANGE if (
+        "live founder acceptance fixture" in lowered_request
+        or "sino_live_acceptance_ok" in lowered_request
+        or "live acceptance" in lowered_request
+    ) else AUTONOMOUS_MISSION_STATUS_CARD_CHANGE
+    plan = dict(BOUNDED_CODE_CHANGE_PLANS[plan_key])
+    live_acceptance_mode = bool(plan.get("live_acceptance_mode"))
     status_lines = _git_status_short(cwd=root)
-    if baseline_branch != SAFE_INTEGRATION_PUSH_BRANCH or status_lines:
+    baseline_allowed = baseline_branch == SAFE_INTEGRATION_PUSH_BRANCH or (
+        live_acceptance_mode and baseline_branch == "feature/sino-live-development-loop-v1"
+    )
+    if not baseline_allowed or (status_lines and not live_acceptance_mode):
         mission = {
             "mission_id": mission_id,
             "conversation_id": conversation_id,
@@ -2183,31 +2479,14 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
             "baseline_branch": baseline_branch,
             "baseline_head": baseline_head,
             "working_branch": working_branch,
+            "source_message_id": source_message_id,
             "created_at": started_at,
         }
         _persist_mission(conversation_id, mission)
         _append_assistant_message(conversation_id, "Mission 已阻断：必须从 clean integration baseline 启动。", message_type="operational_result", grounding={"mission": mission})
         return {"handled": True, "status": "blocked", "mission_id": mission_id, "mission": mission}
-    if _git_branch_exists(working_branch, cwd=root):
-        mission = {
-            "mission_id": mission_id,
-            "conversation_id": conversation_id,
-            "founder_request": founder_request,
-            "mission_type": "CONTROLLED_DEVELOPMENT",
-            "status": "BLOCKED",
-            "current_stage": "BLOCKED",
-            "failed_stage": "PLANNING",
-            "failure_type": "MISSION_BRANCH_EXISTS",
-            "failure_summary": f"Mission branch already exists: {working_branch}",
-            "baseline_branch": baseline_branch,
-            "baseline_head": baseline_head,
-            "working_branch": working_branch,
-            "created_at": started_at,
-        }
-        _persist_mission(conversation_id, mission)
-        _append_assistant_message(conversation_id, f"Mission 已阻断：分支已存在 {working_branch}", message_type="operational_result", grounding={"mission": mission})
-        return {"handled": True, "status": "blocked", "mission_id": mission_id, "mission": mission}
-    created_branch = _git_safe_create_branch(working_branch, cwd=root)
+    branch_already_exists_for_same_mission = branch_resolution["strategy"] == "same_mission_retry_reuse" and _git_branch_exists(working_branch, cwd=root)
+    created_branch = SimpleNamespace(returncode=0, stdout="", stderr="") if branch_already_exists_for_same_mission else _git_safe_create_branch(working_branch, cwd=root)
     if created_branch.returncode != 0:
         mission = {
             "mission_id": mission_id,
@@ -2222,16 +2501,18 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
             "baseline_branch": baseline_branch,
             "baseline_head": baseline_head,
             "working_branch": working_branch,
+            "source_message_id": source_message_id,
+            "branch_resolution": branch_resolution,
             "created_at": started_at,
         }
         _persist_mission(conversation_id, mission)
         _append_assistant_message(conversation_id, f"Mission 创建分支失败：{mission['failure_summary']}", message_type="operational_result", grounding={"mission": mission})
         return {"handled": True, "status": "failed", "mission_id": mission_id, "mission": mission}
-    plan = dict(BOUNDED_CODE_CHANGE_PLANS[AUTONOMOUS_MISSION_STATUS_CARD_CHANGE])
     plan["working_branch"] = working_branch
     plan["mission_id"] = mission_id
     plan["conversation_id"] = conversation_id
     plan["baseline_head"] = baseline_head
+    plan["branch_resolution"] = branch_resolution
     risk = {
         "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
         "risk_level": MEDIUM_RISK,
@@ -2250,12 +2531,15 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
         "status": "WAITING_CHANGE_APPROVAL",
         "current_stage": "WAITING_CHANGE_APPROVAL",
         "risk_level": MEDIUM_RISK,
+        "source_message_id": source_message_id,
         "working_branch": working_branch,
+        "branch_resolution": branch_resolution,
         "baseline_branch": baseline_branch,
         "baseline_head": baseline_head,
         "allowed_files": list(plan.get("allowed_files") or []),
         "acceptance_criteria": list(plan.get("acceptance_criteria") or []),
         "verification_plan": [list(argv) for argv in plan.get("verification_commands") or []],
+        "live_acceptance_mode": live_acceptance_mode,
         "last_completed_step": "MISSION_BRANCH_CREATED",
         "next_required_action": "BOUNDED_CODE_CHANGE_APPROVAL",
         "created_at": started_at,
@@ -2265,7 +2549,7 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
     _attach_mission_to_action(conversation_id, action_id, mission, "WAITING_CHANGE_APPROVAL")
     mission = {**mission, "change_action_id": action_id}
     _persist_mission(conversation_id, mission)
-    _append_assistant_message(
+    acknowledgement_message_id = _append_assistant_message(
         conversation_id,
         (
             "我已理解，这是一个 Autonomous Development Mission。\n\n"
@@ -2277,6 +2561,8 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
         message_type="operational_approval_required",
         grounding={"mission": mission, "operational_runtime": {"status": "approval_required", "operation_type": AUTONOMOUS_DEVELOPMENT_MISSION, "action_id": action_id}},
     )
+    mission = {**mission, "acknowledgement_message_id": acknowledgement_message_id}
+    _persist_mission(conversation_id, mission)
     return {"handled": True, "status": "approval_required", "mission_id": mission_id, "action_id": action_id, "mission": mission}
 
 
@@ -2295,6 +2581,34 @@ def _resume_mission_after_step(conversation_id: str, mission: dict, step_operati
         _append_assistant_message(conversation_id, f"Mission 在 {mission.get('failed_stage')} 阶段停止：{mission.get('failure_summary')}", message_type="operational_result", grounding={"mission": mission})
         return
     if step_operation == BOUNDED_CODE_CHANGE:
+        if mission.get("live_acceptance_mode") or step_result.get("live_acceptance_mode"):
+            mission.update({
+                "status": "COMPLETED",
+                "current_stage": "COMPLETED",
+                "last_completed_step": "VERIFYING",
+                "change_result": step_result,
+                "next_required_action": None,
+                "final_integration_head": mission.get("baseline_head"),
+                "live_acceptance_result": {
+                    "status": "LIVE_ACCEPTANCE_VERIFIED",
+                    "checkpoint_intentionally_not_requested": True,
+                    "push_merge_integration_push_intentionally_not_requested": True,
+                },
+            })
+            _persist_mission(conversation_id, mission)
+            _append_assistant_message(
+                conversation_id,
+                (
+                    "Live Founder Acceptance 已完成验证。\n\n"
+                    f"修改文件：{', '.join(step_result.get('changed_files') or []) or '无'}\n"
+                    f"边界：{step_result.get('boundary_check')}\n"
+                    f"验证：{step_result.get('check_result')}\n"
+                    "本轮真人验收只到 verification；未执行 checkpoint、push、merge。"
+                ),
+                message_type="operational_result",
+                grounding={"mission": mission},
+            )
+            return
         checkpoint = dict(step_result.get("checkpoint") or {})
         mission.update({
             "status": "WAITING_FEATURE_PUSH_APPROVAL",
@@ -2731,7 +3045,16 @@ def execute_bounded_code_change(
     plan.setdefault("baseline_head", baseline_head)
     plan.setdefault("approval_action_id", action_id)
     plan.setdefault("founder_request", founder_request)
+    target_branch = _safe_git_ref(str(plan.get("working_branch") or current_branch), field="working_branch")
+    if target_branch != current_branch:
+        switched = _git_safe_switch_branch(target_branch, cwd=root)
+        if switched.returncode != 0:
+            raise RuntimeError(f"MISSION_BRANCH_SWITCH_FAILED: {_excerpt(switched.stderr or switched.stdout, 1000)}")
+        current_branch = _git_output(["branch", "--show-current"], cwd=root).stdout.strip()
+        if current_branch != target_branch:
+            raise RuntimeError(f"MISSION_BRANCH_SWITCH_FAILED: expected {target_branch}, got {current_branch}")
     before_diff = _git_changed_or_untracked_names(cwd=root)
+    plan["preexisting_dirty_files"] = sorted(before_diff)
     task = create_task_asset(
         title=plan.get("title") or "受控代码修改",
         description=founder_request,
@@ -2868,6 +3191,7 @@ def execute_bounded_code_change(
             "boundary_check": boundary_status,
             "unexpected_files": unexpected,
             "working_tree_status": "dirty" if after_change_diff else "clean",
+            "live_acceptance_mode": bool(plan.get("live_acceptance_mode")),
             "started_at": queued_payload.get("queued_at"),
             "completed_at": completed_at,
             "real_executor_used": code_result.get("real_executor_used") or executor_for_operation(BOUNDED_CODE_CHANGE),
@@ -2883,6 +3207,7 @@ def execute_bounded_code_change(
                 "boundary_check": boundary_status,
                 "build_status": build_step.get("check_result") if build_step else None,
                 "working_tree_clean": not bool(after_change_diff),
+                "live_acceptance_mode": bool(plan.get("live_acceptance_mode")),
                 **test_counts,
             },
         }
@@ -4108,6 +4433,34 @@ def decide_operational_action_by_type(action_id: str, decision: str) -> dict:
     if action_type == SAFE_INTEGRATION_PUSH_QUEUE_TYPE:
         return decide_safe_integration_push_action(action_id, decision)
     raise ValueError("unsupported_operational_action_type")
+
+
+def resolve_operational_approval_shortcut(conversation_id: str, founder_request: str) -> str | None:
+    """Resolve short natural-language approval to the existing pending operational action.
+
+    The shortcut is intentionally narrow: it never creates an action. It only
+    maps an explicit approval word to one already-persisted canonical
+    operational approval in the same conversation.
+    """
+    normalized = (founder_request or "").strip().lower()
+    if normalized not in {"批准", "同意", "继续执行", "approve", "approved"}:
+        return None
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+        if state is None:
+            return None
+        queue = [dict(item) for item in (state.discovery or {}).get("founder_action_queue") or [] if isinstance(item, dict)]
+    pending = [
+        item for item in queue
+        if item.get("status") == "pending"
+        and (item.get("action_type") or item.get("type")) in {
+            BOUNDED_CODE_CHANGE_QUEUE_TYPE,
+            SAFE_PUSH_QUEUE_TYPE,
+            SAFE_MERGE_QUEUE_TYPE,
+            SAFE_INTEGRATION_PUSH_QUEUE_TYPE,
+        }
+    ]
+    return pending[0].get("action_id") if len(pending) == 1 else None
 
 
 def handle_operational_conversation_request(

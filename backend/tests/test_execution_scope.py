@@ -40,6 +40,20 @@ def package():
                             constraints=[], verification=[], commit_requirement="none", approval_required=False, execution_allowed=True)
 
 
+def bounded_package_without_scope():
+    task = TaskAssetDraft(title="bounded", description="bounded", scope={}, constraints=[], risk="medium", approval_required=False)
+    return ExecutionPackage(
+        goal="bounded change",
+        context={"operation_type": "BOUNDED_CODE_CHANGE", "allowed_files": [], "allowed_directories": []},
+        task_asset=task,
+        constraints=[],
+        verification=[],
+        commit_requirement="none",
+        approval_required=False,
+        execution_allowed=True,
+    )
+
+
 def test_preexisting_dirty_hunk_is_not_attributed_to_current_task(repo):
     (repo / "existing.txt").write_text("pre-existing\n")
     baseline, contents = capture_execution_baseline(repo)
@@ -59,6 +73,80 @@ def test_correct_and_unrelated_files_produce_distinct_scope_results(repo):
     result = verify_execution_scope(contract=contract(), attribution=unrelated)
     assert result["status"] == SCOPE_MISMATCH
     assert result["out_of_scope_files"] == ["unrelated.txt"]
+
+
+def test_bounded_code_change_missing_scope_blocks_before_codex(repo):
+    class ShouldNotRunAdapter:
+        def execute(self, task_package, *, cwd):
+            raise AssertionError("Codex must not start without bounded implementation scope")
+
+    session = ExecutionSession("execution", "task", "package", status="approved")
+    with pytest.raises(ExecutionScopeBlocked, match="MISSING_IMPLEMENTATION_SCOPE"):
+        FounderExecutionLoop(ShouldNotRunAdapter()).run(session, bounded_package_without_scope(), cwd=repo)
+    assert session.status == "blocked"
+    assert session.result["scope_verification"]["status"] == "MISSING_IMPLEMENTATION_SCOPE"
+
+
+def test_bounded_code_change_scope_fallback_reads_allowed_files(repo):
+    attribution = {
+        "task_changed_files": ["allowed.txt"],
+        "execution_owned_patch_fingerprint": "patch",
+    }
+    result = verify_execution_scope(
+        contract={
+            "operation_type": "BOUNDED_CODE_CHANGE",
+            "allowed_files": ["allowed.txt"],
+            "allowed_directories": [],
+        },
+        attribution=attribution,
+    )
+    assert result["status"] == SCOPE_PASS
+    assert result["expected_scope"] == ["allowed.txt"]
+
+
+def test_bounded_code_change_scope_fallback_reads_allowed_directories(repo):
+    attribution = {
+        "task_changed_files": ["fixtures/allowed.txt"],
+        "execution_owned_patch_fingerprint": "patch",
+    }
+    result = verify_execution_scope(
+        contract={
+            "operation_type": "BOUNDED_CODE_CHANGE",
+            "allowed_files": [],
+            "allowed_directories": ["fixtures"],
+        },
+        attribution=attribution,
+    )
+    assert result["status"] == SCOPE_PASS
+    assert result["module_boundary"] == ["fixtures"]
+
+
+def test_bounded_code_change_empty_scope_still_fails_closed(repo):
+    result = verify_execution_scope(
+        contract={"operation_type": "BOUNDED_CODE_CHANGE"},
+        attribution={"task_changed_files": ["allowed.txt"]},
+    )
+    assert result["status"] == SCOPE_MISMATCH
+    assert result["expected_scope"] == []
+    assert result["out_of_scope_files"] == ["allowed.txt"]
+
+
+def test_bounded_code_change_allowed_and_unexpected_file_fails(repo):
+    result = verify_execution_scope(
+        contract={"operation_type": "BOUNDED_CODE_CHANGE", "allowed_files": ["allowed.txt"]},
+        attribution={"task_changed_files": ["allowed.txt", "unrelated.txt"]},
+    )
+    assert result["status"] == SCOPE_MISMATCH
+    assert result["out_of_scope_files"] == ["unrelated.txt"]
+
+
+def test_non_bounded_task_does_not_use_allowed_files_fallback(repo):
+    result = verify_execution_scope(
+        contract={"operation_type": "REPO_INSPECTION", "allowed_files": ["allowed.txt"]},
+        attribution={"task_changed_files": ["allowed.txt"]},
+    )
+    assert result["status"] == SCOPE_MISMATCH
+    assert result["expected_scope"] == []
 
 
 def test_rollback_reverses_only_execution_owned_patch_and_preserves_preexisting(repo):

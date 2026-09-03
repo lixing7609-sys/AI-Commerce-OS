@@ -12,12 +12,13 @@ vi.mock("../services/founderAiApi.js", () => ({
   decideFounderClarification: vi.fn().mockResolvedValue({}),
   decideFounderTaskCandidate: vi.fn().mockResolvedValue({}),
   focusFounderTask: vi.fn().mockResolvedValue({}),
+  getFounderActionQueue: vi.fn().mockResolvedValue([]),
   rejectTaskForExecution: vi.fn().mockResolvedValue({ task_id: "task-1", approval_status: "rejected", execution_status: "not_started" }),
   startTaskExecution: vi.fn().mockResolvedValue({ task_id: "task-1", execution_id: "execution-1", execution_status: "queued" }),
 }));
 
 import { SinoBrainContext } from "./SinoBrainContext.jsx";
-import { approveFounderObject, approveTaskForExecution, decideOperationalAction, rejectTaskForExecution, startTaskExecution } from "../services/founderAiApi.js";
+import { approveFounderObject, approveTaskForExecution, decideOperationalAction, getFounderActionQueue, rejectTaskForExecution, startTaskExecution } from "../services/founderAiApi.js";
 
 describe("SinoBrainContext", () => {
   afterEach(() => {
@@ -51,11 +52,14 @@ describe("SinoBrainContext", () => {
   });
 
   it("displays EXECUTION_APPROVAL without starting execution", async () => {
-    render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{ action_id: "execution-approval:task-1", action_type: "EXECUTION_APPROVAL", type: "EXECUTION_APPROVAL", status: "pending", title: "批准执行", summary: "待审批 TaskAsset", risk_level: "HIGH", source_type: "task_asset", source_id: "task-1", task_id: "task-1", conversation_id: "conv-1" }] } }} />);
+    const brain = { stage: "goal_discovery", discovery: { founder_action_queue: [{ action_id: "execution-approval:task-1", action_type: "EXECUTION_APPROVAL", type: "EXECUTION_APPROVAL", status: "pending", title: "批准执行", summary: "待审批 TaskAsset", risk_level: "HIGH", source_type: "task_asset", source_id: "task-1", task_id: "task-1", conversation_id: "conv-1" }] } };
+    const { unmount } = render(<SinoBrainContext conversationId="conv-1" brain={brain} />);
     expect(screen.getByRole("article", { name: "Execution Approval" }).textContent).toContain("执行审批");
     fireEvent.click(screen.getByRole("button", { name: "批准执行" }));
     await waitFor(() => expect(approveTaskForExecution).toHaveBeenCalledWith("task-1"));
     expect(startTaskExecution).not.toHaveBeenCalled();
+    unmount();
+    render(<SinoBrainContext conversationId="conv-1" brain={brain} />);
     fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
     await waitFor(() => expect(rejectTaskForExecution).toHaveBeenCalledWith("task-1"));
   });
@@ -107,6 +111,89 @@ describe("SinoBrainContext", () => {
     fireEvent.click(screen.getByRole("button", { name: "批准修改" }));
     await waitFor(() => expect(decideOperationalAction).toHaveBeenCalledWith("bounded-code-change:message-1", "approve"));
     expect(resolved).toHaveBeenCalled();
+  });
+
+  it("shows immediate approval feedback and disables duplicate bounded change clicks", async () => {
+    let resolveDecision;
+    decideOperationalAction.mockImplementationOnce(() => new Promise((resolve) => { resolveDecision = resolve; }));
+    render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
+      action_id: "bounded-code-change:message-feedback",
+      action_type: "BOUNDED_CODE_CHANGE_APPROVAL",
+      type: "BOUNDED_CODE_CHANGE_APPROVAL",
+      status: "pending",
+      title: "批准受控代码修改",
+      summary: "更新 Live Founder Acceptance fixture",
+      risk_level: "MEDIUM",
+      metadata: { planned_files: ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"] },
+    }] } }} />);
+
+    const approve = screen.getByRole("button", { name: "批准修改" });
+    fireEvent.click(approve);
+
+    await screen.findByRole("button", { name: "批准中…" });
+    expect(screen.getByRole("button", { name: "批准中…" }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "批准中…" }));
+    expect(decideOperationalAction).toHaveBeenCalledTimes(1);
+
+    resolveDecision({ action_id: "bounded-code-change:message-feedback", status: "completed" });
+    await waitFor(() => expect(screen.getAllByText("已批准，Sino 正在继续…").length).toBeGreaterThan(0));
+    expect(screen.getByRole("button", { name: "已批准，Sino 正在继续…" }).disabled).toBe(true);
+  });
+
+  it("loads canonical mission approval into the right sidebar without a second Founder message", async () => {
+    const pendingAction = {
+      action_id: "bounded-code-change:message-live",
+      action_type: "BOUNDED_CODE_CHANGE_APPROVAL",
+      type: "BOUNDED_CODE_CHANGE_APPROVAL",
+      status: "pending",
+      title: "批准受控代码修改",
+      summary: "把 Live Founder Acceptance fixture 的内容改成 SINO_LIVE_ACCEPTANCE_OK，并验证。",
+      risk_level: "MEDIUM",
+      conversation_id: "conv-live",
+      metadata: {
+        mission_id: "mission-live",
+        working_branch: "feature/sino-mission-live-founder-acceptance-fixture",
+        planned_files: ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"],
+        acceptance_criteria: ["fixture content becomes SINO_LIVE_ACCEPTANCE_OK", "verification passes"],
+        explicit_non_goals: ["push", "merge", "deploy"],
+      },
+    };
+    getFounderActionQueue.mockResolvedValueOnce([pendingAction]);
+    render(<SinoBrainContext conversationId="conv-live" brain={{
+      stage: "operational_runtime",
+      discovery: {
+        autonomous_development_mission_view: {
+          mission_id: "mission-live",
+          stage_label: "等待你批准代码修改",
+          pending_approval: { action_id: pendingAction.action_id },
+        },
+      },
+    }} />);
+    await waitFor(() => expect(getFounderActionQueue).toHaveBeenCalledWith("conv-live"));
+    const action = await screen.findByRole("article", { name: "Bounded Code Change Approval" });
+    expect(action.textContent).toContain("批准受控代码修改");
+    expect(action.textContent).toContain("MEDIUM");
+    expect(action.textContent).toContain("frontend/src/sino-founder/live-founder-acceptance-fixture.txt");
+    expect(action.textContent).toContain("修改 → 自动验证 → 创建本地 checkpoint");
+    expect(action.textContent).toContain("push");
+    expect(screen.getByRole("button", { name: "批准修改" })).toBeTruthy();
+  });
+
+  it("deduplicates brain and canonical Action Queue items by action id", async () => {
+    const pendingAction = {
+      action_id: "bounded-code-change:message-dedupe",
+      action_type: "BOUNDED_CODE_CHANGE_APPROVAL",
+      type: "BOUNDED_CODE_CHANGE_APPROVAL",
+      status: "pending",
+      title: "批准受控代码修改",
+      summary: "受控修改",
+      risk_level: "MEDIUM",
+      metadata: { planned_files: ["frontend/src/sino-founder/live-founder-acceptance-fixture.txt"] },
+    };
+    getFounderActionQueue.mockResolvedValueOnce([pendingAction]);
+    render(<SinoBrainContext conversationId="conv-live" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [pendingAction] } }} />);
+    await waitFor(() => expect(getFounderActionQueue).toHaveBeenCalledWith("conv-live"));
+    expect(screen.getAllByRole("article", { name: "Bounded Code Change Approval" })).toHaveLength(1);
   });
 
   it("rejects bounded code change without starting execution", async () => {

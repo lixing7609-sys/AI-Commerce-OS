@@ -40,6 +40,79 @@ def _project_runtime_truth(conversation_id: str | None) -> None:
         logger.exception("Runtime truth projection failed conversation_id=%s", conversation_id)
 
 
+def _execution_terminal_summary(session, package) -> str | None:
+    if dict(package.context or {}).get("operation_type") != "BOUNDED_CODE_CHANGE":
+        return None
+    result = dict(session.result or {})
+    post = dict(result.get("post_implementation_verification") or {})
+    command_evidence = list(result.get("command_verification_evidence") or post.get("evidence") or [])
+    test = next((item for item in command_evidence if item.get("verifier") == "targeted_tests"), {})
+    build = next((item for item in command_evidence if item.get("verifier") == "build"), {})
+    changed = list(result.get("changed_files") or result.get("production_changed_files") or [])
+    if session.status == "completed":
+        return (
+            "受控代码修改和验证已完成。\n\n"
+            f"修改文件：{', '.join(changed) or '无'}\n"
+            f"测试：{test.get('status') or 'NOT_RECORDED'}\n"
+            f"Build：{build.get('status') or 'NOT_RECORDED'}"
+        )
+    reason = (
+        result.get("failure_reason")
+        or post.get("failure_reason")
+        or session.failure_reason
+        or session.error_message
+        or "execution failed"
+    )
+    stage = post.get("stage") or session.current_stage or "execution"
+    return (
+        f"受控代码修改在 {stage} 阶段失败：{reason}\n\n"
+        f"修改文件：{', '.join(changed) or '无'}\n"
+        f"测试：{test.get('status') or 'NOT_RUN'}\n"
+        f"Build：{build.get('status') or 'NOT_RUN'}"
+    )
+
+
+def _append_execution_terminal_message(session, package) -> None:
+    conversation_id = package.task_asset.conversation_id
+    if not conversation_id:
+        return
+    content = _execution_terminal_summary(session, package)
+    if not content:
+        return
+    try:
+        from app.database.db import SessionLocal
+        from app.core.conversation.model import ConversationDB
+        from app.core.conversation_first.model import ConversationMessageDB
+
+        with SessionLocal() as db:
+            existing = db.query(ConversationMessageDB).filter_by(
+                conversation_id=conversation_id,
+                message_type="operational_result",
+            ).all()
+            if any(dict(item.grounding or {}).get("execution_id") == session.id for item in existing):
+                return
+            conversation = db.get(ConversationDB, conversation_id)
+            if conversation is None:
+                return
+            db.add(ConversationMessageDB(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=content,
+                message_type="operational_result",
+                intent="founder_execution_worker",
+                grounding={
+                    "execution_id": session.id,
+                    "task_id": session.task_asset_id,
+                    "execution_status": session.status,
+                    "post_implementation_verification": dict((session.result or {}).get("post_implementation_verification") or {}),
+                },
+            ))
+            conversation.updated_at = _now()
+            db.commit()
+    except Exception:
+        logger.exception("Execution terminal conversation writeback failed execution_id=%s", session.id)
+
+
 @dataclass(slots=True)
 class ExecutionQueueItem:
     execution_id: str
@@ -310,6 +383,8 @@ class ExecutionWorker:
             self.queue.transition(execution_id, "completed")
         except (KeyError, ValueError):
             self.queue.reconcile_terminal(execution_id, "completed")
+        _append_execution_terminal_message(session, package)
+        _project_runtime_truth(package.task_asset.conversation_id)
         return session
 
     def _reconcile_verified_completion(self, session, package) -> None:
@@ -475,6 +550,7 @@ class ExecutionWorker:
             )
             save_execution_session(session, package)
             self.queue.transition(execution_id, "failed")
+            _append_execution_terminal_message(session, package)
             _project_runtime_truth(package.task_asset.conversation_id)
             logger.exception("Founder execution %s failed", execution_id)
 

@@ -111,8 +111,18 @@ def attribute_execution_changes(
 def verify_execution_scope(*, contract: dict[str, Any], attribution: dict[str, Any]) -> dict[str, Any]:
     from app.founder_ai.semantic_scope import semantic_css_hunk_allowed, semantic_scope_file_allowed
     changed = set(attribution.get("task_changed_files") or [])
-    allowed = set(contract.get("implementation_scope") or [])
-    module_boundaries = tuple(str(item).rstrip("/") + "/" for item in contract.get("module_boundary") or [])
+    bounded_change = contract.get("operation_type") == "BOUNDED_CODE_CHANGE" or contract.get("task_type") == "BOUNDED_CODE_CHANGE"
+    implementation_scope = list(contract.get("implementation_scope") or [])
+    module_boundary = list(contract.get("module_boundary") or [])
+    if bounded_change:
+        # BOUNDED_CODE_CHANGE has exactly one canonical scope authority:
+        # allowed_files / allowed_directories. The verifier contract projection is
+        # derived from that boundary, and this fallback is intentionally restricted
+        # to bounded code changes so ordinary tasks do not silently broaden scope.
+        implementation_scope = implementation_scope or list(contract.get("allowed_files") or [])
+        module_boundary = module_boundary or list(contract.get("allowed_directories") or [])
+    allowed = set(implementation_scope)
+    module_boundaries = tuple(str(item).rstrip("/") + "/" for item in module_boundary)
     semantic_scope = dict(contract.get("semantic_scope") or {})
     semantic = contract.get("scope_source") == "semantic_module"
     unexpected = sorted(path for path in changed if not (
@@ -158,7 +168,7 @@ def verify_execution_scope(*, contract: dict[str, Any], attribution: dict[str, A
         "status": status,
         "goal": contract.get("objective") or contract.get("source_goal"),
         "expected_scope": sorted(allowed),
-        "module_boundary": list(contract.get("module_boundary") or []),
+        "module_boundary": list(module_boundary),
         "scope_source": contract.get("scope_source") or "explicit_contract",
         "scope_confidence": contract.get("scope_confidence"),
         "do_not_change": list(contract.get("prohibited_scope") or []),

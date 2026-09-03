@@ -76,6 +76,42 @@ describe("Conversation / Task UI ownership", () => {
     expect(screen.getByRole("button", { name: "停止任务" })).toBeTruthy();
   });
 
+  it("uses active Mission state instead of stale blocked execution progress in the sidebar", () => {
+    render(<SinoBrainContext brain={{
+      stage: "standard_task",
+      execution_progress: {
+        task_id: "task-stale",
+        execution_id: "execution-stale",
+        current_action: "验证受阻",
+        next_action: "历史阻塞",
+        progress_percent: 80,
+        execution_status: "blocked",
+        founder_action_required: false,
+      },
+      discovery: {
+        autonomous_development_mission_view: {
+          mission_id: "mission-live",
+          stage: "CHANGING",
+          status: "CHANGING",
+          stage_label: "正在修改代码",
+          next_step: "Sino 正在通过 Codex 修改授权文件",
+          working_branch: "feature/sino-mission-live-founder-acceptance-fixture",
+          current_head: "head-live",
+        },
+        task_complexity_route: {
+          classification: "STANDARD_TASK",
+          execution_status: "blocked",
+          technical_blocker: { reason: "historical blocker" },
+          autonomous_execution: { execution_session_id: "execution-stale" },
+        },
+      },
+    }} />);
+    const sidebar = screen.getByRole("region", { name: "Execution Center" });
+    expect(within(sidebar).getAllByText("正在修改代码").length).toBeGreaterThan(0);
+    expect(within(sidebar).queryByText("验证受阻")).toBeNull();
+    expect(screen.queryByLabelText(/任务进度/)).toBeNull();
+  });
+
   it("does not queue ordinary Codex permission or self healing", () => {
     const { rerender } = render(<SinoBrainContext brain={taskBrain()} />);
     expect(screen.getByText("暂无需要你处理的事项")).toBeTruthy();

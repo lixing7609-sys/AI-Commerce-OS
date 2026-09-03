@@ -32,10 +32,12 @@ def _unique_dicts(items: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
 @dataclass(frozen=True, slots=True)
 class TaskPackage:
     goal: str
+    task_mode: str
     evidence: list[dict[str, Any]]
     relevant_files: list[dict[str, Any]]
     constraints: list[str]
     acceptance_criteria: list[str]
+    expected_mutations: list[dict[str, Any]]
     commit_requirement: str
     approval_required: bool
 
@@ -43,9 +45,11 @@ class TaskPackage:
         return (
             "# Sino Founder AI Task Package\n\n"
             f"## Goal\n{self.goal}\n\n"
+            f"## Execution Mode\n{self.task_mode}\n\n"
             f"## Evidence\n{json.dumps(self.evidence, ensure_ascii=False, indent=2, default=str)}\n\n"
             f"## Relevant Files\n{json.dumps(self.relevant_files, ensure_ascii=False, indent=2, default=str)}\n\n"
             f"## Constraints\n{json.dumps(self.constraints, ensure_ascii=False, indent=2)}\n\n"
+            f"## Expected Mutations\n{json.dumps(self.expected_mutations, ensure_ascii=False, indent=2, default=str)}\n\n"
             f"## Acceptance Criteria\n{json.dumps(self.acceptance_criteria, ensure_ascii=False, indent=2)}\n\n"
             "## Scope Verification\n"
             "Before running tests or build, compare the task-owned changed files and hunks with the Goal, semantic module boundary, Relevant Files and Constraints. "
@@ -149,10 +153,12 @@ class TaskPackageBuilder:
 
         return TaskPackage(
             goal=package.goal,
+            task_mode=str(context.get("task_mode") or "TECHNICAL_EXECUTION"),
             evidence=_unique_dicts(item for item in evidence if item),
             relevant_files=_unique_dicts(relevant_files),
             constraints=[str(item) for item in package.constraints],
             acceptance_criteria=[str(item) for item in package.verification],
+            expected_mutations=[dict(item) for item in _items(context.get("expected_mutations")) if isinstance(item, Mapping)],
             commit_requirement=package.commit_requirement,
             approval_required=package.approval_required,
         )
