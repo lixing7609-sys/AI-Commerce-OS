@@ -80,6 +80,58 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText("clean")).toBeTruthy();
   });
 
+  it("anchors Controlled Runtime after the source conversation messages", () => {
+    const value = {
+      ...snapshot("conv-operational-order", [
+        { message_id: "founder-readonly", role: "founder", content: "只做只读检查，告诉我当前 integration branch、HEAD、working tree。" },
+        { message_id: "assistant-readonly", role: "assistant", content: "执行完成。\n\n当前 branch：feature/foundation-reset-integration", grounding: { operational_runtime: { source_message_id: "founder-readonly", operation_type: "REPO_INSPECTION" } } },
+      ]),
+      sino_brain: {
+        discovery: {
+          operational_runtime: {
+            status: "completed",
+            source_message_id: "founder-readonly",
+            task_id: "task-readonly",
+            execution_id: "execution-readonly",
+            operation_type: "REPO_INSPECTION",
+            result: { summary: "当前 branch：feature/foundation-reset-integration", result: { branch: "feature/foundation-reset-integration", head: "head-readonly", working_tree_clean: true } },
+          },
+        },
+      },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    const founder = screen.getByText("只做只读检查，告诉我当前 integration branch、HEAD、working tree。").closest(".sino-message-group");
+    const assistant = screen.getByText("执行完成。").closest(".sino-message-group");
+    const runtimeCard = screen.getByRole("complementary", { name: "Operational Runtime Status" });
+    expect(Boolean(founder.compareDocumentPosition(runtimeCard) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(assistant.compareDocumentPosition(runtimeCard) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  });
+
+  it("does not expose raw approval_required or SAFE MERGE for read-only runtime snapshots", () => {
+    const value = {
+      ...snapshot("conv-readonly-runtime", [
+        { message_id: "founder-readonly", role: "founder", content: "只做只读检查，告诉我当前 integration branch、HEAD、working tree。" },
+        { message_id: "assistant-readonly", role: "assistant", content: "执行完成。\n\n当前 branch：feature/foundation-reset-integration", grounding: { operational_runtime: { source_message_id: "founder-readonly", operation_type: "REPO_INSPECTION" } } },
+      ]),
+      sino_brain: {
+        discovery: {
+          operational_runtime: {
+            status: "completed",
+            source_message_id: "founder-readonly",
+            operation_type: "REPO_INSPECTION",
+            result: { result: { branch: "feature/foundation-reset-integration", head: "head-readonly", working_tree_clean: true } },
+          },
+          founder_action_queue: [],
+        },
+      },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.queryByText("approval_required")).toBeNull();
+    expect(screen.queryByText("SAFE MERGE")).toBeNull();
+    expect(screen.queryByText("批准本地安全合并")).toBeNull();
+    expect(screen.queryByRole("article", { name: /SAFE MERGE/i })).toBeNull();
+  });
+
   it("shows operational failure and retryability in the same conversation", () => {
     const value = {
       ...snapshot("conv-operational-failed", [{ message_id: "m1", role: "founder", content: "检查当前工程状态" }]),

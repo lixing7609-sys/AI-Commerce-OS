@@ -26,6 +26,7 @@ BOUNDED_CHANGE_REQUEST = "请把 Sino Operational Runtime 状态卡标题改成 
 SAFE_MERGE_REQUEST = "请把当前 feature 分支本地 --no-ff 合并到 integration branch。"
 SAFE_INTEGRATION_PUSH_REQUEST = "请推送 integration branch 到远程。"
 MISSION_REQUEST = "请执行一个完整开发任务：把 Sino Operational Runtime 状态卡文案改得更清楚一点，并验证。"
+READ_ONLY_BASELINE_REQUEST = "检查当前 Sino Founder AI 的开发基线状态。只做只读检查，不修改代码。告诉我当前 integration branch、HEAD、working tree 状态，以及现在最值得优先改进的一个真实产品问题。"
 
 
 def _runtime(monkeypatch, tmp_path, *, conversation_id="conv-operational"):
@@ -300,6 +301,80 @@ def test_high_risk_request_enters_action_queue_and_blocks_executor(monkeypatch, 
     assert len([item for item in queue if item["action_type"] == "HIGH_RISK_OPERATIONAL_TASK" and item["status"] == "pending"]) == 1
     assert any("不会调用 executor" in item.content for item in messages)
     assert len(execution_registry._sessions) == 0
+
+
+def test_explicit_read_only_baseline_request_routes_repo_inspection_without_approval(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-read-only-baseline")
+    monkeypatch.setattr(runtime, "run_repo_inspection", lambda **_kwargs: {
+        "branch": "feature/foundation-reset-integration",
+        "head": "head-read-only",
+        "working_tree_clean": True,
+        "status_short": "",
+        "repo_path": "/Users/liwu/AI-Commerce-OS",
+        "recommended_product_improvement": "优先修复 read-only routing。",
+    })
+    decision = runtime.classify_operational_risk(READ_ONLY_BASELINE_REQUEST)
+    assert decision["operation_type"] == runtime.REPO_INSPECTION
+    assert decision["risk_level"] == runtime.LOW_RISK
+    assert decision["approval_required"] is False
+
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-read-only-baseline",
+        founder_request=READ_ONLY_BASELINE_REQUEST,
+        source_message_id="message-read-only-baseline",
+    )
+    assert result["status"] == "completed"
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-read-only-baseline").one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-read-only-baseline").all()
+    discovery = dict(state.discovery or {})
+    assert discovery["operational_runtime"]["operation_type"] == runtime.REPO_INSPECTION
+    assert discovery.get("founder_action_queue", []) == []
+    assert "autonomous_development_mission" not in discovery
+    assert any("建议优先改进：优先修复 read-only routing。" in item.content for item in messages)
+
+
+@pytest.mark.parametrize("request_text", [
+    "只做只读检查，告诉我当前 integration branch。",
+    "仅检查 HEAD 和 working tree 状态。",
+    "查看当前 integration branch、HEAD、working tree。",
+])
+def test_integration_head_and_working_tree_keywords_do_not_trigger_safe_merge(request_text):
+    decision = runtime.classify_operational_risk(request_text)
+    assert decision["operation_type"] == runtime.REPO_INSPECTION
+    assert decision["risk_level"] == runtime.LOW_RISK
+    assert decision["approval_required"] is False
+
+
+def test_explicit_merge_still_routes_safe_merge():
+    decision = runtime.classify_operational_risk("把 feature/test 分支安全合并到 integration branch。")
+    assert decision["operation_type"] == runtime.SAFE_MERGE
+    assert decision["risk_level"] == runtime.HIGH_RISK
+    assert decision["approval_required"] is True
+
+
+def test_new_conversation_does_not_inherit_stale_safe_merge_action(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-stale-safe-merge-a")
+    with factory() as db:
+        db.add(ConversationDB(id="conv-stale-safe-merge-b", system_id="founder_ai", title="B"))
+        db.add(SinoBrainSessionDB(conversation_id="conv-stale-safe-merge-b", discovery={}))
+        db.commit()
+    runtime.handle_operational_conversation_request(
+        conversation_id="conv-stale-safe-merge-a",
+        founder_request="把 feature/test 分支安全合并到 integration branch。",
+        source_message_id="message-stale-merge-a",
+    )
+    runtime.handle_operational_conversation_request(
+        conversation_id="conv-stale-safe-merge-b",
+        founder_request="只做只读检查，告诉我当前 integration branch、HEAD、working tree。",
+        source_message_id="message-read-only-b",
+    )
+    with factory() as db:
+        a = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-stale-safe-merge-a").one()
+        b = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-stale-safe-merge-b").one()
+    assert any(item["action_type"] == runtime.SAFE_MERGE_QUEUE_TYPE for item in a.discovery["founder_action_queue"])
+    assert b.discovery.get("founder_action_queue", []) == []
+    assert b.discovery["operational_runtime"]["operation_type"] == runtime.REPO_INSPECTION
 
 
 def test_bounded_code_change_request_is_medium_and_requires_queue():

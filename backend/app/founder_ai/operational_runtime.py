@@ -325,6 +325,33 @@ def _is_production_or_high_risk_request(lowered: str) -> bool:
     return _contains_any(lowered, high_terms)
 
 
+def _has_explicit_side_effect_action(lowered: str) -> bool:
+    normalized = (
+        lowered.replace("不修改", "")
+        .replace("不要修改", "")
+        .replace("不会修改", "")
+        .replace("no modification", "")
+        .replace("read-only", "")
+    )
+    side_effect_terms = (
+        "合并", "merge", "推送", "push", "commit", "提交", "deploy", "部署", "上线",
+        "修改", "改成", "更新", "调整", "删除", "delete", "create", "创建", "新增",
+    )
+    return _contains_any(normalized, side_effect_terms)
+
+
+def _is_explicit_read_only_inspection_request(lowered: str) -> bool:
+    read_only_terms = ("只读", "不修改", "仅检查", "只做只读检查", "查看", "检查状态", "分析当前状态")
+    inspection_terms = ("branch", "分支", "head", "working tree", "工作区", "状态", "baseline", "基线", "integration branch")
+    return _contains_any(lowered, read_only_terms) and _contains_any(lowered, inspection_terms) and not _has_explicit_side_effect_action(lowered)
+
+
+def _is_explicit_safe_merge_request(lowered: str) -> bool:
+    merge_terms = ("合并", "merge")
+    safety_terms = ("integration", "集成", "baseline", "--no-ff", "no-ff", "safe merge", "安全合并")
+    return _contains_any(lowered, merge_terms) and _contains_any(lowered, safety_terms)
+
+
 def _is_clear_development_request(lowered: str) -> bool:
     if _is_production_or_high_risk_request(lowered):
         return False
@@ -399,7 +426,7 @@ def classify_operational_risk(content: str) -> dict:
     live_acceptance_fixture_terms = ("live founder acceptance fixture", "sino_live_acceptance_ok", "live acceptance")
     safe_integration_push_terms = ("integration push", "integration branch push", "推送 integration", "推送集成", "推送 integration branch", "推送集成分支")
     mission_terms = ("autonomous development mission", "完整开发任务", "开发任务", "开发目标", "自动完成整个", "一条龙")
-    safe_merge_terms = ("merge", "合并", "--no-ff", "no-ff", "integration baseline", "integration branch", "集成分支")
+    safe_merge_terms = ("safe merge", "安全合并", "--no-ff", "no-ff")
     safe_push_terms = ("push", "推送", "推到远程", "远程分支", "origin", "safe push")
     if _is_ambiguous_development_request(text):
         return {
@@ -419,6 +446,16 @@ def classify_operational_risk(content: str) -> dict:
             "operation": "discussion",
             "operation_type": DISCUSSION,
             "reason": "discussion_or_inspection_request_not_development_default",
+        }
+    if _is_explicit_read_only_inspection_request(lowered):
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": LOW_RISK,
+            "auto_continue": True,
+            "operation": "repo_inspection",
+            "operation_type": REPO_INSPECTION,
+            "reason": "explicit_read_only_inspection",
+            "approval_required": False,
         }
     if (
         any(term in lowered for term in live_acceptance_fixture_terms)
@@ -445,7 +482,7 @@ def classify_operational_risk(content: str) -> dict:
             "reason": "safe_integration_push_requires_separate_founder_approval",
             "approval_required": True,
         }
-    if any(term in lowered for term in safe_merge_terms):
+    if _is_explicit_safe_merge_request(lowered) or any(term in lowered for term in safe_merge_terms):
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
             "risk_level": HIGH_RISK,
@@ -602,6 +639,7 @@ def run_repo_inspection(*, cwd: Path | None = None) -> dict:
         "working_tree_clean": not bool(status.strip()),
         "status_short": status,
         "repo_path": str(root),
+        "recommended_product_improvement": "优先继续收敛只读检查、开发任务和高风险 Git 操作的 routing 边界，避免 Founder 明确只读请求被误投到审批流程。",
     }
 
 
@@ -2929,7 +2967,8 @@ def _normalize_operation_result(spec: OperationSpec, result: dict) -> dict:
             "summary": (
                 f"当前 branch：{result['branch']}\n"
                 f"当前 HEAD：{result['head']}\n"
-                f"工作区：{'clean' if result['working_tree_clean'] else 'dirty'}"
+                f"工作区：{'clean' if result['working_tree_clean'] else 'dirty'}\n"
+                f"建议优先改进：{result.get('recommended_product_improvement') or '继续加强 clear intent routing 的回归覆盖。'}"
             ),
             "stdout_excerpt": result.get("status_short") or "",
             "stderr_excerpt": "",
@@ -2973,8 +3012,9 @@ def execute_low_risk_operation(
         approval_status="approved",
         execution_status="not_started",
     )
+    task_id = task.id
     with SessionLocal() as session:
-        task = session.get(TaskAssetDB, task.id)
+        task = session.get(TaskAssetDB, task_id)
         scope = dict(task.scope or {})
         prior_start = dict(scope.get("execution_start") or {})
         if prior_start.get("execution_id") and task.result:
@@ -3028,9 +3068,10 @@ def execute_low_risk_operation(
         "status": "queued",
         "operation_type": spec.operation_type,
         "risk_decision": risk,
-        "task_id": task.id,
+        "task_id": task_id,
         "execution_id": execution_id,
         "founder_request": founder_request,
+        "source_message_id": source_message_id,
         "message": "这是一个低风险本地开发检查工作，我会直接执行。正在准备执行…",
     }
     _update_brain(conversation_id, queued_payload)
@@ -3062,7 +3103,7 @@ def execute_low_risk_operation(
             "real_executor_used": "LOCAL_EXECUTOR",
         }
         with SessionLocal() as session:
-            record = session.get(TaskAssetDB, task.id)
+            record = session.get(TaskAssetDB, task_id)
             record.result = persisted_result
             record.status = "failed" if execution_failed else "completed"
             record.execution_status = "failed" if execution_failed else "completed"
@@ -3090,12 +3131,12 @@ def execute_low_risk_operation(
             conversation_id,
             f"{'执行失败' if execution_failed else '执行完成'}。\n\n{persisted_result['summary']}",
             message_type="operational_result",
-            grounding={"operational_runtime": completed_payload, "task_id": task.id, "execution_id": execution_id},
+            grounding={"operational_runtime": completed_payload, "task_id": task_id, "execution_id": execution_id},
         )
         return {
             "handled": True,
             "risk_decision": risk,
-            "task_id": task.id,
+            "task_id": task_id,
             "execution_id": execution_id,
             "created": created,
             "reused": False,
@@ -3112,7 +3153,7 @@ def execute_low_risk_operation(
             "real_executor_used": "LOCAL_EXECUTOR",
         }
         with SessionLocal() as session:
-            record = session.get(TaskAssetDB, task.id)
+            record = session.get(TaskAssetDB, task_id)
             if record is not None:
                 record.result = failure
                 record.status = "failed"
@@ -3131,12 +3172,12 @@ def execute_low_risk_operation(
             conversation_id,
             f"执行失败：{error}\n\n可重试：是",
             message_type="operational_result",
-            grounding={"operational_runtime": failure, "task_id": task.id, "execution_id": execution_id},
+            grounding={"operational_runtime": failure, "task_id": task_id, "execution_id": execution_id},
         )
         return {
             "handled": True,
             "risk_decision": risk,
-            "task_id": task.id,
+            "task_id": task_id,
             "execution_id": execution_id,
             "created": created,
             "reused": False,
