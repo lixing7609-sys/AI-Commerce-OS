@@ -58,6 +58,7 @@ SAFE_PUSH_PROTECTED_BRANCHES = {"main", "master", "develop", "feature/foundation
 SAFE_MERGE_TARGET_BRANCH = "feature/foundation-reset-integration"
 SAFE_MERGE_PROTECTED_BRANCHES = {"main", "master", "develop"}
 SAFE_INTEGRATION_PUSH_BRANCH = "feature/foundation-reset-integration"
+TERMINAL_MISSION_STATES = {"COMPLETED", "FAILED", "BLOCKED", "CANCELLED", "REJECTED"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -857,9 +858,12 @@ def _mission_branch_suffix(mission_id: str) -> str:
     return hashlib.sha1(mission_id.encode()).hexdigest()[:8]
 
 
-def _git_safe_create_branch(branch: str, *, cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess:
+def _git_safe_create_branch(branch: str, *, cwd: Path, start_point: str | None = None, timeout: int = 30) -> subprocess.CompletedProcess:
     target = _safe_git_ref(branch, field="branch")
-    return subprocess.run(["git", "switch", "-c", target], cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False, shell=False)
+    argv = ["git", "switch", "-c", target]
+    if start_point:
+        argv.append(_safe_git_ref(start_point, field="start_point"))
+    return subprocess.run(argv, cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False, shell=False)
 
 
 def executor_for_operation(operation_type: str) -> str:
@@ -1144,6 +1148,43 @@ def _mission_is_active(mission: dict) -> bool:
     }
 
 
+def _mission_is_waiting_integration_closure(mission: dict) -> bool:
+    stage = mission.get("current_stage") or mission.get("status")
+    if stage in TERMINAL_MISSION_STATES:
+        return False
+    return bool(mission.get("working_branch") and mission.get("baseline_branch"))
+
+
+def _find_previous_unintegrated_mission(*, excluding_mission_id: str | None = None) -> dict | None:
+    candidates: list[dict] = []
+    with SessionLocal() as session:
+        states = list(session.scalars(select(SinoBrainSessionDB)))
+    for state in states:
+        discovery = dict(state.discovery or {})
+        missions = dict(discovery.get("autonomous_development_missions") or {})
+        if not missions and isinstance(discovery.get("autonomous_development_mission"), dict):
+            mission = dict(discovery["autonomous_development_mission"])
+            missions[mission.get("mission_id") or "current"] = mission
+        for mission in missions.values():
+            if not isinstance(mission, dict):
+                continue
+            if excluding_mission_id and mission.get("mission_id") == excluding_mission_id:
+                continue
+            if _mission_is_waiting_integration_closure(mission):
+                candidates.append({**mission, "conversation_id": mission.get("conversation_id") or state.conversation_id})
+    candidates.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
+    return candidates[0] if candidates else None
+
+
+def _configured_integration_baseline(*, cwd: Path) -> dict:
+    branch = SAFE_MERGE_TARGET_BRANCH
+    return {
+        "branch": branch,
+        "head": _git_rev_parse(branch, cwd=cwd),
+        "exists": _git_branch_exists(branch, cwd=cwd),
+    }
+
+
 def _load_mission_for_mission_id(mission_id: str) -> dict | None:
     with SessionLocal() as session:
         states = list(session.scalars(select(SinoBrainSessionDB)))
@@ -1225,6 +1266,27 @@ def _resolve_mission_working_branch(founder_request: str, mission_id: str, basel
         "existing_branch_head": branch_head,
         "existing_branch_unique_commits": unique_commits,
         "active_mission": active_mission,
+    }
+
+
+def _mission_safe_merge_request(mission: dict, checkpoint: dict, *, cwd: Path) -> dict:
+    source_branch = _safe_git_ref(str(mission.get("working_branch") or ""), field="source_branch")
+    target_branch = _safe_git_ref(str(mission.get("baseline_branch") or SAFE_MERGE_TARGET_BRANCH), field="target_branch")
+    preflight = _safe_merge_preflight(cwd=cwd, source_branch=source_branch, target_branch=target_branch)
+    checkpoint_head = checkpoint.get("new_head") or mission.get("checkpoint_head") or preflight.get("source_head")
+    return {
+        **preflight,
+        "source_branch": source_branch,
+        "target_branch": target_branch,
+        "target_head_before": preflight.get("target_head"),
+        "checkpoint_head": checkpoint_head,
+        "source_checkpoint_head": checkpoint_head,
+        "source_verification_status": "PASS",
+        "allow_unpushed_source_after_checkpoint": True,
+        "source_safe_push_status": "NOT_REQUIRED_FOR_LOCAL_MISSION_MERGE",
+        "safe_checkpoint_action_id": checkpoint.get("action_id"),
+        "safe_checkpoint_execution_id": checkpoint.get("execution_id"),
+        "mission_id": mission.get("mission_id"),
     }
 
 
@@ -1680,6 +1742,11 @@ def _safe_merge_failure(failure_type: str, summary: str, *, started_at: str, app
 
 
 def _validate_safe_merge_preconditions(approved_request: dict, current: dict, *, started_at: str, action_id: str) -> dict | None:
+    local_checkpointed_source = (
+        bool(approved_request.get("allow_unpushed_source_after_checkpoint"))
+        and approved_request.get("source_verification_status") == "PASS"
+        and (approved_request.get("source_checkpoint_head") or approved_request.get("checkpoint_head")) == current.get("source_head")
+    )
     if current.get("state_blocker"):
         return _safe_merge_failure("REPO_OPERATION_IN_PROGRESS", str(current["state_blocker"]), started_at=started_at, approval_action_id=action_id, preflight=current)
     if current.get("detached_head"):
@@ -1702,13 +1769,13 @@ def _validate_safe_merge_preconditions(approved_request: dict, current: dict, *,
         return _safe_merge_failure("TARGET_HEAD_CHANGED", "target HEAD changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
     if current.get("source_branch") != approved_request.get("source_branch") or current.get("target_branch") != approved_request.get("target_branch"):
         return _safe_merge_failure("SAFE_MERGE_PRECONDITION_CHANGED", "source or target branch changed after approval", started_at=started_at, approval_action_id=action_id, preflight=current)
-    if current.get("source_remote_head") != approved_request.get("source_remote_head") or current.get("source_head") != current.get("source_remote_head") or current.get("source_ahead_remote") or current.get("source_behind_remote"):
+    if not local_checkpointed_source and (current.get("source_remote_head") != approved_request.get("source_remote_head") or current.get("source_head") != current.get("source_remote_head") or current.get("source_ahead_remote") or current.get("source_behind_remote")):
         return _safe_merge_failure("SOURCE_REMOTE_NOT_SYNCED", "source branch must be fully synced with its remote", started_at=started_at, approval_action_id=action_id, preflight=current)
     if current.get("target_remote_head") and (current.get("target_remote_head") != approved_request.get("target_remote_head_before") or current.get("target_head") != current.get("target_remote_head") or current.get("target_ahead_remote") or current.get("target_behind_remote")):
         return _safe_merge_failure("TARGET_REMOTE_NOT_SYNCED", "target branch must be fully synced with its remote", started_at=started_at, approval_action_id=action_id, preflight=current)
-    if not current.get("source_verified"):
+    if not current.get("source_verified") and not local_checkpointed_source:
         return _safe_merge_failure("SOURCE_NOT_VERIFIED", "source verification evidence is missing or not PASS", started_at=started_at, approval_action_id=action_id, preflight=current)
-    if not current.get("source_pushed"):
+    if not current.get("source_pushed") and not local_checkpointed_source:
         return _safe_merge_failure("SOURCE_NOT_PUSHED", "source Safe Push evidence is missing or not PASS", started_at=started_at, approval_action_id=action_id, preflight=current)
     conflict = dict(current.get("conflict_prediction") or {})
     if conflict.get("conflict_predicted"):
@@ -2510,10 +2577,10 @@ def _append_safe_push_queue_item(conversation_id: str, founder_request: str, sou
     return action_id
 
 
-def _append_safe_merge_queue_item(conversation_id: str, founder_request: str, source_message_id: str, risk: dict) -> str:
+def _append_safe_merge_queue_item(conversation_id: str, founder_request: str, source_message_id: str, risk: dict, merge_request: dict | None = None) -> str:
     now = _now()
     action_id = _safe_merge_action_id(source_message_id)
-    merge_request = _safe_merge_preflight()
+    merge_request = dict(merge_request or _safe_merge_preflight())
     with SessionLocal() as session:
         state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
         if state is None:
@@ -2664,21 +2731,67 @@ def _append_safe_integration_push_queue_item(conversation_id: str, founder_reque
 def start_autonomous_development_mission(conversation_id: str, founder_request: str, source_message_id: str) -> dict:
     started_at = _now()
     root = repo_root()
-    baseline_branch = _git_output(["branch", "--show-current"], cwd=root).stdout.strip()
-    baseline_head = _git_output(["rev-parse", "HEAD"], cwd=root).stdout.strip()
+    current_branch = _git_output(["branch", "--show-current"], cwd=root).stdout.strip()
+    baseline = _configured_integration_baseline(cwd=root)
+    baseline_branch = baseline["branch"]
+    baseline_head = baseline["head"]
     mission_id = _mission_id(source_message_id)
+    previous_unintegrated = _find_previous_unintegrated_mission(excluding_mission_id=mission_id)
+    status_lines = _git_status_short(cwd=root)
+    if previous_unintegrated and (current_branch != baseline_branch or status_lines):
+        mission = {
+            "mission_id": mission_id,
+            "conversation_id": conversation_id,
+            "founder_request": founder_request,
+            "mission_type": "CONTROLLED_DEVELOPMENT",
+            "status": "BLOCKED",
+            "current_stage": "BLOCKED",
+            "failed_stage": "PLANNING",
+            "failure_type": "PREVIOUS_MISSION_NOT_INTEGRATED",
+            "failure_summary": "上一项开发已修改/验证但尚未合并回 integration baseline；请先处理上一 Mission 的合并审批。",
+            "baseline_branch": baseline_branch,
+            "baseline_head": baseline_head,
+            "working_branch": None,
+            "previous_mission_id": previous_unintegrated.get("mission_id"),
+            "previous_working_branch": previous_unintegrated.get("working_branch"),
+            "previous_merge_action_id": previous_unintegrated.get("merge_action_id"),
+            "source_message_id": source_message_id,
+            "created_at": started_at,
+        }
+        _persist_mission(conversation_id, mission)
+        _append_assistant_message(
+            conversation_id,
+            "上一项开发已经修改并验证完成，但还没有合并回开发基线。请先处理上一 Mission 的本地安全合并审批。",
+            message_type="operational_result",
+            grounding={"mission": mission},
+        )
+        return {"handled": True, "status": "blocked", "mission_id": mission_id, "mission": mission}
+    if not baseline["exists"] or not baseline_head:
+        mission = {
+            "mission_id": mission_id,
+            "conversation_id": conversation_id,
+            "founder_request": founder_request,
+            "mission_type": "CONTROLLED_DEVELOPMENT",
+            "status": "BLOCKED",
+            "current_stage": "BLOCKED",
+            "failed_stage": "PLANNING",
+            "failure_type": "MISSION_BASELINE_NOT_READY",
+            "failure_summary": "Configured integration baseline branch is unavailable.",
+            "baseline_branch": baseline_branch,
+            "baseline_head": baseline_head,
+            "working_branch": None,
+            "source_message_id": source_message_id,
+            "created_at": started_at,
+        }
+        _persist_mission(conversation_id, mission)
+        _append_assistant_message(conversation_id, "Mission 已阻断：configured integration baseline 不可用。", message_type="operational_result", grounding={"mission": mission})
+        return {"handled": True, "status": "blocked", "mission_id": mission_id, "mission": mission}
     branch_resolution = _resolve_mission_working_branch(founder_request, mission_id, baseline_head, cwd=root)
     working_branch = branch_resolution["working_branch"]
     plan = _plan_for_development_request(founder_request)
     live_acceptance_mode = bool(plan.get("live_acceptance_mode"))
     routing_acceptance_mode = bool(plan.get("routing_acceptance_mode"))
-    status_lines = _git_status_short(cwd=root)
-    baseline_allowed = baseline_branch == SAFE_INTEGRATION_PUSH_BRANCH or (
-        live_acceptance_mode and baseline_branch == "feature/sino-live-development-loop-v1"
-    ) or (
-        routing_acceptance_mode and baseline_branch == "feature/sino-live-development-default-path-v1"
-    )
-    if not baseline_allowed or (status_lines and not (live_acceptance_mode or routing_acceptance_mode)):
+    if status_lines and not (live_acceptance_mode or routing_acceptance_mode):
         mission = {
             "mission_id": mission_id,
             "conversation_id": conversation_id,
@@ -2699,7 +2812,7 @@ def start_autonomous_development_mission(conversation_id: str, founder_request: 
         _append_assistant_message(conversation_id, "Mission 已阻断：必须从 clean integration baseline 启动。", message_type="operational_result", grounding={"mission": mission})
         return {"handled": True, "status": "blocked", "mission_id": mission_id, "mission": mission}
     branch_already_exists_for_same_mission = branch_resolution["strategy"] == "same_mission_retry_reuse" and _git_branch_exists(working_branch, cwd=root)
-    created_branch = SimpleNamespace(returncode=0, stdout="", stderr="") if branch_already_exists_for_same_mission else _git_safe_create_branch(working_branch, cwd=root)
+    created_branch = SimpleNamespace(returncode=0, stdout="", stderr="") if branch_already_exists_for_same_mission else _git_safe_create_branch(working_branch, cwd=root, start_point=baseline_branch)
     if created_branch.returncode != 0:
         mission = {
             "mission_id": mission_id,
@@ -2825,21 +2938,36 @@ def _resume_mission_after_step(conversation_id: str, mission: dict, step_operati
             )
             return
         checkpoint = dict(step_result.get("checkpoint") or {})
+        if not checkpoint.get("success") or not checkpoint.get("new_head"):
+            mission.update({
+                "status": "FAILED",
+                "current_stage": "FAILED",
+                "failed_stage": "CHECKPOINTING",
+                "failure_type": checkpoint.get("failure_type") or "CHECKPOINT_MISSING",
+                "failure_summary": checkpoint.get("summary") or "verification passed but local checkpoint was not created",
+                "last_completed_step": "VERIFYING",
+                "change_result": step_result,
+                "next_required_action": None,
+            })
+            _persist_mission(conversation_id, mission)
+            _append_assistant_message(conversation_id, f"Mission 在 checkpoint 阶段停止：{mission.get('failure_summary')}", message_type="operational_result", grounding={"mission": mission})
+            return
         mission.update({
-            "status": "WAITING_FEATURE_PUSH_APPROVAL",
-            "current_stage": "WAITING_FEATURE_PUSH_APPROVAL",
+            "status": "WAITING_MERGE_APPROVAL",
+            "current_stage": "WAITING_MERGE_APPROVAL",
             "last_completed_step": "CHECKPOINTING",
             "checkpoint_head": checkpoint.get("new_head"),
             "change_result": step_result,
-            "next_required_action": "SAFE_PUSH_APPROVAL",
+            "next_required_action": "SAFE_MERGE_APPROVAL",
         })
         _persist_mission(conversation_id, mission)
-        risk = {"work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK, "risk_level": HIGH_RISK, "auto_continue": False, "operation": "safe_push", "operation_type": SAFE_PUSH, "reason": "mission_feature_push_requires_founder_approval", "approval_required": True}
-        action_id = _append_safe_push_queue_item(conversation_id, "Mission 下一步：推送 feature branch。", f"{mission['mission_id']}:feature-push", risk)
-        mission["feature_push_action_id"] = action_id
+        risk = {"work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK, "risk_level": HIGH_RISK, "auto_continue": False, "operation": "safe_merge", "operation_type": SAFE_MERGE, "reason": "mission_merge_requires_founder_approval", "approval_required": True}
+        merge_request = _mission_safe_merge_request(mission, checkpoint, cwd=repo_root())
+        action_id = _append_safe_merge_queue_item(conversation_id, "Mission 下一步：本地 --no-ff 合并 feature 到 integration。", f"{mission['mission_id']}:safe-merge", risk, merge_request=merge_request)
+        mission["merge_action_id"] = action_id
         _persist_mission(conversation_id, mission)
-        _attach_mission_to_action(conversation_id, action_id, mission, "WAITING_FEATURE_PUSH_APPROVAL")
-        _append_assistant_message(conversation_id, "本地 checkpoint 已完成。接下来需要你批准安全推送 feature branch。", message_type="operational_approval_required", grounding={"mission": mission})
+        _attach_mission_to_action(conversation_id, action_id, mission, "WAITING_MERGE_APPROVAL")
+        _append_assistant_message(conversation_id, "本地 checkpoint 已完成。接下来需要你批准本地 --no-ff merge 到 integration baseline。", message_type="operational_approval_required", grounding={"mission": mission})
         return
     if step_operation == SAFE_PUSH:
         mission.update({
@@ -2859,20 +2987,28 @@ def _resume_mission_after_step(conversation_id: str, mission: dict, step_operati
         return
     if step_operation == SAFE_MERGE:
         mission.update({
-            "status": "WAITING_INTEGRATION_PUSH_APPROVAL",
-            "current_stage": "WAITING_INTEGRATION_PUSH_APPROVAL",
+            "status": "COMPLETED",
+            "current_stage": "COMPLETED",
             "last_completed_step": "MERGING",
             "merge_result": step_result,
             "merge_head": step_result.get("merge_commit_head"),
-            "next_required_action": "SAFE_INTEGRATION_PUSH_APPROVAL",
+            "final_integration_head": step_result.get("merge_commit_head"),
+            "next_required_action": None,
+            "remote_integration_push_required": True,
         })
         _persist_mission(conversation_id, mission)
-        risk = {"work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK, "risk_level": HIGH_RISK, "auto_continue": False, "operation": "safe_integration_push", "operation_type": SAFE_INTEGRATION_PUSH, "reason": "mission_integration_push_requires_founder_approval", "approval_required": True}
-        action_id = _append_safe_integration_push_queue_item(conversation_id, "Mission 下一步：推送 integration branch。", f"{mission['mission_id']}:integration-push", risk)
-        mission["integration_push_action_id"] = action_id
-        _persist_mission(conversation_id, mission)
-        _attach_mission_to_action(conversation_id, action_id, mission, "WAITING_INTEGRATION_PUSH_APPROVAL")
-        _append_assistant_message(conversation_id, "本地 integration merge 已完成。接下来需要你批准 Integration Push。", message_type="operational_approval_required", grounding={"mission": mission})
+        _append_assistant_message(
+            conversation_id,
+            (
+                "开发任务已完成并合并回本地 integration baseline。\n\n"
+                f"Feature branch：{mission.get('working_branch')}\n"
+                f"Checkpoint：{mission.get('checkpoint_head')}\n"
+                f"Merge：{mission.get('merge_head')}\n"
+                "Integration Push：尚未执行，仍需单独高风险审批。"
+            ),
+            message_type="operational_result",
+            grounding={"mission": mission},
+        )
         return
     if step_operation == SAFE_INTEGRATION_PUSH:
         mission.update({
@@ -3466,7 +3602,7 @@ def execute_bounded_code_change(
             execution.completed_at = completed_at
             execution.result = persisted_result
             save_execution_session(execution, package)
-        _mark_bounded_action(conversation_id, action_id, {"status": "completed" if success else "rejected", "decision": "approved", "decided_at": completed_at, "task_id": task.id, "execution_id": execution_id, "result": persisted_result})
+        _mark_bounded_action(conversation_id, action_id, {"status": "completed" if persisted_result.get("success") else "rejected", "decision": "approved", "decided_at": completed_at, "task_id": task.id, "execution_id": execution_id, "result": persisted_result})
         completed_payload = {**queued_payload, "status": persisted_result["status"], "result": persisted_result, "message": summary}
         _update_brain(conversation_id, completed_payload)
         _append_assistant_message(

@@ -629,6 +629,69 @@ describe("ConversationThread layout", () => {
     expect(screen.getByText("YES")).toBeTruthy();
   });
 
+  it("shows checkpoint complete with merge approval pending instead of whole Mission completed", () => {
+    const value = {
+      ...snapshot("conv-mission-waiting-merge", [
+        { message_id: "founder-source", role: "founder", content: "修复 Mission 状态同步并验证。" },
+        { message_id: "assistant-ack", role: "assistant", content: "我已理解，这是一个 Autonomous Development Mission。" },
+      ]),
+      sino_brain: {
+        discovery: {
+          operational_runtime: {
+            status: "completed",
+            operation_type: "BOUNDED_CODE_CHANGE",
+            result: {
+              summary: "受控代码修改完成，验证通过。",
+              changed_files: ["frontend/src/sino-founder/ConversationThread.jsx"],
+              check_result: "PASS",
+              checkpoint: { new_head: "checkpoint-head", commit_message: "fix: sync", commit_file_count: 1, working_tree_clean_after: true },
+            },
+          },
+          autonomous_development_mission_view: {
+            mission_id: "mission-waiting-merge",
+            source_message_id: "founder-source",
+            acknowledgement_message_id: "assistant-ack",
+            goal: "修复 Mission 状态同步并验证。",
+            status: "WAITING_MERGE_APPROVAL",
+            stage: "WAITING_MERGE_APPROVAL",
+            stage_label: "等待你批准合并到 integration",
+            progress: { completed: 4, total: 7, label: "4 / 7 completed" },
+            working_branch: "feature/sino-mission-status-sync",
+            current_head: "checkpoint-head",
+            last_completed_step: "已创建本地 checkpoint",
+            next_required_action: "批准本地合并",
+            timeline: [
+              { key: "planning", label: "规划", status: "completed" },
+              { key: "change", label: "修改", status: "completed" },
+              { key: "verification", label: "验证", status: "completed" },
+              { key: "checkpoint", label: "Checkpoint", status: "completed" },
+              { key: "merge", label: "Merge", status: "waiting_approval" },
+            ],
+            changed_files: { items: [{ path: "frontend/src/sino-founder/ConversationThread.jsx", boundary: "approved" }], total: 1, more: 0 },
+            verification_summary: { status: "PASS", passed: 57, failed: 0, errors: 0, build_status: "PASS" },
+            checkpoint_summary: { commit_message: "fix: sync", commit_head: "checkpoint-head", commit_file_count: 1, working_tree_clean_after: true },
+            pending_approval: {
+              action_id: "safe-merge:mission-waiting-merge:safe-merge",
+              action_type: "SAFE_MERGE_APPROVAL",
+              label: "批准本地合并",
+              risk_level: "HIGH",
+              scope: "feature/sino-mission-status-sync",
+              will_do: ["feature → integration", "执行本地 --no-ff merge"],
+              will_not_do: ["不会自动解决冲突", "不会 push integration", "不会 merge main/master/develop"],
+            },
+          },
+        },
+      },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByText("等待你批准合并到 integration")).toBeTruthy();
+    expect(screen.getByText("已创建本地 checkpoint")).toBeTruthy();
+    expect(screen.getAllByText("批准本地合并").length).toBeGreaterThan(0);
+    expect(screen.getByRole("region", { name: "Checkpoint Summary" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Mission Approval Summary" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Mission Completion Summary" })).toBeNull();
+  });
+
   it("shows autonomous mission failed stage and restores from snapshot reload", () => {
     const value = {
       ...snapshot("conv-mission-failed", [{ message_id: "m1", role: "founder", content: "完成一个小型开发目标" }]),
