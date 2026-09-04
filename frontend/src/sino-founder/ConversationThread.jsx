@@ -473,14 +473,19 @@ export function ConversationThread({ snapshot, drafts = [], onOpenDraft, message
   const standaloneOperationalRuntime = autonomousMission?.mission_id ? null : operationalRuntime;
   const operationalRuntimeSourceMessageId = standaloneOperationalRuntime?.source_message_id || standaloneOperationalRuntime?.risk_decision?.source_message_id;
   const operationalRuntimeActionId = standaloneOperationalRuntime?.action_id;
+  const operationalRuntimeSourceIndex = visibleMessages.findIndex((item) => item.message_id === operationalRuntimeSourceMessageId);
+  const operationalRuntimeSourceReplyId = operationalRuntimeSourceIndex >= 0
+    ? visibleMessages.slice(operationalRuntimeSourceIndex + 1).find((item) => item.role === "assistant")?.message_id
+    : null;
   const operationalRuntimeAnchorMessageId = standaloneOperationalRuntime?.status ? (
     [...visibleMessages].reverse().find((item) => item.role === "assistant" && (
-      item.grounding?.operational_runtime?.action_id === operationalRuntimeActionId
-      || item.grounding?.operational_runtime?.source_message_id === operationalRuntimeSourceMessageId
-      || item.grounding?.operational_runtime?.risk_decision?.reason === standaloneOperationalRuntime?.risk_decision?.reason
+      (operationalRuntimeActionId && item.grounding?.operational_runtime?.action_id === operationalRuntimeActionId)
+      || (operationalRuntimeSourceMessageId && item.grounding?.operational_runtime?.source_message_id === operationalRuntimeSourceMessageId)
+      || (standaloneOperationalRuntime?.risk_decision?.reason && item.grounding?.operational_runtime?.risk_decision?.reason === standaloneOperationalRuntime.risk_decision.reason)
     ))?.message_id
-    || [...visibleMessages].reverse().find((item) => item.role === "assistant")?.message_id
+    || operationalRuntimeSourceReplyId
     || visibleMessages.find((item) => item.message_id === operationalRuntimeSourceMessageId)?.message_id
+    || [...visibleMessages].reverse().find((item) => item.role === "assistant")?.message_id
     || null
   ) : null;
   const operationalRuntimeStatusForMessage = (item) => item.message_id === operationalRuntimeAnchorMessageId ? <OperationalRuntimeStatus runtime={standaloneOperationalRuntime} /> : null;
