@@ -305,13 +305,16 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
   const mvpQueueActions = mergeFounderActionQueues(brain.discovery?.founder_action_queue || [], canonicalQueueActions).filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
   const conversationTasks = brain.discovery?.conversation_tasks || [];
+  const currentOperationalActionId = operationalRuntime.action_id || autonomousMissionView?.merge_action_id || autonomousMissionView?.action_id;
   const currentOperationalExecutionId = operationalRuntime.execution_id || autonomousMissionView?.merge_execution_id || autonomousMissionView?.execution_id;
   const currentOperationalTaskId = operationalRuntime.task_id || autonomousMissionView?.merge_task_id || autonomousMissionView?.task_id;
-  const missionConversationTasks = hasAutonomousMission && (currentOperationalExecutionId || currentOperationalTaskId)
+  const missionConversationTasks = hasAutonomousMission && (currentOperationalActionId || currentOperationalExecutionId || currentOperationalTaskId)
     ? conversationTasks.map((item) => {
       const taskExecutionId = item.execution_id || item.execution_session_id || item.details?.execution_id || item.details?.execution_session_id;
       const taskId = item.task_id || item.task_ref || item.details?.task_id;
-      const isCurrent = taskExecutionId === currentOperationalExecutionId || taskId === currentOperationalTaskId;
+      const taskOperationalRuntime = item.details?.scope?.operational_runtime || {};
+      const taskActionId = item.action_id || item.founder_action_id || taskOperationalRuntime.action_id || taskOperationalRuntime.approval_action_id || taskOperationalRuntime.merge_request?.approval_action_id;
+      const isCurrent = taskActionId === currentOperationalActionId || taskExecutionId === currentOperationalExecutionId || taskId === currentOperationalTaskId;
       return isCurrent ? item : { ...item, status: "completed", current_action: null, is_completed: true, is_historical: true };
     })
     : conversationTasks;
