@@ -112,6 +112,37 @@ describe("Conversation / Task UI ownership", () => {
     expect(screen.queryByLabelText(/任务进度/)).toBeNull();
   });
 
+  it("keeps old blocked safe merge in history when a replacement merge execution is current", () => {
+    render(<SinoBrainContext brain={{
+      stage: "operational_runtime",
+      discovery: {
+        operational_runtime: {
+          operation_type: "SAFE_MERGE",
+          task_id: "task-new",
+          execution_id: "execution-new",
+          status: "queued",
+        },
+        autonomous_development_mission_view: {
+          mission_id: "mission-refresh",
+          stage: "MERGING",
+          status: "MERGING",
+          stage_label: "正在本地合并",
+          next_step: "Sino 正在执行本地安全合并",
+          merge_execution_id: "execution-new",
+        },
+        conversation_tasks: [
+          { task_ref: "task-old", task_id: "task-old", execution_id: "execution-old", title: "旧 SAFE_MERGE", status: "blocked", current_action: "验证受阻", founder_action_required: false },
+          { task_ref: "task-new", task_id: "task-new", execution_id: "execution-new", title: "新 refreshed SAFE_MERGE", status: "queued", current_action: "排队中", founder_action_required: false },
+        ],
+      },
+    }} />);
+    const sidebar = screen.getByRole("region", { name: "Execution Center" });
+    expect(within(sidebar).getByText("新 refreshed SAFE_MERGE")).toBeTruthy();
+    expect(within(sidebar).getByText("排队中")).toBeTruthy();
+    expect(within(sidebar).queryByText("验证受阻")).toBeNull();
+    expect(within(sidebar).getByText("已完成（1）")).toBeTruthy();
+  });
+
   it("does not queue ordinary Codex permission or self healing", () => {
     const { rerender } = render(<SinoBrainContext brain={taskBrain()} />);
     expect(screen.getByText("暂无需要你处理的事项")).toBeTruthy();
