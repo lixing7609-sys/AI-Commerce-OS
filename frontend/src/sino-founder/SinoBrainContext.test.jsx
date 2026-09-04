@@ -500,7 +500,7 @@ describe("SinoBrainContext", () => {
     render(<SinoBrainContext brain={{ stage: "goal_review", execution_progress: { task_id: "task-quick", current_action: "正在定位", next_action: "Sino 自动执行" }, discovery: { task_complexity_route: { classification: "QUICK_FIX", execution_status: "inspecting", founder_gate_required: false, quick_fix_contract: { target_area: "Left Sidebar / AI Commerce OS Project Tree" } } } }} />);
     expect(screen.getByText("正在定位")).toBeTruthy();
     expect(screen.getByText("Sino 自动执行")).toBeTruthy();
-    expect(screen.getByText("当前无需操作")).toBeTruthy();
+    expect(screen.getByText("Founder 暂无需要处理的事项")).toBeTruthy();
     expect(screen.queryByText("确认后开始 Strategy Meeting。")).toBeNull();
     expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
     expect(screen.queryByRole("button", { name: "修改目标" })).toBeNull();
@@ -508,7 +508,7 @@ describe("SinoBrainContext", () => {
   it.skip("projects a Standard Task without Goal confirmation or Strategy actions", () => {
     render(<SinoBrainContext brain={{ stage: "standard_task", execution_progress: { task_id: "task-standard", current_action: "正在实施", next_action: "Sino 自动执行" }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", current_step: "execution", execution_status: "execution", standard_task_contract: { task_id: "task-standard", target_surface: "Capability Repository" } } } }} />);
     expect(screen.getByText("正在实施")).toBeTruthy();
-    expect(screen.getByText("当前无需操作")).toBeTruthy();
+    expect(screen.getByText("Founder 暂无需要处理的事项")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "开始讨论" })).toBeNull();
     expect(screen.queryByText("确认后开始 Strategy Meeting。" )).toBeNull();
   });
@@ -522,6 +522,37 @@ describe("SinoBrainContext", () => {
     expect(screen.getByRole("button", { name: "批准" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "修改范围" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "驳回" })).toBeTruthy();
+  });
+  it("does not show Founder approval for autonomous low-risk execution", () => {
+    render(<SinoBrainContext brain={{
+      stage: "operational_runtime",
+      discovery: {
+        founder_action_queue: [],
+        operational_runtime: {
+          status: "running",
+          operation_type: "REPO_INSPECTION",
+          risk_decision: {
+            risk_level: "LOW",
+            autonomous_execution_policy: {
+              decision: "AUTO_CONTINUE",
+              reason: "low_risk_read_only_operation",
+              approval_required: false,
+              auto_continue: true,
+            },
+          },
+        },
+      },
+      execution_progress: {
+        execution_id: "execution-read-only",
+        execution_status: "running",
+        founder_action_required: false,
+        current_action: "正在检查当前分支和工作树状态",
+        next_action: "Sino 自动返回结果",
+      },
+    }} />);
+    expect(screen.getByText("Founder 暂无需要处理的事项")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Founder Action Queue", exact: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: "批准" })).toBeNull();
   });
   it.skip("projects reuse completion without a stale Capability Repository target", () => {
     render(<SinoBrainContext brain={{ stage: "standard_task", current_action: { action_id: "canonical_execution_progress", title: "复用验证完成", description: "等待 Founder 验收", progress_percent: 100, founder_action_required: false }, execution_progress: { task_id: "task-reuse", current_phase: "complete", execution_status: "completed", next_action: "等待 Founder 验收", founder_action_required: false }, discovery: { task_complexity_route: { classification: "STANDARD_TASK", reuse_lane: true, current_step: "complete", execution_status: "completed", standard_task_contract: { task_id: "task-reuse", target_surface: "Local Development Environment" } } } }} />);

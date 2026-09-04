@@ -26,6 +26,7 @@ from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSe
 from app.core.task_asset.model import TaskAssetDB
 from app.core.task_asset.service import create_task_asset
 from app.database.db import SessionLocal
+from app.founder_ai.autonomous_execution_policy import AUTO_CONTINUE, decide_from_risk
 from app.founder_ai.codex_adapter import CodexExecutionTimeout, SubprocessCodexAdapter
 from app.founder_ai.execution_events import append_event
 from app.founder_ai.execution_loop import ExecutionSession
@@ -342,12 +343,14 @@ def _has_explicit_side_effect_action(lowered: str) -> bool:
         lowered.replace("不修改", "")
         .replace("不要修改", "")
         .replace("不会修改", "")
+        .replace("未提交修改", "")
         .replace("no modification", "")
+        .replace("uncommitted changes", "")
         .replace("read-only", "")
     )
     side_effect_terms = (
         "合并", "merge", "推送", "push", "commit", "提交", "deploy", "部署", "上线",
-        "修改", "改成", "更新", "调整", "删除", "delete", "create", "创建", "新增",
+        "修改", "修复", "改成", "更新", "调整", "删除", "delete", "create", "创建", "新增",
     )
     return _contains_any(normalized, side_effect_terms)
 
@@ -383,6 +386,19 @@ def _is_explicit_analytical_inspection_request(lowered: str) -> bool:
         _contains_any(lowered, read_only_terms)
         and _contains_any(lowered, analytical_terms)
         and not _contains_any(normalized, side_effect_terms)
+    )
+
+
+def _is_repo_status_read_only_request(lowered: str) -> bool:
+    low_terms = (
+        "git status", "当前 branch", "当前分支", "branch", "分支", "head", "未提交",
+        "工程状态", "repo 状态", "repository status", "working tree", "工作树", "工作区",
+    )
+    inspection_terms = ("检查", "查看", "告诉我", "有没有", "status", "当前")
+    return (
+        _contains_any(lowered, low_terms)
+        and _contains_any(lowered, inspection_terms)
+        and not _has_explicit_side_effect_action(lowered)
     )
 
 
@@ -564,6 +580,18 @@ def classify_operational_risk(content: str) -> dict:
             "operation": "high_risk_operational_request",
             "operation_type": "HIGH_RISK_OPERATION",
             "reason": "request_crosses_high_risk_operational_boundary",
+        }
+    if _is_repo_status_read_only_request(lowered):
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": LOW_RISK,
+            "auto_continue": True,
+            "operation": "repo_inspection",
+            "operation_type": REPO_INSPECTION,
+            "reason": "bounded_read_only_repo_inspection",
+            "approval_required": False,
+            "read_only": True,
+            "side_effect": False,
         }
     if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in codex_bridge_fixture_terms):
         plan = BOUNDED_CODE_CHANGE_PLANS[BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE]
@@ -3399,6 +3427,7 @@ def _task_scope(*, founder_request: str, conversation_id: str, source_message_id
             "source_message_id": source_message_id,
             "repo_path": str(repo_root()),
             "risk_decision": risk,
+            "autonomous_execution_policy": decide_from_risk(risk, context={"read_only": spec.operation_type in {REPO_INSPECTION, ANALYTICAL_INSPECTION}}),
             "risk_level": risk["risk_level"],
             "allowed_scope": allowed_scope,
             "timeout_seconds": spec.timeout_seconds,
@@ -3409,7 +3438,7 @@ def _task_scope(*, founder_request: str, conversation_id: str, source_message_id
                 "Do not push",
                 "Do not invoke Codex or a provider",
             ],
-            "auto_continue_policy": "LOW risk controlled local development task",
+            "auto_continue_policy": "authoritative_autonomous_execution_policy",
         }
     }
 
@@ -3646,7 +3675,9 @@ def execute_low_risk_operation(
     runner: Callable[[], dict] | None = None,
 ) -> dict:
     risk = classify_operational_risk(founder_request)
-    if risk.get("risk_level") != LOW_RISK or not risk.get("auto_continue"):
+    policy = decide_from_risk(risk, context={"read_only": risk.get("operation_type") in {REPO_INSPECTION, ANALYTICAL_INSPECTION}})
+    risk["autonomous_execution_policy"] = policy
+    if policy.get("decision") != AUTO_CONTINUE:
         raise ValueError("operational_request_not_low_risk")
     operation_type = risk.get("operation_type") or REPO_INSPECTION
     spec = OPERATION_REGISTRY[operation_type]
@@ -3726,6 +3757,7 @@ def execute_low_risk_operation(
         "status": "queued",
         "operation_type": spec.operation_type,
         "risk_decision": risk,
+        "autonomous_execution_policy": policy,
         "task_id": task_id,
         "execution_id": execution_id,
         "founder_request": founder_request,
@@ -3918,6 +3950,18 @@ def execute_bounded_code_change(
         "approval_action_id": action_id,
         "plan": plan,
     }
+    policy = decide_from_risk(
+        risk,
+        context={
+            "founder_approved": True,
+            "approval_action_id": action_id,
+            "allowed_files": list(plan.get("allowed_files") or []),
+            "allowed_directories": list(plan.get("allowed_directories") or []),
+        },
+    )
+    if policy.get("decision") != AUTO_CONTINUE:
+        raise ValueError(policy.get("reason") or "bounded_local_development_not_authorized")
+    risk["autonomous_execution_policy"] = policy
     if not (plan.get("allowed_files") or plan.get("allowed_directories")):
         raise ValueError("bounded_code_change_requires_file_boundary")
     root = repo_root()
@@ -5624,6 +5668,8 @@ def handle_operational_conversation_request(
     *, conversation_id: str, founder_request: str, source_message_id: str,
 ) -> dict:
     risk = classify_operational_risk(founder_request)
+    policy = decide_from_risk(risk, context={"read_only": risk.get("operation_type") in {REPO_INSPECTION, ANALYTICAL_INSPECTION}})
+    risk["autonomous_execution_policy"] = policy
     if risk.get("work_type") != CONTROLLED_LOCAL_DEVELOPMENT_TASK:
         return {"handled": False, "risk_decision": risk}
     if risk.get("operation_type") == "CLARIFICATION":
@@ -5689,7 +5735,7 @@ def handle_operational_conversation_request(
             grounding={"operational_runtime": {"status": "approval_required", "risk_decision": risk, "action_id": action_id}},
         )
         return {"handled": True, "risk_decision": risk, "status": "approval_required", "action_id": action_id}
-    if risk.get("risk_level") == LOW_RISK and risk.get("auto_continue"):
+    if policy.get("decision") == AUTO_CONTINUE:
         return execute_low_risk_operation(
             conversation_id=conversation_id,
             founder_request=founder_request,
