@@ -26,6 +26,7 @@ from app.core.task_asset.model import TaskAssetDB
 from app.core.task_asset.service import create_task_asset
 from app.database.db import SessionLocal
 from app.founder_ai.codex_adapter import CodexExecutionTimeout, SubprocessCodexAdapter
+from app.founder_ai.execution_events import append_event
 from app.founder_ai.execution_loop import ExecutionSession
 from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions, load_execution_sessions, save_execution_session
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
@@ -2572,6 +2573,7 @@ def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> E
         "task_mode": "IMPLEMENTATION" if operation_type == BOUNDED_CODE_CHANGE else "TECHNICAL_EXECUTION",
         "founder_request": founder_request,
         "conversation_id": task.conversation_id,
+        "source_message_id": operational.get("source_message_id"),
         "mission_id": operational.get("mission_id"),
         "approval_action_id": operational.get("action_id"),
         "task_id": task.id,
@@ -4073,6 +4075,28 @@ def execute_safe_push(
         if existing_session:
             execution, _package = existing_session
             created = False
+            if execution.status in {"executing", "running", "testing"}:
+                return {
+                    "handled": True,
+                    "risk_decision": risk,
+                    "task_id": task.id,
+                    "execution_id": execution_id,
+                    "created": False,
+                    "reused": True,
+                    "status": execution.status,
+                    "result": execution.result,
+                }
+            if execution.status in {"completed", "failed", "blocked"} and execution.result:
+                return {
+                    "handled": True,
+                    "risk_decision": risk,
+                    "task_id": task.id,
+                    "execution_id": execution_id,
+                    "created": False,
+                    "reused": True,
+                    "status": execution.status,
+                    "result": execution.result,
+                }
         else:
             execution = ExecutionSession(
                 id=execution_id,
@@ -4565,6 +4589,74 @@ def _persist_safe_merge_result(
     _update_brain(conversation_id, {**queued_payload, "status": result["status"], "result": result, "message": result.get("summary")})
 
 
+def _mark_safe_merge_handler_started(
+    *,
+    conversation_id: str,
+    task_id: str,
+    execution_id: str,
+    action_id: str,
+    queued_payload: dict,
+) -> None:
+    started_at = _now()
+    with SessionLocal() as session:
+        record = session.get(TaskAssetDB, task_id)
+        if record is not None:
+            scope = dict(record.scope or {})
+            start = dict(scope.get("execution_start") or {})
+            start.update({"status": "executing", "handler_started_at": started_at})
+            scope["execution_start"] = start
+            record.scope = scope
+            record.status = "in_progress"
+            record.execution_status = "executing"
+            session.commit()
+    registry_record = get_execution_session(execution_id)
+    if registry_record:
+        registry_session, package = registry_record
+        registry_session.status = "executing"
+        registry_session.started_at = registry_session.started_at or started_at
+        if not any((event.get("metadata") or {}).get("safe_merge_handler_started") for event in registry_session.events):
+            append_event(
+                registry_session,
+                "execution_resumed",
+                status="executing",
+                message="Canonical Safe Merge handler started",
+                timestamp=registry_session.started_at,
+                metadata={
+                    "approval_action_id": action_id,
+                    "operation_type": SAFE_MERGE,
+                    "safe_merge_handler_started": True,
+                },
+            )
+        save_execution_session(registry_session, package)
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is not None:
+            discovery = dict(state.discovery or {})
+            mission_id = (queued_payload.get("merge_request") or {}).get("mission_id")
+            mission = _mission_from_discovery(discovery, mission_id) if mission_id else None
+            if mission:
+                mission.update({
+                    "status": "MERGING",
+                    "current_stage": "MERGING",
+                    "merge_execution_id": execution_id,
+                    "next_required_action": None,
+                    "updated_at": started_at,
+                })
+                missions = dict(discovery.get("autonomous_development_missions") or {})
+                missions[mission["mission_id"]] = mission
+                action_queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]
+                views = dict(discovery.get("autonomous_development_mission_views") or {})
+                views[mission["mission_id"]] = build_mission_view(mission, action_queue)
+                discovery["autonomous_development_missions"] = missions
+                discovery["autonomous_development_mission"] = mission
+                discovery["autonomous_development_mission_views"] = views
+                discovery["autonomous_development_mission_view"] = views[mission["mission_id"]]
+            state.discovery = discovery
+            state.updated_at = datetime.now(timezone.utc)
+            session.commit()
+    _update_brain(conversation_id, {**queued_payload, "status": "running", "message": "正在执行本地安全合并…"})
+
+
 def execute_safe_merge(
     *,
     conversation_id: str,
@@ -4619,6 +4711,7 @@ def execute_safe_merge(
             "operation_type": SAFE_MERGE,
             "risk_level": HIGH_RISK,
             "approval_action_id": action_id,
+            "merge_request": merge_request,
             "source_branch": merge_request.get("source_branch"),
             "source_head": merge_request.get("source_head"),
             "target_branch": merge_request.get("target_branch"),
@@ -4674,6 +4767,13 @@ def execute_safe_merge(
     }
     _update_brain(conversation_id, queued_payload)
     _append_assistant_message(conversation_id, queued_payload["message"], message_type="operational_execution", grounding={"operational_runtime": queued_payload})
+    _mark_safe_merge_handler_started(
+        conversation_id=conversation_id,
+        task_id=task.id,
+        execution_id=execution_id,
+        action_id=action_id,
+        queued_payload=queued_payload,
+    )
 
     current = _safe_merge_preflight(
         cwd=root,
@@ -4822,6 +4922,80 @@ def execute_safe_merge(
         grounding={"operational_runtime": result, "task_id": task.id, "execution_id": execution_id},
     )
     return {"handled": True, "risk_decision": risk, "task_id": task.id, "execution_id": execution_id, "created": created, "reused": False, "status": "completed", "result": result}
+
+
+def dispatch_canonical_safe_merge_execution(
+    execution_id: str,
+    *,
+    cwd: Path | None = None,
+    switcher: Callable[[str, Path], subprocess.CompletedProcess] | None = None,
+    merger: Callable[[str, Path], subprocess.CompletedProcess] | None = None,
+    aborter: Callable[[Path], subprocess.CompletedProcess] | None = None,
+) -> dict:
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise LookupError("safe_merge_execution_not_found")
+    session_record, package = record
+    context = dict(package.context or {})
+    if context.get("operation_type") != SAFE_MERGE:
+        raise ValueError("not_safe_merge_execution")
+    if package.execution_allowed:
+        raise ValueError("safe_merge_must_not_be_generic_worker_owned")
+    if session_record.status in {"completed", "failed", "blocked"}:
+        return {
+            "handled": True,
+            "execution_id": execution_id,
+            "status": session_record.status,
+            "reused": True,
+            "result": session_record.result,
+        }
+    if session_record.status not in {"approved", "queued"}:
+        return {
+            "handled": True,
+            "execution_id": execution_id,
+            "status": session_record.status,
+            "reused": True,
+            "result": session_record.result,
+        }
+    root = cwd or repo_root()
+    if _git_status_short(cwd=root):
+        return {
+            "handled": False,
+            "execution_id": execution_id,
+            "status": session_record.status,
+            "queue_block_gate": "WORKING_TREE_NOT_CLEAN",
+            "queue_block_reason": "Product workspace is dirty; canonical Safe Merge dispatch deferred without failing the approved merge.",
+        }
+    merge_request = dict(context.get("merge_request") or {})
+    if not merge_request:
+        merge_request = {
+            "source_branch": context.get("source_branch"),
+            "source_head": context.get("source_head"),
+            "target_branch": context.get("target_branch") or SAFE_MERGE_TARGET_BRANCH,
+            "target_head_before": context.get("target_head_before"),
+            "merge_strategy": context.get("merge_strategy") or "no_ff",
+            "push_after_merge": False,
+            "auto_conflict_resolution": False,
+        }
+    result = execute_safe_merge(
+        conversation_id=str(context.get("conversation_id") or package.task_asset.conversation_id),
+        founder_request=str(context.get("founder_request") or package.task_asset.description or package.task_asset.title),
+        source_message_id=str(context.get("source_message_id") or context.get("approval_action_id") or execution_id),
+        action_id=str(context.get("approval_action_id") or ""),
+        merge_request=merge_request,
+        cwd=root,
+        switcher=switcher,
+        merger=merger,
+        aborter=aborter,
+    )
+    try:
+        state, action = _find_action(str(context.get("approval_action_id") or ""))
+        mission = _mission_for_action(action, state)
+        if mission and result.get("result"):
+            _resume_mission_after_step(state.conversation_id, mission, SAFE_MERGE, dict(result.get("result") or {}))
+    except (LookupError, ValueError):
+        pass
+    return result
 
 
 def decide_bounded_code_change_action(action_id: str, decision: str) -> dict:

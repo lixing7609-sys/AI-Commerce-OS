@@ -1536,6 +1536,185 @@ def test_safe_merge_approval_executes_switch_and_no_ff_merge(monkeypatch, tmp_pa
     assert any("本地安全合并完成" in item.content for item in messages)
 
 
+def test_queued_safe_merge_dispatches_canonical_handler_and_reuses_execution(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-dispatch")
+    action_id = "safe-merge-refresh:dispatch"
+    source_message_id = "message-safe-merge-dispatch"
+    preflight = _safe_merge_request(source_branch="feature/sino-dispatch", source_head="source-head")
+    task = runtime.create_task_asset(
+        title="本地安全合并 feature 到 integration",
+        description=SAFE_MERGE_REQUEST,
+        conversation_id="conv-safe-merge-dispatch",
+        source_message_id=source_message_id,
+        scope=runtime._safe_merge_task_scope(
+            founder_request=SAFE_MERGE_REQUEST,
+            conversation_id="conv-safe-merge-dispatch",
+            source_message_id=source_message_id,
+            action_id=action_id,
+            merge_request=preflight,
+        ),
+        status="in_progress",
+        approval_status="approved",
+        execution_status="queued",
+    )
+    execution_id = runtime._stable_execution_id(task.id, source_message_id)
+    package = runtime._execution_package(task=task, execution_id=execution_id, risk={"operation_type": runtime.SAFE_MERGE, "risk_level": runtime.HIGH_RISK})
+    package.context.update({
+        "operation_type": runtime.SAFE_MERGE,
+        "approval_action_id": action_id,
+        "merge_request": preflight,
+        "source_branch": preflight["source_branch"],
+        "source_head": preflight["source_head"],
+        "target_branch": preflight["target_branch"],
+        "target_head_before": preflight["target_head_before"],
+    })
+    execution_registry.save_execution_session(runtime.ExecutionSession(
+        id=execution_id,
+        task_asset_id=task.id,
+        execution_package_id=f"package-{execution_id}",
+        executor="LOCAL_EXECUTOR",
+        status="queued",
+    ), package)
+    monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: [])
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: preflight)
+    monkeypatch.setattr(runtime, "_git_is_ancestor", lambda ancestor, descendant, **_kwargs: False if descendant == "target-head" else descendant == "merge-head")
+    monkeypatch.setattr(runtime, "_merge_parent_count", lambda _head, **_kwargs: 2)
+    revs = ["target-head\n", "merge-head\n"]
+    monkeypatch.setattr(runtime, "_git_output", lambda args, **_kwargs: SimpleNamespace(returncode=0, stdout=revs.pop(0) if args == ["rev-parse", "HEAD"] else "", stderr=""))
+
+    result = runtime.dispatch_canonical_safe_merge_execution(
+        execution_id,
+        cwd=tmp_path,
+        switcher=lambda _branch, _root: SimpleNamespace(returncode=0, stdout="", stderr=""),
+        merger=lambda _branch, _root: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+
+    assert result["execution_id"] == execution_id
+    assert result["status"] == "completed"
+    assert result["result"]["merge_commit_created"] is True
+    with factory() as db:
+        assert db.query(TaskAssetDB).count() == 1
+        assert db.query(TaskAssetDB).one().execution_status == "completed"
+    execution, package = execution_registry.get_execution_session(execution_id)
+    assert execution.status == "completed"
+    assert any((event.get("metadata") or {}).get("safe_merge_handler_started") for event in execution.events)
+    assert package.execution_allowed is False
+    assert execution_worker._is_worker_managed_execution(package) is False
+
+
+def test_temp_repo_queued_safe_merge_dispatch_runs_canonical_no_ff_merge(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-dispatch-real")
+    repo = tmp_path / "safe-merge-dispatch-repo"
+    repo.mkdir()
+
+    def git(*args):
+        return runtime.subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True, check=True)
+
+    git("init")
+    git("config", "user.email", "sino@example.test")
+    git("config", "user.name", "Sino Test")
+    (repo / "fixture.txt").write_text("PENDING\n")
+    git("add", "fixture.txt")
+    git("commit", "-m", "baseline")
+    git("branch", "-M", runtime.SAFE_MERGE_TARGET_BRANCH)
+
+    mission_branch = "feature/sino-safe-merge-dispatch-real"
+    assert runtime._git_safe_create_branch(mission_branch, cwd=repo, start_point=runtime.SAFE_MERGE_TARGET_BRANCH).returncode == 0
+    (repo / "fixture.txt").write_text("OK\n")
+    git("add", "fixture.txt")
+    git("commit", "-m", "fix fixture")
+    source_head = runtime._git_rev_parse(mission_branch, cwd=repo)
+    target_head = runtime._git_rev_parse(runtime.SAFE_MERGE_TARGET_BRANCH, cwd=repo)
+    merge_request = {
+        "source_branch": mission_branch,
+        "source_head": source_head,
+        "source_remote": "origin",
+        "source_remote_head": None,
+        "target_branch": runtime.SAFE_MERGE_TARGET_BRANCH,
+        "target_head_before": target_head,
+        "target_remote": "origin",
+        "target_remote_head_before": None,
+        "merge_strategy": "no_ff",
+        "push_after_merge": False,
+        "auto_conflict_resolution": False,
+        "allow_unpushed_source_after_checkpoint": True,
+        "source_checkpoint_head": source_head,
+        "source_verification_status": "PASS",
+    }
+    action_id = "safe-merge-refresh:dispatch-real"
+    source_message_id = "message-safe-merge-dispatch-real"
+    task = runtime.create_task_asset(
+        title="本地安全合并 feature 到 integration",
+        description=SAFE_MERGE_REQUEST,
+        conversation_id="conv-safe-merge-dispatch-real",
+        source_message_id=source_message_id,
+        scope=runtime._safe_merge_task_scope(
+            founder_request=SAFE_MERGE_REQUEST,
+            conversation_id="conv-safe-merge-dispatch-real",
+            source_message_id=source_message_id,
+            action_id=action_id,
+            merge_request=merge_request,
+        ),
+        status="in_progress",
+        approval_status="approved",
+        execution_status="queued",
+    )
+    execution_id = runtime._stable_execution_id(task.id, source_message_id)
+    package = runtime._execution_package(task=task, execution_id=execution_id, risk={"operation_type": runtime.SAFE_MERGE, "risk_level": runtime.HIGH_RISK})
+    package.context.update({"operation_type": runtime.SAFE_MERGE, "approval_action_id": action_id, "merge_request": merge_request})
+    execution_registry.save_execution_session(runtime.ExecutionSession(id=execution_id, task_asset_id=task.id, execution_package_id=f"package-{execution_id}", executor="LOCAL_EXECUTOR", status="queued"), package)
+
+    result = runtime.dispatch_canonical_safe_merge_execution(execution_id, cwd=repo)
+
+    assert result["execution_id"] == execution_id
+    assert result["status"] == "completed"
+    assert result["result"]["merge_commit_created"] is True
+    assert runtime._git_output(["branch", "--show-current"], cwd=repo).stdout.strip() == runtime.SAFE_MERGE_TARGET_BRANCH
+    merge_head = runtime._git_rev_parse(runtime.SAFE_MERGE_TARGET_BRANCH, cwd=repo)
+    assert runtime._git_is_ancestor(source_head, merge_head, cwd=repo)
+    assert runtime._git_is_ancestor(target_head, merge_head, cwd=repo)
+    assert runtime._merge_parent_count(merge_head, cwd=repo) == 2
+    assert runtime._git_status_short(cwd=repo) == []
+    with factory() as db:
+        assert db.query(TaskAssetDB).count() == 1
+
+
+def test_queued_safe_merge_dispatch_defers_when_product_tree_dirty(monkeypatch, tmp_path):
+    _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-dirty-dispatch")
+    action_id = "safe-merge-refresh:dirty"
+    source_message_id = "message-safe-merge-dirty"
+    preflight = _safe_merge_request()
+    task = runtime.create_task_asset(
+        title="本地安全合并 feature 到 integration",
+        description=SAFE_MERGE_REQUEST,
+        conversation_id="conv-safe-merge-dirty-dispatch",
+        source_message_id=source_message_id,
+        scope=runtime._safe_merge_task_scope(
+            founder_request=SAFE_MERGE_REQUEST,
+            conversation_id="conv-safe-merge-dirty-dispatch",
+            source_message_id=source_message_id,
+            action_id=action_id,
+            merge_request=preflight,
+        ),
+        status="in_progress",
+        approval_status="approved",
+        execution_status="queued",
+    )
+    execution_id = runtime._stable_execution_id(task.id, source_message_id)
+    package = runtime._execution_package(task=task, execution_id=execution_id, risk={"operation_type": runtime.SAFE_MERGE, "risk_level": runtime.HIGH_RISK})
+    package.context.update({"operation_type": runtime.SAFE_MERGE, "approval_action_id": action_id, "merge_request": preflight})
+    execution_registry.save_execution_session(runtime.ExecutionSession(id=execution_id, task_asset_id=task.id, execution_package_id=f"package-{execution_id}", executor="LOCAL_EXECUTOR", status="queued"), package)
+    monkeypatch.setattr(runtime, "_git_status_short", lambda **_kwargs: [" M backend/app/founder_ai/operational_runtime.py"])
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("preflight must not run while product fix is dirty")))
+
+    result = runtime.dispatch_canonical_safe_merge_execution(execution_id, cwd=tmp_path)
+
+    assert result["handled"] is False
+    assert result["queue_block_gate"] == "WORKING_TREE_NOT_CLEAN"
+    execution, _package = execution_registry.get_execution_session(execution_id)
+    assert execution.status == "queued"
+
+
 def test_safe_merge_conflict_aborts_and_persists_failure(monkeypatch, tmp_path):
     factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-conflict")
     preflight = _safe_merge_request()

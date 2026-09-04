@@ -476,6 +476,9 @@ class ExecutionWorker:
                         execution_id, session.status)
             return session
         if not _is_worker_managed_execution(package):
+            if _package_operation_type(package) == "SAFE_MERGE" and session.status in {"approved", "queued"} and not package.execution_allowed:
+                from app.founder_ai.operational_runtime import dispatch_canonical_safe_merge_execution
+                return dispatch_canonical_safe_merge_execution(execution_id, cwd=self.project_root)
             logger.info(
                 "Ignoring deterministic local operation in generic execution worker execution_id=%s operation_type=%s",
                 execution_id,
@@ -602,6 +605,16 @@ class ExecutionWorker:
             for session in list_execution_sessions():
                 if session.status not in {"queued", "executing", "testing"}:
                     continue
+                record = get_execution_session(session.id)
+                if record:
+                    _, package = record
+                    if session.status == "queued" and _package_operation_type(package) == "SAFE_MERGE" and not package.execution_allowed:
+                        try:
+                            from app.founder_ai.operational_runtime import dispatch_canonical_safe_merge_execution
+                            dispatch_canonical_safe_merge_execution(session.id, cwd=self.project_root)
+                        except Exception:
+                            logger.exception("Canonical Safe Merge dispatch failed execution_id=%s", session.id)
+                        continue
                 decision = check_execution_liveness(session, queue_item=self.queue.get(session.id))
                 if decision["action"] == "requeue":
                     record = get_execution_session(session.id)
@@ -678,6 +691,12 @@ class ExecutionWorker:
                 if not any(log.get("stage") == "queued" for log in session.execution_logs):
                     append_event(session, "queued", status="queued", message="Execution restored to worker queue", timestamp=session.queued_at)
                 save_execution_session(session, package)
+            elif session.status in {"approved", "queued"} and _package_operation_type(package) == "SAFE_MERGE" and not package.execution_allowed:
+                try:
+                    from app.founder_ai.operational_runtime import dispatch_canonical_safe_merge_execution
+                    dispatch_canonical_safe_merge_execution(session.id, cwd=self.project_root)
+                except Exception:
+                    logger.exception("Canonical Safe Merge recovery dispatch failed execution_id=%s", session.id)
             elif session.status in {"executing", "testing"}:
                 interrupted_status = session.status
                 post_execution_recovery = self._recoverable_post_execution(session)

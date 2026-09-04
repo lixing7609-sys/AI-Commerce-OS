@@ -272,6 +272,7 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
   const isStrategicTask = quickFixRoute?.classification === "STRATEGIC_TASK" && routeHasTask;
   const architectureDecisionStatus = quickFixRoute?.architecture_proposal?.decision_status || (quickFixRoute?.architecture_proposal?.status === "ready_for_founder_decision" ? "pending" : quickFixRoute?.architecture_proposal?.status);
   const autonomousLoop = brain.discovery?.autonomous_main_loop;
+  const operationalRuntime = brain.discovery?.operational_runtime || {};
   const decision = brain.decision || {};
   const understanding = brain.discovery?.working_understanding || {};
   const risk = decision.key_risks?.[0] || "暂无关键风险";
@@ -304,8 +305,18 @@ export function SinoBrainContext({ brain, conversationId, contextGroundings, bus
   const maturityLabels = { evaluating: "正在判断", continue_analysis: "继续自主分析", founder_input_required: "需要 Founder 判断", ready_for_review: "已可审核" };
   const mvpQueueActions = mergeFounderActionQueues(brain.discovery?.founder_action_queue || [], canonicalQueueActions).filter((item) => UNIFIED_QUEUE_TYPES.includes(item.action_type || item.type) && item.status === "pending");
   const conversationTasks = brain.discovery?.conversation_tasks || [];
+  const currentOperationalExecutionId = operationalRuntime.execution_id || autonomousMissionView?.merge_execution_id || autonomousMissionView?.execution_id;
+  const currentOperationalTaskId = operationalRuntime.task_id || autonomousMissionView?.merge_task_id || autonomousMissionView?.task_id;
+  const missionConversationTasks = hasAutonomousMission && (currentOperationalExecutionId || currentOperationalTaskId)
+    ? conversationTasks.map((item) => {
+      const taskExecutionId = item.execution_id || item.execution_session_id || item.details?.execution_id || item.details?.execution_session_id;
+      const taskId = item.task_id || item.task_ref || item.details?.task_id;
+      const isCurrent = taskExecutionId === currentOperationalExecutionId || taskId === currentOperationalTaskId;
+      return isCurrent ? item : { ...item, status: "completed", current_action: null, is_completed: true, is_historical: true };
+    })
+    : conversationTasks;
   if (hasAutonomousMission) {
-    if (conversationTasks.length > 0 && !mvpQueueActions.length) return <FounderWorkQueue tasks={conversationTasks} focusedTaskId={brain.discovery?.focused_task_id}
+    if (missionConversationTasks.length > 0 && !mvpQueueActions.length) return <FounderWorkQueue tasks={missionConversationTasks} focusedTaskId={brain.discovery?.focused_task_id}
       conversationId={conversationId} busy={busy} onFocused={onTaskCandidateResolved} onCandidateResolved={onTaskCandidateResolved}
       onContinueDiscussion={onContinueDiscussion} />;
     return <section className="sino-brain-context sino-founder-task-sidebar" aria-label="Execution Center">
