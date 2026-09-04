@@ -144,6 +144,51 @@ describe("Conversation / Task UI ownership", () => {
     expect(within(sidebar).getByText("已完成（2）")).toBeTruthy();
   });
 
+  it("shows one analytical inspection task as checking instead of a permanent ready state", () => {
+    render(<SinoBrainContext brain={{
+      stage: "operational_runtime",
+      discovery: {
+        conversation_tasks: [
+          { task_ref: "task-analytical", task_id: "task-analytical", title: "只读产品检查", status: "ready_to_execute", founder_action_required: false, details: { scope: { operational_runtime: { operation_type: "ANALYTICAL_INSPECTION" } } } },
+        ],
+      },
+    }} />);
+    const sidebar = screen.getByRole("region", { name: "Execution Center" });
+    expect(within(sidebar).getByText("只读产品检查")).toBeTruthy();
+    expect(within(sidebar).getByText("检查中")).toBeTruthy();
+    expect(within(sidebar).queryByText("ready_to_execute")).toBeNull();
+  });
+
+  it("does not render duplicate active analytical inspection cards", () => {
+    render(<SinoBrainContext brain={{
+      stage: "operational_runtime",
+      discovery: {
+        conversation_tasks: [
+          { task_ref: "task-analytical-1", task_id: "task-analytical-1", conversation_id: "conv-analysis", title: "只读产品检查", status: "queued", founder_action_required: false, details: { scope: { operational_runtime: { operation_type: "ANALYTICAL_INSPECTION" } } } },
+          { task_ref: "task-analytical-2", task_id: "task-analytical-2", conversation_id: "conv-analysis", title: "重复只读产品检查", status: "queued", founder_action_required: false, details: { scope: { operational_runtime: { operation_type: "ANALYTICAL_INSPECTION" } } } },
+        ],
+      },
+    }} />);
+    const sidebar = screen.getByRole("region", { name: "Execution Center" });
+    const activeList = within(sidebar).getByRole("region", { name: "Conversation Tasks" });
+    expect(within(activeList).getByText("只读产品检查")).toBeTruthy();
+    expect(within(activeList).queryByText("重复只读产品检查")).toBeNull();
+    expect(within(sidebar).getByText("已完成（1）")).toBeTruthy();
+  });
+
+  it("renders final analytical answer in the same conversation", () => {
+    render(<ConversationThread snapshot={{
+      conversation: { id: "conv-analysis", title: "产品检查" },
+      messages: [
+        message("founder-analysis", "founder", "检查当前 Sino Founder AI 的真实产品界面和现有能力，只检查和讨论，不修改代码。"),
+        { message_id: "assistant-analysis", role: "assistant", content: "检查完成。当前最值得优先解决的一个具体产品问题是：Execution Center 会停在准备状态。", message_type: "operational_result", grounding: { operational_runtime: { operation_type: "ANALYTICAL_INSPECTION", source_message_id: "founder-analysis" } } },
+      ],
+      sino_brain: discussionBrain,
+    }} message="" onMessage={() => {}} onSend={() => {}} busy={false} />);
+    const conversation = screen.getByRole("region", { name: "Conversation" });
+    expect(within(conversation).getByText(/检查完成。当前最值得优先解决/)).toBeTruthy();
+  });
+
   it("does not queue ordinary Codex permission or self healing", () => {
     const { rerender } = render(<SinoBrainContext brain={taskBrain()} />);
     expect(screen.getByText("暂无需要你处理的事项")).toBeTruthy();

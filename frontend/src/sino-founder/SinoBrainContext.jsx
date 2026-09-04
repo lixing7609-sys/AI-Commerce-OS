@@ -51,14 +51,30 @@ function PackageOverview({ pkg }) {
 
 const TASK_STATUS_LABELS = {
   pending_founder_confirmation: "待确认", needs_revision: "待修改", discussion_continues: "讨论中",
+  ready_to_execute: "检查中",
   queued: "排队中", inspecting: "检查中", executing: "执行中", testing: "测试中",
   verification: "验证中", blocked: "验证受阻", self_healing: "正在自愈", retrying: "重新验证",
   completed: "已完成", accepted: "已验收", closed: "已关闭", cancelled: "已停止",
 };
 
 export function FounderWorkQueue({ tasks = [], focusedTaskId, conversationId, busy, onFocused, onCandidateResolved, onContinueDiscussion }) {
-  const active = tasks.filter((item) => !item.is_completed && !item.is_archived);
-  const completed = tasks.filter((item) => item.is_completed && !item.is_archived);
+  const displayedTasks = [];
+  const seenActiveAnalytical = new Set();
+  for (const item of tasks) {
+    const operationType = item.details?.scope?.operational_runtime?.operation_type || item.details?.operation_type;
+    const isActive = !item.is_completed && !item.is_archived;
+    if (isActive && operationType === "ANALYTICAL_INSPECTION") {
+      const key = item.conversation_id || item.details?.conversation_id || "current-conversation";
+      if (seenActiveAnalytical.has(key)) {
+        displayedTasks.push({ ...item, status: "completed", current_action: null, is_completed: true, is_historical: true });
+        continue;
+      }
+      seenActiveAnalytical.add(key);
+    }
+    displayedTasks.push(item);
+  }
+  const active = displayedTasks.filter((item) => !item.is_completed && !item.is_archived);
+  const completed = displayedTasks.filter((item) => item.is_completed && !item.is_archived);
   const choose = async (taskRef) => {
     const result = await focusFounderTask(conversationId, taskRef);
     onFocused?.(result);

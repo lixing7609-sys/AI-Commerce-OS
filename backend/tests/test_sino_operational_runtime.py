@@ -28,6 +28,7 @@ SAFE_MERGE_REQUEST = "请把当前 feature 分支本地 --no-ff 合并到 integr
 SAFE_INTEGRATION_PUSH_REQUEST = "请推送 integration branch 到远程。"
 MISSION_REQUEST = "请执行一个完整开发任务：把 Sino Operational Runtime 状态卡文案改得更清楚一点，并验证。"
 READ_ONLY_BASELINE_REQUEST = "检查当前 Sino Founder AI 的开发基线状态。只做只读检查，不修改代码。告诉我当前 integration branch、HEAD、working tree 状态，以及现在最值得优先改进的一个真实产品问题。"
+ANALYTICAL_READ_ONLY_REQUEST = "检查当前 Sino Founder AI 的真实产品界面和现有能力，找出一个对 Founder 日常使用影响最大的具体问题。不要给我泛泛的 routing、架构或测试建议，要指出一个我在实际使用中能直接看到或感受到的问题，并说明你建议怎么改。先只检查和讨论，不修改代码。"
 
 
 def _runtime(monkeypatch, tmp_path, *, conversation_id="conv-operational"):
@@ -333,6 +334,147 @@ def test_explicit_read_only_baseline_request_routes_repo_inspection_without_appr
     assert discovery.get("founder_action_queue", []) == []
     assert "autonomous_development_mission" not in discovery
     assert any("建议优先改进：优先修复 read-only routing。" in item.content for item in messages)
+
+
+def _analytical_result():
+    return {
+        "operation_type": runtime.ANALYTICAL_INSPECTION,
+        "success": True,
+        "check_result": "PASS",
+        "summary": (
+            "检查完成。当前最值得优先解决的一个具体产品问题是：\n\n"
+            "1. 具体问题\nExecution Center 会把准备态当成终态展示。\n\n"
+            "2. Founder 真实使用中会看到/感受到什么\nFounder 会看到任务卡停在等待进入执行，却没有最终结论。\n\n"
+            "3. 为什么这是当前影响最大的一个问题\n它直接阻断只读分析任务闭环。\n\n"
+            "4. 建议具体修改什么\n修改分析型只读任务的自动执行和任务卡状态。\n\n"
+            "5. 修改后应该是什么体验\nFounder 一次请求后即可看到检查完成和最终建议。"
+        ),
+        "stdout_excerpt": "",
+        "stderr_excerpt": "",
+        "result": {
+            "analysis": {
+                "observed_problem": "Execution Center 会把准备态当成终态展示。",
+                "founder_impact": "Founder 会看到任务卡停在等待进入执行，却没有最终结论。",
+                "why_priority": "它直接阻断只读分析任务闭环。",
+                "specific_change": "修改分析型只读任务的自动执行和任务卡状态。",
+                "expected_experience": "Founder 一次请求后即可看到检查完成和最终建议。",
+                "model_invoked": True,
+            },
+            "evidence": {"read_only": True},
+        },
+        "real_executor_used": "SINO_ANALYTICAL_INSPECTION_ORCHESTRATOR",
+        "model_reasoning_required": True,
+        "model_invoked": True,
+    }
+
+
+def test_analytical_read_only_request_routes_low_no_approval_and_model_required():
+    decision = runtime.classify_operational_risk(ANALYTICAL_READ_ONLY_REQUEST)
+    assert decision["operation_type"] == runtime.ANALYTICAL_INSPECTION
+    assert decision["risk_level"] == runtime.LOW_RISK
+    assert decision["auto_continue"] is True
+    assert decision["approval_required"] is False
+    assert decision["read_only"] is True
+    assert decision["code_change"] is False
+    assert decision["model_reasoning_required"] is True
+
+
+def test_analytical_read_only_auto_advances_and_persists_final_answer(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-analytical")
+    calls = {"runner": 0}
+
+    def runner():
+        calls["runner"] += 1
+        return _analytical_result()
+
+    result = runtime.execute_low_risk_operation(
+        conversation_id="conv-analytical",
+        founder_request=ANALYTICAL_READ_ONLY_REQUEST,
+        source_message_id="message-analytical",
+        runner=runner,
+    )
+
+    assert result["status"] == "completed"
+    assert result["risk_decision"]["operation_type"] == runtime.ANALYTICAL_INSPECTION
+    assert calls["runner"] == 1
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-analytical").all()
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-analytical").one()
+    assert task.status == "completed"
+    assert task.execution_status == "completed"
+    assert task.approval_status == "approved"
+    assert task.result["operation_type"] == runtime.ANALYTICAL_INSPECTION
+    assert task.result["result"]["analysis"]["model_invoked"] is True
+    assert any("检查完成。当前最值得优先解决的一个具体产品问题是" in item.content for item in messages)
+    assert not any("任务已经准备好，等待进入执行" in item.content for item in messages)
+    assert state.discovery["operational_runtime"]["status"] == "completed"
+    assert state.discovery["operational_runtime"]["operation_type"] == runtime.ANALYTICAL_INSPECTION
+
+
+def test_analytical_acknowledgement_does_not_stop_before_final_answer(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-analytical-api")
+    monkeypatch.setattr(runtime, "run_analytical_inspection", lambda **_kwargs: _analytical_result())
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-analytical-api",
+        founder_request=ANALYTICAL_READ_ONLY_REQUEST,
+        source_message_id="message-analytical-api",
+    )
+    assert result["handled"] is True
+    assert result["status"] == "completed"
+    with factory() as db:
+        assert db.query(TaskAssetDB).count() == 1
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-analytical-api").all()
+    assert any("检查完成。" in item.content for item in messages)
+    assert not any("我会直接做一次只读产品检查" == item.content for item in messages)
+
+
+def test_analytical_continuation_reuses_completed_task_and_does_not_duplicate(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-analytical-retry")
+    first = runtime.execute_low_risk_operation(
+        conversation_id="conv-analytical-retry",
+        founder_request=ANALYTICAL_READ_ONLY_REQUEST,
+        source_message_id="message-analytical-retry",
+        runner=_analytical_result,
+    )
+    second = runtime.execute_low_risk_operation(
+        conversation_id="conv-analytical-retry",
+        founder_request="继续完成刚才的只读产品检查。不要只告诉我准备检查。",
+        source_message_id="message-analytical-retry",
+        runner=lambda: (_ for _ in ()).throw(AssertionError("continuation must reuse existing analytical task")),
+    )
+    with factory() as db:
+        assert db.query(TaskAssetDB).count() == 1
+    assert first["execution_id"] == second["execution_id"]
+    assert second["reused"] is True
+
+
+def test_analytical_model_failure_does_not_leave_ready_to_execute(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-analytical-failure")
+    result = runtime.execute_low_risk_operation(
+        conversation_id="conv-analytical-failure",
+        founder_request=ANALYTICAL_READ_ONLY_REQUEST,
+        source_message_id="message-analytical-failure",
+        runner=lambda: (_ for _ in ()).throw(RuntimeError("model unavailable")),
+    )
+    assert result["status"] == "failed"
+    with factory() as db:
+        task = db.query(TaskAssetDB).one()
+        messages = db.query(ConversationMessageDB).filter_by(conversation_id="conv-analytical-failure").all()
+    assert task.execution_status == "failed"
+    assert task.status == "failed"
+    assert task.status != "ready_to_execute"
+    assert any("执行失败" in item.content and "model unavailable" in item.content for item in messages)
+
+
+def test_deterministic_repo_development_and_high_risk_routing_regressions():
+    assert runtime.classify_operational_risk(READ_ONLY_BASELINE_REQUEST)["operation_type"] == runtime.REPO_INSPECTION
+    development = runtime.classify_operational_risk("把按钮 A 改成 B，并验证。")
+    assert development["operation_type"] == runtime.AUTONOMOUS_DEVELOPMENT_MISSION
+    assert development["risk_level"] == runtime.MEDIUM_RISK
+    high = runtime.classify_operational_risk("部署到生产环境。")
+    assert high["operation_type"] == "HIGH_RISK_OPERATION"
+    assert high["risk_level"] == runtime.HIGH_RISK
 
 
 @pytest.mark.parametrize("request_text", [

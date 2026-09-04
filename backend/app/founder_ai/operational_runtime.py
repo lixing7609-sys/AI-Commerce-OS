@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
+import json
 import re
 from pathlib import Path
 import shutil
@@ -41,6 +42,7 @@ SAFE_PUSH_QUEUE_TYPE = "SAFE_PUSH_APPROVAL"
 SAFE_MERGE_QUEUE_TYPE = "SAFE_MERGE_APPROVAL"
 SAFE_INTEGRATION_PUSH_QUEUE_TYPE = "SAFE_INTEGRATION_PUSH_APPROVAL"
 REPO_INSPECTION = "REPO_INSPECTION"
+ANALYTICAL_INSPECTION = "ANALYTICAL_INSPECTION"
 FOCUSED_TEST = "FOCUSED_TEST"
 FRONTEND_BUILD = "FRONTEND_BUILD"
 BOUNDED_CODE_CHANGE = "BOUNDED_CODE_CHANGE"
@@ -79,6 +81,12 @@ OPERATION_REGISTRY: dict[str, OperationSpec] = {
         title="检查当前 AI-Commerce-OS 工程状态",
         argv=None,
         timeout_seconds=10,
+    ),
+    ANALYTICAL_INSPECTION: OperationSpec(
+        operation_type=ANALYTICAL_INSPECTION,
+        title="只读分析 Sino Founder AI 产品体验",
+        argv=None,
+        timeout_seconds=30,
     ),
     FOCUSED_TEST: OperationSpec(
         operation_type=FOCUSED_TEST,
@@ -350,6 +358,34 @@ def _is_explicit_read_only_inspection_request(lowered: str) -> bool:
     return _contains_any(lowered, read_only_terms) and _contains_any(lowered, inspection_terms) and not _has_explicit_side_effect_action(lowered)
 
 
+def _is_explicit_analytical_inspection_request(lowered: str) -> bool:
+    read_only_terms = (
+        "只读", "不修改", "不要修改", "仅检查", "只检查", "先只检查", "只讨论",
+        "不改代码", "不修改代码", "read-only",
+    )
+    analytical_terms = (
+        "分析", "判断", "找出", "指出", "建议", "产品问题", "具体问题", "真实产品界面",
+        "产品界面", "产品检查", "实际使用", "日常使用", "用户体验", "交互反馈", "现有能力",
+        "界面", "体验", "感受到", "看到",
+    )
+    normalized = lowered
+    for phrase in (
+        "不修改代码", "不要修改代码", "不改代码", "不修改", "不要修改", "只讨论",
+        "先只检查和讨论", "只检查和讨论", "建议怎么改", "建议具体修改",
+        "准备具体修改哪些", "说明你建议怎么改",
+    ):
+        normalized = normalized.replace(phrase, "")
+    side_effect_terms = (
+        "合并", "merge", "推送", "push", "commit", "提交", "deploy", "部署", "上线",
+        "执行 git", "git merge", "git push", "删除", "delete", "创建分支",
+    )
+    return (
+        _contains_any(lowered, read_only_terms)
+        and _contains_any(lowered, analytical_terms)
+        and not _contains_any(normalized, side_effect_terms)
+    )
+
+
 def _is_explicit_safe_merge_request(lowered: str) -> bool:
     merge_terms = ("合并", "merge")
     safety_terms = ("integration", "集成", "baseline", "--no-ff", "no-ff", "safe merge", "安全合并")
@@ -442,15 +478,6 @@ def classify_operational_risk(content: str) -> dict:
             "reason": "target_scope_unresolved",
             "clarification_required": True,
         }
-    if _is_exploratory_discussion_request(lowered) or _is_explanation_or_inspection_request(lowered):
-        return {
-            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
-            "risk_level": LOW_RISK,
-            "auto_continue": False,
-            "operation": "discussion",
-            "operation_type": DISCUSSION,
-            "reason": "discussion_or_inspection_request_not_development_default",
-        }
     if _is_explicit_read_only_inspection_request(lowered):
         return {
             "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
@@ -460,6 +487,29 @@ def classify_operational_risk(content: str) -> dict:
             "operation_type": REPO_INSPECTION,
             "reason": "explicit_read_only_inspection",
             "approval_required": False,
+        }
+    if _is_explicit_analytical_inspection_request(lowered):
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": LOW_RISK,
+            "auto_continue": True,
+            "operation": "analytical_inspection",
+            "operation_type": ANALYTICAL_INSPECTION,
+            "reason": "explicit_read_only_analytical_inspection",
+            "approval_required": False,
+            "read_only": True,
+            "code_change": False,
+            "side_effect": False,
+            "model_reasoning_required": True,
+        }
+    if _is_exploratory_discussion_request(lowered) or _is_explanation_or_inspection_request(lowered):
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": LOW_RISK,
+            "auto_continue": False,
+            "operation": "discussion",
+            "operation_type": DISCUSSION,
+            "reason": "discussion_or_inspection_request_not_development_default",
         }
     if (
         any(term in lowered for term in live_acceptance_fixture_terms)
@@ -3324,6 +3374,11 @@ def _task_scope(*, founder_request: str, conversation_id: str, source_message_id
             "Return current HEAD",
             "Return whether the working tree has uncommitted files",
         ],
+        ANALYTICAL_INSPECTION: [
+            "Collect read-only product and conversation evidence",
+            "Invoke the configured Sino reasoning model",
+            "Return one concrete Founder-visible product issue and a specific change recommendation",
+        ],
         FOCUSED_TEST: [
             "Run the allowlisted Sino Operational Runtime focused test target",
             "Return passed/failed/errors and concise failure summary",
@@ -3401,6 +3456,188 @@ def _normalize_operation_result(spec: OperationSpec, result: dict) -> dict:
     return payload
 
 
+def _operation_start_message(spec: OperationSpec) -> str:
+    if spec.operation_type == ANALYTICAL_INSPECTION:
+        return "我先做一次只读产品检查，不会修改代码。正在检查…"
+    return "这是一个低风险本地开发检查工作，我会直接执行。正在准备执行…"
+
+
+def collect_analytical_inspection_evidence(*, conversation_id: str, founder_request: str) -> dict:
+    """Collect bounded read-only evidence for a product-analysis answer."""
+    root = repo_root()
+    repo = run_repo_inspection(cwd=root)
+    files = {
+        "ConversationThread.jsx": root / "frontend/src/sino-founder/ConversationThread.jsx",
+        "SinoBrainContext.jsx": root / "frontend/src/sino-founder/SinoBrainContext.jsx",
+        "operational_runtime.py": root / "backend/app/founder_ai/operational_runtime.py",
+    }
+    snippets = {}
+    markers = {}
+    for label, path in files.items():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        snippets[label] = _excerpt(text, 2200)
+        markers[label] = {
+            "has_execution_center": "Execution Center" in text or "执行中心" in text,
+            "has_action_queue": "Action Queue" in text or "founder_action_queue" in text,
+            "has_ready_to_execute": "ready_to_execute" in text,
+            "has_approval_required": "approval_required" in text,
+        }
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id))
+        messages = list(session.scalars(select(ConversationMessageDB).where(
+            ConversationMessageDB.conversation_id == conversation_id).order_by(ConversationMessageDB.created_at)))
+        tasks = list(session.scalars(select(TaskAssetDB).where(
+            TaskAssetDB.conversation_id == conversation_id,
+            TaskAssetDB.system_id == "founder_ai",
+        ).order_by(TaskAssetDB.updated_at.desc()).limit(10)))
+        discovery = dict(state.discovery or {}) if state else {}
+    return {
+        "evidence_type": ANALYTICAL_INSPECTION,
+        "read_only": True,
+        "founder_request": founder_request,
+        "repo": repo,
+        "frontend_component_markers": markers,
+        "source_snippets": snippets,
+        "conversation_state": {
+            "conversation_id": conversation_id,
+            "message_count": len(messages),
+            "recent_messages": [
+                {"message_id": item.id, "role": item.role, "content": item.content,
+                 "message_type": item.message_type}
+                for item in messages[-8:]
+            ],
+            "task_count": len(tasks),
+            "tasks": [
+                {"task_id": item.id, "title": item.title, "status": item.status,
+                 "execution_status": item.execution_status,
+                 "operation_type": ((item.scope or {}).get("operational_runtime") or {}).get("operation_type")}
+                for item in tasks
+            ],
+            "current_discovery_keys": sorted(discovery.keys()),
+        },
+    }
+
+
+def _fallback_analytical_answer(evidence: dict) -> dict:
+    tasks = evidence.get("conversation_state", {}).get("tasks", [])
+    issue = "分析型只读请求缺少自动执行闭环，容易停在任务准备状态。"
+    if any(item.get("execution_status") == "ready_to_execute" or item.get("status") == "ready_to_execute" for item in tasks):
+        issue = "只读分析任务会停在“等待进入执行”，Founder 看不到最终分析结论。"
+    return {
+        "observed_problem": issue,
+        "founder_impact": "Founder 明确要求“检查、分析、给结论”时，界面只显示任务已准备或等待执行，实际使用中需要反复催促，仍拿不到可决策的产品建议。",
+        "why_priority": "这是日常使用入口级问题：它让低风险只读分析看起来像执行系统卡住，直接削弱 Founder 对 Sino 自主完成分析工作的信任。",
+        "specific_change": "把分析型只读请求接入 LOW risk analytical inspection 执行链：自动收集只读证据、调用 Sino reasoning model、在同一 conversation 返回最终分析，并把右侧任务标记为已完成。",
+        "expected_experience": "Founder 发出产品检查请求后，只会看到一个检查任务短暂运行；随后同一对话直接出现“检查完成”以及一个具体问题、影响、优先级理由和修改建议。",
+        "model_invoked": False,
+        "fallback_used": True,
+    }
+
+
+def run_analytical_inspection(
+    *,
+    conversation_id: str,
+    founder_request: str,
+    evidence_collector: Callable[[], dict] | None = None,
+    model_generator: Callable[[dict], dict] | None = None,
+) -> dict:
+    started = _now()
+    evidence = evidence_collector() if evidence_collector else collect_analytical_inspection_evidence(
+        conversation_id=conversation_id,
+        founder_request=founder_request,
+    )
+    prompt = """You are Sino Founder AI completing a LOW-risk read-only analytical inspection. Use only the supplied evidence. Do not propose routing, architecture, or test-only improvements unless that is the directly visible Founder-facing product problem. Pick exactly one concrete product problem the Founder can see or feel in daily use. Return JSON with observed_problem, founder_impact, why_priority, specific_change, expected_experience. This is the final answer, not an acknowledgement."""
+    payload = None
+    provider = model = None
+    model_invoked = False
+    if model_generator is not None:
+        payload = model_generator(evidence)
+        model_invoked = True
+    else:
+        try:
+            from app.founder_ai.conversation_core import conversation_model_authority
+            from app.llm.gateway import llm_gateway
+            from app.llm.models import LLMRequest
+            authority = conversation_model_authority(conversation_id)
+            runtimes = []
+            if authority.get("primary") is not None:
+                runtimes.append(authority["primary"])
+            runtimes.extend(authority.get("fallbacks") or [])
+            for runtime in runtimes:
+                try:
+                    request = LLMRequest(
+                        system_prompt=prompt,
+                        user_prompt=json.dumps({"founder_request": founder_request, "evidence": evidence}, ensure_ascii=False),
+                        temperature=.25,
+                        max_tokens=1100,
+                        response_format="json",
+                        metadata={
+                            "runtime_role": "sino_conversation",
+                            "purpose": "analytical_read_only_inspection",
+                            "conversation_id": conversation_id,
+                            "final_analysis_required": True,
+                        },
+                    )
+                    response = llm_gateway.generate_for_model(runtime.provider_key, runtime.model, request)
+                    payload = json.loads(response.content.strip().removeprefix("```json").removesuffix("```").strip())
+                    provider = response.provider
+                    model = response.model
+                    model_invoked = True
+                    break
+                except Exception:
+                    continue
+        except Exception:
+            payload = None
+    analysis = dict(payload or {}) if isinstance(payload, dict) else _fallback_analytical_answer(evidence)
+    required = ("observed_problem", "founder_impact", "why_priority", "specific_change", "expected_experience")
+    if any(not str(analysis.get(field) or "").strip() for field in required):
+        analysis = _fallback_analytical_answer(evidence)
+    analysis["model_invoked"] = model_invoked
+    if provider:
+        analysis["provider"] = provider
+    if model:
+        analysis["model"] = model
+    final_answer = (
+        "检查完成。当前最值得优先解决的一个具体产品问题是：\n\n"
+        f"1. 具体问题\n{analysis['observed_problem']}\n\n"
+        f"2. Founder 真实使用中会看到/感受到什么\n{analysis['founder_impact']}\n\n"
+        f"3. 为什么这是当前影响最大的一个问题\n{analysis['why_priority']}\n\n"
+        f"4. 建议具体修改什么\n{analysis['specific_change']}\n\n"
+        f"5. 修改后应该是什么体验\n{analysis['expected_experience']}"
+    )
+    return {
+        "operation_type": ANALYTICAL_INSPECTION,
+        "success": True,
+        "check_result": "PASS",
+        "summary": final_answer,
+        "stdout_excerpt": "",
+        "stderr_excerpt": "",
+        "started_at": started,
+        "completed_at": _now(),
+        "result": {"analysis": analysis, "evidence": evidence},
+        "real_executor_used": "SINO_ANALYTICAL_INSPECTION_ORCHESTRATOR",
+        "model_reasoning_required": True,
+        "model_invoked": model_invoked,
+    }
+
+
+def _active_analytical_task_id(conversation_id: str) -> str | None:
+    with SessionLocal() as session:
+        tasks = list(session.scalars(select(TaskAssetDB).where(
+            TaskAssetDB.conversation_id == conversation_id,
+            TaskAssetDB.system_id == "founder_ai",
+            TaskAssetDB.status.notin_(["completed", "failed", "cancelled", "superseded"]),
+        ).order_by(TaskAssetDB.updated_at.desc())))
+        for task in tasks:
+            operation = dict((task.scope or {}).get("operational_runtime") or {}).get("operation_type")
+            if operation == ANALYTICAL_INSPECTION:
+                return str(task.id)
+    return None
+
+
 def execute_low_risk_operation(
     *,
     conversation_id: str,
@@ -3413,23 +3650,27 @@ def execute_low_risk_operation(
         raise ValueError("operational_request_not_low_risk")
     operation_type = risk.get("operation_type") or REPO_INSPECTION
     spec = OPERATION_REGISTRY[operation_type]
-    task = create_task_asset(
-        title=spec.title,
-        description=founder_request,
-        conversation_id=conversation_id,
-        source_message_id=source_message_id,
-        scope=_task_scope(
-            founder_request=founder_request,
+    active_task_id = _active_analytical_task_id(conversation_id) if operation_type == ANALYTICAL_INSPECTION else None
+    if active_task_id is not None:
+        task_id = active_task_id
+    else:
+        task = create_task_asset(
+            title=spec.title,
+            description=founder_request,
             conversation_id=conversation_id,
             source_message_id=source_message_id,
-            risk=risk,
-            spec=spec,
-        ),
-        status="draft",
-        approval_status="approved",
-        execution_status="not_started",
-    )
-    task_id = task.id
+            scope=_task_scope(
+                founder_request=founder_request,
+                conversation_id=conversation_id,
+                source_message_id=source_message_id,
+                risk=risk,
+                spec=spec,
+            ),
+            status="draft",
+            approval_status="approved",
+            execution_status="not_started",
+        )
+        task_id = task.id
     with SessionLocal() as session:
         task = session.get(TaskAssetDB, task_id)
         scope = dict(task.scope or {})
@@ -3489,19 +3730,25 @@ def execute_low_risk_operation(
         "execution_id": execution_id,
         "founder_request": founder_request,
         "source_message_id": source_message_id,
-        "message": "这是一个低风险本地开发检查工作，我会直接执行。正在准备执行…",
+        "message": _operation_start_message(spec),
     }
     _update_brain(conversation_id, queued_payload)
     _append_assistant_message(
         conversation_id,
-        "这是一个低风险本地开发检查工作，我会直接执行。正在准备执行…",
+        queued_payload["message"],
         message_type="operational_execution",
         grounding={"operational_runtime": queued_payload},
     )
     try:
         running_payload = {**queued_payload, "status": "running", "message": "正在执行…"}
         _update_brain(conversation_id, running_payload)
-        raw_result = (runner or (lambda: run_repo_inspection() if spec.operation_type == REPO_INSPECTION else run_allowlisted_process(spec)))()
+        raw_result = (runner or (lambda: (
+            run_repo_inspection()
+            if spec.operation_type == REPO_INSPECTION
+            else run_analytical_inspection(conversation_id=conversation_id, founder_request=founder_request)
+            if spec.operation_type == ANALYTICAL_INSPECTION
+            else run_allowlisted_process(spec)
+        )))()
         result = _normalize_operation_result(spec, raw_result)
         completed_at = _now()
         execution_failed = result.get("check_result") == "EXECUTOR_FAILURE" or result.get("timeout") is True
