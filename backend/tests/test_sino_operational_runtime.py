@@ -1343,6 +1343,115 @@ def test_safe_merge_still_requires_remote_sync_without_mission_checkpoint_eviden
     assert failure["failure_type"] == "SOURCE_REMOTE_NOT_SYNCED"
 
 
+def test_historical_safe_merge_refresh_supersedes_old_approval_and_creates_unique_reapproval(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-refresh-merge")
+    mission_id = "mission-refresh"
+    old_action_id = "safe-merge:mission-refresh:safe-merge"
+    old_execution_id = "execution-old-safe-merge"
+    mission = {
+        "mission_id": mission_id,
+        "conversation_id": "conv-refresh-merge",
+        "status": "WAITING_MERGE_APPROVAL",
+        "current_stage": "WAITING_MERGE_APPROVAL",
+        "working_branch": "feature/sino-mission-refresh",
+        "baseline_branch": runtime.SAFE_MERGE_TARGET_BRANCH,
+        "baseline_head": "baseline-a",
+        "checkpoint_head": "checkpoint-head",
+        "verification_plan": [["npm", "--prefix", "frontend", "test"]],
+        "change_result": {"checkpoint": {"new_head": "checkpoint-head", "execution_id": "execution-change"}},
+    }
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-refresh-merge").one()
+        state.discovery = {
+            "autonomous_development_missions": {mission_id: mission},
+            "autonomous_development_mission": mission,
+            "founder_action_queue": [{
+                "action_id": old_action_id,
+                "action_type": runtime.SAFE_MERGE_QUEUE_TYPE,
+                "type": runtime.SAFE_MERGE_QUEUE_TYPE,
+                "status": "approved",
+                "decision": "approved",
+                "mission_id": mission_id,
+                "execution_id": old_execution_id,
+                "metadata": {"merge_request": {"source_head": "checkpoint-head", "target_head_before": "baseline-a"}},
+            }],
+        }
+        db.commit()
+    package = runtime.ExecutionPackage(
+        goal="old merge",
+        context={"operation_type": runtime.SAFE_MERGE},
+        task_asset=runtime.TaskAssetDraft(title="old", description="old", scope={}, constraints=[], risk="high", approval_required=False, conversation_id="conv-refresh-merge"),
+        constraints=[],
+        verification=[],
+        commit_requirement="none",
+        execution_allowed=False,
+    )
+    execution_registry.save_execution_session(runtime.ExecutionSession(id=old_execution_id, task_asset_id="task-old", execution_package_id="package-old", executor="LOCAL_EXECUTOR", status="blocked"), package)
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda ref, **_kwargs: "checkpoint-head" if ref == "feature/sino-mission-refresh" else "baseline-b")
+    monkeypatch.setattr(runtime, "_candidate_merge_validation", lambda **_kwargs: {
+        "status": "PASS",
+        "source_head": "checkpoint-head",
+        "target_head": "baseline-b",
+        "merge_base": "baseline-a",
+        "verification": [{"argv": ["npm", "--prefix", "frontend", "test"], "status": "PASS", "success": True}],
+    })
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: _safe_merge_request(
+        source_branch="feature/sino-mission-refresh",
+        source_head="checkpoint-head",
+        target_head="baseline-b",
+        target_head_before="baseline-b",
+        checkpoint_head="checkpoint-head",
+        source_checkpoint_head="checkpoint-head",
+        source_verification_status="PASS",
+        allow_unpushed_source_after_checkpoint=True,
+    ))
+
+    result = runtime.refresh_historical_safe_merge(
+        conversation_id="conv-refresh-merge",
+        mission_id=mission_id,
+        action_id=old_action_id,
+        cwd=tmp_path,
+    )
+
+    assert result["status"] == "READY_FOR_FOUNDER_SAFE_MERGE"
+    assert result["approval_decision"] == "REAPPROVAL_REQUIRED"
+    assert result["replacement_target_head"] == "baseline-b"
+    old_execution, _ = execution_registry.get_execution_session(old_execution_id)
+    assert old_execution.status == "blocked"
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-refresh-merge").one()
+    queue = state.discovery["founder_action_queue"]
+    old = next(item for item in queue if item["action_id"] == old_action_id)
+    replacement = next(item for item in queue if item["action_id"] == result["replacement_action_id"])
+    assert old["status"] == "superseded"
+    assert replacement["status"] == "pending"
+    assert replacement["metadata"]["target_head"] == "baseline-b"
+    assert replacement["metadata"]["refreshed_validation_status"] == "PASS"
+    assert state.discovery["autonomous_development_mission"]["current_stage"] == "WAITING_MERGE_APPROVAL"
+
+
+def test_historical_safe_merge_refresh_does_not_duplicate_replacement_action(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-refresh-merge-duplicate")
+    mission_id = "mission-refresh-dup"
+    old_action_id = "safe-merge:mission-refresh-dup:safe-merge"
+    mission = {"mission_id": mission_id, "conversation_id": "conv-refresh-merge-duplicate", "status": "WAITING_MERGE_APPROVAL", "current_stage": "WAITING_MERGE_APPROVAL", "working_branch": "feature/sino-mission-refresh-dup", "baseline_branch": runtime.SAFE_MERGE_TARGET_BRANCH, "baseline_head": "baseline-a", "checkpoint_head": "checkpoint-head", "verification_plan": []}
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-refresh-merge-duplicate").one()
+        state.discovery = {"autonomous_development_missions": {mission_id: mission}, "autonomous_development_mission": mission, "founder_action_queue": [{"action_id": old_action_id, "action_type": runtime.SAFE_MERGE_QUEUE_TYPE, "type": runtime.SAFE_MERGE_QUEUE_TYPE, "status": "approved", "mission_id": mission_id}]}
+        db.commit()
+    monkeypatch.setattr(runtime, "_git_rev_parse", lambda ref, **_kwargs: "checkpoint-head" if ref == "feature/sino-mission-refresh-dup" else "baseline-b")
+    monkeypatch.setattr(runtime, "_candidate_merge_validation", lambda **_kwargs: {"status": "PASS", "source_head": "checkpoint-head", "target_head": "baseline-b", "merge_base": "baseline-a", "verification": []})
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: _safe_merge_request(source_branch="feature/sino-mission-refresh-dup", source_head="checkpoint-head", target_head="baseline-b", target_head_before="baseline-b", checkpoint_head="checkpoint-head", source_checkpoint_head="checkpoint-head", source_verification_status="PASS", allow_unpushed_source_after_checkpoint=True))
+
+    first = runtime.refresh_historical_safe_merge(conversation_id="conv-refresh-merge-duplicate", mission_id=mission_id, action_id=old_action_id, cwd=tmp_path)
+    second = runtime.refresh_historical_safe_merge(conversation_id="conv-refresh-merge-duplicate", mission_id=mission_id, action_id=old_action_id, cwd=tmp_path)
+
+    assert second["replacement_action_id"] == first["replacement_action_id"]
+    with factory() as db:
+        queue = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-refresh-merge-duplicate").one().discovery["founder_action_queue"]
+    assert sum(1 for item in queue if item["action_id"] == first["replacement_action_id"]) == 1
+
+
 def test_safe_merge_argv_uses_shell_false_and_no_squash_rebase_or_push(monkeypatch, tmp_path):
     calls = []
 

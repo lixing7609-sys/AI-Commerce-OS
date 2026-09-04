@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 import hashlib
 import re
 from pathlib import Path
+import shutil
 import subprocess
+import tempfile
 import time
 from types import SimpleNamespace
 from typing import Callable
@@ -25,7 +27,7 @@ from app.core.task_asset.service import create_task_asset
 from app.database.db import SessionLocal
 from app.founder_ai.codex_adapter import CodexExecutionTimeout, SubprocessCodexAdapter
 from app.founder_ai.execution_loop import ExecutionSession
-from app.founder_ai.execution_registry import get_execution_session, save_execution_session
+from app.founder_ai.execution_registry import get_execution_session, list_execution_sessions, load_execution_sessions, save_execution_session
 from app.founder_ai.orchestrator import ExecutionPackage, TaskAssetDraft
 
 CONTROLLED_LOCAL_DEVELOPMENT_TASK = "CONTROLLED_LOCAL_DEVELOPMENT_TASK"
@@ -1290,6 +1292,253 @@ def _mission_safe_merge_request(mission: dict, checkpoint: dict, *, cwd: Path) -
     }
 
 
+def _run_candidate_verification(argv: list[str], *, cwd: Path, timeout: int = 120) -> dict:
+    started_at = _now()
+    result = subprocess.run(argv, cwd=str(cwd), text=True, capture_output=True, timeout=timeout, check=False, shell=False)
+    return {
+        "argv": argv,
+        "status": "PASS" if result.returncode == 0 else "FAIL",
+        "success": result.returncode == 0,
+        "exit_code": result.returncode,
+        "stdout_excerpt": _excerpt(result.stdout, 2000),
+        "stderr_excerpt": _excerpt(result.stderr, 2000),
+        "started_at": started_at,
+        "completed_at": _now(),
+    }
+
+
+def _candidate_merge_validation(
+    *,
+    source_branch: str,
+    target_branch: str,
+    verification_plan: list[list[str]],
+    cwd: Path,
+    verifier: Callable[[list[str], Path], dict] | None = None,
+) -> dict:
+    source = _safe_git_ref(source_branch, field="source_branch")
+    target = _safe_git_ref(target_branch, field="target_branch")
+    source_head = _git_rev_parse(source, cwd=cwd)
+    target_head = _git_rev_parse(target, cwd=cwd)
+    merge_base = _git_output(["merge-base", target, source], cwd=cwd).stdout.strip()
+    worktree = Path(tempfile.mkdtemp(prefix="sino-safe-merge-candidate-", dir="/private/tmp"))
+    validation = {
+        "status": "RUNNING",
+        "source_branch": source,
+        "source_head": source_head,
+        "target_branch": target,
+        "target_head": target_head,
+        "merge_base": merge_base,
+        "candidate_worktree": str(worktree),
+        "conflict": False,
+        "conflict_files": [],
+        "verification": [],
+        "real_integration_branch_modified": False,
+        "mission_checkpoint_modified": False,
+        "started_at": _now(),
+    }
+    try:
+        add = subprocess.run(["git", "worktree", "add", "--detach", str(worktree), target_head], cwd=str(cwd), text=True, capture_output=True, timeout=60, check=False, shell=False)
+        if add.returncode != 0:
+            validation.update({"status": "FAIL", "failure_type": "CANDIDATE_WORKTREE_FAILED", "summary": _excerpt(add.stderr or add.stdout, 1000), "completed_at": _now()})
+            return validation
+        node_modules = cwd / "frontend" / "node_modules"
+        candidate_node_modules = worktree / "frontend" / "node_modules"
+        if node_modules.exists() and not candidate_node_modules.exists():
+            candidate_node_modules.symlink_to(node_modules, target_is_directory=True)
+        merge = subprocess.run(["git", "merge", "--no-commit", "--no-ff", source], cwd=str(worktree), text=True, capture_output=True, timeout=60, check=False, shell=False)
+        if merge.returncode != 0:
+            conflicts = _git_output(["diff", "--name-only", "--diff-filter=U"], cwd=worktree, check=False).stdout.splitlines()
+            validation.update({
+                "status": "BLOCKED_CONFLICT",
+                "conflict": True,
+                "conflict_files": conflicts,
+                "summary": _excerpt(merge.stderr or merge.stdout, 1000),
+                "completed_at": _now(),
+            })
+            return validation
+        runner = verifier or (lambda command, root: _run_candidate_verification(command, cwd=root))
+        results = []
+        for command in verification_plan:
+            evidence = runner(list(command), worktree)
+            results.append(evidence)
+            if not evidence.get("success"):
+                validation.update({
+                    "status": "FAIL",
+                    "failure_type": "CANDIDATE_VERIFICATION_FAILED",
+                    "summary": f"candidate verification failed: {' '.join(command)}",
+                    "verification": results,
+                    "completed_at": _now(),
+                })
+                return validation
+        validation.update({"status": "PASS", "summary": "candidate merge validation passed", "verification": results, "completed_at": _now()})
+        return validation
+    finally:
+        subprocess.run(["git", "worktree", "remove", "--force", str(worktree)], cwd=str(cwd), text=True, capture_output=True, timeout=60, check=False, shell=False)
+
+
+def refresh_historical_safe_merge(
+    *,
+    conversation_id: str,
+    mission_id: str,
+    action_id: str,
+    cwd: Path | None = None,
+    verifier: Callable[[list[str], Path], dict] | None = None,
+) -> dict:
+    root = cwd or repo_root()
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None:
+            raise LookupError("sino_brain_session_not_found")
+        discovery = dict(state.discovery or {})
+        mission = _mission_from_discovery(discovery, mission_id)
+        if not mission:
+            raise LookupError("mission_not_found")
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]
+        action = next((item for item in queue if item.get("action_id") == action_id), None)
+        if not action:
+            raise LookupError("safe_merge_action_not_found")
+    checkpoint_head = str(mission.get("checkpoint_head") or "")
+    working_branch = str(mission.get("working_branch") or "")
+    target_branch = str(mission.get("baseline_branch") or SAFE_MERGE_TARGET_BRANCH)
+    source_head = _git_rev_parse(working_branch, cwd=root)
+    target_head = _git_rev_parse(target_branch, cwd=root)
+    original_baseline = str(mission.get("baseline_head") or "")
+    historical_execution_id, historical_execution_status = _historical_execution_for_action(action, action_id)
+    if source_head != checkpoint_head:
+        return {"status": "FAIL", "failure_type": "SOURCE_HEAD_MISMATCH", "summary": "Mission branch no longer points at the recorded checkpoint."}
+    target_drift = bool(original_baseline and original_baseline != target_head)
+    validation = _candidate_merge_validation(
+        source_branch=working_branch,
+        target_branch=target_branch,
+        verification_plan=[list(argv) for argv in mission.get("verification_plan") or []],
+        cwd=root,
+        verifier=verifier,
+    )
+    if validation.get("status") != "PASS":
+        return {
+            "status": "BLOCKED",
+            "target_baseline_drift": target_drift,
+            "historical_execution_id": historical_execution_id,
+            "historical_execution_status": historical_execution_status,
+            "candidate_validation": validation,
+            "replacement_action_created": False,
+        }
+    replacement_action_id = _safe_merge_refresh_action_id(mission_id, source_head, target_head)
+    now = _now()
+    refreshed_merge_request = _mission_safe_merge_request(mission, dict(mission.get("change_result", {}).get("checkpoint") or {"new_head": checkpoint_head}), cwd=root)
+    refreshed_merge_request.update({
+        "target_head_before": target_head,
+        "target_head": target_head,
+        "source_head": source_head,
+        "source_checkpoint_head": checkpoint_head,
+        "checkpoint_head": checkpoint_head,
+        "merge_base": validation.get("merge_base"),
+        "refreshed_validation": validation,
+        "refreshed_validation_status": "PASS",
+        "previous_safe_merge_action_id": action_id,
+        "previous_safe_merge_execution_id": historical_execution_id,
+        "approval_decision": "REAPPROVAL_REQUIRED",
+    })
+    risk = {"work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK, "risk_level": HIGH_RISK, "auto_continue": False, "operation": "safe_merge", "operation_type": SAFE_MERGE, "reason": "refreshed_merge_requires_founder_reapproval", "approval_required": True}
+    with SessionLocal() as session:
+        state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        discovery = dict(state.discovery or {})
+        queue = [dict(item) for item in discovery.get("founder_action_queue") or [] if isinstance(item, dict)]
+        duplicate = next((item for item in queue if item.get("action_id") == replacement_action_id), None)
+        replacement_already_present = duplicate is not None
+        for index, item in enumerate(queue):
+            if item.get("action_id") == action_id:
+                queue[index] = {**item, "status": "superseded", "superseded_by": replacement_action_id, "superseded_at": now, "updated_at": now}
+        replacement_action = {
+                "action_id": replacement_action_id,
+                "action_type": SAFE_MERGE_QUEUE_TYPE,
+                "type": SAFE_MERGE_QUEUE_TYPE,
+                "title": "批准基于最新 integration baseline 的本地安全合并",
+                "summary": "Integration baseline 已更新；Sino 已重新验证候选合并，需要重新确认本地安全合并。",
+                "risk_level": HIGH_RISK,
+                "risk": "high",
+                "status": "pending",
+                "conversation_id": conversation_id,
+                "mission_id": mission_id,
+                "source_type": "conversation_message",
+                "source_id": f"{mission_id}:safe-merge-refresh:{target_head[:8]}",
+                "created_at": now,
+                "updated_at": now,
+                "reason": risk["reason"],
+                "metadata": {
+                    "queue_schema": "sino-safe-merge-refresh-v1",
+                    "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+                    "operation_type": SAFE_MERGE,
+                    "mission_id": mission_id,
+                    "founder_request": "Mission 下一步：基于最新 integration baseline 本地 --no-ff 合并 feature。",
+                    "merge_request": refreshed_merge_request,
+                    "source_branch": working_branch,
+                    "source_head": source_head,
+                    "target_branch": target_branch,
+                    "target_head_before": target_head,
+                    "target_head": target_head,
+                    "refreshed_validation_status": "PASS",
+                    "refreshed_validation": validation,
+                    "previous_safe_merge_action_id": action_id,
+                    "previous_safe_merge_execution_id": historical_execution_id,
+                    "approval_decision": "REAPPROVAL_REQUIRED",
+                    "merge_strategy": "no_ff",
+                    "push_after_merge": False,
+                    "auto_conflict_resolution": False,
+                },
+        }
+        if duplicate:
+            queue = [replacement_action if item.get("action_id") == replacement_action_id else item for item in queue]
+        else:
+            queue.append(replacement_action)
+        missions = dict(discovery.get("autonomous_development_missions") or {})
+        mission = {**mission, "status": "WAITING_MERGE_APPROVAL", "current_stage": "WAITING_MERGE_APPROVAL", "last_completed_step": "CHECKPOINTING", "next_required_action": "SAFE_MERGE_APPROVAL", "merge_action_id": replacement_action_id, "refreshed_safe_merge_validation": validation, "target_baseline_drift": target_drift, "updated_at": now}
+        missions[mission_id] = mission
+        discovery["autonomous_development_missions"] = missions
+        discovery["autonomous_development_mission"] = mission
+        discovery["founder_action_queue"] = queue
+        discovery["founder_action_required"] = True
+        discovery["operational_runtime"] = {
+            "status": "approval_required",
+            "operation_type": SAFE_MERGE,
+            "risk_decision": risk,
+            "action_id": replacement_action_id,
+            "source_message_id": f"{mission_id}:safe-merge-refresh:{target_head[:8]}",
+            "merge_request": refreshed_merge_request,
+            "refreshed_validation": validation,
+            "message": "Integration baseline 已更新。Sino 已基于最新 baseline 重新验证该合并，验证通过，需要重新确认合并。",
+        }
+        action_queue = [dict(item) for item in queue if isinstance(item, dict)]
+        mission_view = build_mission_view(mission, action_queue)
+        views = dict(discovery.get("autonomous_development_mission_views") or {})
+        views[mission_id] = mission_view
+        discovery["autonomous_development_mission_views"] = views
+        discovery["autonomous_development_mission_view"] = mission_view
+        state.discovery = discovery
+        state.stage = "operational_runtime"
+        state.updated_at = datetime.now(timezone.utc)
+        session.commit()
+    if not replacement_already_present:
+        _append_assistant_message(
+            conversation_id,
+            "Integration baseline 已更新。Sino 已基于最新 baseline 重新验证该合并，验证通过；请重新批准本地安全合并。",
+            message_type="operational_result",
+            grounding={"operation_type": SAFE_MERGE, "action_id": replacement_action_id, "refreshed_validation": validation},
+        )
+    return {
+        "status": "READY_FOR_FOUNDER_SAFE_MERGE",
+        "target_baseline_drift": target_drift,
+        "approval_decision": "REAPPROVAL_REQUIRED",
+        "old_approval_superseded": True,
+        "historical_execution_id": historical_execution_id,
+        "historical_execution_status": historical_execution_status,
+        "replacement_action_id": replacement_action_id,
+        "replacement_action_status": "pending",
+        "replacement_target_head": target_head,
+        "candidate_validation": validation,
+    }
+
+
 def _persist_mission(conversation_id: str, mission: dict) -> None:
     with SessionLocal() as session:
         state = session.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
@@ -1480,6 +1729,26 @@ def _git_safe_push(remote_name: str, branch: str, *, cwd: Path, timeout: int = 6
 
 def _safe_merge_action_id(source_message_id: str) -> str:
     return f"safe-merge:{source_message_id}"
+
+
+def _safe_merge_refresh_action_id(mission_id: str, source_head: str, target_head: str) -> str:
+    digest = hashlib.sha256(f"safe-merge-refresh:{mission_id}:{source_head}:{target_head}".encode()).hexdigest()[:12]
+    return f"safe-merge-refresh:{digest}"
+
+
+def _historical_execution_for_action(action: dict, action_id: str) -> tuple[str | None, str | None]:
+    execution_id = action.get("execution_id") or (action.get("metadata") or {}).get("execution_id")
+    if execution_id:
+        record = get_execution_session(str(execution_id))
+        return str(execution_id), record[0].status if record else None
+    load_execution_sessions()
+    for session_record in list_execution_sessions():
+        record = get_execution_session(session_record.id)
+        package = record[1] if record else None
+        context = dict(package.context or {}) if package else {}
+        if context.get("approval_action_id") == action_id:
+            return session_record.id, session_record.status
+    return None, None
 
 
 def _safe_integration_push_action_id(source_message_id: str) -> str:

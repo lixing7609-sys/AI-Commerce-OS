@@ -174,6 +174,8 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
       if (type === "SAFE_MERGE_APPROVAL") {
         const metadata = item.metadata || {};
         const mergeRequest = metadata.merge_request || {};
+        const refreshedValidation = mergeRequest.refreshed_validation || metadata.refreshed_validation;
+        const refreshedStatus = mergeRequest.refreshed_validation_status || metadata.refreshed_validation_status || refreshedValidation?.status;
         return <article className="sino-founder-action-item" aria-label="Safe Merge Approval" key={item.action_id}>
           <span>SAFE MERGE · {risk}</span><h3>{item.title || "批准本地安全合并"}</h3><p>{item.summary}</p>
           <dl>
@@ -182,7 +184,8 @@ function FounderActionQueueItems({ actions = [], busy, onResolved, onContinueDis
             <div><dt>Source remote</dt><dd>{mergeRequest.source_remote || metadata.source_remote || "origin"}</dd></div>
             <div><dt>Source remote HEAD</dt><dd>{mergeRequest.source_remote_head || metadata.source_remote_head || "—"}</dd></div>
             <div><dt>Target branch</dt><dd>{mergeRequest.target_branch || metadata.target_branch || "feature/foundation-reset-integration"}</dd></div>
-            <div><dt>Target HEAD</dt><dd>{mergeRequest.target_head_before || metadata.target_head_before || "—"}</dd></div>
+            <div><dt>Target HEAD</dt><dd>{mergeRequest.target_head_before || mergeRequest.target_head || metadata.target_head_before || metadata.target_head || "—"}</dd></div>
+            {refreshedStatus ? <div><dt>Refreshed validation</dt><dd>{refreshedStatus}</dd></div> : null}
             <div><dt>Target remote sync</dt><dd>{mergeRequest.target_ahead_remote || mergeRequest.target_behind_remote ? "NOT_SYNCED" : "SYNCED"}</dd></div>
             <div><dt>Source remote sync</dt><dd>{mergeRequest.source_ahead_remote || mergeRequest.source_behind_remote ? "NOT_SYNCED" : "SYNCED"}</dd></div>
             <div><dt>Strategy</dt><dd>--no-ff</dd></div>

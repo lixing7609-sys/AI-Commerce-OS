@@ -692,6 +692,50 @@ describe("ConversationThread layout", () => {
     expect(screen.queryByRole("region", { name: "Mission Completion Summary" })).toBeNull();
   });
 
+  it("shows refreshed merge validation after integration baseline drift", () => {
+    const value = {
+      ...snapshot("conv-mission-refreshed-merge", [
+        { message_id: "founder-source", role: "founder", content: "完成上一个 Mission 的安全合并。" },
+        { message_id: "assistant-refresh", role: "assistant", content: "Integration baseline 已更新。Sino 已基于最新 baseline 重新验证该合并，验证通过；请重新批准本地安全合并。" },
+      ]),
+      sino_brain: {
+        discovery: {
+          autonomous_development_mission_view: {
+            mission_id: "mission-refreshed",
+            source_message_id: "founder-source",
+            acknowledgement_message_id: "assistant-refresh",
+            goal: "完成上一个 Mission 的安全合并。",
+            status: "WAITING_MERGE_APPROVAL",
+            stage: "WAITING_MERGE_APPROVAL",
+            stage_label: "等待你批准合并到 integration",
+            working_branch: "feature/sino-mission-617b0edd",
+            current_head: "0698f9c",
+            last_completed_step: "Checkpoint 已完成",
+            next_required_action: "批准基于最新 integration baseline 的本地安全合并",
+            refreshed_safe_merge_validation: {
+              status: "PASS",
+              source_head: "0698f9c",
+              target_head: "5b849b9",
+              merge_base: "372de85",
+            },
+            pending_approval: {
+              action_id: "safe-merge-refresh:abc",
+              action_type: "SAFE_MERGE_APPROVAL",
+              label: "批准基于最新 integration baseline 的本地安全合并",
+              risk_level: "HIGH",
+              scope: "feature/sino-mission-617b0edd",
+            },
+          },
+        },
+      },
+    };
+    render(<ConversationThread snapshot={value} message="" onMessage={vi.fn()} onSend={vi.fn()} busy={false} />);
+    expect(screen.getByRole("region", { name: "Refreshed Merge Validation" })).toBeTruthy();
+    expect(screen.getByText("Integration baseline 已更新")).toBeTruthy();
+    expect(screen.getByText("5b849b9")).toBeTruthy();
+    expect(screen.queryByText("验证受阻")).toBeNull();
+  });
+
   it("shows autonomous mission failed stage and restores from snapshot reload", () => {
     const value = {
       ...snapshot("conv-mission-failed", [{ message_id: "m1", role: "founder", content: "完成一个小型开发目标" }]),
