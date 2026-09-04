@@ -1,0 +1,463 @@
+"""Safe autonomous diagnosis and resolution for local execution constraints."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from hashlib import sha256
+import json
+import os
+from pathlib import Path
+import subprocess
+from dataclasses import replace
+from urllib.request import urlopen
+
+from sqlalchemy import select
+
+from app.core.task_asset.model import TaskAssetDB
+from app.database.db import SessionLocal
+from app.founder_ai.execution_events import append_event
+from app.founder_ai.execution_registry import get_execution_session, list_actually_active_sessions, save_execution_session
+from app.founder_ai.execution_state import runtime_revision
+from core.conversation_first.model import SinoBrainSessionDB
+
+STALL_THRESHOLD_SECONDS = int(os.getenv("FOUNDER_EXECUTION_STALL_SECONDS", "180"))
+LONG_RUNNING_STALL_SECONDS = int(os.getenv("FOUNDER_EXECUTION_LONG_RUNNING_STALL_SECONDS", "900"))
+HEARTBEAT_GRACE_SECONDS = int(os.getenv("FOUNDER_EXECUTION_HEARTBEAT_GRACE_SECONDS", "30"))
+DEFAULT_RETRY_BUDGET = int(os.getenv("FOUNDER_TECHNICAL_RESOLUTION_RETRY_BUDGET", "3"))
+FALSE_COMPLETION_EVIDENCE_INVALID = "FALSE_COMPLETION_EVIDENCE_INVALID"
+INTERNAL_INVALIDATORS = {"evidence_audit", "runtime_reconciliation"}
+MEANINGFUL_EVENTS = {
+    "queued", "worker_started", "codex_started", "codex_finished",
+    "scope_verification_started", "scope_verification_finished", "scope_correction_started", "scope_correction_finished",
+    "tests_started", "tests_passed", "tests_failed", "build_started", "build_passed", "build_failed",
+    "diff_check_started", "diff_check_passed", "diff_check_failed", "browser_verification_started",
+    "verification_completed", "testing_started", "testing_finished", "artifact_saved", "memory_saved", "completed", "failed",
+}
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _real_command_passed(result: dict, verifier: str) -> bool:
+    item = next((entry for entry in list(result.get("command_verification_evidence") or [])
+                 if entry.get("verifier") == verifier), None)
+    return bool(item and item.get("status") == "PASS" and (item.get("evidence") or {}).get("command"))
+
+
+def _browser_passed(result: dict) -> bool:
+    if dict(result.get("browser_verification") or {}).get("status") == "PASS":
+        return True
+    evidence_items = list(result.get("verification_evidence") or [])
+    evidence_items.extend(list(dict(result.get("post_implementation_verification") or {}).get("evidence") or []))
+    return any(
+        item.get("status") == "PASS" and item.get("verifier") in {
+            "preferred_browser", "system_chrome_playwright", "component_static_acceptance",
+        }
+        for item in evidence_items
+    )
+
+
+def _production_files(result: dict) -> list[str]:
+    changed = list(result.get("production_changed_files") or [])
+    if not changed:
+        changed = list(dict(result.get("execution_attribution") or {}).get("task_changed_files") or [])
+    production = []
+    for path in changed:
+        lowered = str(path).lower()
+        name = Path(lowered).name
+        if lowered.startswith("docs/") or lowered.endswith((".md", ".rst")):
+            continue
+        if lowered.startswith("backend/tests/") or any(marker in name for marker in (".test.", ".spec.", "_test.")):
+            continue
+        production.append(path)
+    return production
+
+
+def resolve_reopen_stage(*, result: dict, contract: dict) -> str | None:
+    """Return the earliest stage whose durable completion evidence is missing."""
+    implementation_required = bool(contract.get("implementation_required", True))
+    production_files = _production_files(result)
+    preexisting_verified = bool(result.get("preexisting_acceptance_verified"))
+    if implementation_required and not preexisting_verified and not (
+        production_files and result.get("task_owned_patch_persisted")
+    ):
+        return "IMPLEMENTING"
+    if dict(result.get("scope_verification") or {}).get("status") != "PASS":
+        return "SCOPE_VERIFYING"
+    required = [str(item).lower() for item in list(result.get("tests") or [])]
+    tests_required = implementation_required or any("test" in item for item in required)
+    build_required = any(path.startswith("frontend/") for path in production_files) or any("build" in item for item in required)
+    if tests_required and not _real_command_passed(result, "targeted_tests"):
+        return "TESTING"
+    if build_required and not _real_command_passed(result, "build"):
+        return "BUILDING"
+    diff_item = next((entry for entry in list(result.get("command_verification_evidence") or [])
+                      if entry.get("verifier") == "git_diff_check"), None)
+    if implementation_required and not (
+        diff_item and diff_item.get("status") == "PASS" and (diff_item.get("evidence") or {}).get("command")
+    ):
+        return "DIFF_CHECKING"
+    visible_required = bool((contract.get("visible_artifact_contract") or {}).get("required")) or any(
+        path.startswith("frontend/") for path in production_files
+    )
+    if visible_required and not _browser_passed(result):
+        return "UI_VERIFYING"
+    return None
+
+
+def audit_false_completion(*, session, package) -> dict:
+    """Derive invalidity solely from durable raw evidence, never caller claims."""
+    contract = dict((package.context or {}).get("standard_task_contract") or {})
+    resume_stage = resolve_reopen_stage(result=dict(session.result or {}), contract=contract)
+    completed_event = next((item for item in reversed(session.events or []) if item.get("event_name") == "completed"), None)
+    invalid_evidence = [] if resume_stage is None else [{
+        "missing_stage": resume_stage,
+        "production_changed_files": _production_files(dict(session.result or {})),
+        "task_owned_patch_persisted": bool((session.result or {}).get("task_owned_patch_persisted")),
+        "scope_status": dict((session.result or {}).get("scope_verification") or {}).get("status"),
+        "tests_executed": _real_command_passed(dict(session.result or {}), "targeted_tests"),
+        "build_executed": _real_command_passed(dict(session.result or {}), "build"),
+        "browser_verified": _browser_passed(dict(session.result or {})),
+    }]
+    revision = runtime_revision()
+    fingerprint_payload = {
+        "execution_id": session.id,
+        "completion_event_id": (completed_event or {}).get("event_id"),
+        "reason": FALSE_COMPLETION_EVIDENCE_INVALID,
+        "invalid_evidence": invalid_evidence,
+        "runtime_revision": revision,
+    }
+    return {
+        "valid": resume_stage is None,
+        "resume_stage": resume_stage,
+        "invalid_evidence": invalid_evidence,
+        "completion_event_id": (completed_event or {}).get("event_id"),
+        "runtime_revision": revision,
+        "audit_fingerprint": sha256(json.dumps(fingerprint_payload, sort_keys=True).encode()).hexdigest(),
+    }
+
+
+def recover_false_completion(
+    *, execution_id: str, invalidated_by: str = "evidence_audit", enqueue=None,
+) -> dict:
+    """Invalidate one proven false completion and reopen the same execution identity."""
+    if invalidated_by not in INTERNAL_INVALIDATORS:
+        raise PermissionError("false completion recovery is restricted to internal evidence reconciliation")
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise LookupError("Execution session not found")
+    session, package = record
+    prior_reopen = next((item for item in reversed(session.events or [])
+                         if item.get("event_name") == "execution_reopened"), None)
+    if session.status in {"queued", "executing", "testing"} and prior_reopen:
+        metadata = dict(prior_reopen.get("metadata") or {})
+        queue_item = (enqueue or _default_reopen_enqueue)(session.id)
+        return {
+            "status": "ALREADY_REOPENED", "execution_id": execution_id,
+            "task_id": session.task_asset_id, "resume_stage": metadata.get("resume_stage"),
+            "audit_fingerprint": metadata.get("audit_fingerprint"),
+            "queue_item": queue_item,
+        }
+    if session.status != "completed" or session.execution_stage != "COMPLETED":
+        return {"status": "NOT_APPLICABLE", "execution_id": execution_id}
+    audit = audit_false_completion(session=session, package=package)
+    if audit["valid"]:
+        return {"status": "REJECTED", "reason": "completion evidence is valid", "execution_id": execution_id}
+    prior = next((item for item in reversed(session.events or [])
+                  if item.get("event_name") == "completion_invalidated"
+                  and (item.get("metadata") or {}).get("audit_fingerprint") == audit["audit_fingerprint"]), None)
+    if prior:
+        return {
+            "status": "ALREADY_REOPENED", "execution_id": execution_id,
+            "task_id": session.task_asset_id, "resume_stage": (prior.get("metadata") or {}).get("resume_stage"),
+            "audit_fingerprint": audit["audit_fingerprint"],
+        }
+
+    timestamp = _now()
+    previous = {
+        "previous_status": session.status,
+        "previous_stage": session.execution_stage,
+        "previous_progress": 100,
+    }
+    invalidation = {
+        "task_id": session.task_asset_id, "execution_id": session.id,
+        "reason": FALSE_COMPLETION_EVIDENCE_INVALID, **previous,
+        "invalid_evidence": audit["invalid_evidence"], "audited_at": timestamp,
+        "invalidated_by": invalidated_by, "runtime_revision": audit["runtime_revision"],
+        "source_commit": audit["runtime_revision"].split("+")[0],
+        "audit_fingerprint": audit["audit_fingerprint"], "resume_stage": audit["resume_stage"],
+        "completion_event_id": audit["completion_event_id"],
+        "founder_summary": "此前完成状态的验证证据无效，任务已恢复执行并将重新完成必要验证。",
+    }
+    append_event(session, "completion_invalidated", status="invalidated",
+                 message="Previously completed execution failed durable evidence audit", timestamp=timestamp,
+                 metadata=invalidation)
+
+    from app.founder_ai.standard_task_execution import build_standard_task_contract
+    refreshed = build_standard_task_contract(
+        conversation_id=package.task_asset.conversation_id, goal=package.goal,
+        task_id=session.task_asset_id,
+    )
+    package = replace(package, context={**dict(package.context), "standard_task_contract": refreshed})
+    session.source_status = "completed"
+    session.status = "queued"
+    session.completed_at = None
+    session.started_at = None
+    session.testing_at = None
+    session.result = None
+    session.artifact = None
+    session.memory = None
+    session.error_message = None
+    session.failure_reason = None
+    session.recoverable = True
+    reopened_at = _now()
+    reopen_metadata = {
+        "task_id": session.task_asset_id, "execution_id": session.id,
+        "reopen_reason": FALSE_COMPLETION_EVIDENCE_INVALID,
+        "resume_stage": audit["resume_stage"], "previous_terminal_stage": "COMPLETED",
+        "runtime_revision": runtime_revision(), "reopened_at": reopened_at,
+        "audit_fingerprint": audit["audit_fingerprint"],
+        "founder_summary": "任务已按原 Task 和原 Execution 恢复，将从缺失证据对应阶段继续。",
+    }
+    append_event(session, "execution_reopened", status="queued",
+                 message="False completion reopened on the original execution identity",
+                 timestamp=reopened_at, metadata=reopen_metadata)
+    session.execution_stage = audit["resume_stage"]
+    session.stage_started_at = reopened_at
+    session.queued_at = reopened_at
+    save_execution_session(session, package)
+    queue_item = (enqueue or _default_reopen_enqueue)(session.id)
+    _project_false_completion_reopen(session=session, package=package, resume_stage=audit["resume_stage"])
+    return {
+        "status": "REOPENED", "task_id": session.task_asset_id, "execution_id": session.id,
+        "resume_stage": audit["resume_stage"], "audit_fingerprint": audit["audit_fingerprint"],
+        "queue_item": queue_item,
+    }
+
+
+def _default_reopen_enqueue(execution_id: str):
+    from app.founder_ai.execution_worker import execution_queue
+    return execution_queue.requeue(execution_id)
+
+
+def _project_false_completion_reopen(*, session, package, resume_stage: str) -> None:
+    conversation_id = package.task_asset.conversation_id
+    if not conversation_id:
+        return
+    with SessionLocal() as db:
+        task = db.get(TaskAssetDB, session.task_asset_id)
+        if task:
+            task.status = "in_progress"
+            task.execution_status = "queued"
+            task.result = {"status": "reopened", "reason": FALSE_COMPLETION_EVIDENCE_INVALID,
+                           "resume_stage": resume_stage, "execution_id": session.id}
+        state = db.scalar(select(SinoBrainSessionDB).where(
+            SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state:
+            discovery = dict(state.discovery or {})
+            route = dict(discovery.get("task_complexity_route") or {})
+            execution = dict(route.get("autonomous_execution") or {})
+            execution.update({"task_id": session.task_asset_id, "execution_session_id": session.id,
+                              "dispatch_status": "queued", "completion_invalidated": True,
+                              "resume_stage": resume_stage, "verification": {"status": "PENDING"}})
+            route.update({"autonomous_execution": execution, "execution_status": "queued",
+                          "current_step": "execution", "technical_blocker": None})
+            discovery["task_complexity_route"] = route
+            discovery["standard_task_contract"] = (package.context or {}).get("standard_task_contract")
+            state.discovery = discovery
+            state.updated_at = datetime.now(timezone.utc)
+        db.commit()
+
+
+def _parse(value: str | None):
+    try: return datetime.fromisoformat(value) if value else None
+    except (TypeError, ValueError): return None
+
+
+def meaningful_progress_at(session) -> str | None:
+    explicit = getattr(session, "meaningful_progress_at", None)
+    if explicit: return explicit
+    event = next((item for item in reversed(session.events or []) if item.get("event_name") in MEANINGFUL_EVENTS), None)
+    return event.get("timestamp") if event else session.started_at or session.queued_at
+
+
+def _owned_subprocess_alive(session) -> bool:
+    pid = getattr(session, "subprocess_pid", None)
+    if not pid or getattr(session, "subprocess_exit_status", None) is not None:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (OSError, ProcessLookupError):
+        return False
+    return True
+
+
+def evaluate_stall(session, *, now: datetime | None = None, threshold_seconds: int = STALL_THRESHOLD_SECONDS,
+                   process_checker=None) -> dict:
+    current = now or datetime.now(timezone.utc); progress = _parse(meaningful_progress_at(session)); heartbeat = _parse(getattr(session, "worker_heartbeat_at", None))
+    activity = _parse(getattr(session, "subprocess_activity_at", None))
+    meaningful_age = max(0, int((current - progress).total_seconds())) if progress else None
+    heartbeat_age = max(0, int((current - heartbeat).total_seconds())) if heartbeat else None
+    activity_age = max(0, int((current - activity).total_seconds())) if activity else meaningful_age
+    running = session.status in {"queued", "executing", "testing"}
+    worker_alive = bool(heartbeat_age is not None and heartbeat_age <= max(HEARTBEAT_GRACE_SECONDS, threshold_seconds))
+    subprocess_alive = bool((process_checker or _owned_subprocess_alive)(session))
+    pending_authorization = bool(getattr(session, "pending_codex_authorization", None))
+    long_running = bool(getattr(session, "expected_long_running_operation", None))
+    effective_timeout = int(getattr(session, "expected_operation_timeout_seconds", None) or (LONG_RUNNING_STALL_SECONDS if long_running else threshold_seconds))
+    no_progress = meaningful_age is not None and meaningful_age > effective_timeout
+    healthy_execution = worker_alive and subprocess_alive and activity_age is not None and activity_age <= effective_timeout
+    stalled = bool(running and no_progress and not healthy_execution and not pending_authorization)
+    return {"stalled": stalled, "threshold_seconds": threshold_seconds, "worker_heartbeat_at": getattr(session, "worker_heartbeat_at", None),
+            "meaningful_progress_at": meaningful_progress_at(session), "meaningful_progress_age_seconds": meaningful_age,
+            "worker_alive": worker_alive, "heartbeat_age_seconds": heartbeat_age, "subprocess_alive": subprocess_alive,
+            "subprocess_activity_at": getattr(session, "subprocess_activity_at", None), "subprocess_activity_age_seconds": activity_age,
+            "expected_long_running_operation": getattr(session, "expected_long_running_operation", None),
+            "effective_timeout_seconds": effective_timeout, "pending_authorization": pending_authorization}
+
+
+def check_execution_liveness(session, *, queue_item=None, now: datetime | None = None, process_checker=None) -> dict:
+    """Choose one safe watchdog action from owned process and durable state."""
+    evidence = evaluate_stall(session, now=now, process_checker=process_checker)
+    if evidence["subprocess_alive"]:
+        return {"action": "wait", "reason": "owned subprocess is alive; refresh heartbeat without replay", **evidence}
+    if not evidence["stalled"]:
+        return {"action": "wait", "reason": "owned worker/process is live or progress is fresh", **evidence}
+    if session.status == "queued" and (queue_item is None or queue_item.status not in {"queued", "running"}):
+        return {"action": "requeue", "reason": "queued execution is missing from worker queue", **evidence}
+    if not evidence["subprocess_alive"] and getattr(session, "subprocess_exit_status", None) is None and not any((session.result, session.artifact, session.memory)):
+        return {"action": "requeue", "reason": "worker/subprocess disappeared before durable results", **evidence}
+    return {"action": "block", "reason": "active stage has no live owner and cannot be safely replayed", **evidence}
+
+
+def classify_subprocess_constraint(session) -> dict:
+    result = dict(session.result or {}); text = f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}".lower()
+    denied = "permission denied" in text or "operation not permitted" in text or "not authorized" in text
+    return {"issue_type": "LOCAL_OS_PERMISSION_DENIED" if denied else "EXECUTION_VERIFICATION_BLOCKED",
+            "permission_denied": denied, "subprocess_exit_status": result.get("exit_code"),
+            "evidence": "permission-denied evidence captured from owned subprocess output" if denied else "verification did not reach closure"}
+
+
+def safe_repair_allowed(action: str, *, ownership_verified: bool = False) -> bool:
+    if action in {"modify_macos_privacy", "full_disk_access", "sudo", "kill_unrelated_process", "destructive_git_reset"}: return False
+    if action in {"delete_git_lock", "kill_process"}: return ownership_verified
+    return action in {"application_health_endpoints", "service_registry", "execution_registry", "git_read_only", "repository_lock_read_only", "state_reconciliation"}
+
+
+def _application_owned_health(repo_root: Path) -> dict:
+    checks = {}
+    for name, url in (("frontend", "http://127.0.0.1:5173/"), ("backend_database", "http://127.0.0.1:8000/health")):
+        try:
+            with urlopen(url, timeout=5) as response: checks[name] = {"status": "PASS", "http_status": response.status}
+        except Exception as error: checks[name] = {"status": "FAIL", "reason": error.__class__.__name__}
+    status = subprocess.run([str(repo_root / "scripts" / "dev-status")], cwd=repo_root, capture_output=True, text=True, timeout=15)
+    checks["service_registry"] = {"status": "PASS" if status.returncode == 0 and "Healthy" in status.stdout else "FAIL", "evidence": status.stdout[-1000:]}
+    git = subprocess.run(["git", "status", "--porcelain=v1"], cwd=repo_root, capture_output=True, text=True, timeout=10)
+    checks["git_working_tree"] = {"status": "PASS" if git.returncode == 0 and not git.stdout.strip() else "FAIL", "dirty_paths": git.stdout.splitlines()}
+    checks["git_lock"] = {"status": "PASS" if not (repo_root / ".git" / "index.lock").exists() else "FAIL", "deleted": False}
+    checks["execution_lifecycle"] = {"status": "PASS", "actually_active_sessions": len(list_actually_active_sessions())}
+    return {"status": "PASS" if all(item["status"] == "PASS" for item in checks.values()) else "FAIL", "checks": checks, "checked_at": _now(), "method": "application_owned_low_privilege_evidence"}
+
+
+def build_resolution_contract(session, *, retry_budget: int = DEFAULT_RETRY_BUDGET) -> dict:
+    constraint = classify_subprocess_constraint(session)
+    return {**constraint, "technical_incident_id": f"incident-{session.id}-{len(session.events or [])}",
+            "affected_component": "execution_lifecycle", "severity": "recoverable",
+            "safe_auto_repair": True, "repair_plan": ["avoid_privileged_cross_app_inspection", "use_application_owned_health_evidence", "reconcile_execution_state"],
+            "rollback_plan": "none_required_read_only_checks", "retry_limit": retry_budget, "attempt_count": 0,
+            "last_attempt": None, "resolution_status": "pending", "created_at": _now()}
+
+
+def is_local_health_check_goal(goal: str) -> bool:
+    text = (goal or "").lower()
+    return "健康检查" in text and all(term in text for term in ("backend", "database", "worker", "git"))
+
+
+def mark_stalled_execution(*, conversation_id: str, execution_id: str, stall_evidence: dict) -> dict:
+    record = get_execution_session(execution_id)
+    if record is None: raise LookupError("Execution session not found")
+    session, package = record
+    if session.technical_resolution and session.technical_resolution.get("resolution_status") in {"diagnosing", "retrying", "resolved"}:
+        return session.technical_resolution
+    contract = build_resolution_contract(session); contract.update({"issue_type": "STALLED_EXECUTION", "resolution_status": "diagnosing", "stall_evidence": stall_evidence})
+    append_event(session, "stall_detected", status="stalled", message="Meaningful progress exceeded the execution stall threshold",
+                 metadata={**stall_evidence, "technical_incident_id": contract["technical_incident_id"]})
+    session.technical_resolution = contract; save_execution_session(session, package)
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None: raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {}); route = dict(discovery.get("task_complexity_route") or {})
+        route.update({"stall_detected": True, "execution_status": "self_healing", "technical_resolution_contract": contract,
+                      "founder_gate_required": False, "manual_continue_count": 0, "manual_codex_instruction_count": 0})
+        discovery["task_complexity_route"] = route; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+    return contract
+
+
+def resolve_false_stall_after_progress(*, conversation_id: str, execution_id: str) -> dict | None:
+    """Close a stale stall incident once durable execution progress has resumed."""
+    record = get_execution_session(execution_id)
+    if record is None:
+        return None
+    session, package = record
+    contract = dict(session.technical_resolution or {})
+    if contract.get("issue_type") != "STALLED_EXECUTION" or contract.get("resolution_status") not in {"pending", "diagnosing", "retrying"}:
+        return contract or None
+    contract.update({"resolution_status": "resolved", "resolution_reason": "execution_progress_resumed", "completed_at": _now()})
+    if not any(item.get("event_name") == "technical_resolution_completed" and
+               (item.get("metadata") or {}).get("technical_incident_id") == contract.get("technical_incident_id") for item in session.events or []):
+        append_event(session, "technical_resolution_completed", status="resolved", message="Execution progress resumed",
+                     metadata={"technical_incident_id": contract.get("technical_incident_id"), "reason": "execution_progress_resumed"})
+    session.technical_resolution = contract
+    save_execution_session(session, package)
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state:
+            discovery = dict(state.discovery or {}); route = dict(discovery.get("task_complexity_route") or {})
+            route["technical_resolution_contract"] = contract
+            route["stall_detected"] = False
+            if route.get("execution_status") == "self_healing": route["execution_status"] = "executing"
+            discovery["task_complexity_route"] = route; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc); db.commit()
+    return contract
+
+
+def resolve_local_health_check(*, conversation_id: str, task_id: str, execution_id: str, repo_root: Path | None = None, retry_budget: int = DEFAULT_RETRY_BUDGET, health_runner=None) -> dict:
+    root = (repo_root or Path(__file__).resolve().parents[3]).resolve(); record = get_execution_session(execution_id)
+    if record is None: raise LookupError("Execution session not found")
+    session, package = record; contract = build_resolution_contract(session, retry_budget=retry_budget)
+    append_event(session, "technical_resolution_started", status="self_healing", message="Autonomous technical resolution started", metadata={"issue_type": contract["issue_type"]})
+    session.technical_resolution = contract; save_execution_session(session, package)
+    runner = health_runner or _application_owned_health; attempts = []
+    for number in range(1, retry_budget + 1):
+        evidence = runner(root); attempt = {"attempt": number, "action": "application_owned_low_privilege_health_check", "result": evidence["status"], "evidence": evidence, "timestamp": _now()}
+        attempts.append(attempt); contract.update({"attempt_count": number, "last_attempt": attempt, "resolution_status": "resolved" if evidence["status"] == "PASS" else "retrying"})
+        append_event(session, "technical_resolution_attempted", status="self_healing", message=f"Safe resolution attempt {number}: {evidence['status']}", metadata=attempt)
+        session.technical_resolution = contract; save_execution_session(session, package)
+        if evidence["status"] == "PASS": break
+    resolved = contract["resolution_status"] == "resolved"
+    contract.update({"attempts": attempts, "resolution_status": "resolved" if resolved else "exhausted", "completed_at": _now()})
+    append_event(session, "technical_resolution_completed" if resolved else "technical_resolution_exhausted", status="completed" if resolved else "blocked",
+                 message="Autonomous technical resolution completed" if resolved else "Autonomous technical resolution exhausted", metadata={"attempt_count": len(attempts)})
+    session.technical_resolution = contract; session.meaningful_progress_at = _now(); save_execution_session(session, package)
+    with SessionLocal() as db:
+        state = db.scalar(select(SinoBrainSessionDB).where(SinoBrainSessionDB.conversation_id == conversation_id).with_for_update())
+        if state is None: raise LookupError("Sino Brain state not found")
+        discovery = dict(state.discovery or {}); route = dict(discovery.get("task_complexity_route") or {})
+        route.update({"founder_gate_required": False, "manual_continue_count": 0, "manual_codex_instruction_count": 0,
+                      "stall_detected": True, "health_check_resumed": True, "technical_resolution_contract": contract,
+                      "current_step": "complete" if resolved else "verification", "execution_status": "completed" if resolved else "technical_blocker"})
+        standard_contract = dict(route.get("standard_task_contract") or {})
+        standard_contract.update({"task_id": task_id, "conversation_id": conversation_id, "target_surface": "Local Development Environment",
+                                  "objective": "Verify Founder frontend, Backend, Database, Worker, Execution Lifecycle and Git Working Tree without modifying business functionality.",
+                                  "implementation_scope": [], "inspect_status": "health_check_completed" if resolved else "technical_blocker"})
+        route["standard_task_contract"] = standard_contract
+        route.pop("technical_blocker", None)
+        execution = dict(route.get("autonomous_execution") or {}); execution.update({"dispatch_status": "completed" if resolved else "technical_blocker",
+            "verification": {"status": "PASS" if resolved else "BLOCKED", "health_check": attempts[-1]["evidence"] if attempts else None},
+            "checkpoint": {"status": "NOT_REQUIRED", "reason": "read_only_health_check_no_changed_files"}})
+        route["autonomous_execution"] = execution; discovery["task_complexity_route"] = route; state.discovery = discovery; state.updated_at = datetime.now(timezone.utc)
+        task = db.get(TaskAssetDB, task_id)
+        if task:
+            task.status = "completed" if resolved else "blocked"; task.execution_status = "completed" if resolved else "blocked"
+            task.result = {"status": "completed" if resolved else "technical_blocker", "technical_resolution": contract, "verification": execution["verification"]}
+        db.commit()
+    return contract

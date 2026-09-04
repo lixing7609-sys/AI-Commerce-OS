@@ -1,0 +1,341 @@
+.sf-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+  Navigation V2 — single row, four groups, no second tier:
+  [ Brand ] | [ Current workspace nav ] | [ Product switch ] | [ trailing: theme + Fullscreen ]
+  Groups are separated by a thin vertical divider, never by wrapping onto a new row.
+*/
+.sf-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.sf-topbar-brand-zone {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.sf-topbar-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 0;
+  background: var(--border-subtle);
+}
+
+.sf-brand {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.sf-brand strong {
+  font: var(--font-title);
+  letter-spacing: 0.01em;
+}
+
+.sf-brand span {
+  font: var(--font-caption);
+  color: var(--text-secondary);
+}
+
+.sf-app-label {
+  font: var(--font-caption);
+  color: var(--text-secondary);
+  padding: 2px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  margin-left: var(--space-2);
+  white-space: nowrap;
+}
+
+/* Current workspace nav — this workspace's own menu, unchanged content. */
+.sf-current-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sf-current-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.sf-nav-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--font-caption);
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+  text-decoration: none;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.sf-nav-item:hover {
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+}
+
+.sf-nav-item.is-active {
+  background: var(--ai-accent-soft);
+  color: var(--ai-accent);
+  font-weight: 600;
+}
+
+/* Product switch — visually distinct segmented group, separate from the current
+   workspace's own menu. Studio / Growth / Operator / Operator Cloud live here. */
+.sf-product-switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 3px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sf-product-switch::-webkit-scrollbar {
+  display: none;
+}
+
+.sf-product-switch-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--font-caption);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+  text-decoration: none;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.sf-product-switch-item:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.sf-topbar-trailing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+/* Retained for apps/studio's own StudioShell.jsx (out of scope for this nav
+   refactor — Studio keeps its existing left-sidebar shell and top bar as-is). */
+.sf-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sf-cross-app-links {
+  display: flex;
+  gap: 6px;
+}
+
+.sf-icon-button {
+  appearance: none;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  font: var(--font-caption);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sf-icon-button:hover {
+  color: var(--text-primary);
+  border-color: var(--ai-accent);
+}
+
+.sf-main {
+  flex: 1;
+  padding: var(--space-4) var(--space-4) var(--space-6);
+  max-width: 1320px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* --- SinoFUT floating widget --- */
+
+.sf-floating {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 100;
+}
+
+.sf-floating.is-stacked {
+  bottom: 88px;
+}
+
+.sf-floating-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  background: var(--glass-surface);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--shadow-floating);
+  cursor: pointer;
+  color: var(--text-primary);
+  font: var(--font-caption);
+  font-weight: 600;
+}
+
+.sf-floating-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+
+.sf-floating-dot.status-suggestion {
+  background: var(--ai-accent);
+}
+
+.sf-floating-dot.status-alert {
+  background: var(--signal-danger);
+  animation: sf-breathe 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-floating-dot.status-alert {
+    animation: none;
+  }
+}
+
+@keyframes sf-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.sf-floating-badge {
+  background: var(--signal-danger);
+  color: white;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  padding: 0 6px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.sf-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 12px);
+  width: min(380px, 88vw);
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--glass-surface);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-floating);
+  padding: var(--space-3);
+}
+
+.sf-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-2);
+}
+
+.sf-panel-header h3 {
+  margin: 0;
+  font: var(--font-title);
+}
+
+.sf-panel-context {
+  font: var(--font-caption);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.sf-panel-section {
+  margin-bottom: var(--space-2);
+}
+
+.sf-panel-section h4 {
+  margin: 0 0 6px;
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sf-panel-section ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sf-panel-section li {
+  font: var(--font-body);
+  font-size: 13px;
+  padding: 8px 10px;
+  background: var(--surface-sunken);
+  border-radius: 10px;
+}
+
+.sf-panel-input {
+  display: flex;
+  gap: 8px;
+  margin-top: var(--space-2);
+}
+
+.sf-panel-input input {
+  flex: 1;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 8px 14px;
+  font: var(--font-body);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.sf-panel-footer {
+  margin-top: var(--space-2);
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+  text-align: center;
+}

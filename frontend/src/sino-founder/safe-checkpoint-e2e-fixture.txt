@@ -1,0 +1,1 @@
+Sino Safe Checkpoint E2E fixture: bounded change verified and locally checkpointed.\n

@@ -1,0 +1,12 @@
+.founder-assets-view { max-width: 1100px; }
+.founder-assets-view__header { margin-bottom: 20px; }
+.founder-assets-view__title { margin: 0 0 6px; font-size: 24px; color: var(--text-primary, #172033); }
+.founder-assets-view__subtitle { margin: 0; color: var(--text-secondary, #64748b); font-size: 13px; }
+.founder-assets-view__state { padding: 32px 20px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; color: var(--text-secondary, #64748b); background: var(--surface, #fff); }
+.founder-assets-view__error { color: #b42318; border-color: #f3b4ae; background: #fff8f7; }
+.founder-assets-list { display: grid; gap: 12px; }
+.founder-asset-card { padding: 18px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; background: var(--surface, #fff); }
+.founder-asset-card__title { margin: 0 0 10px; font-size: 16px; color: var(--text-primary, #172033); }
+.founder-asset-card__meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0; font-size: 12px; }
+.founder-asset-card__meta dt { color: var(--text-secondary, #64748b); }
+.founder-asset-card__meta dd { margin: 2px 0 0; color: var(--text-primary, #172033); }

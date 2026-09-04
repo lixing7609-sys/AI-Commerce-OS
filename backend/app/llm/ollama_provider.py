@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 
@@ -110,3 +111,20 @@ class OllamaProvider(LLMProvider):
             usage=usage,
             latency_ms=latency_ms,
         )
+
+    def stream(self, request: LLMRequest):
+        payload = {"model": self._model, "prompt": f"{request.system_prompt}\n\n{request.user_prompt}", "stream": True,
+                   "options": {"temperature": request.temperature, "num_predict": request.max_tokens}}
+        if request.response_format == "json": payload["format"] = "json"
+        try:
+            with httpx.stream("POST", f"{self._base_url}/api/generate", json=payload, timeout=self._timeout_seconds) as response:
+                if response.status_code == 404: raise ConfigurationError()
+                if response.status_code >= 500: raise ProviderUnavailableError()
+                if response.status_code != 200: raise InvalidResponseError()
+                for line in response.iter_lines():
+                    try: chunk = json.loads(line).get("response")
+                    except (ValueError, TypeError): chunk = None
+                    if chunk: yield chunk
+        except httpx.TimeoutException as error: raise LLMTimeoutError() from error
+        except (httpx.ConnectError, httpx.ConnectTimeout) as error: raise ProviderUnavailableError() from error
+        except httpx.HTTPError as error: raise NetworkError() from error

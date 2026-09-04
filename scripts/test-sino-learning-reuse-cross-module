@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -u
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/scripts/test-database-env"
+pytest_bin="$repo_root/backend/.venv/bin/pytest"
+failures=0
+
+run_contract() {
+  local label="$1"; shift
+  if (cd "$repo_root/backend" && "$pytest_bin" -q "$@"); then
+    printf '%s: PASS\n' "$label"
+  else
+    printf '%s: FAIL\n' "$label"
+    failures=$((failures + 1))
+  fi
+}
+
+echo "Sino Learning & Reuse · Cross-Module Compatibility Extensions"
+run_contract "Capability 1.1 Pattern Compatibility" \
+  tests/test_reusable_ui_pattern.py::test_cross_module_pattern_is_compatible_with_decision_selected_surface \
+  tests/test_reusable_ui_pattern.py::test_cross_module_pattern_wrong_intent_risk_and_invalidation_are_rejected \
+  tests/test_reusable_ui_pattern.py::test_source_module_exact_match_is_only_a_rank_signal \
+  tests/test_reusable_ui_pattern.py::test_legacy_pattern_profile_is_inferred_without_asset_migration
+run_contract "Capability 2.1 Decision Applicability" \
+  tests/test_reusable_decision_strategy.py::test_cross_module_conversation_task_can_apply_sidebar_decision_strategy \
+  tests/test_reusable_decision_strategy.py::test_cross_module_decision_rejects_wrong_intent_and_protected_contexts \
+  tests/test_reusable_decision_strategy.py::test_decision_source_module_exact_match_is_only_a_rank_signal \
+  tests/test_reusable_decision_strategy.py::test_legacy_decision_profile_is_inferred_without_asset_migration
+run_contract "Scope Non-Expansion & Source-File Leakage" \
+  tests/test_reusable_ui_pattern.py::test_cross_module_pattern_lookup_preserves_scope_and_projects_provenance_not_source_files \
+  tests/test_reusable_ui_pattern.py::test_deliberate_historical_source_file_leakage_is_rejected \
+  tests/test_reusable_execution_playbook.py::test_playbook_rejects_deliberate_historical_source_file_leakage
+run_contract "Cross-Module Playbook Composition" \
+  tests/test_reusable_execution_playbook.py::test_conversation_task_composes_cross_module_decision_with_same_module_pattern \
+  tests/test_reusable_execution_playbook.py::test_sidebar_task_composes_same_module_decision_with_cross_module_pattern \
+  tests/test_reusable_execution_playbook.py::test_cross_module_playbook_evidence_persists_provenance_and_applicability
+
+if [[ "${SINO_CROSS_MODULE_EXTENSION_ONLY:-0}" == "1" ]]; then
+  if (( failures == 0 )); then echo "Overall: PASS"; exit 0; fi
+  echo "Overall: FAIL ($failures contract groups failed)"; exit 1
+fi
+
+echo "Capability 3"
+if "$repo_root/scripts/test-sino-learning-reuse-capability-3"; then
+  echo "Capability 3: PASS"
+else
+  echo "Capability 3: FAIL"
+  failures=$((failures + 1))
+fi
+
+if (( failures == 0 )); then echo "Overall: PASS"; exit 0; fi
+echo "Overall: FAIL ($failures contract groups failed)"; exit 1

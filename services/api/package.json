@@ -1,0 +1,14 @@
+{
+  "name": "@sinofut/api",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Minimal shared mock API for the V2 first real-operating-loop demo (docs/2608-v2/06-founder-daily-operations.md §16). In-memory store seeded from @sinofut/domain — not a production backend. See docs/2608-v2/08-backend-reuse-audit.md for the real backend reuse plan.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test loop.test.js"
+  },
+  "dependencies": {
+    "@sinofut/domain": "*"
+  }
+}

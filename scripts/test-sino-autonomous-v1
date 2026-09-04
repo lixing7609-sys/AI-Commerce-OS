@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -u
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/scripts/test-database-env"
+pytest_bin="$repo_root/backend/.venv/bin/pytest"
+failures=0
+
+if [[ ! -x "$pytest_bin" ]]; then
+  echo "Sino Autonomous Execution V1 Regression"
+  echo "ERROR: backend virtual environment is missing: $pytest_bin"
+  exit 2
+fi
+
+run_contract() {
+  local label="$1"
+  shift
+  if (cd "$repo_root/backend" && "$pytest_bin" -q "$@"); then
+    printf '%s: PASS\n' "$label"
+  else
+    printf '%s: FAIL\n' "$label"
+    failures=$((failures + 1))
+  fi
+}
+
+echo "Sino Autonomous Execution V1 Regression"
+
+run_contract "Conversation Intent" \
+  tests/test_conversation_task_interaction.py::test_five_discussion_turns_never_become_execution_controls \
+  tests/test_conversation_task_interaction.py::test_execute_without_current_task_stays_discussion_and_requests_clarification \
+  tests/test_founder_ai_conversation_api.py::test_clear_quick_fix_message_stays_in_conversation_until_explicit_execution
+
+run_contract "Task Lifecycle" \
+  tests/test_conversation_task_interaction.py::test_task_confirmation_creates_one_task_package_and_is_idempotent \
+  tests/test_conversation_task_interaction.py::test_low_risk_confirmation_dispatches_through_the_resolved_quick_fix_lane
+
+run_contract "Single Canonical Execution" \
+  tests/test_conversation_task_interaction.py::test_repeated_execute_controls_reuse_one_active_execution \
+  tests/test_conversation_task_interaction.py::test_confirm_resumes_the_same_paused_execution \
+  tests/test_conversation_task_interaction.py::test_completed_canonical_task_is_not_recovered_as_current
+
+run_contract "Semantic Scope" \
+  tests/test_semantic_scope_resolution.py::test_clear_unseen_sidebar_ui_task_resolves_high_semantic_scope \
+  tests/test_semantic_scope_resolution.py::test_empty_explicit_match_falls_through_to_dynamic_write_scope \
+  tests/test_semantic_scope_resolution.py::test_vague_goal_requires_resolution_instead_of_auto_execution
+
+run_contract "Target / Reference" \
+  tests/test_semantic_scope_resolution.py::test_unseen_conversation_action_popover_uses_target_not_reference_module
+
+run_contract "Execution State" \
+  tests/test_execution_state.py::test_v1_canonical_execution_event_stage_contract
+
+run_contract "Stage Progress" \
+  tests/test_execution_state.py::test_v1_stage_progress_contract_is_frozen
+
+run_contract "Worker Recovery" \
+  tests/test_execution_worker.py::test_backend_restart_requeues_same_active_execution \
+  tests/test_execution_worker.py::test_backend_restart_restores_inflight_session_to_same_queue \
+  tests/test_execution_worker.py::test_safely_rolled_back_scope_blocked_execution_resumes_same_execution
+
+run_contract "Technical Resolution" \
+  tests/test_technical_resolution.py::test_watchdog_waits_for_live_process_and_requeues_missing_dead_owner \
+  tests/test_technical_resolution.py::test_watchdog_blocks_unrecoverable_stall_instead_of_leaving_it_active \
+  tests/test_technical_resolution.py::test_resolution_retries_then_resumes_same_lineage_without_founder_action
+
+run_contract "Post-Implementation Pipeline" \
+  tests/test_post_implementation.py::test_runtime_runs_tests_build_diff_and_browser_without_founder_interaction \
+  tests/test_post_implementation.py::test_test_failure_stops_before_build
+
+run_contract "Verification Fallback" tests/test_verification_fallback.py
+
+run_contract "Completion Semantics" \
+  tests/test_standard_task_execution.py::test_verified_dirty_patch_completes_without_checkpoint \
+  tests/test_standard_task_execution.py::test_requested_checkpoint_is_post_completion_pending_state \
+  tests/test_standard_task_execution.py::test_checkpoint_cannot_override_failed_task_verification \
+  tests/test_standard_task_execution.py::test_diff_and_scope_remain_completion_gates_independent_of_git_state
+
+if (( failures == 0 )); then
+  echo "Overall: PASS"
+  exit 0
+fi
+
+echo "Overall: FAIL ($failures contract groups failed)"
+exit 1

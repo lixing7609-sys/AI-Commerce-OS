@@ -12,6 +12,14 @@ Status
 
 Frozen
 
+> **Superseded (2026-07-30).** The 18-module/5-section navigation architecture frozen below has
+> been replaced by the 5-group Founder Master Edition architecture (Founder Workspace, AI
+> Capability Center, Operator Lab, Studio Lab, Cloud Center). See the
+> [Founder Master Edition Development Charter](../architecture/Founder_Master_Edition_Development_Charter.md)
+> and [ADR-0007](../10-adr/ADR-0007-founder-master-edition-development-charter.md), which is the
+> sole architecture authority going forward. This document is retained for historical reference
+> only — do not use it as an implementation guide.
+
 Scope
 
 `frontend/src/console/` — the Founder Operator Edition console (`?mode=founder`), built as the

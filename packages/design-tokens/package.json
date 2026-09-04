@@ -1,0 +1,11 @@
+{
+  "name": "@sinofut/design-tokens",
+  "private": true,
+  "version": "0.1.0",
+  "description": "V2 SinoFUT design tokens (docs/2608-v2/04-design-system.md). CSS custom properties only, no build step.",
+  "type": "module",
+  "main": "theme.css",
+  "exports": {
+    "./theme.css": "./theme.css"
+  }
+}

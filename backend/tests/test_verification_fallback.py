@@ -1,0 +1,186 @@
+import time
+
+from app.founder_ai.verification_fallback import (
+    ACCEPTANCE_FAILED, PASS, UNAVAILABLE, codex_command_evidence, evidence, execute_ui_verification_chain,
+    canonical_verification_attempt, founder_verification_narration, system_chrome_playwright_verifier,
+    verification_attempt_key,
+)
+
+
+def unavailable(name):
+    return lambda: evidence(name, UNAVAILABLE, failure_reason="not available")
+
+
+def passed(name):
+    return lambda: evidence(name, PASS, detail={"assertions": "passed"})
+
+
+def test_preferred_browser_pass_is_verified_without_fallback():
+    called = []
+    result = execute_ui_verification_chain(preferred={"status": "PASS"},
+        system_browser=lambda: called.append(True), static_acceptance=lambda: called.append(True))
+    assert result["status"] == "VERIFIED" and called == []
+
+
+def test_preferred_unavailable_falls_back_to_system_chrome():
+    result = execute_ui_verification_chain(preferred={"status": "MISSING", "error": "Browser is not available: iab"},
+        system_browser=passed("system_chrome_playwright"), static_acceptance=unavailable("static"))
+    assert result["status"] == "VERIFIED"
+    assert [item["status"] for item in result["evidence"]] == [UNAVAILABLE, PASS]
+
+
+def test_all_ui_verifiers_unavailable_is_terminal_blocked():
+    result = execute_ui_verification_chain(preferred=None, system_browser=unavailable("chrome"), static_acceptance=unavailable("static"))
+    assert result["status"] == "BLOCKED" and result["terminal"] is True
+
+
+def test_acceptance_failure_is_failed_not_unavailable():
+    result = execute_ui_verification_chain(preferred=None,
+        system_browser=lambda: evidence("chrome", ACCEPTANCE_FAILED, failure_reason="target UI absent"),
+        static_acceptance=passed("static"))
+    assert result["status"] == "FAILED"
+    assert result["evidence"][-1]["failure_reason"] == "target UI absent"
+
+
+def test_verifier_timeout_continues_to_next_fallback():
+    def stuck():
+        time.sleep(.05)
+        return passed("late")()
+    result = execute_ui_verification_chain(preferred=None, system_browser=stuck,
+        static_acceptance=passed("component_static_acceptance"),
+        requirements={"component_static_allowed": True}, timeout_seconds=.001)
+    assert result["status"] == "VERIFIED"
+    assert [item["status"] for item in result["evidence"]] == [UNAVAILABLE, "TIMEOUT", PASS]
+
+
+def test_component_static_cannot_satisfy_real_browser_or_interaction_authority():
+    result = execute_ui_verification_chain(
+        preferred=None, system_browser=unavailable("system_chrome_playwright"),
+        static_acceptance=passed("component_static_acceptance"),
+        requirements={"real_browser_required": True, "interaction_required": True,
+                      "component_static_allowed": False},
+    )
+    assert result["status"] == "BLOCKED"
+    assert result["authority_satisfied"] is False
+    assert result["evidence"][-1]["status"] == PASS
+
+
+def test_explicit_component_static_authority_remains_a_legal_fallback():
+    result = execute_ui_verification_chain(
+        preferred=None, system_browser=unavailable("system_chrome_playwright"),
+        static_acceptance=passed("component_static_acceptance"),
+        requirements={"component_static_allowed": True},
+    )
+    assert result["status"] == "VERIFIED"
+    assert result["authority_satisfied"] is True
+    assert result["verification_source"] == "component_static_acceptance"
+
+
+def test_verification_attempt_identity_is_deterministic_per_execution_stage_and_contract():
+    contract = {"artifact_type": "generic_visible_interaction", "interaction_type": "generic_control_state"}
+    first = verification_attempt_key(execution_id="execution-1", verification_stage="visible_artifact", contract=contract)
+    assert first == verification_attempt_key(execution_id="execution-1", verification_stage="visible_artifact", contract=dict(reversed(list(contract.items()))))
+    assert first != verification_attempt_key(execution_id="execution-2", verification_stage="visible_artifact", contract=contract)
+    attempt = canonical_verification_attempt(
+        execution_id="execution-1", verification_stage="visible_artifact", contract=contract,
+    )
+    reused = canonical_verification_attempt(
+        execution_id="execution-1", verification_stage="visible_artifact", contract=contract,
+        previous={**attempt, "status": "PASS"},
+    )
+    assert reused["attempt_number"] == 1 and reused["reused"] is True
+    retry = canonical_verification_attempt(
+        execution_id="execution-1", verification_stage="visible_artifact", contract=contract,
+        previous={**attempt, "status": "UNAVAILABLE"}, retry_reason="transient browser restart",
+    )
+    assert retry["attempt_number"] == 2
+    assert retry["previous_result"] == "UNAVAILABLE"
+
+
+def test_system_chrome_process_crash_is_unavailable_not_acceptance_failure(monkeypatch, tmp_path):
+    script = tmp_path / "frontend/scripts/founder-ui-verifier.mjs"
+    script.parent.mkdir(parents=True)
+    script.write_text("// fixture")
+    completed = type("Completed", (), {"returncode": -6, "stdout": "", "stderr": "Chrome SIGABRT"})()
+    monkeypatch.setattr("app.founder_ai.verification_fallback.subprocess.run", lambda *args, **kwargs: completed)
+    result = system_chrome_playwright_verifier(repo_root=tmp_path, contract={"artifact_type": "fixture"})
+    assert result["status"] == UNAVAILABLE
+    assert "SIGABRT" in result["failure_reason"]
+
+
+def test_conversation_file_adapter_targets_only_visible_active_textarea_and_truthful_boundaries():
+    from pathlib import Path
+    script = (Path(__file__).resolve().parents[2] / "frontend/scripts/founder-ui-verifier.mjs").read_text()
+    assert "founder_conversation_file_actions" in script
+    assert ".sino-global-composer textarea:visible" in script
+    assert "active_textarea_count" in script
+    assert "tolerance = 1" in script
+    assert "filechooser_opened" in script and "file_selected_false" in script
+    assert "document_boundary_truthful" in script and "document_data_not_fabricated" in script
+
+
+def test_generic_visible_adapter_counts_native_and_application_controls():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "frontend/scripts/founder-ui-verifier.mjs").read_text()
+    core = (root / "frontend/scripts/founder-ui-verifier-core.mjs").read_text()
+    assert 'artifactType === "generic_visible_interaction"' in script
+    assert 'contract.interaction_type === "search_clear"' in script
+    assert "::-webkit-search-cancel-button" in script
+    assert "effective_visible_clear_control_count" in script
+    assert "clear_control_count_matches" in script and "duplicate_control_absent" in script
+    assert "effectiveVisibleControlCount" in core and "evaluateVisibleCardinality" in core
+
+
+def test_generic_visible_adapter_supports_derived_count_across_baseline_filter_and_restore():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "frontend/scripts/founder-ui-verifier.mjs").read_text()
+    core = (root / "frontend/scripts/founder-ui-verifier-core.mjs").read_text()
+    assert 'contract.interaction_type === "derived_visible_count"' in script
+    assert "derived_value_assertion" in script and "verification_states" in script
+    assert 'inspectState("baseline")' in script and 'inspectState("filtered")' in script and 'inspectState("restored")' in script
+    assert "no safe reducing non-empty filter query" in script
+    assert "evaluateDerivedCount" in core and "evaluateDerivedStates" in core
+
+
+def test_generic_visible_adapter_supports_application_control_state_contracts():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "frontend/scripts/founder-ui-verifier.mjs").read_text()
+    core = (root / "frontend/scripts/founder-ui-verifier-core.mjs").read_text()
+    assert 'contract.interaction_type === "generic_control_state"' in script
+    assert "control_group_locator" in script and "expected_state_after_action" in script
+    assert "previous_control_state_cleared" in script and "state_exclusivity_preserved" in script
+    assert "accessibility_state_matches" in script and "original_behavior_preserved" in script
+    assert "evaluateControlStateTransition" in core and "accessibilityStateMatches" in core
+
+
+def test_conversation_narration_matches_terminal_verification_state():
+    verified = execute_ui_verification_chain(preferred=None, system_browser=passed("system_chrome_playwright"), static_acceptance=unavailable("static"))
+    blocked = execute_ui_verification_chain(preferred=None, system_browser=unavailable("chrome"), static_acceptance=unavailable("static"))
+    failed = execute_ui_verification_chain(preferred=None, system_browser=lambda: evidence("chrome", ACCEPTANCE_FAILED), static_acceptance=passed("static"))
+    assert "本机浏览器" in founder_verification_narration(verified) and "任务完成" in founder_verification_narration(verified)
+    assert "BLOCKED" in founder_verification_narration(blocked)
+    assert "FAILED" in founder_verification_narration(failed)
+
+
+def test_codex_command_results_require_explicit_evidence_not_expected_labels():
+    missing = codex_command_evidence("implementation done", exit_code=0, required=["targeted tests", "frontend build", "git diff --check"])
+    passed_checks = codex_command_evidence("15/15 tests passed\nfrontend build: passed\n`git diff --check`: passed", exit_code=0,
+                                           required=["targeted tests", "frontend build", "git diff --check"])
+    assert [item["status"] for item in missing] == [UNAVAILABLE, UNAVAILABLE, UNAVAILABLE]
+    assert [item["status"] for item in passed_checks] == [PASS, PASS, PASS]
+
+
+def test_codex_command_results_accept_chinese_counted_test_summary():
+    checks = codex_command_evidence("定向测试：24 项全部通过\nFrontend Build：PASS\ngit diff --check：PASS", exit_code=0,
+                                    required=["targeted frontend tests", "frontend build", "git diff --check"])
+    assert [item["status"] for item in checks] == [PASS, PASS, PASS]
+
+
+def test_codex_command_results_accept_verified_section_with_test_ratio():
+    summary = "已通过：\n- `FounderNavigationPanel.test.jsx`：24/24\n- 前端生产构建\n- scoped `git diff --check`"
+    checks = codex_command_evidence(summary, exit_code=0,
+                                    required=["targeted frontend tests", "frontend build", "git diff --check"])
+    assert [item["status"] for item in checks[:2]] == [PASS, PASS]

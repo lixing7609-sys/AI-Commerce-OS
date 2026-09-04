@@ -16,6 +16,11 @@ import {
   rechargeTokens,
   refundTokens,
 } from "../../mock/tokenCenterMock.js";
+import {
+  CONTENT_AGENT_ID,
+  getCostIntelligenceSummary,
+  getLearningCandidates,
+} from "../../../shared/agentEvolution/evolutionMock.js";
 
 const LEDGER_TYPE_LABEL = {
   grant_credit: "授予",
@@ -28,9 +33,15 @@ function OverviewView({ state, onChange, navigate }) {
   const [grantAmount, setGrantAmount] = useState(5000);
   const [grantNote, setGrantNote] = useState("");
 
-  const { account, ledger, pricing, burnTrend } = state;
+  const { account, ledger, pricing, burnTrend, usageByAgent, usageByTaskType, usageByModel, expensiveTaskWarnings } = state;
   const lowBalance = account.available < account.lowBalanceThreshold;
   const refundable = getRefundableBalance(account);
+  const costIntelligence = getCostIntelligenceSummary(CONTENT_AGENT_ID);
+  const pendingCostCandidates = getLearningCandidates(CONTENT_AGENT_ID).filter(
+    (c) =>
+      (c.candidateType === "ModelRouteUpdate" || c.candidateType === "CostOptimization") &&
+      ["candidate", "evaluating", "experimenting"].includes(c.status)
+  );
 
   function handleGrant() {
     onChange(grantTokens(Number(grantAmount), grantNote));
@@ -81,6 +92,85 @@ function OverviewView({ state, onChange, navigate }) {
           <DemoBadge />
         </div>
         <TrendLineChart data={burnTrend} xKey="date" series={[{ key: "consumed", label: "消耗 Token" }]} />
+      </div>
+
+      <div className="fdr-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 className="fdr-card__title" style={{ margin: 0 }}>成本智能</h3>
+          <DemoBadge />
+        </div>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "8px 0 12px 0" }}>
+          优化目标是"更高价值/质量、更低成本"，不是单纯省 Token——一次成本优化只有在质量不明显下降的前提下才会被采纳。
+        </p>
+        <StatGrid>
+          <StatCard label="脚本Agent 累计运行" value={costIntelligence.totalRuns} />
+          <StatCard label="脚本Agent 累计模型成本" value={`$${costIntelligence.totalModelCostUsd}`} />
+          <StatCard label="脚本Agent 累计业务价值" value={`$${costIntelligence.totalBusinessValueUsd}`} />
+          <StatCard label="已生效成本优化数" value={costIntelligence.promotedOptimizations} />
+        </StatGrid>
+
+        <h4 style={{ fontSize: 13, margin: "16px 0 6px 0" }}>按 Agent 消耗排行</h4>
+        <DataTable
+          columns={[
+            { key: "agent", label: "Agent" },
+            { key: "tokens", label: "Token 消耗", render: (r) => r.tokens.toLocaleString() },
+            { key: "costUsd", label: "模型成本", render: (r) => `$${r.costUsd.toFixed(2)}` },
+            { key: "tasksToday", label: "今日任务数" },
+          ]}
+          rows={usageByAgent}
+        />
+
+        <h4 style={{ fontSize: 13, margin: "16px 0 6px 0" }}>按任务类型消耗</h4>
+        <DataTable
+          columns={[
+            { key: "taskType", label: "任务类型" },
+            { key: "tokens", label: "Token 消耗", render: (r) => r.tokens.toLocaleString() },
+            { key: "avgCostUsd", label: "单次平均成本", render: (r) => `$${r.avgCostUsd.toFixed(2)}` },
+            { key: "runsToday", label: "今日运行次数" },
+          ]}
+          rows={usageByTaskType}
+        />
+
+        <h4 style={{ fontSize: 13, margin: "16px 0 6px 0" }}>按模型路由消耗（本地/经济/高级模型分布）</h4>
+        <DataTable
+          columns={[
+            { key: "model", label: "模型" },
+            { key: "tokens", label: "Token 消耗", render: (r) => r.tokens.toLocaleString() },
+            { key: "costUsd", label: "模型成本", render: (r) => `$${r.costUsd.toFixed(2)}` },
+            { key: "share", label: "占比", render: (r) => `${Math.round(r.share * 100)}%` },
+          ]}
+          rows={usageByModel}
+        />
+
+        {expensiveTaskWarnings.length > 0 ? (
+          <div style={{ marginTop: 16 }}>
+            <h4 style={{ fontSize: 13, margin: "0 0 6px 0" }}>高成本任务提醒</h4>
+            {expensiveTaskWarnings.map((w) => (
+              <div key={w.id} className="fdr-card" style={{ background: "var(--bg)", marginBottom: 8 }}>
+                <strong style={{ fontSize: 13 }}>{w.taskType}</strong>
+                <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0 0" }}>{w.detail}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {pendingCostCandidates.length > 0 ? (
+          <div style={{ marginTop: 16 }}>
+            <h4 style={{ fontSize: 13, margin: "0 0 6px 0" }}>待处理的成本优化候选</h4>
+            {pendingCostCandidates.map((c) => (
+              <div key={c.id} className="fdr-card" style={{ background: "var(--bg)", marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong style={{ fontSize: 13 }}>{c.affectedScope}</strong>
+                  <StatusPill tone="info">{c.status}</StatusPill>
+                </div>
+                <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0 0" }}>{c.expectedBenefit}</p>
+                <Button size="sm" variant="ghost" style={{ marginTop: 8 }} onClick={() => navigate("agentStudio")}>
+                  前往 Agent 工作室查看详情
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="fdr-card">

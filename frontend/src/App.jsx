@@ -12,6 +12,10 @@ import KnowledgeBase from "./pages/KnowledgeBase";
 import Settings from "./pages/Settings";
 
 function App() {
+  return <LegacyApp />;
+}
+
+function LegacyApp() {
   const [activePage, setActivePage] = useState("dashboard");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [selectedDeliverableId, setSelectedDeliverableId] = useState(null);

@@ -6,6 +6,7 @@ import { DataTable } from "../../kit/DataTable.jsx";
 import { StatusPill, DemoBadge } from "../../kit/StatusPill.jsx";
 import { Button } from "../../kit/Button.jsx";
 import { Modal } from "../../kit/Modal.jsx";
+import { EmptyState } from "../../kit/EmptyState.jsx";
 import { useToast } from "../../kit/useToast.js";
 import { useConsoleNavContext } from "../../nav/ConsoleNavContext.jsx";
 import { DEMO_STORES } from "../../mock/storesMock.js";
@@ -85,8 +86,9 @@ function ShipModal({ order, open, onClose, onConfirm }) {
   );
 }
 
-function OrderDetailModal({ order, open, onClose }) {
+function OrderDetailModal({ order, open, onClose, navigate }) {
   if (!order) return null;
+  const attribution = order.attribution;
   return (
     <Modal open={open} title={`订单详情 · ${order.orderNumber}`} onClose={onClose} footer={<Button variant="secondary" onClick={onClose}>关闭</Button>}>
       <dl style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, margin: 0, fontSize: 13 }}>
@@ -104,12 +106,27 @@ function OrderDetailModal({ order, open, onClose }) {
         <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>快递</dt><dd style={{ margin: 0 }}>{order.courierCompany ?? "—"} {order.trackingNumber ?? ""}</dd></div>
         <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>下单时间</dt><dd style={{ margin: 0 }}>{new Date(order.orderTime).toLocaleString("zh-CN")}</dd></div>
       </dl>
+      {attribution ? (
+        <div className="fdr-card" style={{ background: "rgba(79,70,229,.06)", marginTop: 12, marginBottom: 0 }}>
+          <h4 style={{ margin: "0 0 8px 0", fontSize: 13 }}>内容归因（演示）</h4>
+          <dl style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8, margin: 0, fontSize: 13 }}>
+            <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>流量来源</dt><dd style={{ margin: 0 }}>{attribution.trafficSource}</dd></div>
+            <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>平台内容 ID</dt><dd style={{ margin: 0 }}>{attribution.platformContentId}</dd></div>
+            <div style={{ gridColumn: "1 / -1" }}><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>转化路径</dt><dd style={{ margin: 0 }}>{attribution.conversionPath}</dd></div>
+            <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>活动来源</dt><dd style={{ margin: 0 }}>{attribution.campaignSource ?? "无"}</dd></div>
+            <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>归因 GMV</dt><dd style={{ margin: 0, fontWeight: 700 }}>¥{attribution.attributedGmv}</dd></div>
+          </dl>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <Button size="sm" variant="ghost" onClick={() => navigate("contentCenter", { subView: "projects", entityId: attribution.contentProjectId })}>在内容项目中打开 →</Button>
+          </div>
+        </div>
+      ) : null}
     </Modal>
   );
 }
 
 export function OrderCenterModule() {
-  const { subView, navigate } = useConsoleNavContext();
+  const { subView, entityId, navigate } = useConsoleNavContext();
   const toast = useToast();
   const [orders, setOrders] = useState(() => getOrders());
   const [selectedIds, setSelectedIds] = useState([]);
@@ -121,10 +138,22 @@ export function OrderCenterModule() {
   const [shipOrder, setShipOrder] = useState(null);
   const [labelOrders, setLabelOrders] = useState(null);
 
+  // 深链打开指定订单——不用 effect 同步 state，直接把 entityId 对应
+  // 的订单当作渲染期间派生值：找到了就当作详情弹窗内容，找不到就
+  // 显示"链接已失效"提示，关闭弹窗时把 entityId 从 URL 里清掉。
+  const linkedOrder = entityId ? orders.find((o) => o.id === entityId) : null;
+  const deepLinkNotice = entityId && !linkedOrder ? "未找到该订单（链接可能已失效）" : null;
+  const activeDetailOrder = detailOrder ?? linkedOrder;
+
   const scope = subView ?? ALL_STORES;
   // 挂载时刻的时间戳，不在每次渲染里重新读取——渲染函数本身必须
   // 是纯函数，"现在几点"这种会变的值只能在挂载时读一次。
   const [nowTs] = useState(() => Date.now());
+
+  function closeDetail() {
+    setDetailOrder(null);
+    if (entityId) navigate("orderCenter", { subView: scope === ALL_STORES ? undefined : scope });
+  }
 
   const dateRangeHours = { today: 24, "7d": 24 * 7, "30d": 24 * 30 }[dateRange] ?? 24 * 30;
   const cutoff = nowTs - dateRangeHours * 3600000;
@@ -171,6 +200,12 @@ export function OrderCenterModule() {
         subtitle={scope === ALL_STORES ? "跨店铺汇总视图" : `${DEMO_STORES.find((s) => s.id === scope)?.name} 店铺明细`}
         actions={<DemoBadge />}
       />
+
+      {deepLinkNotice ? (
+        <div className="fdr-card">
+          <EmptyState icon="⚠" message={deepLinkNotice} action={<Button variant="secondary" onClick={() => navigate("orderCenter")}>清除定位</Button>} />
+        </div>
+      ) : null}
 
       <Tabs
         tabs={[{ key: ALL_STORES, label: "全部店铺汇总" }, ...DEMO_STORES.map((s) => ({ key: s.id, label: s.name }))]}
@@ -333,7 +368,7 @@ export function OrderCenterModule() {
         />
       </div>
 
-      <OrderDetailModal order={detailOrder} open={!!detailOrder} onClose={() => setDetailOrder(null)} />
+      <OrderDetailModal order={activeDetailOrder} open={!!activeDetailOrder} onClose={closeDetail} navigate={navigate} />
       <ShipModal order={shipOrder} open={!!shipOrder} onClose={() => setShipOrder(null)} onConfirm={handleShipConfirm} />
       <ShippingLabelModal orders={labelOrders} open={!!labelOrders} onClose={() => setLabelOrders(null)} />
     </div>

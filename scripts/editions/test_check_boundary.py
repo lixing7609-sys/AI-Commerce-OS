@@ -183,6 +183,59 @@ class RealRepoIntegrationTests(unittest.TestCase):
         errors = check_boundary.run_checks("operator", all_files)
         self.assertEqual(errors, [], errors)
 
+    def test_studio_edition_passes_against_the_real_repo(self):
+        all_files = check_boundary._git_ls_files()
+        errors = check_boundary.run_checks("studio", all_files)
+        self.assertEqual(errors, [], errors)
+
+
+class M8FounderConsolidationBoundaryTests(unittest.TestCase):
+    """
+    阶段 M8 Founder Product Shell Consolidation：console/（Founder
+    专属产品研发壳层）现在必须和 pages/ 一样，对 operator/studio/
+    device-admin 三个客户发行包都是禁区——防止未来有人在
+    operator-preview/ 或 studio/ 里直接 import Founder 专属模块，
+    只在 UI 层面看起来收口了，代码里其实还连着 Founder-only 逻辑。
+    """
+
+    def test_console_is_forbidden_for_operator_studio_and_device_admin(self):
+        for edition in ("operator", "studio", "device-admin"):
+            self.assertIn(
+                "frontend/src/console/",
+                manifest.FRONTEND_FORBIDDEN_PREFIXES[edition],
+                f"{edition} 必须禁止 console/",
+            )
+
+    def test_operator_and_studio_cannot_import_each_others_product_tree(self):
+        self.assertIn(
+            "frontend/src/studio/", manifest.FRONTEND_FORBIDDEN_PREFIXES["operator"]
+        )
+        self.assertIn(
+            "frontend/src/operator-preview/",
+            manifest.FRONTEND_FORBIDDEN_PREFIXES["studio"],
+        )
+
+    def test_studio_edition_is_registered_with_a_non_empty_include_list(self):
+        self.assertIn("studio", manifest.EDITIONS)
+        self.assertTrue(manifest.FRONTEND_INCLUDE_PREFIXES["studio"])
+
+    def test_an_operator_file_importing_console_is_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp).resolve()
+            preview_dir = tmp_path / "frontend/src/operator-preview"
+            preview_dir.mkdir(parents=True)
+            (preview_dir / "Bad.jsx").write_text(
+                'import { ProductCenterModule } from "../console/modules/productCenter/ProductCenterModule.jsx";\n'
+            )
+
+            with mock.patch.object(check_boundary, "REPO_ROOT", tmp_path):
+                errors = check_boundary.check_import_boundary(
+                    "operator", ["frontend/src/operator-preview/Bad.jsx"]
+                )
+
+        self.assertTrue(errors)
+        self.assertIn("developer-only", errors[0])
+
 
 if __name__ == "__main__":
     unittest.main()

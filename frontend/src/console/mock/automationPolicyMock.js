@@ -259,62 +259,113 @@ const repository = createLocalRepository("automationPolicy.state", () => ({
   runLog: seedRunLog(),
 }));
 
+/**
+ * 数据契约边界（阶段 Founder Full-System v3 Batch 2 §E）：交办任务
+ * 点名的截图崩溃是 `Cannot read properties of undefined (reading
+ * 'length')`——即使这次没能在当前代码状态下复现，说明"某处代码假设
+ * `state.policies`/`state.customAutomations`/`state.runLog` 永远是
+ * 数组"这个假设本身是脆弱的（`createLocalRepository` 在 localStorage
+ * 数据损坏、或者未来任何一次 `repository.update()` 的 updater 函数
+ * 写漏一个字段时，都可能返回形状不完整的对象）。修法不是在页面组件
+ * 里到处加 `?.`/`ErrorBoundary` 掩盖，而是让**仓库的唯一读取出口**
+ * 保证返回值永远形状完整——`getAutomationPolicyState()` 是所有页面
+ * 代码读取状态的唯一入口，这里做一次性兜底，比在每个 `.map`/
+ * `.length` 调用点分别防御更可靠、更不容易漏。
+ */
+function normalizeState(raw) {
+  const safe = raw && typeof raw === "object" ? raw : {};
+  return {
+    policies: Array.isArray(safe.policies) ? safe.policies : seedPolicies(),
+    customAutomations: Array.isArray(safe.customAutomations) ? safe.customAutomations : [],
+    runLog: Array.isArray(safe.runLog) ? safe.runLog : [],
+  };
+}
+
 export function getAutomationPolicyState() {
-  return repository.get();
+  return normalizeState(repository.get());
 }
 
 export function updatePolicyThreshold(policyId, thresholdValue) {
-  return repository.update((state) => ({
-    ...state,
-    policies: state.policies.map((p) => (p.id === policyId ? { ...p, thresholdValue } : p)),
-  }));
+  return repository.update((state) => {
+    const safe = normalizeState(state);
+    return { ...safe, policies: safe.policies.map((p) => (p.id === policyId ? { ...p, thresholdValue } : p)) };
+  });
 }
 
 export function togglePolicyEnabled(policyId) {
-  return repository.update((state) => ({
-    ...state,
-    policies: state.policies.map((p) => (p.id === policyId ? { ...p, enabled: !p.enabled } : p)),
-  }));
+  return repository.update((state) => {
+    const safe = normalizeState(state);
+    return { ...safe, policies: safe.policies.map((p) => (p.id === policyId ? { ...p, enabled: !p.enabled } : p)) };
+  });
 }
 
 export function createCustomAutomation(payload) {
-  return repository.update((state) => ({
-    ...state,
-    customAutomations: [
-      {
-        id: nextMockId("auto"),
-        origin: "custom",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        ...payload,
-      },
-      ...state.customAutomations,
-    ],
-  }));
+  return repository.update((state) => {
+    const safe = normalizeState(state);
+    return {
+      ...safe,
+      customAutomations: [
+        {
+          id: nextMockId("auto"),
+          origin: "custom",
+          name: payload?.name?.trim() || "未命名自动化",
+          description: payload?.description ?? "",
+          applicableStore: payload?.applicableStore ?? "全部店铺",
+          applicableCategory: payload?.applicableCategory ?? "",
+          enabled: payload?.enabled ?? true,
+          status: payload?.status ?? "enabled",
+          trigger: payload?.trigger ?? { type: TRIGGER_TYPES[0].key, scheduleTime: "" },
+          conditions: payload?.conditions ?? {},
+          actions: Array.isArray(payload?.actions) ? payload.actions : [],
+          riskLevel: payload?.riskLevel ?? "L1",
+          limits: {
+            dailyExecutionLimit: 10,
+            singleExecutionCostLimit: 1,
+            dailyTokenCostLimit: 1000,
+            dailyAdLimit: 0,
+            failureRetry: true,
+            failureNotification: true,
+            auditLog: true,
+            ...(payload?.limits ?? {}),
+          },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        ...safe.customAutomations,
+      ],
+    };
+  });
 }
 
 export function updateCustomAutomation(id, patch) {
-  return repository.update((state) => ({
-    ...state,
-    customAutomations: state.customAutomations.map((a) =>
-      a.id === id ? { ...a, ...patch, updatedAt: new Date().toISOString() } : a
-    ),
-  }));
+  return repository.update((state) => {
+    const safe = normalizeState(state);
+    return {
+      ...safe,
+      customAutomations: safe.customAutomations.map((a) =>
+        a.id === id ? { ...a, ...patch, updatedAt: new Date().toISOString() } : a
+      ),
+    };
+  });
 }
 
 export function toggleCustomAutomationEnabled(id) {
-  return repository.update((state) => ({
-    ...state,
-    customAutomations: state.customAutomations.map((a) =>
-      a.id === id ? { ...a, enabled: !a.enabled, status: !a.enabled ? "enabled" : "disabled" } : a
-    ),
-  }));
+  return repository.update((state) => {
+    const safe = normalizeState(state);
+    return {
+      ...safe,
+      customAutomations: safe.customAutomations.map((a) =>
+        a.id === id ? { ...a, enabled: !a.enabled, status: !a.enabled ? "enabled" : "disabled" } : a
+      ),
+    };
+  });
 }
 
 export function duplicateCustomAutomation(id) {
   return repository.update((state) => {
-    const source = state.customAutomations.find((a) => a.id === id);
-    if (!source) return state;
+    const safe = normalizeState(state);
+    const source = safe.customAutomations.find((a) => a.id === id);
+    if (!source) return safe;
     const copy = {
       ...source,
       id: nextMockId("auto"),
@@ -324,16 +375,16 @@ export function duplicateCustomAutomation(id) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    return { ...state, customAutomations: [copy, ...state.customAutomations] };
+    return { ...safe, customAutomations: [copy, ...safe.customAutomations] };
   });
 }
 
 // 系统自动化不可删除（阶段 V3 明确要求），只有自定义自动化可以删除。
 export function deleteCustomAutomation(id) {
-  return repository.update((state) => ({
-    ...state,
-    customAutomations: state.customAutomations.filter((a) => a.id !== id),
-  }));
+  return repository.update((state) => {
+    const safe = normalizeState(state);
+    return { ...safe, customAutomations: safe.customAutomations.filter((a) => a.id !== id) };
+  });
 }
 
 export async function testCustomAutomation() {

@@ -15,9 +15,12 @@ import pytest
 
 from app.llm import deepseek_provider as deepseek_module
 from app.llm import ollama_provider as ollama_module
+from app.llm import openai_provider as openai_module
+from app.llm import anthropic_provider as anthropic_module
 from app.llm.exceptions import (
     AuthenticationError,
     ConfigurationError,
+    InsufficientQuotaError,
     InvalidResponseError,
     LLMGatewayError,
     LLMTimeoutError,
@@ -29,6 +32,12 @@ from app.llm.gateway import LLMGateway
 from app.llm.models import LLMRequest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_legacy_gateway_tests_from_model_center(monkeypatch):
+    import app.core.model_center.service as model_center_service
+    monkeypatch.setattr(model_center_service, "resolve_runtime_config", lambda *args, **kwargs: None)
+
+
 class _FakeResponse:
     def __init__(self, status_code, json_body=None):
         self.status_code = status_code
@@ -36,6 +45,45 @@ class _FakeResponse:
 
     def json(self):
         return self._json_body
+
+
+def test_explicit_gpt_and_claude_provider_config_and_dispatch(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test-key")
+    monkeypatch.setenv("OPENAI_MODEL", "runtime-gpt-model")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test-key")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "runtime-claude-model")
+    def provider_response(url, *args, **kwargs):
+        if url.endswith("/chat/completions"):
+            return _FakeResponse(200, {"choices": [{"message": {"content": '{"reply":"gpt"}'}}], "usage": {}})
+        return _FakeResponse(200, {"content": [{"text": '{"reply":"claude"}'}], "usage": {}})
+    monkeypatch.setattr(openai_module.httpx, "post", provider_response)
+
+    gpt = LLMGateway().generate_for("gpt", _make_request())
+    claude = LLMGateway().generate_for("claude", _make_request())
+
+    assert (gpt.provider, gpt.model, gpt.content) == ("openai", "runtime-gpt-model", '{"reply":"gpt"}')
+    assert (claude.provider, claude.model, claude.content) == ("anthropic", "runtime-claude-model", '{"reply":"claude"}')
+
+
+def test_explicit_gpt_and_claude_missing_config_are_not_configured(monkeypatch):
+    for name in ("OPENAI_API_KEY", "OPENAI_MODEL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ConfigurationError): LLMGateway().generate_for("gpt", _make_request())
+    with pytest.raises(ConfigurationError): LLMGateway().generate_for("claude", _make_request())
+
+
+def test_anthropic_billing_error_is_not_misclassified_as_invalid_response(monkeypatch):
+    provider = anthropic_module.AnthropicProvider("real-unmasked-key", "https://api.anthropic.com/v1", "claude-sonnet-5", 5)
+    monkeypatch.setattr(anthropic_module.httpx, "post", lambda *args, **kwargs: _FakeResponse(400, {"type": "error", "error": {"type": "invalid_request_error", "message": "Your credit balance is too low to access the Anthropic API."}}))
+    with pytest.raises(InsufficientQuotaError):
+        provider.generate(_make_request())
+
+
+def test_openai_compatible_http_402_is_preserved_as_insufficient_quota(monkeypatch):
+    provider = openai_module.OpenAIProvider("safe-test-key", "https://provider.example/v1", "model", 5)
+    monkeypatch.setattr(openai_module.httpx, "post", lambda *args, **kwargs: _FakeResponse(402))
+    with pytest.raises(InsufficientQuotaError):
+        provider.generate(_make_request())
 
 
 def _make_request():
@@ -57,8 +105,9 @@ def test_gateway_no_provider_configured_raises_configuration_error(monkeypatch):
 
     gateway = LLMGateway()
 
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError) as excinfo:
         gateway.generate(_make_request())
+    assert excinfo.value.reason == "provider_missing"
 
 
 def test_gateway_unknown_provider_raises_configuration_error(monkeypatch):
@@ -66,8 +115,9 @@ def test_gateway_unknown_provider_raises_configuration_error(monkeypatch):
 
     gateway = LLMGateway()
 
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError) as excinfo:
         gateway.generate(_make_request())
+    assert excinfo.value.reason == "provider_invalid"
 
 
 def test_gateway_deepseek_selected_without_api_key_raises_configuration_error(
@@ -78,8 +128,9 @@ def test_gateway_deepseek_selected_without_api_key_raises_configuration_error(
 
     gateway = LLMGateway()
 
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError) as excinfo:
         gateway.generate(_make_request())
+    assert excinfo.value.reason == "api_key_missing"
 
 
 def test_gateway_ollama_selected_without_model_raises_configuration_error(
@@ -90,8 +141,9 @@ def test_gateway_ollama_selected_without_model_raises_configuration_error(
 
     gateway = LLMGateway()
 
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError) as excinfo:
         gateway.generate(_make_request())
+    assert excinfo.value.reason == "model_missing"
 
 
 def test_gateway_does_not_fall_back_across_providers(monkeypatch):

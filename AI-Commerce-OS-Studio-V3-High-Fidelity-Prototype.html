@@ -1,0 +1,381 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Commerce OS Studio V3</title>
+<style>
+:root{
+  --bg:#f3f6fb;--panel:#fff;--ink:#182033;--muted:#758096;--line:#e6eaf1;
+  --nav:#0c1424;--nav2:#141f34;--teal:#17b8a6;--blue:#5b7cfa;--violet:#8b5cf6;
+  --green:#21b66f;--orange:#f59e0b;--red:#ef5b63;--shadow:0 12px 40px rgba(22,34,63,.08);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);height:100vh;overflow:hidden}
+button,input,select,textarea{font:inherit}
+.app{height:100vh;display:grid;grid-template-columns:248px 1fr}
+.sidebar{background:linear-gradient(180deg,#0a1221,#0d1729);color:#dbe4f5;height:100vh;overflow:auto;border-right:1px solid #17243d}
+.brand{padding:21px 18px 17px;border-bottom:1px solid #1a2943;position:sticky;top:0;background:#0b1424;z-index:2}
+.brand-row{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.2px}
+.logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#6ee7d8,#6a78ff);box-shadow:0 0 0 4px rgba(93,211,192,.09)}
+.brand small{display:block;color:#8390aa;margin:7px 0 0 38px;font-size:11px}
+.nav-section{padding:14px 10px 5px}
+.nav-title{font-size:10px;color:#67758e;text-transform:uppercase;letter-spacing:1.2px;padding:0 10px 7px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 11px;margin:2px 0;border-radius:9px;font-size:13px;cursor:pointer;color:#c4cede;transition:.18s}
+.nav-item:hover{background:#17243a;color:#fff}
+.nav-item.active{background:linear-gradient(90deg,rgba(23,184,166,.26),rgba(23,184,166,.10));color:#fff;box-shadow:inset 3px 0 0 var(--teal)}
+.ico{width:19px;text-align:center;opacity:.92}
+.badge-dot{margin-left:auto;background:#ef5b63;color:#fff;border-radius:999px;min-width:18px;height:18px;padding:0 5px;display:flex;align-items:center;justify-content:center;font-size:10px}
+.main{min-width:0;height:100vh;display:grid;grid-template-rows:68px 1fr}
+.topbar{background:rgba(255,255,255,.92);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:3}
+.top-left h1{font-size:18px;margin:0}.top-left p{font-size:12px;color:var(--muted);margin:4px 0 0}
+.top-actions{display:flex;align-items:center;gap:9px}
+.pill{padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;font-size:12px;color:#49566e}
+.primary{border:none;background:linear-gradient(135deg,var(--teal),#26a6d1);color:#fff;padding:9px 14px;border-radius:9px;font-weight:700;cursor:pointer;box-shadow:0 8px 20px rgba(23,184,166,.22)}
+.content{overflow:auto;padding:20px 24px 50px}
+.page{display:none;max-width:1500px;margin:0 auto}.page.active{display:block}
+.hero{background:linear-gradient(135deg,#111d34 0%,#172845 56%,#173d4a 100%);border-radius:18px;padding:22px;color:white;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.hero:after{content:"";position:absolute;width:330px;height:330px;border-radius:50%;background:radial-gradient(circle,rgba(72,221,197,.25),transparent 64%);right:-70px;top:-145px}
+.hero-top{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1}
+.hero h2{margin:0 0 8px;font-size:22px}.hero p{margin:0;color:#b7c4d9;font-size:13px}
+.secretary{margin-top:18px;display:grid;grid-template-columns:1.3fr .7fr;gap:14px;position:relative;z-index:1}
+.brief{background:rgba(255,255,255,.075);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:16px}
+.brief h3{margin:0 0 11px;font-size:14px}.brief li{margin:9px 0;color:#d8e4f2;font-size:13px}
+.quick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.quick button{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:white;border-radius:12px;text-align:left;padding:14px;cursor:pointer}
+.quick button:hover{background:rgba(255,255,255,.14)}
+.quick b{display:block;font-size:20px;margin-bottom:4px}.quick span{font-size:11px;color:#b8c7dc}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:13px;margin:16px 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow)}
+.kpi{padding:16px}.kpi .label{font-size:12px;color:var(--muted)}.kpi strong{display:block;font-size:24px;margin:8px 0 3px}.trend{font-size:11px;color:var(--green)}
+.grid2{display:grid;grid-template-columns:1.25fr .75fr;gap:16px;margin-bottom:16px}
+.section-head{display:flex;align-items:center;justify-content:space-between;padding:17px 18px 10px}
+.section-head h3{margin:0;font-size:15px}.link{font-size:12px;color:var(--blue);cursor:pointer}
+.hot-list{padding:0 12px 13px}
+.hot-item{display:grid;grid-template-columns:38px 1fr 90px 110px;align-items:center;padding:12px 8px;border-top:1px solid var(--line)}
+.rank{width:28px;height:28px;border-radius:8px;background:#eef3ff;color:#5571d8;display:grid;place-items:center;font-weight:800;font-size:12px}
+.hot-item h4{margin:0 0 4px;font-size:13px}.hot-item p{margin:0;font-size:11px;color:var(--muted)}
+.score{font-size:12px;color:#f08b1c}.action-btn{border:none;background:#eef9f7;color:#129b8d;padding:8px 10px;border-radius:8px;cursor:pointer;font-weight:700;font-size:12px}
+.agent-list{padding:0 15px 16px}
+.agent{display:grid;grid-template-columns:33px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
+.avatar{width:31px;height:31px;border-radius:9px;background:linear-gradient(135deg,#dff8f4,#e9eefe);display:grid;place-items:center}
+.agent b{font-size:12px}.agent p{font-size:11px;color:var(--muted);margin:3px 0 0}.status{font-size:10px;padding:4px 7px;border-radius:999px;background:#eaf8f0;color:#159958}
+.project-list{padding:0 14px 14px}
+.project{display:grid;grid-template-columns:1.4fr .8fr 1fr auto;gap:14px;align-items:center;padding:13px 4px;border-top:1px solid var(--line)}
+.project h4{margin:0 0 4px;font-size:13px}.project p{margin:0;font-size:11px;color:var(--muted)}
+.progress{height:7px;background:#edf1f7;border-radius:999px;overflow:hidden}.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--teal),var(--blue));border-radius:999px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}.tag{font-size:10px;background:#f0f3f8;color:#5e6980;padding:4px 7px;border-radius:999px}
+.workspace-shell{display:grid;grid-template-columns:230px 1fr 310px;gap:14px;height:calc(100vh - 112px)}
+.workspace-left,.workspace-center,.workspace-right{background:#fff;border:1px solid var(--line);border-radius:15px;overflow:auto;box-shadow:var(--shadow)}
+.ws-head{padding:15px;border-bottom:1px solid var(--line);position:sticky;top:0;background:white;z-index:2}
+.ws-head h3{margin:0;font-size:14px}.ws-head p{font-size:11px;color:var(--muted);margin:4px 0 0}
+.asset-tabs{display:flex;gap:6px;padding:10px}.asset-tabs button{border:1px solid var(--line);background:#fff;padding:6px 8px;border-radius:7px;font-size:10px}
+.asset{margin:8px 11px;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:11px}
+.pipeline{padding:15px}
+.stage{display:grid;grid-template-columns:34px 1fr auto;gap:10px;padding:12px;border:1px solid var(--line);border-radius:11px;margin-bottom:9px;cursor:pointer}
+.stage.active{border-color:#74cfc4;background:#f1fbf9}
+.stage-num{width:30px;height:30px;border-radius:9px;background:#eff3fa;display:grid;place-items:center;font-size:11px;font-weight:800}
+.stage b{font-size:12px}.stage p{font-size:10px;color:var(--muted);margin:4px 0 0}
+.stage-state{font-size:10px;color:var(--green)}
+.editor{padding:16px}
+.editor-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px}
+.editor-toolbar h3{font-size:16px;margin:0}.editor-actions{display:flex;gap:7px}
+.ghost{border:1px solid var(--line);background:#fff;padding:7px 9px;border-radius:8px;font-size:11px;cursor:pointer}
+.canvas{border:1px solid var(--line);border-radius:13px;background:#fbfcff;padding:16px;min-height:360px}
+.story-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.shot{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:white}
+.shot-img{height:105px;background:linear-gradient(135deg,#dce7f9,#efe8ff);display:grid;place-items:center;color:#71809a;font-size:12px}
+.shot-body{padding:9px}.shot-body b{font-size:11px}.shot-body p{font-size:10px;color:var(--muted);line-height:1.5;margin:4px 0}
+.inspector{padding:15px}
+.field{margin-bottom:12px}.field label{display:block;font-size:10px;color:var(--muted);margin-bottom:5px}.field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px;background:#fbfcfe;font-size:11px}.field textarea{height:78px;resize:vertical}
+.inspector-card{border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px}.inspector-card h4{font-size:11px;margin:0 0 8px}
+.publish-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.platform{padding:15px}.platform h4{margin:0 0 7px}.platform p{font-size:11px;color:var(--muted)}.platform .metric{font-size:19px;font-weight:800}
+.monetize-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.money-card{padding:17px;min-height:130px}.money-card small{color:var(--muted)}.money-card strong{display:block;font-size:22px;margin:9px 0}.money-card p{font-size:11px;color:var(--muted)}
+.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:11px;border-top:1px solid var(--line);font-size:12px}.table th{color:var(--muted);font-weight:600}
+.modal{position:fixed;inset:0;background:rgba(7,12,24,.55);display:none;align-items:center;justify-content:center;z-index:20}.modal.show{display:flex}.modal-box{width:720px;max-height:85vh;overflow:auto;background:white;border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.3)}.modal-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}.modal-body{padding:20px}.close{border:none;background:#f1f3f7;border-radius:8px;width:30px;height:30px;cursor:pointer}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}.grid2{grid-template-columns:1fr}.workspace-shell{grid-template-columns:210px 1fr}.workspace-right{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-row"><div class="logo"></div><div>AI Commerce OS</div></div>
+    <small>STUDIO · 内容公司操作系统</small>
+  </div>
+  <div class="nav-section">
+    <div class="nav-title">总控</div>
+    <div class="nav-item active" data-page="dashboard"><span class="ico">✦</span>Studio秘书</div>
+    <div class="nav-item" data-page="dashboard"><span class="ico">◇</span>Studio概览</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-title">内容策划</div>
+    <div class="nav-item" data-page="dashboard"><span class="ico">🔥</span>热点分析<span class="badge-dot">18</span></div>
+    <div class="nav-item" data-page="dashboard"><span class="ico">↗</span>趋势预测</div>
+    <div class="nav-item" data-page="dashboard"><span class="ico">◎</span>选题池</div>
+    <div class="nav-item" data-page="workspace"><span class="ico">▣</span>内容项目</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-title">AI创作中心</div>
+    <div class="nav-item" data-page="workspace"><span class="ico">◈</span>AI短剧</div>
+    <div class="nav-item" data-page="workspace"><span class="ico">▶</span>AI视频</div>
+    <div class="nav-item" data-page="workspace"><span class="ico">◉</span>AI直播</div>
+    <div class="nav-item" data-page="workspace"><span class="ico">✎</span>剧本 / 脚本 / 分镜</div>
+    <div class="nav-item" data-page="workspace"><span class="ico">♙</span>角色与场景</div>
+    <div class="nav-item" data-page="workspace"><span class="ico">⌁</span>AI剪辑</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-title">矩阵运营</div>
+    <div class="nav-item" data-page="publish"><span class="ico">▦</span>矩阵账号</div>
+    <div class="nav-item" data-page="publish"><span class="ico">⬆</span>矩阵发布</div>
+    <div class="nav-item" data-page="publish"><span class="ico">◫</span>内容资产</div>
+    <div class="nav-item" data-page="publish"><span class="ico">♢</span>流量池</div>
+    <div class="nav-item" data-page="publish"><span class="ico">◈</span>广告资源</div>
+    <div class="nav-item" data-page="publish"><span class="ico">▤</span>广告订单</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-title">商业经营</div>
+    <div class="nav-item" data-page="monetize"><span class="ico">¥</span>商业变现</div>
+    <div class="nav-item" data-page="monetize"><span class="ico">▥</span>平台分成</div>
+    <div class="nav-item" data-page="monetize"><span class="ico">◌</span>品牌合作</div>
+    <div class="nav-item" data-page="monetize"><span class="ico">▧</span>算力任务</div>
+    <div class="nav-item" data-page="monetize"><span class="ico">⌁</span>数据分析</div>
+    <div class="nav-item" data-page="monetize"><span class="ico">⊙</span>能力市场</div>
+  </div>
+</aside>
+
+<section class="main">
+<header class="topbar">
+  <div class="top-left"><h1 id="topTitle">Studio秘书</h1><p id="topSub">内容生产、矩阵运营、流量经营与商业变现总控</p></div>
+  <div class="top-actions">
+    <div class="pill">算力余额 2,840 CR</div>
+    <div class="pill">AI服务余额 ¥8,420</div>
+    <button class="primary" onclick="openModal()">＋ 新建内容项目</button>
+  </div>
+</header>
+
+<div class="content">
+<section class="page active" id="dashboard">
+  <div class="hero">
+    <div class="hero-top">
+      <div><h2>早上好，Founder。Studio 今日已进入自动经营状态。</h2><p>热点 Agent 已完成全平台扫描，内容总监 Agent 已生成今日生产计划。</p></div>
+      <span class="status">系统健康 98%</span>
+    </div>
+    <div class="secretary">
+      <div class="brief">
+        <h3>Studio秘书 · 今日经营简报</h3>
+        <ul>
+          <li>发现 18 个可用热点，其中 5 个与家居、女性成长、AI创业高度匹配。</li>
+          <li>建议生产 6 条短视频、2 部红果短剧、1 场直播切片矩阵。</li>
+          <li>矩阵账号预计今日自然曝光 126 万，建议追加 Dou+ 预算 ¥1,500。</li>
+          <li>红果短剧《重生后我接管了老板的公司》预测分成 ¥3,800～¥8,600。</li>
+        </ul>
+      </div>
+      <div class="quick">
+        <button onclick="go('workspace')"><b>9</b><span>正在生产的项目</span></button>
+        <button onclick="go('publish')"><b>32</b><span>已接入矩阵账号</span></button>
+        <button onclick="go('monetize')"><b>¥128,600</b><span>本月内容收入</span></button>
+        <button onclick="go('workspace')"><b>14</b><span>Agent 正在工作</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="card kpi"><span class="label">今日预计曝光</span><strong>1,260,000</strong><span class="trend">↑ 18.6%</span></div>
+    <div class="card kpi"><span class="label">待生产内容</span><strong>27</strong><span class="trend">6 条高优先级</span></div>
+    <div class="card kpi"><span class="label">矩阵健康账号</span><strong>29/32</strong><span class="trend">3 个需处理</span></div>
+    <div class="card kpi"><span class="label">本月平台分成</span><strong>¥42,800</strong><span class="trend">↑ 26.1%</span></div>
+    <div class="card kpi"><span class="label">内容经营 ROI</span><strong>3.72</strong><span class="trend">高于目标 0.72</span></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="section-head"><h3>🔥 今日热点与 AI 选题建议</h3><span class="link">进入热点分析中心</span></div>
+      <div class="hot-list">
+        <div class="hot-item"><div class="rank">01</div><div><h4>普通人用 AI 开一人公司</h4><p>抖音热度上涨 326% · 适合知识IP / 商业观察</p></div><div class="score">潜力 96</div><button class="action-btn" onclick="openModal()">创建项目</button></div>
+        <div class="hot-item"><div class="rank">02</div><div><h4>红果女性重生短剧</h4><p>红果近7日完播率 42% · 平台分成强</p></div><div class="score">潜力 93</div><button class="action-btn" onclick="go('workspace')">开始创作</button></div>
+        <div class="hot-item"><div class="rank">03</div><div><h4>出租屋氛围灯改造</h4><p>小红书搜索量上涨 187% · 可绑定 LED 商品</p></div><div class="score">潜力 88</div><button class="action-btn" onclick="go('workspace')">开始创作</button></div>
+        <div class="hot-item"><div class="rank">04</div><div><h4>老板突然消失的第七天</h4><p>悬疑职场题材 · 可扩展 24 集短剧</p></div><div class="score">潜力 86</div><button class="action-btn" onclick="go('workspace')">生成剧本</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-head"><h3>Agent 工作状态</h3><span class="link">查看全部</span></div>
+      <div class="agent-list">
+        <div class="agent"><div class="avatar">🔥</div><div><b>Trend Agent</b><p>正在扫描 8 个平台热点</p></div><span class="status">运行中</span></div>
+        <div class="agent"><div class="avatar">✎</div><div><b>Writer Agent</b><p>生成《重生老板》EP03 剧本</p></div><span class="status">运行中</span></div>
+        <div class="agent"><div class="avatar">▦</div><div><b>Storyboard Agent</b><p>已完成 18 个镜头规划</p></div><span class="status">已完成</span></div>
+        <div class="agent"><div class="avatar">▶</div><div><b>Video Agent</b><p>正在渲染镜头 12/18</p></div><span class="status">运行中</span></div>
+        <div class="agent"><div class="avatar">⬆</div><div><b>Publisher Agent</b><p>等待 20:30 发布窗口</p></div><span class="status">已排期</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-head"><h3>重点内容项目</h3><span class="link" onclick="go('workspace')">进入项目中心</span></div>
+    <div class="project-list">
+      <div class="project"><div><h4>红果短剧《重生后我接管了老板的公司》</h4><p>24 集 · 情绪爽剧 · 平台分成项目</p></div><div class="tags"><span class="tag">红果</span><span class="tag">抖音</span></div><div><div class="progress"><i style="width:68%"></i></div><p>剧本完成 · 视频生成中</p></div><button class="ghost" onclick="go('workspace')">进入导演台</button></div>
+      <div class="project"><div><h4>LightOS 出租屋灯光改造矩阵</h4><p>30 条短视频 · 带货 + 品牌种草</p></div><div class="tags"><span class="tag">抖音</span><span class="tag">小红书</span></div><div><div class="progress"><i style="width:42%"></i></div><p>分镜确认中</p></div><button class="ghost" onclick="go('workspace')">继续制作</button></div>
+      <div class="project"><div><h4>AI 一人公司商业观察 IP</h4><p>知识IP · 日更短视频 + 直播切片</p></div><div class="tags"><span class="tag">视频号</span><span class="tag">B站</span></div><div><div class="progress"><i style="width:81%"></i></div><p>12 条已发布</p></div><button class="ghost" onclick="go('publish')">查看矩阵</button></div>
+    </div>
+  </div>
+</section>
+
+<section class="page" id="workspace">
+  <div class="workspace-shell">
+    <aside class="workspace-left">
+      <div class="ws-head"><h3>项目素材库</h3><p>红果短剧 · 重生后我接管了老板的公司</p></div>
+      <div class="asset-tabs"><button>全部</button><button>角色</button><button>场景</button></div>
+      <div class="asset">👩 女主 · 林晚<br><small>28岁 / 创业者 / 冷静克制</small></div>
+      <div class="asset">👨 男主 · 周启<br><small>35岁 / 公司老板 / 强势</small></div>
+      <div class="asset">🏢 场景 · 公司会议室</div>
+      <div class="asset">🌃 场景 · 深夜办公室</div>
+      <div class="asset">🎵 BGM · 逆袭情绪版</div>
+      <div class="asset">🧠 知识库 · 红果爆款结构V4</div>
+      <div class="asset">🧩 Skill · 24集短剧节奏模板</div>
+    </aside>
+
+    <main class="workspace-center">
+      <div class="ws-head"><h3>AI导演工作台</h3><p>热点 → 创意 → 剧本 → 脚本 → 分镜 → 角色 → 生成 → AI剪辑 → 审核 → 发布</p></div>
+      <div style="display:grid;grid-template-columns:265px 1fr;min-height:100%">
+        <div class="pipeline">
+          <div class="stage"><div class="stage-num">01</div><div><b>热点分析</b><p>Trend Agent · 已锁定红果重生题材</p></div><span class="stage-state">完成</span></div>
+          <div class="stage"><div class="stage-num">02</div><div><b>创作 Brief</b><p>目标受众、平台、情绪、收益模型</p></div><span class="stage-state">完成</span></div>
+          <div class="stage"><div class="stage-num">03</div><div><b>剧本生成</b><p>24集总剧本与人物弧光</p></div><span class="stage-state">完成</span></div>
+          <div class="stage"><div class="stage-num">04</div><div><b>单集脚本</b><p>EP03 台词、动作、节奏</p></div><span class="stage-state">完成</span></div>
+          <div class="stage active"><div class="stage-num">05</div><div><b>分镜生成</b><p>Storyboard Agent · 18镜头</p></div><span class="stage-state">编辑中</span></div>
+          <div class="stage"><div class="stage-num">06</div><div><b>角色与场景生成</b><p>人物一致性与场景资产</p></div><span class="stage-state">完成</span></div>
+          <div class="stage"><div class="stage-num">07</div><div><b>图片 / 视频生成</b><p>Video Agent · 镜头12/18</p></div><span class="stage-state">运行中</span></div>
+          <div class="stage"><div class="stage-num">08</div><div><b>AI剪辑</b><p>节奏、转场、配音、字幕、BGM</p></div><span class="stage-state">等待</span></div>
+          <div class="stage"><div class="stage-num">09</div><div><b>内容审核</b><p>平台、版权、品牌、AI质检</p></div><span class="stage-state">等待</span></div>
+          <div class="stage"><div class="stage-num">10</div><div><b>矩阵发布与变现</b><p>红果主发 · 抖音预热 · 视频号分发</p></div><span class="stage-state">等待</span></div>
+        </div>
+
+        <div class="editor">
+          <div class="editor-toolbar">
+            <h3>EP03 · 分镜工作台</h3>
+            <div class="editor-actions"><button class="ghost">查看Agent</button><button class="ghost">重新生成</button><button class="primary">锁定并继续</button></div>
+          </div>
+          <div class="canvas">
+            <div class="story-grid">
+              <div class="shot"><div class="shot-img">镜头预览 01</div><div class="shot-body"><b>办公室广角 · 3秒</b><p>林晚推门进入会议室，所有人突然安静。</p></div></div>
+              <div class="shot"><div class="shot-img">镜头预览 02</div><div class="shot-body"><b>女主近景 · 2秒</b><p>眼神冷静，手中握着公司公章。</p></div></div>
+              <div class="shot"><div class="shot-img">镜头预览 03</div><div class="shot-body"><b>男主反应 · 2秒</b><p>周启抬头，表情第一次出现慌乱。</p></div></div>
+              <div class="shot"><div class="shot-img">镜头预览 04</div><div class="shot-body"><b>文件特写 · 1.5秒</b><p>股权转让协议被重重放在桌上。</p></div></div>
+              <div class="shot"><div class="shot-img">镜头预览 05</div><div class="shot-body"><b>对峙双人景 · 4秒</b><p>“从今天起，这家公司由我说了算。”</p></div></div>
+              <div class="shot"><div class="shot-img">＋ 新增镜头</div><div class="shot-body"><b>点击添加</b><p>可让分镜 Agent 补充镜头。</p></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="workspace-right">
+      <div class="ws-head"><h3>当前镜头检查器</h3><p>人工可随时调整 Agent 输出</p></div>
+      <div class="inspector">
+        <div class="field"><label>镜头类型</label><select><option>女主近景</option><option>双人对峙</option><option>文件特写</option></select></div>
+        <div class="field"><label>画面描述</label><textarea>林晚推门进入会议室，冷静扫视众人，手中拿着公司公章。</textarea></div>
+        <div class="field"><label>对白</label><textarea>从今天起，这家公司由我说了算。</textarea></div>
+        <div class="field"><label>镜头时长</label><input value="3.0 秒"></div>
+        <div class="field"><label>视觉模型</label><select><option>Video Model A · 电影感</option><option>Video Model B · 写实</option></select></div>
+        <div class="inspector-card"><h4>Agent 建议</h4><p style="font-size:11px;color:var(--muted)">建议增加“公章特写”0.8秒，强化权力逆转的情绪钩子。</p><button class="action-btn">接受建议</button></div>
+        <div class="inspector-card"><h4>成本与质量</h4><p style="font-size:11px">预计生成成本 ¥3.60<br>一致性评分 93<br>平台风险：低</p></div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section class="page" id="publish">
+  <div class="card" style="padding:20px;margin-bottom:15px">
+    <div class="section-head" style="padding:0 0 15px"><h3>矩阵账号与流量运营</h3><button class="primary">＋ 接入新账号</button></div>
+    <div class="publish-grid">
+      <div class="card platform"><h4>抖音矩阵</h4><div class="metric">12 个账号</div><p>总粉丝 486,000 · 健康 11/12</p><span class="status">今日预计 68万曝光</span></div>
+      <div class="card platform"><h4>小红书矩阵</h4><div class="metric">8 个账号</div><p>总粉丝 126,000 · 健康 8/8</p><span class="status">搜索流量上升</span></div>
+      <div class="card platform"><h4>视频号矩阵</h4><div class="metric">7 个账号</div><p>总粉丝 82,000 · 健康 6/7</p><span class="status">1 个需关注</span></div>
+      <div class="card platform"><h4>红果短剧</h4><div class="metric">5 个项目号</div><p>本月分成 ¥28,600</p><span class="status">2 部正在连载</span></div>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <div class="section-head"><h3>今日发布排期</h3><button class="ghost">AI重新排期</button></div>
+      <table class="table"><tr><th>时间</th><th>内容</th><th>平台</th><th>目标</th><th>状态</th></tr>
+        <tr><td>12:10</td><td>出租屋灯光改造01</td><td>小红书 / 抖音</td><td>种草 + 带货</td><td><span class="status">已发布</span></td></tr>
+        <tr><td>18:30</td><td>AI一人公司：员工都是Agent</td><td>视频号 / B站</td><td>涨粉</td><td><span class="status">已排期</span></td></tr>
+        <tr><td>20:30</td><td>《重生老板》EP03</td><td>红果 / 抖音</td><td>平台分成</td><td><span class="status">待审核</span></td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <div class="section-head"><h3>流量池结构</h3></div>
+      <div style="padding:10px 18px 18px">
+        <p style="font-size:12px">自然推荐流量 <b>46%</b></p><div class="progress"><i style="width:46%"></i></div>
+        <p style="font-size:12px">搜索与关键词流量 <b>24%</b></p><div class="progress"><i style="width:24%"></i></div>
+        <p style="font-size:12px">矩阵互推流量 <b>18%</b></p><div class="progress"><i style="width:18%"></i></div>
+        <p style="font-size:12px">广告付费流量 <b>12%</b></p><div class="progress"><i style="width:12%"></i></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page" id="monetize">
+  <div class="card" style="padding:20px;margin-bottom:15px">
+    <div class="section-head" style="padding:0 0 15px"><h3>内容商业变现中心</h3><span class="pill">本月总收入 ¥128,600</span></div>
+    <div class="monetize-grid">
+      <div class="card money-card"><small>平台内容分成</small><strong>¥42,800</strong><p>红果、B站创作激励、视频号、YouTube</p><span class="trend">↑ 26.1%</span></div>
+      <div class="card money-card"><small>品牌合作与广告订单</small><strong>¥38,000</strong><p>5 个执行中订单 · 2 个待报价</p><span class="trend">↑ 12.4%</span></div>
+      <div class="card money-card"><small>带货与直播佣金</small><strong>¥31,600</strong><p>橱窗GMV ¥286,000 · 佣金率11.0%</p><span class="trend">↑ 19.8%</span></div>
+      <div class="card money-card"><small>知识产品</small><strong>¥9,800</strong><p>课程、会员、数字模板与社群</p></div>
+      <div class="card money-card"><small>版权与IP授权</small><strong>¥6,400</strong><p>剧本授权、角色形象、二创授权</p></div>
+      <div class="card money-card"><small>内容生产成本</small><strong>¥34,560</strong><p>模型、视频生成、广告与算力</p><span style="color:var(--orange);font-size:11px">综合毛利率 73.1%</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-head"><h3>项目收益排行榜</h3><button class="ghost">查看完整损益</button></div>
+    <table class="table"><tr><th>内容项目</th><th>收入模式</th><th>收入</th><th>成本</th><th>毛利</th><th>ROI</th></tr>
+      <tr><td>重生后我接管了老板的公司</td><td>红果分成 + 广告</td><td>¥36,800</td><td>¥8,600</td><td>¥28,200</td><td>4.28</td></tr>
+      <tr><td>LightOS 租房改造矩阵</td><td>带货 + 品牌</td><td>¥28,400</td><td>¥7,300</td><td>¥21,100</td><td>3.89</td></tr>
+      <tr><td>AI一人公司商业观察</td><td>课程 + 品牌合作</td><td>¥24,600</td><td>¥5,900</td><td>¥18,700</td><td>4.17</td></tr>
+    </table>
+  </div>
+</section>
+</div>
+</section>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <div class="modal-head"><div><b>新建内容项目</b><div style="font-size:11px;color:var(--muted);margin-top:4px">从热点、商品、IP或自定义创意开始</div></div><button class="close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>项目名称</label><input value="红果女性重生短剧 · 新项目"></div>
+      <div class="field"><label>内容类型</label><select><option>AI短剧</option><option>短视频矩阵</option><option>直播内容</option><option>品牌广告</option><option>知识IP</option></select></div>
+      <div class="field"><label>目标平台</label><select><option>红果 + 抖音矩阵</option><option>小红书 + 抖音</option><option>视频号 + B站</option></select></div>
+      <div class="field"><label>变现目标</label><select><option>平台分成</option><option>带货转化</option><option>品牌广告</option><option>涨粉与私域</option></select></div>
+      <div class="field"><label>创作说明</label><textarea>女性逆袭、职场重生、强情绪钩子，24集，每集60-90秒。</textarea></div>
+      <button class="primary" style="width:100%" onclick="closeModal();go('workspace')">让 Studio 秘书创建完整生产计划</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const titles={
+ dashboard:["Studio秘书","内容生产、矩阵运营、流量经营与商业变现总控"],
+ workspace:["AI导演工作台","查看并介入热点、剧本、脚本、分镜、角色、生成、剪辑与发布全流程"],
+ publish:["矩阵运营中心","账号矩阵、内容发布、流量池、广告资源与账号健康度"],
+ monetize:["商业变现中心","平台分成、广告订单、带货、知识产品与版权收入"]
+};
+function go(id){
+ document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
+ document.getElementById(id).classList.add("active");
+ document.getElementById("topTitle").textContent=titles[id][0];
+ document.getElementById("topSub").textContent=titles[id][1];
+ document.querySelectorAll(".nav-item").forEach(x=>x.classList.remove("active"));
+ const match=[...document.querySelectorAll('.nav-item')].find(x=>x.dataset.page===id);
+ if(match)match.classList.add("active");
+ document.querySelector(".content").scrollTop=0;
+}
+document.querySelectorAll(".nav-item").forEach(x=>x.addEventListener("click",()=>go(x.dataset.page)));
+function openModal(){document.getElementById("modal").classList.add("show")}
+function closeModal(){document.getElementById("modal").classList.remove("show")}
+document.getElementById("modal").addEventListener("click",e=>{if(e.target.id==="modal")closeModal()})
+</script>
+</body>
+</html>

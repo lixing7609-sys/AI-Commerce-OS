@@ -49,9 +49,23 @@ UNIVERSAL_FORBIDDEN_FILENAME_SUBSTRINGS = (
 # 模块"。真正的按 Edition 拆分入口、产出独立 dist/，是 ADR-0002
 # Migration Plan Phase 3 的工作，不在这一轮范围内。
 FRONTEND_INCLUDE_PREFIXES = {
+    # frontend/src/shared/ 是阶段"Agent Evolution + 三版最终定位"新增
+    # 的公共层（Edition Policy、Agent Evolution 领域 mock、
+    # localRepository 基础设施）——Founder(console/)、Operator
+    # (operator-preview/)、Cloud(cloud/) 都被允许依赖它，所以三个
+    # Edition 的 include 清单都要显式列出它，而不是让 operator 的
+    # 发行包意外漏掉这一层。
     "operator": (
         "frontend/src/editions/",
         "frontend/src/operator-preview/",
+        "frontend/src/shared/",
+        "frontend/src/index.css",
+        "frontend/src/styles/",
+    ),
+    "studio": (
+        "frontend/src/editions/",
+        "frontend/src/studio/",
+        "frontend/src/shared/",
         "frontend/src/index.css",
         "frontend/src/styles/",
     ),
@@ -61,6 +75,17 @@ FRONTEND_INCLUDE_PREFIXES = {
 # 明确禁止出现在该 Edition 发行包里的前端目录/文件。即使有人以后
 # 不小心把某个 Edition 的 include 前缀写得过宽（比如指向了
 # frontend/src 根目录），这里也会在自洽性检查阶段挡住。
+#
+# 阶段 M8 Founder Product Shell Consolidation：加入
+# frontend/src/console/（Founder 专属产品研发壳层——Agent/Prompt/
+# Skill/Workflow/Model Router/Evaluation/Replay/Release Candidate/
+# 风险策略等研发控制层，以及 Founder 自己 fork 过的、现已收口的
+# 业务模块）——之前这份清单只挡开发者版的 pages/，没有挡 Founder
+# 专属的 console/，等于允许 operator/studio/device-admin 发行包在
+# 代码层面偷偷 import Founder 专属逻辑而不被发现，即使 UI 上从未
+# 展示。同理加入其它产品端专属目录（cloud/、彼此的产品目录）——
+# 每个产品端只应该依赖 frontend/src/shared/ 这一层公共代码，不允许
+# 互相 import 对方的专属实现。
 FRONTEND_FORBIDDEN_PREFIXES = {
     "operator": (
         "frontend/src/pages/",
@@ -68,6 +93,19 @@ FRONTEND_FORBIDDEN_PREFIXES = {
         "frontend/src/App.css",
         "frontend/src/components/tasks/",
         "frontend/src/components/runtime/",
+        "frontend/src/console/",
+        "frontend/src/studio/",
+        "frontend/src/cloud/",
+    ),
+    "studio": (
+        "frontend/src/pages/",
+        "frontend/src/App.jsx",
+        "frontend/src/App.css",
+        "frontend/src/components/tasks/",
+        "frontend/src/components/runtime/",
+        "frontend/src/console/",
+        "frontend/src/operator-preview/",
+        "frontend/src/cloud/",
     ),
     "device-admin": (
         "frontend/src/pages/",
@@ -76,6 +114,9 @@ FRONTEND_FORBIDDEN_PREFIXES = {
         "frontend/src/components/tasks/",
         "frontend/src/components/runtime/",
         "frontend/src/operator-preview/",
+        "frontend/src/console/",
+        "frontend/src/studio/",
+        "frontend/src/cloud/",
     ),
 }
 

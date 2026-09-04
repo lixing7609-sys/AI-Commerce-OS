@@ -114,6 +114,51 @@ export function getStoreOrderStats(storeId) {
   return tagDemo(stats);
 }
 
+/**
+ * 内容归因订单——由经营闭环的"模拟发布"动作调用，不是买家真实
+ * 下单。幂等保护：同一个 contentVersionId 只生成一笔归因订单，
+ * 重复触发"模拟发布"不会在订单中心里堆出重复订单。
+ */
+export function createAttributedOrder(payload) {
+  const existing = repository
+    .get()
+    .find((o) => payload.attribution?.contentVersionId && o.attribution?.contentVersionId === payload.attribution.contentVersionId);
+  if (existing) {
+    return { record: existing, alreadyExists: true };
+  }
+  const store = DEMO_STORES.find((s) => s.id === payload.storeId);
+  const idx = repository.get().length + 1;
+  const record = {
+    id: nextMockId("ord"),
+    orderNumber: `${payload.platform.slice(0, 2).toUpperCase()}${Date.now().toString().slice(-6)}${idx}`,
+    platform: payload.platform,
+    storeId: payload.storeId,
+    storeName: store?.name ?? payload.storeId,
+    buyer: payload.buyer ?? `买家${5000 + idx}`,
+    buyerPhone: maskPhone(`138${String(20000000 + idx).slice(0, 8)}`),
+    recipient: payload.buyer ?? `买家${5000 + idx}`,
+    deliveryAddress: payload.deliveryAddress ?? "广东省深圳市示范路 1 号",
+    product: payload.product,
+    sku: payload.sku,
+    quantity: 1,
+    amount: payload.amount,
+    paymentStatus: "paid",
+    orderStatus: "pending_shipment",
+    shippingStatus: "not_shipped",
+    courierCompany: null,
+    trackingNumber: null,
+    orderTime: new Date().toISOString(),
+    abnormal: false,
+    attribution: payload.attribution,
+  };
+  repository.update((orders) => [record, ...orders]);
+  return { record, alreadyExists: false };
+}
+
+export function getOrder(orderId) {
+  return repository.get().find((o) => o.id === orderId) ?? null;
+}
+
 export function markOrderShipped(orderId, courierCompany, trackingNumber) {
   return repository.update((orders) =>
     orders.map((o) =>

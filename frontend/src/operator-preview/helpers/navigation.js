@@ -1,0 +1,78 @@
+/**
+ * 经营者版一级导航定义（阶段：路由/页面修复 + 品牌统一）。
+ *
+ * 与 Founder 的 console/nav/navConfig.js 同一个原则：这是唯一权威
+ * 列表，侧边栏、底部导航、抽屉导航都从这里读取，不在别处重复定义
+ * 模块 key。15 项客户最终导航结构：
+ *   今日经营 / Operator秘书 / 店铺 / 商品 / 内容 / 广告投放 / 订单 / 客服 /
+ *   审批 / AI 成长 / 成本与 Token / 能力市场 / 设备与更新 / 数据与
+ *   隐私 / 设置
+ *
+ * 商品/内容/订单/客服/审批这 5 项在 Founder 版已有完整实现
+ * （productCenter/orderCenter/customerServiceCenter/approvalCenter，
+ * 内容已改为重定向到 Studio），经营者版目前是"即将上线"骨架页（见
+ * pages/ComingSoonPage.jsx）而不是完整实现——诚实标注，不是空白/
+ * 报错页。广告投放（adOps）是本阶段新建的真实功能页
+ * （pages/AdOpsPage.jsx + helpers/adOpsMock.js），不是骨架页。之前
+ * 版本里的"成果"（deliverables）和"业务记忆"（memory）不在这份最终
+ * 结构里，页面组件仍保留在代码库中，只是不再出现在一级导航——不是
+ * 删除功能，是这次导航收敛的范围决定。
+ *
+ * 阶段 M8 Founder Product Shell Consolidation §9：新增
+ * marketplace——Operator 消费视角的 AI 能力市场，和 Founder
+ * Marketplace 中心、Studio 的 marketplace 页面共用同一份
+ * shared/marketplace/marketplaceService.js。
+ *
+ * 阶段 M8c 三类秘书正式区分：这里的 "secretary" 是 **Operator秘书**，
+ * 只负责经营 Runtime 范围内的任务（当前店铺/商品/订单/客户/客服/
+ * 库存/广告投放/直播带货/利润/Token经营成本/日报/经营审批/经营
+ * 异常）——不显示 Founder 研发全局、Studio 内容项目、完整 Prompt/
+ * Skill 管理、Release 管理、开发者审核、Marketplace 全局运营。与
+ * Founder 的"AI秘书处"（跨产品总秘书）、Studio 的"Studio秘书"
+ * （内容 Runtime）是三个不同职责的秘书，不是三套同名秘书——关系是
+ * Founder AI秘书处调用/汇总 Operator秘书与 Studio秘书的报告，不是
+ * 三者互相替代。见 docs/01-reference-architecture/
+ * edition-architecture.md §19。
+ */
+export const OPERATOR_NAV_ITEMS = [
+  { key: "dashboard", label: "今日经营", icon: "◆", status: "ready" },
+  { key: "secretary", label: "Operator秘书", icon: "☑", status: "ready" },
+  { key: "shops", label: "店铺", icon: "▽", status: "ready" },
+  { key: "products", label: "商品", icon: "▣", status: "comingSoon" },
+  { key: "content", label: "内容", icon: "▥", status: "comingSoon" },
+  { key: "adOps", label: "广告投放", icon: "■", status: "ready" },
+  { key: "orders", label: "订单", icon: "▤", status: "comingSoon" },
+  { key: "customerService", label: "客服", icon: "⟲", status: "comingSoon" },
+  { key: "approvals", label: "审批", icon: "☑", status: "comingSoon" },
+  { key: "growth", label: "AI 成长", icon: "↗", status: "ready" },
+  { key: "costToken", label: "成本与 Token", icon: "◔", status: "ready" },
+  { key: "marketplace", label: "能力市场", icon: "⛁", status: "ready" },
+  { key: "deviceUpdates", label: "设备与更新", icon: "▣", status: "ready" },
+  { key: "dataPrivacy", label: "数据与隐私", icon: "⛨", status: "ready" },
+  { key: "settings", label: "设置", icon: "⚙", status: "ready" },
+];
+
+const FORBIDDEN_DEV_TERMS = [
+  "RuntimeEngine",
+  "Task",
+  "Agent",
+  "role",
+  "Consumer",
+  "migration",
+];
+
+/**
+ * 校验导航项文案不含开发者术语（供测试使用），避免未来有人
+ * 在这份列表里不小心加回"任务中心"、"Agent"这类字眼。
+ */
+export function containsForbiddenDevTerms(text) {
+  return FORBIDDEN_DEV_TERMS.some((term) => text.includes(term));
+}
+
+export function getNavItemByKey(key) {
+  return OPERATOR_NAV_ITEMS.find((item) => item.key === key) ?? null;
+}
+
+export function isValidNavKey(key) {
+  return OPERATOR_NAV_ITEMS.some((item) => item.key === key);
+}

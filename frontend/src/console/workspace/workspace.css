@@ -1,0 +1,430 @@
+/* AI Commerce OS — Workspace 类型体系（母版层）。
+   Spec: docs/workspace-page-mapping.md + 本轮 Founder Master Edition
+   页面架构重建任务。
+
+   六类 Workspace 是页面的"语法"，不是又一套卡片皮肤：
+     Command      — 决策/风险/待办：任务队列行，不是 KPI 看板
+     Canvas       — 创作/编排：可平移缩放的无限画布
+     Editor       — Prompt/Skill/文案：三栏编辑器（列表/正文/属性）
+     Operations   — 商品/订单/客服：任务队列为主，表格为辅
+     Asset        — 素材/品牌/知识：facet 筛选 + 缩略图网格 + 详情栏
+     Analytics    — 经营/流量/广告分析：唯一允许 KPI 卡片+图表为主体
+
+   每一类都复用 theme.css 的 token（颜色/圆角/间距/字号），不引入
+   第二套视觉语言；区别只在结构（grid/flex 布局），不是换皮肤。 */
+
+.ws-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.ws-header {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding-bottom: var(--space-16);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: var(--space-16);
+}
+
+.ws-header__text { min-width: 0; }
+
+.ws-header__title {
+  font-size: var(--type-heading-section-size);
+  font-weight: var(--type-heading-section-weight);
+  color: var(--text-primary);
+  margin: 0 0 2px;
+}
+
+.ws-header__subtitle {
+  font-size: var(--type-body-small-size);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.ws-header__actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: var(--space-8);
+}
+
+.ws-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: var(--space-16);
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- */
+/* Command Workspace — 任务队列行，不是 KPI 卡片墙                   */
+/* ---------------------------------------------------------------- */
+
+.ws-command__feed {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.ws-command-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  background: var(--surface);
+}
+
+.ws-command-row__dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.ws-command-row__body { flex: 1; min-width: 0; }
+
+.ws-command-row__title {
+  font-size: var(--type-body-size);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ws-command-row__context {
+  font-size: var(--type-body-small-size);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.ws-command-row__action { flex-shrink: 0; }
+
+.ws-side-panel {
+  flex: none;
+  width: 320px;
+  overflow-y: auto;
+  border-left: 1px solid var(--border-subtle);
+  padding-left: var(--space-16);
+}
+
+/* ---------------------------------------------------------------- */
+/* Canvas Workspace — 可平移缩放的无限画布                           */
+/* ---------------------------------------------------------------- */
+
+.ws-canvas {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--canvas-subtle);
+}
+
+.ws-canvas__palette {
+  flex: none;
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-12) 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.ws-canvas__tool {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+
+.ws-canvas__tool:hover { background: var(--canvas-subtle); color: var(--text-primary); }
+.ws-canvas__tool--active { background: var(--ai-accent-subtle); color: var(--ai-accent); border-color: var(--ai-accent); }
+
+.ws-canvas__viewport {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  background-image: radial-gradient(var(--border-default) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.ws-canvas__viewport--panning { cursor: grabbing; }
+
+.ws-canvas__layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.ws-canvas__node {
+  position: absolute;
+  width: 220px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--surface);
+  box-shadow: var(--elevation-2);
+  cursor: grab;
+  user-select: none;
+}
+
+.ws-canvas__node--dragging { box-shadow: var(--elevation-3); cursor: grabbing; z-index: 5; }
+
+.ws-canvas__node-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-subtle);
+  text-transform: uppercase;
+}
+
+.ws-canvas__node-body {
+  padding: 10px;
+  font-size: var(--type-body-small-size);
+  color: var(--text-primary);
+}
+
+.ws-canvas__zoom {
+  position: absolute;
+  right: var(--space-16);
+  bottom: var(--space-16);
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  background: var(--surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  font-size: var(--type-caption-size);
+  color: var(--text-secondary);
+  box-shadow: var(--elevation-2);
+}
+
+/* ---------------------------------------------------------------- */
+/* Editor Workspace — 三栏：列表 / 正文 / 属性                       */
+/* ---------------------------------------------------------------- */
+
+.ws-editor__list {
+  flex: none;
+  width: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.ws-editor__list-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-12);
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.ws-editor__list-item:last-child { border-bottom: none; }
+.ws-editor__list-item:hover { background: var(--canvas-subtle); }
+.ws-editor__list-item--active { background: var(--ai-accent-subtle); box-shadow: inset 3px 0 0 var(--ai-accent); }
+
+.ws-editor__list-item-title { font-size: var(--type-body-size); font-weight: 600; color: var(--text-primary); }
+.ws-editor__list-item-meta { font-size: var(--type-caption-size); color: var(--text-tertiary); margin-top: 2px; }
+
+.ws-editor__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.ws-editor__surface {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-16);
+  overflow-y: auto;
+}
+
+.ws-editor__properties {
+  flex: none;
+  width: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-16);
+}
+
+.ws-editor__field { margin-bottom: var(--space-16); }
+.ws-editor__field-label { display: block; font-size: var(--type-caption-size); font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+
+/* ---------------------------------------------------------------- */
+/* Operations Workspace — 任务队列为主，表格为辅                     */
+/* ---------------------------------------------------------------- */
+
+.ws-ops__toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  margin-bottom: var(--space-16);
+}
+
+.ws-ops__toggle-btn {
+  padding: 5px 14px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: none;
+  font-size: var(--type-body-small-size);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ws-ops__toggle-btn--active { background: var(--action-primary); color: var(--text-inverse); }
+
+.ws-ops__queue { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-8); }
+
+.ws-ops__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.ws-ops__row--urgent { border-left: 3px solid var(--danger); }
+.ws-ops__row--attention { border-left: 3px solid var(--warning); }
+
+.ws-ops__row-thumb {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-xs);
+  background: var(--canvas-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--text-tertiary);
+}
+
+.ws-ops__row-body { flex: 1; min-width: 0; }
+.ws-ops__row-title { font-size: var(--type-body-size); font-weight: 600; color: var(--text-primary); }
+.ws-ops__row-context { font-size: var(--type-body-small-size); color: var(--text-secondary); margin-top: 2px; }
+.ws-ops__row-actions { flex-shrink: 0; display: flex; gap: 6px; }
+
+/* ---------------------------------------------------------------- */
+/* Asset Workspace — facet + 缩略图网格 + 详情栏                     */
+/* ---------------------------------------------------------------- */
+
+.ws-asset__facets {
+  flex: none;
+  width: 200px;
+  overflow-y: auto;
+}
+
+.ws-asset__facet-group { margin-bottom: var(--space-24); }
+.ws-asset__facet-label { font-size: var(--type-caption-size); font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--space-8); }
+.ws-asset__facet-option { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: var(--type-body-small-size); color: var(--text-secondary); cursor: pointer; }
+.ws-asset__facet-option--active { color: var(--text-primary); font-weight: 600; }
+
+.ws-asset__grid {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-12);
+  align-content: start;
+}
+
+.ws-asset__tile {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--surface);
+}
+
+.ws-asset__tile--active { border-color: var(--ai-accent); box-shadow: 0 0 0 1px var(--ai-accent); }
+
+.ws-asset__tile-thumb {
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  background: var(--canvas-subtle);
+  color: var(--text-tertiary);
+}
+
+.ws-asset__tile-meta { padding: 8px 10px; }
+.ws-asset__tile-title { font-size: var(--type-body-small-size); font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-asset__tile-sub { font-size: var(--type-caption-size); color: var(--text-tertiary); }
+
+.ws-asset__inspector { flex: none; width: 300px; overflow-y: auto; border-left: 1px solid var(--border-subtle); padding-left: var(--space-16); }
+
+/* ---------------------------------------------------------------- */
+/* Analytics Workspace — 唯一允许 KPI + 图表为主体                   */
+/* ---------------------------------------------------------------- */
+
+.ws-analytics { flex: 1; min-width: 0; overflow-y: auto; }
+
+.ws-analytics__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-12);
+  margin-bottom: var(--space-16);
+}
+
+.ws-analytics__stat {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-16);
+  background: var(--surface);
+}
+
+.ws-analytics__stat-label { font-size: var(--type-caption-size); color: var(--text-tertiary); }
+.ws-analytics__stat-value { font-size: var(--type-metric-size); font-weight: 600; color: var(--text-primary); margin-top: 4px; }
+.ws-analytics__stat-delta { font-size: var(--type-caption-size); margin-top: 4px; }
+.ws-analytics__stat-delta--up { color: var(--success); }
+.ws-analytics__stat-delta--down { color: var(--danger); }
+
+/* ---------------------------------------------------------------- */
+/* Full-bleed opt-out — used by Canvas / Fullscreen-style pages that
+   need to run edge-to-edge instead of the standard max-width column
+   (ConsoleShell.jsx applies this class when navConfig marks a module
+   `bleed: true`). */
+/* ---------------------------------------------------------------- */
+
+.fdr-content--bleed { padding: 0; }
+.fdr-content--bleed .fdr-content__inner { max-width: none; height: 100%; }

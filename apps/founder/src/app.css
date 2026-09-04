@@ -1,0 +1,1090 @@
+.sf-cockpit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+
+@media (max-width: 960px) {
+  .sf-cockpit-grid { grid-template-columns: 1fr; }
+}
+
+.sf-cockpit-question {
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Founder AI workspace — "AI 董事会 + 决策中心 + 公司总控". Left: feature
+   navigation (13 sections in 4 groups). Right: whichever section is active.
+   Full-bleed below the top nav, no page-level scroll — see the pixel-exact
+   height fix (git log) for why the inline height + full-bleed margins exist.
+
+   .sf-main (packages/ui/src/shell.css, shared with Operator/Operator Cloud —
+   not touched here) centers content in a max-width:1320px, padded box; the
+   rules below break .founder-home out of that box using only this file. */
+
+.founder-home {
+  position: relative;
+  left: 50%;
+  width: 100vw;
+  margin-left: -50vw;
+  margin-top: calc(-1 * var(--space-4));
+  margin-bottom: calc(-1 * var(--space-6));
+  /* CSS fallback for the instant before FounderHome.jsx measures the real
+     top-nav height and sets an exact inline `height: calc(100dvh - Npx)`. */
+  height: calc(100% + var(--space-4) + var(--space-6));
+  display: grid;
+  grid-template-columns: 260px 1fr 320px;
+  overflow: hidden;
+}
+
+/* 固定工作入口页面没有 Sino 面板，只有两栏。 */
+.founder-home.is-two-column {
+  grid-template-columns: 260px 1fr;
+}
+
+.founder-home-workspace {
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--surface-base);
+}
+
+.founder-home-workspace.is-conversation {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.founder-home-workspace.is-dashboard {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.founder-home-topbar {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.founder-home-topbar h1 {
+  margin: 0;
+  font: var(--font-title);
+  font-size: 26px;
+}
+
+.founder-home-topbar p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font: var(--font-body);
+  font-size: 13px;
+}
+
+.founder-ai-content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Founder Developer OS — contract projection only. The cards reuse the
+   existing Design DNA and do not introduce a second application shell. */
+.founder-developer-os {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-4);
+  color: var(--text-primary);
+}
+
+.founder-developer-os__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.founder-developer-os__title h1 { margin: 2px 0 0; font: var(--font-title); font-size: 25px; }
+.founder-developer-os__eyebrow { color: var(--ai-accent); font: var(--font-caption); }
+.founder-developer-os__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.founder-developer-os__card { min-width: 0; }
+.founder-developer-os__recommendation { grid-column: span 2; }
+.founder-developer-os__facts { display: grid; grid-template-columns: minmax(90px, 0.3fr) minmax(0, 1fr); gap: 7px 12px; margin: 12px 0 0; }
+.founder-developer-os__facts dt { color: var(--text-tertiary); font: var(--font-caption); }
+.founder-developer-os__facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 13px; color: var(--text-secondary); }
+.founder-developer-os__facts dd.is-strong { color: var(--text-primary); font-weight: 650; }
+.founder-developer-os__mission { min-height: 38px; color: var(--text-primary) !important; font-weight: 600; }
+.founder-developer-os__notice { display: flex; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); border-color: var(--signal-warning); }
+.founder-developer-os__notice p { margin: 4px 0 0; }
+.founder-developer-os__danger { color: var(--signal-danger) !important; }
+.founder-developer-os__report { margin-top: var(--space-3); }
+.founder-developer-os__report pre { max-height: 280px; overflow: auto; margin: 10px 0 0; padding: 12px; border-radius: 10px; background: var(--surface-sunken); color: var(--text-secondary); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 1000px) {
+  .founder-developer-os__grid { grid-template-columns: 1fr; }
+  .founder-developer-os__recommendation { grid-column: span 1; }
+}
+
+@media (max-width: 640px) {
+  .founder-developer-os { padding: var(--space-3); }
+  .founder-developer-os__facts { grid-template-columns: 1fr; gap: 3px; }
+  .founder-developer-os__facts dd { margin-bottom: 6px; }
+}
+
+@media (max-width: 860px) {
+  .founder-home {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+}
+
+/* --- Left sidebar: feature navigation --- */
+
+.founder-ai-sidebar {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+/* --- "+ 新建对话" button + floating menu primitive --- */
+
+.founder-ai-new-wrap {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.founder-ai-new-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  appearance: none;
+  border: 1px solid var(--border-subtle);
+  background: var(--ai-accent);
+  color: white;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: var(--font-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.founder-ai-floating-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--shadow-floating);
+  overflow: hidden;
+  padding: 4px;
+}
+
+.founder-ai-floating-menu button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: var(--font-body);
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.founder-ai-floating-menu button:hover {
+  background: var(--surface-sunken);
+}
+
+.founder-ai-floating-menu button.is-danger {
+  color: var(--signal-danger);
+}
+
+/* --- Search box + 最近对话 --- */
+
+.founder-ai-search-wrap {
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.founder-ai-search-input {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  background: var(--surface-base);
+  color: var(--text-primary);
+}
+
+.founder-ai-conv-list {
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 0 var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.founder-ai-conv-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.founder-ai-conv-archive-toggle {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--ai-accent);
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.founder-ai-conv-group-label {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.founder-ai-conv-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.founder-ai-conv-item:hover,
+.founder-ai-conv-item.is-active {
+  background: var(--surface-sunken);
+}
+
+.founder-ai-conv-item.is-active .founder-ai-conv-title-text {
+  color: var(--ai-accent);
+  font-weight: 600;
+}
+
+.founder-ai-conv-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.founder-ai-conv-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.founder-ai-conv-title svg {
+  flex: 0 0 auto;
+  color: var(--ai-accent);
+}
+
+.founder-ai-conv-rename-input {
+  flex: 1;
+  border: 1px solid var(--ai-accent);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  margin: 2px 4px;
+}
+
+.founder-ai-conv-item-more {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.founder-ai-conv-kebab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.founder-ai-conv-item:hover .founder-ai-conv-kebab,
+.founder-ai-conv-item.is-active .founder-ai-conv-kebab {
+  opacity: 1;
+}
+
+.founder-ai-conv-kebab:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.founder-ai-conv-menu {
+  min-width: 160px;
+}
+
+.founder-ai-conv-delete-confirm {
+  padding: 8px;
+}
+
+.founder-ai-conv-delete-confirm p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.founder-ai-conv-delete-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.founder-ai-conv-delete-actions button {
+  flex: 1;
+  text-align: center;
+  border: 1px solid var(--border-subtle);
+}
+
+.founder-ai-conv-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.founder-ai-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.founder-ai-nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.founder-ai-nav-item:hover {
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+}
+
+.founder-ai-nav-item.is-active {
+  background: var(--ai-accent-soft);
+  color: var(--ai-accent);
+  font-weight: 600;
+}
+
+.founder-ai-nav-item svg {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+/* --- Shared view shells --- */
+
+.founder-ai-view-shell {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+/* --- Generic section/list building blocks reused across every view --- */
+
+.founder-ai-section-title {
+  font: var(--font-title);
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.founder-ai-section-title:first-child {
+  margin-top: 0;
+}
+
+.founder-ai-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.founder-ai-row-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.founder-ai-row-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.founder-ai-meta {
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+  margin: 4px 0;
+}
+
+.founder-ai-ai-suggestion {
+  font-size: 13px;
+  color: var(--ai-accent);
+  margin: 6px 0;
+}
+
+.founder-ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.founder-ai-empty {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.founder-ai-progress-track {
+  background: var(--surface-sunken);
+  border-radius: 6px;
+  height: 8px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.founder-ai-progress-fill {
+  height: 100%;
+  background: var(--ai-accent);
+}
+
+.founder-ai-saved-note {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--signal-success);
+}
+
+/* --- Functional Argumentation / Model Meeting --- */
+
+.founder-ai-textarea {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font: var(--font-body);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.founder-ai-argument-result {
+  margin-top: var(--space-3);
+}
+
+.founder-ai-definition-grid {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 6px 12px;
+  margin: 10px 0 0;
+}
+
+.founder-ai-definition-grid dt {
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+}
+
+.founder-ai-definition-grid dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+@media (max-width: 720px) {
+  .founder-ai-definition-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- 中间：FounderConversation --- */
+.founder-mission-approval-card {
+  margin: 10px 24px;
+  padding: 18px;
+  border: 1px solid rgba(126, 147, 255, 0.24);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(25, 31, 52, 0.96), rgba(16, 21, 37, 0.98));
+  color: #f2f5ff;
+}
+
+.founder-mission-approval-heading,
+.founder-mission-approval-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.founder-mission-approval-heading h3 { margin: 5px 0 0; font-size: 16px; }
+.founder-mission-approval-kicker { color: #9eace8; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.founder-mission-approval-status { flex: none; padding: 5px 9px; border-radius: 999px; background: rgba(120, 134, 164, 0.16); color: #b8c1d8; font-size: 12px; }
+.founder-mission-approval-status.is-waiting { background: rgba(231, 169, 72, 0.14); color: #f2c36f; }
+.founder-mission-approval-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
+.founder-mission-approval-summary div { min-width: 0; }
+.founder-mission-approval-summary dt { margin-bottom: 3px; color: #8f9ab6; font-size: 11px; }
+.founder-mission-approval-summary dd { margin: 0; color: #e3e8f5; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.founder-mission-approval-details { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); color: #c9d0e2; font-size: 12px; }
+.founder-mission-approval-details p { margin: 4px 0; }
+.founder-mission-approval-details strong { display: inline-block; min-width: 58px; color: #f0f3fa; }
+.founder-mission-approval-error { color: #ff9d9d; font-size: 12px; }
+.founder-mission-approval-failure { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; background: rgba(196, 73, 73, 0.1); color: #e9caca; font-size: 12px; }
+.founder-mission-approval-failure p { margin: 5px 0; line-height: 1.45; }
+.founder-mission-approval-failure strong { display: block; color: #ffb7b7; }
+.founder-mission-approval-actions { justify-content: flex-start; flex-wrap: wrap; }
+.founder-commit-review-package,
+.founder-commit-result { margin: 0 0 14px; padding: 14px; border: 1px solid rgba(126, 147, 255, 0.18); border-radius: 12px; background: rgba(8, 13, 27, 0.5); }
+.founder-commit-review-package .founder-mission-approval-summary,
+.founder-commit-result .founder-mission-approval-summary { margin-bottom: 0; }
+.founder-commit-full-diff { max-height: 280px; margin: 10px 0 0; padding: 10px; overflow: auto; border-radius: 8px; background: rgba(0, 0, 0, 0.28); color: #d8def0; font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 900px) {
+  .founder-mission-approval-summary { grid-template-columns: 1fr; }
+}
+
+.founder-conversation {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.founder-conversation.is-briefing {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.founder-conversation-header {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.founder-conversation-header h1 {
+  margin: 0;
+  font: var(--font-title);
+  font-size: 18px;
+}
+
+.founder-conversation-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(var(--space-4), 5vw, 56px);
+}
+
+.founder-daily-briefing {
+  width: min(100%, 860px);
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.founder-daily-briefing-heading {
+  max-width: 760px;
+  text-align: left;
+}
+
+.founder-daily-briefing-kicker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.founder-daily-briefing-kicker button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: var(--font-caption);
+  cursor: pointer;
+}
+
+.founder-daily-briefing-kicker button:hover { color: var(--ai-accent); }
+.founder-daily-briefing-kicker button:disabled { cursor: default; opacity: 0.65; }
+
+.founder-daily-briefing-eyebrow {
+  display: block;
+  margin-bottom: 0;
+  color: var(--ai-accent);
+  font: var(--font-caption);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.founder-daily-briefing-heading h1 {
+  margin: 10px 0 0;
+  font: var(--font-display);
+  font-size: clamp(26px, 3vw, 36px);
+  letter-spacing: -0.02em;
+}
+
+.founder-daily-briefing-heading > p {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.founder-daily-briefing-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 14px;
+  margin-top: 14px;
+  color: var(--text-tertiary);
+  font: var(--font-caption);
+}
+
+.founder-daily-briefing-status > span + span {
+  position: relative;
+}
+
+.founder-daily-briefing-status > span + span::before {
+  position: absolute;
+  left: -8px;
+  content: "·";
+}
+
+.founder-daily-briefing-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--signal-success);
+  font-weight: 650;
+}
+
+.founder-daily-briefing-live i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.founder-daily-briefing-live.is-error {
+  color: var(--signal-danger);
+}
+
+.founder-daily-briefing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: clamp(24px, 5vh, 44px);
+}
+
+.founder-daily-briefing-card {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-card);
+  text-align: left;
+}
+
+.founder-daily-briefing-card.is-featured {
+  grid-column: 1 / -1;
+  border-color: color-mix(in srgb, var(--ai-accent) 38%, var(--border-subtle));
+  background: color-mix(in srgb, var(--ai-accent) 7%, var(--surface-raised));
+}
+
+.founder-daily-briefing-card-topline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  font: var(--font-caption);
+}
+
+.founder-daily-briefing-index {
+  color: var(--ai-accent);
+  font-weight: 700;
+}
+
+.founder-daily-briefing-card h2 {
+  margin: 18px 0 0;
+  font: var(--font-title);
+  font-size: 15px;
+}
+
+.founder-daily-briefing-card p {
+  margin: 7px 0 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.founder-daily-briefing-progress {
+  height: 5px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+}
+
+.founder-daily-briefing-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ai-accent);
+  transition: width 240ms ease;
+}
+
+.founder-conversation-empty-inline {
+  padding: var(--space-3) 0 var(--space-4);
+}
+
+.founder-daily-briefing.is-compact {
+  width: 100%;
+}
+
+.founder-daily-briefing.is-compact .founder-daily-briefing-heading h1 {
+  font-size: 24px;
+}
+
+.founder-daily-briefing.is-compact .founder-daily-briefing-grid {
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 760px) {
+  .founder-daily-briefing-grid { grid-template-columns: 1fr; }
+  .founder-conversation-empty { padding: var(--space-4); }
+}
+
+.founder-conversation-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.founder-conversation-bubble {
+  max-width: 72%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.founder-conversation-bubble.role-sino {
+  align-self: flex-start;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.founder-conversation-bubble.role-user {
+  align-self: flex-end;
+  background: var(--ai-accent);
+  color: white;
+}
+
+.founder-conversation-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+/* --- 时间线内联卡片：多模型 / 待决策 / 任务包 / 执行 / 复盘 / 知识 --- */
+
+.timeline-card {
+  align-self: stretch;
+}
+
+.timeline-card h4 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.timeline-multi-model-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: 10px;
+}
+
+.timeline-multi-model-column strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.timeline-multi-model-column p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* --- 底部输入框：FounderComposer --- */
+
+.founder-composer {
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-3);
+  background: var(--surface-raised);
+}
+
+.founder-composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.founder-composer-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.founder-composer-attachment-chip button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  display: flex;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.founder-composer-textarea {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: var(--font-body);
+  background: var(--surface-base);
+  color: var(--text-primary);
+  resize: none;
+}
+
+.founder-composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.founder-composer-toolbar-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.founder-composer-send {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* --- 右侧：Sino 实时状态面板 --- */
+
+.sino-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.sino-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sino-panel-header h2 {
+  margin: 0;
+  font: var(--font-title);
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+
+.sino-panel-empty-state {
+  padding: var(--space-4);
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.sino-panel-topic {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sino-panel-topic-label {
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+}
+
+.sino-panel-topic p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sino-panel-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+}
+
+.sino-panel-section {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 6px 0;
+}
+
+.sino-panel-section-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 6px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sino-panel-section-header svg:first-child {
+  color: var(--ai-accent);
+}
+
+.sino-panel-section-header svg:last-child {
+  margin-left: auto;
+  opacity: 0.6;
+}
+
+.sino-panel-section-count {
+  background: var(--surface-sunken);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.sino-panel-section-list {
+  list-style: none;
+  margin: 4px 0 6px;
+  padding: 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sino-panel-section-list li {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.sino-panel-empty {
+  color: var(--text-tertiary) !important;
+}
+
+.sino-panel-section.tone-success .sino-panel-section-header svg:first-child {
+  color: var(--signal-success);
+}
+
+.sino-panel-section.tone-danger .sino-panel-section-header svg:first-child {
+  color: var(--signal-danger);
+}
+
+.sino-panel-section.tone-warn .sino-panel-section-header svg:first-child {
+  color: var(--signal-warning, var(--ai-accent));
+}
+
+.sino-panel-suggestion {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 var(--space-3) var(--space-2);
+  padding: var(--space-2);
+  border-radius: 10px;
+  background: var(--ai-accent-soft);
+  color: var(--ai-accent);
+}
+
+.sino-panel-suggestion svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.sino-panel-suggestion p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.sino-panel-actions {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sino-panel-actions-label {
+  font: var(--font-caption);
+  color: var(--text-tertiary);
+}
+
+.sino-panel-actions-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+@media (max-width: 1280px) {
+  .founder-home {
+    grid-template-columns: 240px 1fr 280px;
+  }
+}

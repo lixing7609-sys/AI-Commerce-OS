@@ -13,12 +13,11 @@ import {
 } from "../components/deliverables/deliverableLabels";
 import ShopScopeSelector from "../components/shops/ShopScopeSelector";
 import { getAgents } from "../services/agentApi";
+import { getArtifactDetail, getArtifactList } from "../services/artifactReadService";
 import {
   approveDeliverable,
   archiveDeliverable,
   exportDeliverable,
-  getDeliverable,
-  getDeliverables,
   rejectDeliverable,
   restoreDeliverable,
 } from "../services/deliverableApi";
@@ -91,9 +90,9 @@ function DeliverableListView({ onOpenDeliverable, onNavigateToTask }) {
     async function load() {
       setLoading(true);
       try {
-        const data = await getDeliverables({
+        const data = await getArtifactList({
           status: statusFilter === "all" ? undefined : statusFilter,
-          deliverableType: typeFilter === "all" ? undefined : typeFilter,
+          artifactType: typeFilter === "all" ? undefined : typeFilter,
           keyword: keyword || undefined,
           limit: 50,
           ...shopScopeToQueryParams(shopScope),
@@ -213,9 +212,10 @@ function DeliverableListView({ onOpenDeliverable, onNavigateToTask }) {
                 <button
                   type="button"
                   className="os-btn-link"
+                  disabled={!item.source_task_id}
                   onClick={(event) => {
                     event.stopPropagation();
-                    onNavigateToTask(item.source_task_id);
+                    if (item.source_task_id) onNavigateToTask(item.source_task_id);
                   }}
                 >
                   查看来源任务 →
@@ -274,7 +274,7 @@ function DeliverableDetailView({ deliverableId, onBack, onNavigateToTask }) {
 
   async function reload() {
     try {
-      const data = await getDeliverable(deliverableId);
+      const data = await getArtifactDetail(deliverableId);
       setDeliverable(data);
       setError(null);
     } catch (err) {
@@ -301,11 +301,13 @@ function DeliverableDetailView({ deliverableId, onBack, onNavigateToTask }) {
   }, []);
 
   async function handleAction(action) {
+    const legacyId = deliverable?.legacy_deliverable_id;
+    if (!legacyId) return;
     try {
-      if (action === "approve") await approveDeliverable(deliverableId);
-      if (action === "reject") await rejectDeliverable(deliverableId);
-      if (action === "archive") await archiveDeliverable(deliverableId);
-      if (action === "restore") await restoreDeliverable(deliverableId);
+      if (action === "approve") await approveDeliverable(legacyId);
+      if (action === "reject") await rejectDeliverable(legacyId);
+      if (action === "archive") await archiveDeliverable(legacyId);
+      if (action === "restore") await restoreDeliverable(legacyId);
       await reload();
     } catch (err) {
       console.error(`成果操作失败（${action}）：`, err);
@@ -313,9 +315,11 @@ function DeliverableDetailView({ deliverableId, onBack, onNavigateToTask }) {
   }
 
   async function handleExport(format) {
+    const legacyId = deliverable?.legacy_deliverable_id;
+    if (!legacyId) return;
     setExportingFormat(format);
     try {
-      const { blob, filename } = await exportDeliverable(deliverableId, format);
+      const { blob, filename } = await exportDeliverable(legacyId, format);
       downloadBlob(blob, filename);
     } catch (err) {
       console.error(`导出失败（${format}）：`, err);
@@ -425,7 +429,7 @@ function DeliverableDetailView({ deliverableId, onBack, onNavigateToTask }) {
               type="button"
               className="os-btn"
               onClick={() => handleExport(format)}
-              disabled={exportingFormat === format}
+              disabled={!deliverable.legacy_deliverable_id || exportingFormat === format}
             >
               {exportingFormat === format ? "导出中…" : `下载 ${getExportFormatLabel(format)}`}
             </button>
@@ -509,7 +513,7 @@ function DeliverableDetailView({ deliverableId, onBack, onNavigateToTask }) {
 
       {followUpOpen && (
         <CreateFollowUpTaskDialog
-          deliverable={deliverable}
+          deliverable={{ ...deliverable, id: deliverable.legacy_deliverable_id || deliverable.id }}
           shops={shops}
           agents={agents}
           onClose={() => setFollowUpOpen(false)}

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# Shared authority for every repository-owned pytest/Frozen Gate entry point.
+# backend/tests/conftest.py independently enforces the same identity so direct
+# pytest is equally fail-closed.
+export AI_COMMERCE_TESTING=1
+export DATABASE_URL="postgresql+psycopg://n8n:password123@localhost:5432/ai_commerce_os_test"
+printf 'Test database: localhost:5432/ai_commerce_os_test\n'

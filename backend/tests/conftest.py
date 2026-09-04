@@ -11,11 +11,30 @@ pytest session 级别做一次外层快照/恢复，作为最终的安全网，
 """
 
 from datetime import datetime, timezone
+import os
+from pathlib import Path
+import tempfile
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+
+# Establish the test database authority before importing any application module
+# that creates the global SQLAlchemy engine/SessionLocal.
+os.environ["AI_COMMERCE_TESTING"] = "1"
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql+psycopg://n8n:password123@localhost:5432/ai_commerce_os_test",
+)
+
+# Founder execution runtime state must never share the developer's live registry.
+os.environ.setdefault(
+    "FOUNDER_EXECUTION_REGISTRY_PATH",
+    str(Path(tempfile.mkdtemp(prefix="sino-execution-tests-")) / "registry.json"),
+)
 
 from app.agents.agent_registry import AgentRegistry
-from app.database.db import SessionLocal
+from app.database.db import DATABASE_RUNTIME_CONFIG, SessionLocal, engine
 from app.models.runtime_state_db import RuntimeStateDB
 from app.runtime.engine.runtime_engine import runtime_engine
 
@@ -45,11 +64,19 @@ def _snapshot_runtime_state_row():
             "recovery_failure_count": row.recovery_failure_count,
         }
 
+    except SQLAlchemyError:
+        # Pure unit tests must remain runnable when the developer PostgreSQL
+        # instance is unavailable (for example inside a network sandbox).
+        return _DATABASE_UNAVAILABLE
+
     finally:
         db.close()
 
 
 def _restore_runtime_state_row(snapshot):
+    if snapshot is _DATABASE_UNAVAILABLE:
+        return
+
     db = SessionLocal()
 
     try:
@@ -80,6 +107,36 @@ def _restore_runtime_state_row(snapshot):
 
     finally:
         db.close()
+
+
+_DATABASE_UNAVAILABLE = object()
+
+
+def _reset_test_database() -> None:
+    if not DATABASE_RUNTIME_CONFIG.testing or DATABASE_RUNTIME_CONFIG.database_name != "ai_commerce_os_test":
+        raise RuntimeError("pytest_database_authority_is_not_isolated")
+    with engine.begin() as connection:
+        tables = list(connection.execute(text(
+            "SELECT tablename FROM pg_tables "
+            "WHERE schemaname = 'public' AND tablename <> 'alembic_version'"
+        )).scalars())
+        if tables:
+            quoted = ", ".join(f'"{name.replace(chr(34), chr(34) * 2)}"' for name in tables)
+            connection.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+        connection.execute(text(
+            "INSERT INTO application_systems "
+            "(id, system_key, name, system_type, status, config) "
+            "VALUES "
+            "('app-founder-ai', 'founder_ai', 'Founder AI', 'application_system', 'active', '{}')"
+        ))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolated_test_database_authority():
+    print(f"\nTEST DATABASE: {DATABASE_RUNTIME_CONFIG.safe_identity}")
+    _reset_test_database()
+    yield
+    _reset_test_database()
 
 
 @pytest.fixture(scope="session", autouse=True)

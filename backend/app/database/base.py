@@ -1,3 +1,5 @@
-from sqlalchemy.orm import declarative_base
+"""Backward-compatible application import for the shared database Base."""
 
-Base = declarative_base()
+from database.base import Base
+
+__all__ = ["Base"]

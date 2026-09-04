@@ -162,6 +162,8 @@ def get_wecom_n8n_webhook_config() -> WeComN8nWebhookConfig | None:
 _DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 _DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
 _DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+_DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+_DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
 _DEFAULT_LLM_TIMEOUT_SECONDS = 60.0
 _DEFAULT_LLM_MAX_TOKENS = 2000
 
@@ -229,6 +231,36 @@ def get_ollama_llm_config() -> OllamaLLMConfig | None:
         base_url=os.environ.get("OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL),
         model=model,
     )
+
+
+@dataclass(frozen=True)
+class OpenAILLMConfig:
+    api_key: str
+    base_url: str
+    model: str
+
+
+def get_openai_llm_config() -> OpenAILLMConfig | None:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    model = os.environ.get("OPENAI_MODEL")
+    if not api_key or not model:
+        return None
+    return OpenAILLMConfig(api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL", _DEFAULT_OPENAI_BASE_URL), model=model)
+
+
+@dataclass(frozen=True)
+class AnthropicLLMConfig:
+    api_key: str
+    base_url: str
+    model: str
+
+
+def get_anthropic_llm_config() -> AnthropicLLMConfig | None:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    model = os.environ.get("ANTHROPIC_MODEL")
+    if not api_key or not model:
+        return None
+    return AnthropicLLMConfig(api_key=api_key, base_url=os.environ.get("ANTHROPIC_BASE_URL", _DEFAULT_ANTHROPIC_BASE_URL), model=model)
 
 
 def get_llm_timeout_seconds() -> float:

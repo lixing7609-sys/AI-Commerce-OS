@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -u
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/scripts/test-database-env"
+pytest_bin="$repo_root/backend/.venv/bin/pytest"
+failures=0
+
+run_contract() {
+  local label="$1"; shift
+  if (cd "$repo_root/backend" && "$pytest_bin" -q "$@"); then
+    printf '%s: PASS\n' "$label"
+  else
+    printf '%s: FAIL\n' "$label"
+    failures=$((failures + 1))
+  fi
+}
+
+echo "Sino Learning & Reuse V1 · Capability 2 Regression"
+run_contract "Decision Extraction & Classification" tests/test_reusable_decision_strategy.py::test_verified_completed_task_with_explicit_correction_is_eligible tests/test_reusable_decision_strategy.py::test_no_decision_evidence_creates_no_strategy tests/test_reusable_decision_strategy.py::test_failed_or_test_only_task_creates_no_strategy tests/test_reusable_decision_strategy.py::test_chosen_strategy_and_rejected_alternatives_are_structured
+run_contract "Source Lineage & Canonical Dedup" tests/test_reusable_decision_strategy.py::test_source_lineage_is_persisted tests/test_reusable_decision_strategy.py::test_fingerprint_duplicate_keeps_one_canonical_strategy_and_dedups_source tests/test_reusable_decision_strategy.py::test_fingerprint_is_strategy_semantic_not_source_identity
+run_contract "Applicability Gate" tests/test_reusable_decision_strategy.py::test_applicable_context_returns_applicable tests/test_reusable_decision_strategy.py::test_clear_contextual_low_risk_choice_is_applicable_without_surface_name tests/test_reusable_decision_strategy.py::test_incompatible_context_returns_not_applicable tests/test_reusable_decision_strategy.py::test_explicit_modal_or_destructive_confirmation_is_not_applicable tests/test_reusable_decision_strategy.py::test_large_multistep_editor_is_not_applicable tests/test_reusable_decision_strategy.py::test_medium_risk_cannot_be_lowered_by_historical_strategy tests/test_reusable_decision_strategy.py::test_incompatible_semantic_module_is_not_retrieved tests/test_reusable_decision_strategy.py::test_uncertain_context_is_not_auto_applied
+run_contract "Semantic Target Before Retrieval" tests/test_reusable_decision_strategy.py::test_unresolved_semantic_target_prevents_decision_lookup
+run_contract "Decision Advisory Authority" tests/test_reusable_decision_strategy.py::test_decision_context_is_advisory_and_does_not_expand_scope
+run_contract "Planning Injection" tests/test_reusable_decision_strategy.py::test_decision_context_is_injected_into_task_package_separately
+run_contract "Decision Reuse Evidence" tests/test_reusable_decision_strategy.py::test_decision_reuse_evidence_is_persisted_with_authority_safety tests/test_reusable_decision_strategy.py::test_decision_lookup_is_idempotent_for_same_task_and_execution
+run_contract "Pattern / Decision Separation" tests/test_reusable_decision_strategy.py::test_pattern_and_decision_retrieval_are_separate
+run_contract "Supersede / Invalidate" tests/test_reusable_decision_strategy.py::test_superseded_strategy_is_not_retrieved
+run_contract "Asset Center Projection" tests/test_reusable_decision_strategy.py::test_asset_center_projection_exposes_strategy_name_and_source_count
+run_contract "Independent Verification" tests/test_reusable_decision_strategy.py::test_decision_strategy_requires_independent_verification_guidance tests/test_post_implementation.py::test_runtime_runs_tests_build_diff_and_browser_without_founder_interaction
+run_contract "False Completion Protection" tests/test_standard_task_execution.py::test_noop_requires_explicit_preexisting_acceptance_evidence tests/test_standard_task_execution.py::test_empty_test_or_build_command_cannot_be_projected_as_pass tests/test_standard_task_execution.py::test_codex_exit_zero_without_production_patch_is_not_implementation_complete tests/test_standard_task_execution.py::test_missing_browser_or_failed_build_prevents_verification_completion tests/test_standard_task_execution.py::test_diff_and_scope_remain_completion_gates_independent_of_git_state
+run_contract "Safe False-Completion Recovery" tests/test_false_completion_recovery.py::test_false_completion_reopens_same_execution_and_preserves_history tests/test_false_completion_recovery.py::test_valid_completed_execution_is_rejected tests/test_false_completion_recovery.py::test_recovery_cannot_be_triggered_by_untrusted_context
+
+echo "Frozen Capability 1"
+if "$repo_root/scripts/test-sino-learning-reuse-capability-1"; then echo "Frozen Capability 1: PASS"; else echo "Frozen Capability 1: FAIL"; failures=$((failures + 1)); fi
+echo "Frozen Autonomous Execution V1"
+if "$repo_root/scripts/test-sino-autonomous-v1"; then echo "Frozen Autonomous Execution V1: PASS"; else echo "Frozen Autonomous Execution V1: FAIL"; failures=$((failures + 1)); fi
+
+if (( failures == 0 )); then echo "Overall: PASS"; exit 0; fi
+echo "Overall: FAIL ($failures contract groups failed)"; exit 1

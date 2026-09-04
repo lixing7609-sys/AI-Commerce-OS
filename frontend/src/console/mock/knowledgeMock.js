@@ -479,3 +479,43 @@ export function updateKnowledgeContent(id, patch) {
     }),
   }));
 }
+
+/**
+ * 知识候选（阶段 Founder V4.3）——复盘产出的知识建议不会自动写入
+ * Knowledge 资产库，只以 status: "candidate" 的形式挂进同一份
+ * assets 列表，Founder 在这里点击"采纳为知识"后才正式变成
+ * published 资产；点击"驳回"则标记为 rejected，仍保留在列表里
+ * 供审计，不物理删除。复用已有的 assets 数组与 Agent 工作室
+ * Knowledge 资产库 UI，不新建 Knowledge Center 模块。
+ */
+export function createKnowledgeCandidate(payload) {
+  const candidate = {
+    id: nextMockId("kb"),
+    version: 1,
+    status: "candidate",
+    updatedAt: new Date().toISOString(),
+    versionHistory: [{ version: 1, note: "由复盘生成的知识候选", updatedAt: new Date().toISOString() }],
+    linkedAgentIds: payload.linkedAgentIds ?? [],
+    applicableStore: payload.applicableStore ?? null,
+    applicableCategory: payload.applicableCategory ?? null,
+    ...payload,
+  };
+  repository.update((state) => ({ ...state, assets: [candidate, ...state.assets] }));
+  return candidate;
+}
+
+export function decideKnowledgeCandidate(id, decision) {
+  const state = repository.get();
+  const target = state.assets.find((a) => a.id === id);
+  if (!target) return { ok: false, error: "知识候选不存在" };
+  if (target.status !== "candidate") {
+    return { ok: false, error: "该知识候选已处理，不能重复操作", alreadyProcessed: true };
+  }
+  repository.update((s) => ({
+    ...s,
+    assets: s.assets.map((a) =>
+      a.id === id ? { ...a, status: decision === "approved" ? "published" : "rejected", updatedAt: new Date().toISOString() } : a
+    ),
+  }));
+  return { ok: true };
+}

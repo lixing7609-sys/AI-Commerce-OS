@@ -387,8 +387,8 @@ export function AutomationPolicyModule() {
             columns={[
               { key: "name", label: "名称" },
               { key: "applicableStore", label: "适用店铺" },
-              { key: "trigger", label: "触发方式", render: (r) => TRIGGER_TYPES.find((t) => t.key === r.trigger.type)?.label ?? r.trigger.type },
-              { key: "actions", label: "动作数", render: (r) => r.actions.length },
+              { key: "trigger", label: "触发方式", render: (r) => TRIGGER_TYPES.find((t) => t.key === r.trigger?.type)?.label ?? r.trigger?.type ?? "—" },
+              { key: "actions", label: "动作数", render: (r) => (r.actions ?? []).length },
               { key: "riskLevel", label: "风险等级" },
               {
                 key: "status",

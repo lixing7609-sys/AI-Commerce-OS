@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/runtime-common.sh"
+"${SCRIPT_DIR}/dev-stop" >/dev/null
+sleep 1
+assert_ports_free
+(cd "${AICOS_ROOT}/backend" && "${AICOS_ROOT}/backend/.venv/bin/alembic" upgrade head) >>"${AICOS_LOG_DIR}/bootstrap.log" 2>&1
+
+USER_AGENTS="${HOME}/Library/LaunchAgents"
+mkdir -p "${USER_AGENTS}"
+BACKEND_PLIST="${USER_AGENTS}/${AICOS_RESIDENT_BACKEND_LABEL}.plist"
+FRONTEND_PLIST="${USER_AGENTS}/${AICOS_RESIDENT_FRONTEND_LABEL}.plist"
+write_plist "$BACKEND_PLIST" "$AICOS_RESIDENT_BACKEND_LABEL" "${AICOS_ROOT}/backend" "${AICOS_ROOT}/scripts/backend-server" "${AICOS_LOG_DIR}/backend.log" 0
+write_plist "$FRONTEND_PLIST" "$AICOS_RESIDENT_FRONTEND_LABEL" "${AICOS_ROOT}/frontend" "${AICOS_ROOT}/scripts/frontend-server" "${AICOS_LOG_DIR}/frontend.log" 0
+start_job "$AICOS_RESIDENT_BACKEND_LABEL" "$BACKEND_PLIST"
+start_job "$AICOS_RESIDENT_FRONTEND_LABEL" "$FRONTEND_PLIST"
+printf 'resident\n' >"${AICOS_RUNTIME}/mode"
+wait_http "$AICOS_BACKEND_URL" || { echo "Resident Backend 启动失败" >&2; exit 1; }
+wait_http "$AICOS_FRONTEND_URL" || { echo "Resident Frontend 启动失败" >&2; exit 1; }
+echo "AI Commerce OS RESIDENT READY"
+echo "Founder:  ${AICOS_FRONTEND_URL}"
+echo "Backend:  ${AICOS_BACKEND_URL}"
+echo "Database: Healthy"

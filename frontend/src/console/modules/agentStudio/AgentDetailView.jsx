@@ -28,6 +28,7 @@ import {
   updatePromptContent,
 } from "../../mock/promptSkillMock.js";
 import {
+  decideKnowledgeCandidate,
   duplicateKnowledgeAsset,
   getKnowledgeState,
   getScopeLabel,
@@ -35,6 +36,27 @@ import {
 } from "../../mock/knowledgeMock.js";
 import { DEMO_STORES, getStoreName } from "../../mock/storesMock.js";
 import { simulateLatency, nextMockId } from "../../mock/mockUtils.js";
+import {
+  MEMORY_TYPES,
+  applyPurificationAction,
+  approveExperiment,
+  evaluateCandidate,
+  getAgentVersions,
+  getCostIntelligenceSummary,
+  getEvaluationRunForCandidate,
+  getEvolutionLevel,
+  getLearningCandidates,
+  getMemoryRecords,
+  getPromotionRecords,
+  getPurificationActionLabel,
+  getReflectionReports,
+  getRollbackRecords,
+  getStableVersion,
+  promoteCandidate,
+  rejectCandidate,
+  rollbackToVersion,
+} from "../../../shared/agentEvolution/evolutionMock.js";
+import { EDITIONS, POLICY_KEYS, hasPolicy } from "../../../shared/editionPolicy.js";
 
 const TABS = [
   { key: "config", label: "Agent 配置" },
@@ -42,6 +64,7 @@ const TABS = [
   { key: "skillLibrary", label: "Skill 资产库" },
   { key: "knowledgeLibrary", label: "Knowledge 资产库" },
   { key: "testEval", label: "测试与评测" },
+  { key: "evolution", label: "Agent 演化" },
   { key: "version", label: "版本与回滚" },
 ];
 
@@ -537,11 +560,61 @@ function SkillDetail({ skill, onBack }) {
  * Knowledge → Tools → Model 的第三类可复用资产。支持全局/店铺/
  * 类目/Agent 四级绑定，店铺级、类目级优先于全局通用知识。
  * ---------------------------------------------------------------- */
+/**
+ * 知识候选——复盘产出的建议，Founder 逐条"采纳为知识"或"驳回"，
+ * 不会自动写入生产 Knowledge（阶段 Founder V4.3）。采纳后状态变为
+ * published，与其它 Knowledge 资产没有区别；驳回后保留在列表里
+ * 供审计，不物理删除，也不能重复处理。
+ */
+function KnowledgeCandidates({ candidates, onChange, toast }) {
+  if (candidates.length === 0) return null;
+
+  function decide(id, decision) {
+    const result = decideKnowledgeCandidate(id, decision);
+    if (!result.ok) {
+      toast(result.error, "danger");
+      return;
+    }
+    onChange(getKnowledgeState());
+    toast(decision === "approved" ? "已采纳为知识" : "已驳回", "success");
+  }
+
+  return (
+    <div className="fdr-card" style={{ background: "rgba(79,70,229,.06)" }}>
+      <h3 className="fdr-card__title">知识候选（来自复盘，待确认）</h3>
+      <DataTable
+        columns={[
+          { key: "name", label: "名称" },
+          { key: "candidateType", label: "候选类型" },
+          { key: "sourceProjectName", label: "来源项目" },
+          { key: "applicableStore", label: "店铺", render: (r) => (r.applicableStore ? getStoreName(r.applicableStore) : "全部店铺") },
+          { key: "evidence", label: "证据" },
+          { key: "confidence", label: "置信度" },
+          { key: "riskLevel", label: "风险" },
+          {
+            key: "actions",
+            label: "操作",
+            render: (r) => (
+              <div style={{ display: "flex", gap: 6 }}>
+                <Button size="sm" variant="primary" onClick={() => decide(r.id, "approved")}>采纳为知识</Button>
+                <Button size="sm" variant="secondary" onClick={() => decide(r.id, "rejected")}>驳回</Button>
+              </div>
+            ),
+          },
+        ]}
+        rows={candidates}
+      />
+    </div>
+  );
+}
+
 function KnowledgeLibraryTab() {
   const [state, setState] = useState(() => getKnowledgeState());
   const [selectedId, setSelectedId] = useState(null);
   const toast = useToast();
   const selected = selectedId ? state.assets.find((a) => a.id === selectedId) : null;
+  const candidates = state.assets.filter((a) => a.status === "candidate");
+  const publishedAssets = state.assets.filter((a) => a.status !== "candidate" && a.status !== "rejected");
 
   if (selected) {
     return (
@@ -555,23 +628,26 @@ function KnowledgeLibraryTab() {
   }
 
   return (
-    <div className="fdr-card">
-      <DataTable
-        columns={[
-          { key: "name", label: "名称" },
-          { key: "type", label: "类型" },
-          { key: "scope", label: "绑定层级", render: (r) => <StatusPill tone={r.scope === "global" ? "neutral" : "info"}>{getScopeLabel(r.scope)}</StatusPill> },
-          { key: "applicableStore", label: "适用店铺", render: (r) => (r.applicableStore ? getStoreName(r.applicableStore) : "全部店铺") },
-          { key: "applicableCategory", label: "适用类目", render: (r) => r.applicableCategory ?? "不限类目" },
-          { key: "linked", label: "关联 Agent", render: (r) => { const linked = computeLinkedForKnowledge(r.id); return linked.length ? linked.join("、") : "暂无引用"; } },
-          { key: "version", label: "版本", render: (r) => `v${r.version}` },
-          { key: "status", label: "状态", render: (r) => <StatusPill tone={r.status === "published" ? "success" : "neutral"}>{r.status === "published" ? "已发布" : "草稿"}</StatusPill> },
-          { key: "updatedAt", label: "最近更新", render: (r) => new Date(r.updatedAt).toLocaleDateString("zh-CN") },
-        ]}
-        rows={state.assets}
-        onRowClick={(row) => setSelectedId(row.id)}
-        emptyMessage={<EmptyState icon="▤" message="暂无 Knowledge 资产" />}
-      />
+    <div>
+      <KnowledgeCandidates candidates={candidates} onChange={setState} toast={toast} />
+      <div className="fdr-card">
+        <DataTable
+          columns={[
+            { key: "name", label: "名称" },
+            { key: "type", label: "类型" },
+            { key: "scope", label: "绑定层级", render: (r) => <StatusPill tone={r.scope === "global" ? "neutral" : "info"}>{getScopeLabel(r.scope)}</StatusPill> },
+            { key: "applicableStore", label: "适用店铺", render: (r) => (r.applicableStore ? getStoreName(r.applicableStore) : "全部店铺") },
+            { key: "applicableCategory", label: "适用类目", render: (r) => r.applicableCategory ?? "不限类目" },
+            { key: "linked", label: "关联 Agent", render: (r) => { const linked = computeLinkedForKnowledge(r.id); return linked.length ? linked.join("、") : "暂无引用"; } },
+            { key: "version", label: "版本", render: (r) => `v${r.version}` },
+            { key: "status", label: "状态", render: (r) => <StatusPill tone={r.status === "published" ? "success" : "neutral"}>{r.status === "published" ? "已发布" : "草稿"}</StatusPill> },
+            { key: "updatedAt", label: "最近更新", render: (r) => new Date(r.updatedAt).toLocaleDateString("zh-CN") },
+          ]}
+          rows={publishedAssets}
+          onRowClick={(row) => setSelectedId(row.id)}
+          emptyMessage={<EmptyState icon="▤" message="暂无 Knowledge 资产" />}
+        />
+      </div>
     </div>
   );
 }
@@ -700,6 +776,302 @@ function TestEvalTab({ agentName, storeId, config, onChange }) {
           rows={config.runHistory}
           emptyMessage="暂无运行历史"
         />
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------
+ * Agent 演化——阶段"Agent Evolution Foundation"：记忆/反思/学习候选/
+ * 评测/实验/晋升/回滚/净化/成本智能都集中在这一个标签页里查看和
+ * 操作，复用 Agent 工作室已有的标签结构，不新建独立顶级模块。数据
+ * 只对真正建立了演化记录的 Agent（"脚本Agent"）有内容，其它 Agent
+ * 显示明确的空状态而不是空白页或报错。
+ * ---------------------------------------------------------------- */
+const MEMORY_STATUS_TONE = {
+  active: "success", verified: "success", candidate: "warning",
+  deprecated: "neutral", rejected: "danger", expired: "neutral", superseded: "neutral",
+};
+
+function MemoryPanel({ agentName, onChange }) {
+  const toast = useToast();
+  const memories = getMemoryRecords(agentName);
+
+  function decide(memoryId, action) {
+    const result = applyPurificationAction(memoryId, action);
+    if (!result.ok) {
+      toast(result.error, "danger");
+      return;
+    }
+    onChange();
+    toast(`已执行净化动作：${getPurificationActionLabel(action)}`, "success");
+  }
+
+  if (memories.length === 0) {
+    return <EmptyState icon="▣" message="该 Agent 尚无记忆记录" />;
+  }
+
+  return (
+    <div>
+      {MEMORY_TYPES.map((type) => {
+        const rows = memories.filter((m) => m.memoryType === type.key);
+        if (rows.length === 0) return null;
+        return (
+          <div key={type.key} className="fdr-card" style={{ marginBottom: 12 }}>
+            <h4 style={{ margin: "0 0 4px 0", fontSize: 13 }}>{type.label}</h4>
+            <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "0 0 8px 0" }}>{type.description}</p>
+            <DataTable
+              columns={[
+                { key: "content", label: "内容" },
+                { key: "evidence", label: "证据" },
+                { key: "confidence", label: "置信度" },
+                { key: "status", label: "状态", render: (r) => <StatusPill tone={MEMORY_STATUS_TONE[r.status] ?? "neutral"}>{r.status}</StatusPill> },
+                { key: "costImpact", label: "成本影响" },
+                {
+                  key: "actions", label: "净化动作", render: (r) => (
+                    hasPolicy(EDITIONS.FOUNDER, POLICY_KEYS.MEMORY_FULL_ACCESS) ? (
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                        {r.status === "candidate" ? (
+                          <>
+                            <Button size="sm" variant="secondary" onClick={() => decide(r.id, "merge")}>合并</Button>
+                            <Button size="sm" variant="ghost" onClick={() => decide(r.id, "quarantine")}>隔离</Button>
+                          </>
+                        ) : null}
+                        {r.status === "active" || r.status === "verified" ? (
+                          <Button size="sm" variant="ghost" onClick={() => decide(r.id, "reducePriority")}>降优先级</Button>
+                        ) : null}
+                        {!["expired", "rejected", "superseded"].includes(r.status) ? (
+                          <Button size="sm" variant="ghost" onClick={() => decide(r.id, "deprecate")}>标记过期</Button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>仅摘要可见</span>
+                    )
+                  ),
+                },
+              ]}
+              rows={rows}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReflectionPanel({ agentName }) {
+  const reports = getReflectionReports(agentName);
+  if (reports.length === 0) return <EmptyState icon="◔" message="该 Agent 尚无反思报告" />;
+  return (
+    <div>
+      {reports.map((r) => (
+        <div key={r.id} className="fdr-card">
+          <h4 style={{ margin: "0 0 8px 0", fontSize: 13 }}>反思报告 · {new Date(r.createdAt).toLocaleString("zh-CN")}</h4>
+          <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 10, fontSize: 13 }}>
+            <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>成功了什么</dt><dd style={{ margin: 0 }}>{r.whatSucceeded}</dd></div>
+            <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>失败了什么</dt><dd style={{ margin: 0 }}>{r.whatFailed}</dd></div>
+            <div style={{ gridColumn: "1/-1" }}><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>为什么</dt><dd style={{ margin: 0 }}>{r.whyAnalysis}</dd></div>
+            <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>模型是否过于昂贵</dt><dd style={{ margin: 0 }}>{r.modelTooExpensive ? "是" : "否"}</dd></div>
+            <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>上下文是否过长</dt><dd style={{ margin: 0 }}>{r.contextTooLong ? "是" : "否"}</dd></div>
+            <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>Knowledge 是否缺失/过时</dt><dd style={{ margin: 0 }}>{r.knowledgeMissingOrObsolete ? "是" : "否"}</dd></div>
+            <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>证据是否充分</dt><dd style={{ margin: 0 }}>{r.evidenceSufficient ? "是" : "否"}</dd></div>
+          </dl>
+          <p style={{ fontSize: 13, marginTop: 8, marginBottom: 0, fontWeight: 600 }}>{r.summary}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LearningCandidatesPanel({ agentName, onChange }) {
+  const toast = useToast();
+  const candidates = getLearningCandidates(agentName);
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectNote, setRejectNote] = useState("");
+  const [rollbackTarget, setRollbackTarget] = useState(null);
+  const [rollbackReason, setRollbackReason] = useState("");
+
+  function handle(fn, ...args) {
+    const result = fn(...args);
+    if (!result.ok) {
+      toast(result.error, result.alreadyExists || result.alreadyProcessed ? "warning" : "danger");
+      return;
+    }
+    onChange();
+    toast("已更新", "success");
+  }
+
+  if (candidates.length === 0) return <EmptyState icon="✎" message="该 Agent 当前没有学习候选" />;
+
+  return (
+    <div>
+      {candidates.map((c) => {
+        const evalRun = getEvaluationRunForCandidate(c.id);
+        return (
+          <div key={c.id} className="fdr-card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h4 style={{ margin: 0, fontSize: 13 }}>{c.candidateType} · {c.affectedScope}</h4>
+              <StatusPill tone={c.status === "promoted" ? "success" : c.status === "rejected" || c.status === "rolledBack" ? "danger" : "info"}>{c.status}</StatusPill>
+            </div>
+            <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, fontSize: 13, marginTop: 8 }}>
+              <div style={{ gridColumn: "1/-1" }}><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>证据</dt><dd style={{ margin: 0 }}>{c.evidence}</dd></div>
+              <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>预期收益</dt><dd style={{ margin: 0 }}>{c.expectedBenefit}</dd></div>
+              <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>可能风险</dt><dd style={{ margin: 0 }}>{c.possibleRisk}</dd></div>
+              <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>置信度</dt><dd style={{ margin: 0 }}>{c.confidence}</dd></div>
+              <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>风险等级</dt><dd style={{ margin: 0 }}>{c.riskLevel}</dd></div>
+            </dl>
+            {evalRun ? (
+              <div className="fdr-card" style={{ background: "var(--bg)", marginTop: 8, marginBottom: 0 }}>
+                <h5 style={{ margin: "0 0 8px 0", fontSize: 12 }}>评测对比：当前稳定版本 vs 候选</h5>
+                <DataTable
+                  columns={[
+                    { key: "metric", label: "维度" },
+                    { key: "stable", label: "稳定版本" },
+                    { key: "candidate", label: "候选" },
+                  ]}
+                  rows={Object.keys(evalRun.metrics.stable).map((k) => ({ metric: k, stable: String(evalRun.metrics.stable[k]), candidate: String(evalRun.metrics.candidate[k]) }))}
+                />
+                <p style={{ fontSize: 12, fontWeight: 600, marginTop: 8, marginBottom: 0 }}>{evalRun.recommendation}</p>
+              </div>
+            ) : null}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+              {hasPolicy(EDITIONS.FOUNDER, POLICY_KEYS.EVOLUTION_FULL_CONTROL) ? (
+                <>
+                  {c.status === "candidate" ? (
+                    <>
+                      <Button size="sm" variant="primary" onClick={() => handle(evaluateCandidate, c.id)}>评测候选</Button>
+                      <Button size="sm" variant="secondary" onClick={() => setRejectTarget(c.id)}>驳回</Button>
+                    </>
+                  ) : null}
+                  {c.status === "evaluating" ? (
+                    <Button size="sm" variant="primary" onClick={() => handle(approveExperiment, c.id)}>批准灰度实验</Button>
+                  ) : null}
+                  {c.status === "experimenting" ? (
+                    <Button size="sm" variant="primary" onClick={() => handle(promoteCandidate, c.id)}>晋升为稳定版本</Button>
+                  ) : null}
+                </>
+              ) : (
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>当前 Edition 无完整演化控制权限</span>
+              )}
+            </div>
+            {rejectTarget === c.id ? (
+              <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                <input className="fdr-input" placeholder="驳回理由（必填）" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
+                <Button size="sm" variant="danger" disabled={!rejectNote.trim()} onClick={() => { handle(rejectCandidate, c.id, rejectNote); setRejectTarget(null); setRejectNote(""); }}>确认驳回</Button>
+                <Button size="sm" variant="ghost" onClick={() => setRejectTarget(null)}>取消</Button>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+      {rollbackTarget !== null ? null : null}
+      <RollbackPanel agentName={agentName} onChange={onChange} target={rollbackTarget} setTarget={setRollbackTarget} reason={rollbackReason} setReason={setRollbackReason} />
+    </div>
+  );
+}
+
+function RollbackPanel({ agentName, onChange, reason, setReason }) {
+  const toast = useToast();
+  const versions = getAgentVersions(agentName);
+  const stable = getStableVersion(agentName);
+  const archived = versions.filter((v) => v.status === "archived");
+  const promotions = getPromotionRecords(agentName);
+  const rollbacks = getRollbackRecords(agentName);
+
+  if (versions.length === 0) return null;
+
+  function handleRollback(targetVersionId) {
+    const result = rollbackToVersion(agentName, targetVersionId, reason);
+    if (!result.ok) {
+      toast(result.error, "danger");
+      return;
+    }
+    onChange();
+    setReason("");
+    toast("已回滚到指定版本", "success");
+  }
+
+  return (
+    <div className="fdr-card">
+      <h4 style={{ margin: "0 0 8px 0", fontSize: 13 }}>版本历史 / 回滚</h4>
+      <DataTable
+        columns={[
+          { key: "version", label: "版本" },
+          { key: "modelRoute", label: "模型路由" },
+          { key: "status", label: "状态", render: (r) => <StatusPill tone={r.status === "stable" ? "success" : "neutral"}>{r.status}</StatusPill> },
+          { key: "createdAt", label: "创建时间", render: (r) => new Date(r.createdAt).toLocaleString("zh-CN") },
+          {
+            key: "actions", label: "操作", render: (r) => {
+              if (r.status === "archived") {
+                return hasPolicy(EDITIONS.FOUNDER, POLICY_KEYS.EVOLUTION_ROLLBACK)
+                  ? <Button size="sm" variant="secondary" onClick={() => handleRollback(r.id)}>回滚到此版本</Button>
+                  : <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>无回滚权限</span>;
+              }
+              if (r.status === "stable") {
+                return <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>当前稳定</span>;
+              }
+              return <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>未晋升（{r.status}）</span>;
+            },
+          },
+        ]}
+        rows={versions}
+      />
+      <div className="fdr-field" style={{ marginTop: 10 }}>
+        <label className="fdr-field__label">回滚原因（回滚到已归档版本时必填）</label>
+        <input className="fdr-input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例如：灰度后发现质量下降" />
+      </div>
+      {promotions.length > 0 ? (
+        <div style={{ marginTop: 10 }}>
+          <h5 style={{ fontSize: 12, margin: "0 0 6px 0" }}>晋升记录</h5>
+          <DataTable columns={[{ key: "promotedAt", label: "时间", render: (r) => new Date(r.promotedAt).toLocaleString("zh-CN") }, { key: "rationale", label: "理由" }]} rows={promotions} />
+        </div>
+      ) : null}
+      {rollbacks.length > 0 ? (
+        <div style={{ marginTop: 10 }}>
+          <h5 style={{ fontSize: 12, margin: "0 0 6px 0" }}>回滚记录</h5>
+          <DataTable columns={[{ key: "rolledBackAt", label: "时间", render: (r) => new Date(r.rolledBackAt).toLocaleString("zh-CN") }, { key: "reason", label: "原因" }]} rows={rollbacks} />
+        </div>
+      ) : null}
+      <p style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 8 }}>当前稳定版本：{stable?.version ? `v${stable.version}` : "—"} · 已归档版本数：{archived.length}</p>
+    </div>
+  );
+}
+
+function EvolutionTab({ agentName }) {
+  const [, forceRerender] = useState(0);
+  const onChange = () => forceRerender((n) => n + 1);
+  const cost = getCostIntelligenceSummary(agentName);
+  const evolutionLevel = getEvolutionLevel();
+
+  return (
+    <div>
+      <div className="fdr-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 className="fdr-card__title" style={{ margin: 0 }}>成本智能</h3>
+          <StatusPill tone="info">受控演化档位：{evolutionLevel}</StatusPill>
+        </div>
+        <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, marginTop: 12 }}>
+          <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>累计运行次数</dt><dd style={{ margin: 0, fontWeight: 700 }}>{cost.totalRuns}</dd></div>
+          <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>累计模型成本</dt><dd style={{ margin: 0, fontWeight: 700 }}>${cost.totalModelCostUsd}</dd></div>
+          <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>累计业务价值</dt><dd style={{ margin: 0, fontWeight: 700 }}>${cost.totalBusinessValueUsd}</dd></div>
+          <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>单次平均成本</dt><dd style={{ margin: 0, fontWeight: 700 }}>${cost.avgCostPerRunUsd}</dd></div>
+          <div><dt style={{ fontSize: 11, color: "var(--text-secondary)" }}>已晋升的成本优化</dt><dd style={{ margin: 0, fontWeight: 700 }}>{cost.promotedOptimizations}</dd></div>
+        </dl>
+      </div>
+
+      <div className="fdr-card">
+        <h3 className="fdr-card__title">记忆</h3>
+        <MemoryPanel agentName={agentName} onChange={onChange} />
+      </div>
+
+      <div className="fdr-card">
+        <h3 className="fdr-card__title">反思报告</h3>
+        <ReflectionPanel agentName={agentName} />
+      </div>
+
+      <div className="fdr-card">
+        <h3 className="fdr-card__title">学习候选 / 评测 / 实验 / 晋升</h3>
+        <LearningCandidatesPanel agentName={agentName} onChange={onChange} />
       </div>
     </div>
   );
@@ -914,6 +1286,7 @@ export function AgentDetailView({ agent, storeId, config, onConfigChange, allAge
       {activeTab === "testEval" && (
         <TestEvalTab agentName={agent.name} storeId={storeId} config={config} onChange={onConfigChange} />
       )}
+      {activeTab === "evolution" && <EvolutionTab agentName={agent.name} />}
       {activeTab === "version" && <VersionTab agentName={agent.name} storeId={storeId} config={config} onChange={onConfigChange} />}
     </div>
   );

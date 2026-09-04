@@ -1,0 +1,33 @@
+from datetime import datetime
+from uuid import uuid4
+
+from sqlalchemy import DateTime, String, text
+from sqlalchemy.orm import Mapped, mapped_column
+
+from database.base import Base
+
+
+class ConversationDB(Base):
+    """Application-scoped conversation identity; messages arrive in a later phase."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(
+        String(40), primary_key=True, default=lambda: f"conv-{uuid4().hex[:20]}"
+    )
+    system_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="New Conversation")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="active", server_default="active")
+    conversation_kind: Mapped[str] = mapped_column(String(30), nullable=False, default="founder_discussion", server_default="founder_discussion")
+    conversation_type: Mapped[str] = mapped_column(String(30), nullable=False, default="USER_CONVERSATION", server_default="USER_CONVERSATION", index=True)
+    created_by: Mapped[str] = mapped_column(String(20), nullable=False, default="FOUNDER", server_default="FOUNDER", index=True)
+    visibility: Mapped[str] = mapped_column(String(40), nullable=False, default="conversation_list", server_default="conversation_list", index=True)
+    lifecycle_status: Mapped[str] = mapped_column(String(30), nullable=False, default="active", server_default="active", index=True)
+    topic_key: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    merged_into_conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    conversation_state: Mapped[str] = mapped_column(String(30), nullable=False, default="exploring", server_default="exploring")
+    conversation_model_provider: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    conversation_model: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))

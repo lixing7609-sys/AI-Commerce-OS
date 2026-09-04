@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/runtime-common.sh"
+
+supervisor_state=Healthy
+if legacy_supervisor_conflict; then supervisor_state="Conflict (${AICOS_CONFLICT_DETAIL})"; fi
+
+frontend_state="$(process_health_state "$AICOS_DEV_FRONTEND_LABEL" 5173 "$AICOS_FRONTEND_URL")"
+backend_state="$(process_health_state "$AICOS_DEV_BACKEND_LABEL" 8000 "$AICOS_BACKEND_URL")"
+runtime_json="$(runtime_status_json 2>/dev/null || true)"
+
+health_state=UNAVAILABLE
+if health_components_ready; then
+  health_state=HEALTHY
+fi
+
+AICOS_PROJECTED_BACKEND_STATE="$backend_state"
+project_runtime_truth "$backend_state" "$health_state" "$runtime_json"
+backend_state="$AICOS_PROJECTED_BACKEND_STATE"
+
+printf '%-20s %s\n' "Supervisor:" "$supervisor_state"
+printf '%-20s %s\n' "Frontend Process:" "$frontend_state"
+printf '%-20s %s\n' "Backend Process:" "$backend_state"
+printf '%-20s %s\n' "Database:" "$AICOS_DATABASE_STATE"
+printf '%-20s %s\n' "Backend Heartbeat:" "$AICOS_HEARTBEAT_STATE"
+printf '%-20s %s\n' "Business Runtime:" "$AICOS_BUSINESS_RUNTIME_STATE"
+printf '%-20s %s\n' "Lifecycle:" "$AICOS_LIFECYCLE_STATE"
+printf '%-20s %s\n' "Mode:" "$(cat "${AICOS_RUNTIME}/mode" 2>/dev/null || echo resident-or-stopped)"

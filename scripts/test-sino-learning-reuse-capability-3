@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -u
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/scripts/test-database-env"
+pytest_bin="$repo_root/backend/.venv/bin/pytest"
+failures=0
+
+run_contract() {
+  local label="$1"; shift
+  if (cd "$repo_root/backend" && "$pytest_bin" -q "$@"); then
+    printf '%s: PASS\n' "$label"
+  else
+    printf '%s: FAIL\n' "$label"
+    failures=$((failures + 1))
+  fi
+}
+
+echo "Sino Learning & Reuse V1 · Capability 3 Regression"
+run_contract "Composition & Decision-to-Pattern Order" tests/test_reusable_execution_playbook.py::test_decision_then_compatible_pattern_composes_ui_playbook tests/test_reusable_execution_playbook.py::test_decision_recommendation_enables_pattern_without_surface_name tests/test_reusable_execution_playbook.py::test_pattern_cannot_decide_interaction_surface
+run_contract "Constraint Priority & Conflict Rejection" tests/test_reusable_execution_playbook.py::test_constraint_priority_is_current_authority_before_history tests/test_reusable_execution_playbook.py::test_founder_conflict_rejects_historical_asset_and_records_reason
+run_contract "Verification Non-Weakening & Authority Isolation" tests/test_reusable_execution_playbook.py::test_verification_merge_is_additive_and_never_removes_required_evidence tests/test_reusable_execution_playbook.py::test_playbook_preserves_scope_risk_and_all_authorities_are_false tests/test_reusable_execution_playbook.py::test_current_task_still_requires_independent_frozen_verification
+run_contract "Safety Gate" tests/test_reusable_execution_playbook.py::test_decision_then_compatible_pattern_composes_ui_playbook tests/test_reusable_execution_playbook.py::test_founder_conflict_rejects_historical_asset_and_records_reason tests/test_reusable_execution_playbook.py::test_incomplete_compatibility_is_uncertain_and_not_applied
+run_contract "Evidence, Idempotency & Cycle Guard" tests/test_reusable_execution_playbook.py::test_playbook_identity_and_fingerprint_are_stable_on_retry tests/test_reusable_execution_playbook.py::test_playbook_evidence_is_persisted_idempotently_without_new_table tests/test_reusable_execution_playbook.py::test_cycle_guard_rejects_recursive_lineage_and_persists_rejection tests/test_reusable_execution_playbook.py::test_source_lineage_references_both_assets_and_their_sources
+run_contract "Visible Contract Refinement" tests/test_reusable_execution_playbook.py::test_playbook_guidance_refines_base_visible_contract_without_weakening_it tests/test_reusable_execution_playbook.py::test_visible_contract_refinement_is_deterministic_and_cannot_remove_base_requirements
+run_contract "Durable Evidence Finalization & Late Resume" tests/test_reusable_execution_playbook.py::test_playbook_evidence_finalization_preserves_identity_lineage_and_is_idempotent tests/test_reusable_execution_playbook.py::test_late_browser_resume_finalizes_same_playbook_evidence_truthfully tests/test_standard_task_execution.py::test_completed_same_execution_can_finalize_playbook_evidence_without_rerunning_work
+run_contract "Task Package Injection" tests/test_reusable_execution_playbook.py::test_task_package_receives_structured_playbook_context
+run_contract "Cross-Module Composition & Source Leakage" tests/test_reusable_execution_playbook.py::test_conversation_task_composes_cross_module_decision_with_same_module_pattern tests/test_reusable_execution_playbook.py::test_playbook_rejects_deliberate_historical_source_file_leakage
+
+echo "Cross-Module Compatibility Extension"
+if SINO_CROSS_MODULE_EXTENSION_ONLY=1 "$repo_root/scripts/test-sino-learning-reuse-cross-module"; then
+  echo "Cross-Module Compatibility Extension: PASS"
+else
+  echo "Cross-Module Compatibility Extension: FAIL"
+  failures=$((failures + 1))
+fi
+
+echo "Frozen Capability 2"
+if "$repo_root/scripts/test-sino-learning-reuse-capability-2"; then echo "Frozen Capability 2: PASS"; else echo "Frozen Capability 2: FAIL"; failures=$((failures + 1)); fi
+
+if (( failures == 0 )); then echo "Overall: PASS"; exit 0; fi
+echo "Overall: FAIL ($failures contract groups failed)"; exit 1

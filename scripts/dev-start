@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/runtime-common.sh"
+if ! mkdir "${AICOS_RUNTIME}/start.lock" 2>/dev/null; then
+  echo "另一个启动流程正在运行。" >&2
+  exit 1
+fi
+trap 'rmdir "${AICOS_RUNTIME}/start.lock" 2>/dev/null || true' EXIT
+
+for required in "${AICOS_ROOT}/backend/.venv/bin/python" "${AICOS_ROOT}/frontend/node_modules"; do
+  [ -e "$required" ] || { echo "缺少依赖：${required}" >&2; exit 1; }
+done
+
+# The com.sinofut.* jobs are the only formal development supervisor authority.
+# Legacy com.aicommerceos.* jobs are never removed implicitly: an operator must
+# resolve that conflict deliberately.
+if legacy_supervisor_conflict; then
+  echo "SUPERVISOR_CONFLICT: ${AICOS_CONFLICT_DETAIL}" >&2
+  exit 1
+fi
+
+# Development and resident services are mutually exclusive.
+stop_job "${AICOS_RESIDENT_FRONTEND_LABEL}"
+stop_job "${AICOS_RESIDENT_BACKEND_LABEL}"
+
+if job_loaded "${AICOS_DEV_BACKEND_LABEL}" && job_loaded "${AICOS_DEV_FRONTEND_LABEL}"; then
+  if ! stable_readiness_window; then
+    echo "${AICOS_LAST_READINESS_REASON:-STABLE_READINESS_FAILED}" >&2
+    exit 1
+  fi
+  echo "AI Commerce OS READY"
+  echo "Founder:  ${AICOS_FRONTEND_URL}"
+  echo "Backend:  ${AICOS_BACKEND_URL}"
+  echo "Database: Healthy"
+  exit 0
+fi
+
+stop_job "${AICOS_DEV_FRONTEND_LABEL}"
+stop_job "${AICOS_DEV_BACKEND_LABEL}"
+sleep 1
+assert_ports_free
+
+(cd "${AICOS_ROOT}/backend" && "${AICOS_ROOT}/backend/.venv/bin/alembic" upgrade head) >>"${AICOS_LOG_DIR}/bootstrap.log" 2>&1
+write_plist "${AICOS_PLIST_DIR}/${AICOS_DEV_BACKEND_LABEL}.plist" "${AICOS_DEV_BACKEND_LABEL}" "${AICOS_ROOT}/backend" "${AICOS_ROOT}/scripts/backend-server" "${AICOS_LOG_DIR}/backend.log" 1
+write_plist "${AICOS_PLIST_DIR}/${AICOS_DEV_FRONTEND_LABEL}.plist" "${AICOS_DEV_FRONTEND_LABEL}" "${AICOS_ROOT}/frontend" "${AICOS_ROOT}/scripts/frontend-server" "${AICOS_LOG_DIR}/frontend.log" 1
+start_job "${AICOS_DEV_BACKEND_LABEL}" "${AICOS_PLIST_DIR}/${AICOS_DEV_BACKEND_LABEL}.plist"
+start_job "${AICOS_DEV_FRONTEND_LABEL}" "${AICOS_PLIST_DIR}/${AICOS_DEV_FRONTEND_LABEL}.plist"
+printf 'development\n' >"${AICOS_RUNTIME}/mode"
+
+wait_http "${AICOS_BACKEND_URL}" || { echo "BACKEND_HEALTH_UNAVAILABLE: 请查看 .runtime/logs/backend.log" >&2; exit 1; }
+wait_http "${AICOS_FRONTEND_URL}" || { echo "FRONTEND_HEALTH_UNAVAILABLE: 请查看 .runtime/logs/frontend.log" >&2; exit 1; }
+if ! stable_readiness_window; then
+  echo "${AICOS_LAST_READINESS_REASON:-STABLE_READINESS_FAILED}" >&2
+  exit 1
+fi
+echo "AI Commerce OS READY"
+echo "Founder:  ${AICOS_FRONTEND_URL}"
+echo "Backend:  ${AICOS_BACKEND_URL}"
+echo "Database: Healthy"
