@@ -346,6 +346,35 @@ describe("SinoBrainContext", () => {
     expect(resolved).toHaveBeenCalled();
   });
 
+  it("displays refreshed SAFE_MERGE approval evidence after target baseline drift", () => {
+    render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
+      action_id: "safe-merge-refresh:abc",
+      action_type: "SAFE_MERGE_APPROVAL",
+      type: "SAFE_MERGE_APPROVAL",
+      status: "pending",
+      title: "批准基于最新 integration baseline 的本地安全合并",
+      summary: "Integration baseline 已更新；Sino 已重新验证候选合并，需要重新确认本地安全合并。",
+      risk_level: "HIGH",
+      metadata: {
+        merge_request: {
+          source_branch: "feature/sino-mission-617b0edd",
+          source_head: "0698f9c",
+          target_branch: "feature/foundation-reset-integration",
+          target_head: "5b849b9",
+          refreshed_validation_status: "PASS",
+          refreshed_validation: { status: "PASS", merge_base: "372de85" },
+        },
+      },
+    }] } }} />);
+    const action = screen.getByRole("article", { name: "Safe Merge Approval" });
+    expect(action.textContent).toContain("feature/sino-mission-617b0edd");
+    expect(action.textContent).toContain("0698f9c");
+    expect(action.textContent).toContain("feature/foundation-reset-integration");
+    expect(action.textContent).toContain("5b849b9");
+    expect(action.textContent).toContain("Refreshed validation");
+    expect(action.textContent).toContain("PASS");
+  });
+
   it("rejects SAFE_MERGE without starting any other execution action", async () => {
     render(<SinoBrainContext conversationId="conv-1" brain={{ stage: "goal_discovery", discovery: { founder_action_queue: [{
       action_id: "safe-merge:message-2",
