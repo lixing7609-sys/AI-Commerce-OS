@@ -118,8 +118,7 @@ describe("Conversation / Task UI ownership", () => {
       discovery: {
         operational_runtime: {
           operation_type: "SAFE_MERGE",
-          task_id: "task-new",
-          execution_id: "execution-new",
+          action_id: "safe-merge-refresh:current",
           status: "queued",
         },
         autonomous_development_mission_view: {
@@ -129,10 +128,12 @@ describe("Conversation / Task UI ownership", () => {
           stage_label: "正在本地合并",
           next_step: "Sino 正在执行本地安全合并",
           merge_execution_id: "execution-new",
+          merge_action_id: "safe-merge-refresh:current",
         },
         conversation_tasks: [
-          { task_ref: "task-old", task_id: "task-old", execution_id: "execution-old", title: "旧 SAFE_MERGE", status: "blocked", current_action: "验证受阻", founder_action_required: false },
-          { task_ref: "task-new", task_id: "task-new", execution_id: "execution-new", title: "新 refreshed SAFE_MERGE", status: "queued", current_action: "排队中", founder_action_required: false },
+          { task_ref: "task-old", task_id: "task-old", execution_id: "execution-old", title: "旧 SAFE_MERGE", status: "blocked", current_action: "验证受阻", founder_action_required: false, details: { scope: { operational_runtime: { action_id: "safe-merge:old" } } } },
+          { task_ref: "task-stale", task_id: "task-stale", execution_id: "execution-stale", title: "过期 refreshed SAFE_MERGE", status: "queued", current_action: "排队中", founder_action_required: false, details: { scope: { operational_runtime: { action_id: "safe-merge-refresh:stale" } } } },
+          { task_ref: "task-new", task_id: "task-new", execution_id: "execution-new", title: "新 refreshed SAFE_MERGE", status: "queued", current_action: "排队中", founder_action_required: false, details: { scope: { operational_runtime: { action_id: "safe-merge-refresh:current" } } } },
         ],
       },
     }} />);
@@ -140,7 +141,7 @@ describe("Conversation / Task UI ownership", () => {
     expect(within(sidebar).getByText("新 refreshed SAFE_MERGE")).toBeTruthy();
     expect(within(sidebar).getByText("排队中")).toBeTruthy();
     expect(within(sidebar).queryByText("验证受阻")).toBeNull();
-    expect(within(sidebar).getByText("已完成（1）")).toBeTruthy();
+    expect(within(sidebar).getByText("已完成（2）")).toBeTruthy();
   });
 
   it("does not queue ordinary Codex permission or self healing", () => {

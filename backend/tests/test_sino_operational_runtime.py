@@ -1602,6 +1602,107 @@ def test_queued_safe_merge_dispatches_canonical_handler_and_reuses_execution(mon
     assert execution_worker._is_worker_managed_execution(package) is False
 
 
+def test_safe_merge_approval_reuses_active_execution_for_same_action_source_target(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-active-reuse")
+    action_id = "safe-merge-refresh:active-reuse"
+    source_message_id = "message-safe-merge-active-reuse"
+    preflight = _safe_merge_request(source_branch="feature/sino-reuse", source_head="source-head", target_head="target-head", target_head_before="target-head")
+    task = runtime.create_task_asset(
+        title="本地安全合并 feature 到 integration",
+        description=SAFE_MERGE_REQUEST,
+        conversation_id="conv-safe-merge-active-reuse",
+        source_message_id=source_message_id,
+        scope=runtime._safe_merge_task_scope(
+            founder_request=SAFE_MERGE_REQUEST,
+            conversation_id="conv-safe-merge-active-reuse",
+            source_message_id=source_message_id,
+            action_id=action_id,
+            merge_request=preflight,
+        ),
+        status="in_progress",
+        approval_status="approved",
+        execution_status="queued",
+    )
+    execution_id = runtime._stable_execution_id(task.id, source_message_id)
+    package = runtime._execution_package(task=task, execution_id=execution_id, risk={"operation_type": runtime.SAFE_MERGE, "risk_level": runtime.HIGH_RISK})
+    package.context.update({"operation_type": runtime.SAFE_MERGE, "approval_action_id": action_id, "merge_request": preflight})
+    execution_registry.save_execution_session(runtime.ExecutionSession(
+        id=execution_id,
+        task_asset_id=task.id,
+        execution_package_id=f"package-{execution_id}",
+        executor="LOCAL_EXECUTOR",
+        status="queued",
+    ), package)
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("duplicate approval must not start preflight")))
+
+    result = runtime.execute_safe_merge(
+        conversation_id="conv-safe-merge-active-reuse",
+        founder_request=SAFE_MERGE_REQUEST,
+        source_message_id="message-safe-merge-active-retry",
+        action_id=action_id,
+        merge_request=preflight,
+        cwd=tmp_path,
+    )
+
+    assert result["reused"] is True
+    assert result["execution_id"] == execution_id
+    assert result["status"] == "queued"
+    with factory() as db:
+        assert db.query(TaskAssetDB).count() == 1
+
+
+def test_safe_merge_dispatcher_ignores_superseded_and_stale_queued_execution(monkeypatch, tmp_path):
+    _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-stale")
+    mission_id = "mission-safe-merge-stale"
+    current_action_id = "safe-merge-refresh:current"
+    stale_action_id = "safe-merge-refresh:stale"
+    with runtime.SessionLocal() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-safe-merge-stale").one()
+        mission = {
+            "mission_id": mission_id,
+            "conversation_id": "conv-safe-merge-stale",
+            "status": "WAITING_MERGE_APPROVAL",
+            "current_stage": "WAITING_MERGE_APPROVAL",
+            "merge_action_id": current_action_id,
+        }
+        state.discovery = {
+            "autonomous_development_missions": {mission_id: mission},
+            "founder_action_queue": [
+                {"action_id": stale_action_id, "action_type": runtime.SAFE_MERGE_QUEUE_TYPE, "type": runtime.SAFE_MERGE_QUEUE_TYPE, "status": "superseded", "mission_id": mission_id, "metadata": {"target_head": "old-target"}},
+                {"action_id": current_action_id, "action_type": runtime.SAFE_MERGE_QUEUE_TYPE, "type": runtime.SAFE_MERGE_QUEUE_TYPE, "status": "approved", "mission_id": mission_id, "metadata": {"target_head": "new-target"}},
+            ],
+        }
+        db.commit()
+    task = runtime.create_task_asset(
+        title="本地安全合并 feature 到 integration",
+        description=SAFE_MERGE_REQUEST,
+        conversation_id="conv-safe-merge-stale",
+        source_message_id="message-safe-merge-stale",
+        scope=runtime._safe_merge_task_scope(
+            founder_request=SAFE_MERGE_REQUEST,
+            conversation_id="conv-safe-merge-stale",
+            source_message_id="message-safe-merge-stale",
+            action_id=stale_action_id,
+            merge_request={"mission_id": mission_id, "source_head": "source-head", "target_head_before": "old-target"},
+        ),
+        status="in_progress",
+        approval_status="approved",
+        execution_status="queued",
+    )
+    execution_id = runtime._stable_execution_id(task.id, "message-safe-merge-stale")
+    package = runtime._execution_package(task=task, execution_id=execution_id, risk={"operation_type": runtime.SAFE_MERGE, "risk_level": runtime.HIGH_RISK})
+    package.context.update({"operation_type": runtime.SAFE_MERGE, "approval_action_id": stale_action_id, "merge_request": {"mission_id": mission_id, "source_head": "source-head", "target_head_before": "old-target"}})
+    execution_registry.save_execution_session(runtime.ExecutionSession(id=execution_id, task_asset_id=task.id, execution_package_id=f"package-{execution_id}", executor="LOCAL_EXECUTOR", status="queued"), package)
+    monkeypatch.setattr(runtime, "_safe_merge_preflight", lambda **_kwargs: (_ for _ in ()).throw(AssertionError("stale queued execution must not start preflight")))
+
+    result = runtime.dispatch_canonical_safe_merge_execution(execution_id, cwd=tmp_path)
+
+    assert result["handled"] is False
+    assert result["queue_block_gate"] == "SUPERSEDED_SAFE_MERGE_ACTION"
+    execution, _package = execution_registry.get_execution_session(execution_id)
+    assert execution.status == "queued"
+
+
 def test_temp_repo_queued_safe_merge_dispatch_runs_canonical_no_ff_merge(monkeypatch, tmp_path):
     factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-merge-dispatch-real")
     repo = tmp_path / "safe-merge-dispatch-repo"
