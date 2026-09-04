@@ -12,7 +12,7 @@ const PRIORITY_TONE = { P0: "danger", P1: "warning", P2: "neutral" };
 
 export function AIDecisionCard({ recommendation, explanation, approval, confidence, risk, cost, modelBadge }) {
   if (import.meta.env.DEV && !recommendation?.reason) {
-     
+
     console.warn("AIDecisionCard: a recommendation must not render without a `reason`");
   }
 

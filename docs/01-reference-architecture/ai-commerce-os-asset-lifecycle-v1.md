@@ -1,6 +1,6 @@
 # AI Commerce OS Asset Lifecycle V1 Freeze
 
-Status: V1 product and data-boundary freeze  
+Status: V1 product and data-boundary freeze
 Effective: 2026-08-14
 
 ## Canonical lifecycle

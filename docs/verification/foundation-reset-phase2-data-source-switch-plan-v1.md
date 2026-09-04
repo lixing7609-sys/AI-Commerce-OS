@@ -132,4 +132,3 @@
 5. 将 DeliverableCenter 仅切换成果读路径；完成版本/导出/审核等能力对照后再迁移操作。
 6. 明确 Knowledge→MemoryAsset 的提炼入口，保持 History 独立。
 7. 最后再规划 Legacy 页面下线；本阶段不删除页面、API 或数据库表。
-

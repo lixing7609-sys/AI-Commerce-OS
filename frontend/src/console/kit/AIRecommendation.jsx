@@ -6,7 +6,7 @@ const PRIORITY_TONE = { P0: "danger", P1: "warning", P2: "neutral" };
 
 export function AIRecommendation({ title, reason, priority, action }) {
   if (import.meta.env.DEV && !reason) {
-     
+
     console.warn("AIRecommendation: a recommendation must not render without a `reason`");
   }
 

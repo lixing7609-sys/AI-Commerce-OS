@@ -9,7 +9,7 @@ export function IconButton({
   ...rest
 }) {
   if (import.meta.env.DEV && !ariaLabel) {
-     
+
     console.warn("IconButton: aria-label is required");
   }
 

@@ -15,7 +15,7 @@ export function Icon({ name, size = 16, className, "aria-label": ariaLabel, ...r
 
   if (!LucideIcon) {
     if (import.meta.env.DEV) {
-       
+
       console.warn(`Icon: unknown lucide-react icon "${name}"`);
     }
     return null;
