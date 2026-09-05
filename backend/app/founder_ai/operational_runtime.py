@@ -26,6 +26,7 @@ from app.core.conversation_first.model import ConversationMessageDB, SinoBrainSe
 from app.core.task_asset.model import TaskAssetDB
 from app.core.task_asset.service import create_task_asset
 from app.database.db import SessionLocal
+from app.founder_ai.autonomous_execution_policy import AUTO_CONTINUE, decide_from_risk
 from app.founder_ai.codex_adapter import CodexExecutionTimeout, SubprocessCodexAdapter
 from app.founder_ai.execution_events import append_event
 from app.founder_ai.execution_loop import ExecutionSession
@@ -342,12 +343,14 @@ def _has_explicit_side_effect_action(lowered: str) -> bool:
         lowered.replace("不修改", "")
         .replace("不要修改", "")
         .replace("不会修改", "")
+        .replace("未提交修改", "")
         .replace("no modification", "")
+        .replace("uncommitted changes", "")
         .replace("read-only", "")
     )
     side_effect_terms = (
         "合并", "merge", "推送", "push", "commit", "提交", "deploy", "部署", "上线",
-        "修改", "改成", "更新", "调整", "删除", "delete", "create", "创建", "新增",
+        "修改", "修复", "改成", "更新", "调整", "删除", "delete", "create", "创建", "新增",
     )
     return _contains_any(normalized, side_effect_terms)
 
@@ -383,6 +386,19 @@ def _is_explicit_analytical_inspection_request(lowered: str) -> bool:
         _contains_any(lowered, read_only_terms)
         and _contains_any(lowered, analytical_terms)
         and not _contains_any(normalized, side_effect_terms)
+    )
+
+
+def _is_repo_status_read_only_request(lowered: str) -> bool:
+    low_terms = (
+        "git status", "当前 branch", "当前分支", "branch", "分支", "head", "未提交",
+        "工程状态", "repo 状态", "repository status", "working tree", "工作树", "工作区",
+    )
+    inspection_terms = ("检查", "查看", "告诉我", "有没有", "status", "当前")
+    return (
+        _contains_any(lowered, low_terms)
+        and _contains_any(lowered, inspection_terms)
+        and not _has_explicit_side_effect_action(lowered)
     )
 
 
@@ -564,6 +580,18 @@ def classify_operational_risk(content: str) -> dict:
             "operation": "high_risk_operational_request",
             "operation_type": "HIGH_RISK_OPERATION",
             "reason": "request_crosses_high_risk_operational_boundary",
+        }
+    if _is_repo_status_read_only_request(lowered):
+        return {
+            "work_type": CONTROLLED_LOCAL_DEVELOPMENT_TASK,
+            "risk_level": LOW_RISK,
+            "auto_continue": True,
+            "operation": "repo_inspection",
+            "operation_type": REPO_INSPECTION,
+            "reason": "bounded_read_only_repo_inspection",
+            "approval_required": False,
+            "read_only": True,
+            "side_effect": False,
         }
     if any(term in lowered for term in bounded_change_terms) and any(term in lowered for term in codex_bridge_fixture_terms):
         plan = BOUNDED_CODE_CHANGE_PLANS[BOUNDED_CODEX_BRIDGE_FIXTURE_CHANGE]
@@ -2339,6 +2367,8 @@ def _codex_execution_package_for_bounded_change(plan: dict, *, cwd: Path) -> Exe
         "standard_task_contract": scope_contract,
         "preexisting_dirty_files": list(plan.get("preexisting_dirty_files") or []),
         "risk_level": MEDIUM_RISK,
+        "risk_decision": plan.get("risk_decision"),
+        "autonomous_execution_policy": plan.get("autonomous_execution_policy"),
         "approval_action_id": plan.get("approval_action_id"),
         "founder_authorization_boundary": {
             "allowed_files": allowed_files,
@@ -2422,6 +2452,17 @@ def run_bounded_code_change(
             "started_at": started_at,
             "completed_at": _now(),
         }
+    completed_at = _now()
+    trace = _autonomous_execution_trace(
+        task_id=plan.get("task_id"),
+        execution_id=plan.get("execution_id"),
+        operation_type=BOUNDED_CODE_CHANGE,
+        policy=plan.get("autonomous_execution_policy"),
+        permission_decision=result.permission_decision,
+        executor="CODEX",
+        result="completed" if result.exit_code == 0 else "failed",
+        timestamp=completed_at,
+    )
     return {
         "executor": "CODEX",
         "real_executor_used": CODEX_EXECUTOR,
@@ -2445,11 +2486,14 @@ def run_bounded_code_change(
             "invocation_source": "sino_autonomous_development_mission" if plan.get("mission_id") else "sino_bounded_code_change",
             "status": "completed" if result.exit_code == 0 else "failed",
             "started_at": started_at,
-            "completed_at": _now(),
+            "completed_at": completed_at,
             "codex_run_id": result.codex_run_id,
+            "permission_decision": result.permission_decision,
         },
+        "codex_permission_decision": result.permission_decision,
+        "autonomous_execution_trace": trace,
         "started_at": started_at,
-        "completed_at": _now(),
+        "completed_at": completed_at,
     }
 
 
@@ -2586,6 +2630,44 @@ def _stable_execution_id(task_id: str, source_message_id: str) -> str:
     return f"execution-operational-{digest}"
 
 
+def _autonomous_execution_trace(
+    *,
+    task_id: str | None,
+    execution_id: str | None,
+    operation_type: str | None,
+    policy: dict | None,
+    permission_decision: dict | str | None,
+    executor: str | None,
+    result: str,
+    timestamp: str | None = None,
+) -> dict:
+    policy_payload = dict(policy or {})
+    policy_decision = policy_payload.get("decision") or "UNKNOWN"
+    if policy_decision == AUTO_CONTINUE:
+        approval_boundary = "AUTO_CONTINUE_NO_FOUNDER_QUEUE"
+    elif policy_decision == "UNKNOWN" or policy_payload.get("reason") == "unknown_operation_or_risk":
+        approval_boundary = "UNKNOWN_FAIL_CLOSED"
+    else:
+        approval_boundary = "FOUNDER_APPROVAL_REQUIRED"
+    if isinstance(permission_decision, dict):
+        permission_value = permission_decision.get("decision")
+    else:
+        permission_value = permission_decision
+    return {
+        "schema_version": "sino-autonomous-execution-trace-v1",
+        "task_id": task_id,
+        "execution_id": execution_id,
+        "operation_type": operation_type,
+        "policy_decision": policy_decision,
+        "policy_reason": policy_payload.get("reason"),
+        "permission_decision": permission_value or "NOT_APPLICABLE_LOCAL_EXECUTOR",
+        "executor": executor,
+        "result": result,
+        "timestamp": timestamp or _now(),
+        "approval_boundary": approval_boundary,
+    }
+
+
 def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> ExecutionPackage:
     operational = dict((task.scope or {}).get("operational_runtime") or {})
     operation_type = operational.get("operation_type") or risk.get("operation_type") or REPO_INSPECTION
@@ -2632,6 +2714,8 @@ def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> E
         "working_branch": operational.get("working_branch"),
         "baseline_head": operational.get("baseline_head"),
         "risk_level": risk.get("risk_level", LOW_RISK),
+        "risk_decision": operational.get("risk_decision") or risk,
+        "autonomous_execution_policy": operational.get("autonomous_execution_policy") or (risk.get("autonomous_execution_policy") if isinstance(risk, dict) else None),
         "operation_type": operation_type,
         "allowed_scope": operational.get("allowed_scope"),
         "allowed_files": allowed_files,
@@ -3399,6 +3483,7 @@ def _task_scope(*, founder_request: str, conversation_id: str, source_message_id
             "source_message_id": source_message_id,
             "repo_path": str(repo_root()),
             "risk_decision": risk,
+            "autonomous_execution_policy": decide_from_risk(risk, context={"read_only": spec.operation_type in {REPO_INSPECTION, ANALYTICAL_INSPECTION}}),
             "risk_level": risk["risk_level"],
             "allowed_scope": allowed_scope,
             "timeout_seconds": spec.timeout_seconds,
@@ -3409,7 +3494,7 @@ def _task_scope(*, founder_request: str, conversation_id: str, source_message_id
                 "Do not push",
                 "Do not invoke Codex or a provider",
             ],
-            "auto_continue_policy": "LOW risk controlled local development task",
+            "auto_continue_policy": "authoritative_autonomous_execution_policy",
         }
     }
 
@@ -3646,7 +3731,9 @@ def execute_low_risk_operation(
     runner: Callable[[], dict] | None = None,
 ) -> dict:
     risk = classify_operational_risk(founder_request)
-    if risk.get("risk_level") != LOW_RISK or not risk.get("auto_continue"):
+    policy = decide_from_risk(risk, context={"read_only": risk.get("operation_type") in {REPO_INSPECTION, ANALYTICAL_INSPECTION}})
+    risk["autonomous_execution_policy"] = policy
+    if policy.get("decision") != AUTO_CONTINUE:
         raise ValueError("operational_request_not_low_risk")
     operation_type = risk.get("operation_type") or REPO_INSPECTION
     spec = OPERATION_REGISTRY[operation_type]
@@ -3717,6 +3804,16 @@ def execute_low_risk_operation(
             "source_message_refs": [source_message_id],
         }
         scope["execution_start"] = start
+        scope["autonomous_execution_trace"] = _autonomous_execution_trace(
+            task_id=task.id,
+            execution_id=execution_id,
+            operation_type=spec.operation_type,
+            policy=policy,
+            permission_decision="NOT_APPLICABLE_LOCAL_EXECUTOR",
+            executor="LOCAL_EXECUTOR",
+            result="started",
+            timestamp=start["queued_at"],
+        )
         task.scope = scope
         task.status = "in_progress"
         task.execution_status = "queued"
@@ -3726,6 +3823,7 @@ def execute_low_risk_operation(
         "status": "queued",
         "operation_type": spec.operation_type,
         "risk_decision": risk,
+        "autonomous_execution_policy": policy,
         "task_id": task_id,
         "execution_id": execution_id,
         "founder_request": founder_request,
@@ -3766,6 +3864,16 @@ def execute_low_risk_operation(
             "completed_at": completed_at,
             "real_executor_used": "LOCAL_EXECUTOR",
         }
+        persisted_result["autonomous_execution_trace"] = _autonomous_execution_trace(
+            task_id=task_id,
+            execution_id=execution_id,
+            operation_type=spec.operation_type,
+            policy=policy,
+            permission_decision="NOT_APPLICABLE_LOCAL_EXECUTOR",
+            executor="LOCAL_EXECUTOR",
+            result=persisted_result["status"],
+            timestamp=completed_at,
+        )
         with SessionLocal() as session:
             record = session.get(TaskAssetDB, task_id)
             record.result = persisted_result
@@ -3775,6 +3883,7 @@ def execute_low_risk_operation(
             start = dict(scope.get("execution_start") or {})
             start.update({"status": persisted_result["status"], "completed_at": completed_at})
             scope["execution_start"] = start
+            scope["autonomous_execution_trace"] = persisted_result["autonomous_execution_trace"]
             record.scope = scope
             session.commit()
         registry_record = get_execution_session(execution_id)
@@ -3816,12 +3925,25 @@ def execute_low_risk_operation(
             "retryable": True,
             "real_executor_used": "LOCAL_EXECUTOR",
         }
+        failure["autonomous_execution_trace"] = _autonomous_execution_trace(
+            task_id=task_id,
+            execution_id=execution_id,
+            operation_type=spec.operation_type,
+            policy=policy,
+            permission_decision="NOT_APPLICABLE_LOCAL_EXECUTOR",
+            executor="LOCAL_EXECUTOR",
+            result="failed",
+            timestamp=failed_at,
+        )
         with SessionLocal() as session:
             record = session.get(TaskAssetDB, task_id)
             if record is not None:
                 record.result = failure
                 record.status = "failed"
                 record.execution_status = "failed"
+                scope = dict(record.scope or {})
+                scope["autonomous_execution_trace"] = failure["autonomous_execution_trace"]
+                record.scope = scope
                 session.commit()
         registry_record = get_execution_session(execution_id)
         if registry_record:
@@ -3866,6 +3988,7 @@ def _bounded_task_scope(*, founder_request: str, conversation_id: str, source_me
             "working_branch": plan.get("working_branch"),
             "baseline_head": plan.get("baseline_head"),
             "risk_decision": risk,
+            "autonomous_execution_policy": risk.get("autonomous_execution_policy"),
             "risk_level": MEDIUM_RISK,
             "allowed_files": list(plan.get("allowed_files") or []),
             "allowed_directories": list(plan.get("allowed_directories") or []),
@@ -3918,6 +4041,20 @@ def execute_bounded_code_change(
         "approval_action_id": action_id,
         "plan": plan,
     }
+    policy = decide_from_risk(
+        risk,
+        context={
+            "founder_approved": True,
+            "approval_action_id": action_id,
+            "allowed_files": list(plan.get("allowed_files") or []),
+            "allowed_directories": list(plan.get("allowed_directories") or []),
+        },
+    )
+    if policy.get("decision") != AUTO_CONTINUE:
+        raise ValueError(policy.get("reason") or "bounded_local_development_not_authorized")
+    risk["autonomous_execution_policy"] = policy
+    plan["risk_decision"] = {key: value for key, value in risk.items() if key != "plan"}
+    plan["autonomous_execution_policy"] = dict(policy)
     if not (plan.get("allowed_files") or plan.get("allowed_directories")):
         raise ValueError("bounded_code_change_requires_file_boundary")
     root = repo_root()
@@ -4013,6 +4150,16 @@ def execute_bounded_code_change(
             "source_message_refs": [source_message_id],
             "action_id": action_id,
         }
+        scope["autonomous_execution_trace"] = _autonomous_execution_trace(
+            task_id=task.id,
+            execution_id=execution_id,
+            operation_type=BOUNDED_CODE_CHANGE,
+            policy=policy,
+            permission_decision=None,
+            executor="CODEX",
+            result="started",
+            timestamp=execution.queued_at or _now(),
+        )
         task.scope = scope
         task.status = "in_progress"
         task.execution_status = "queued"
@@ -4080,6 +4227,17 @@ def execute_bounded_code_change(
             "executor": code_result.get("executor") or "CODEX",
             "codex_invocation": code_result.get("codex_invocation"),
             "codex_session_id": code_result.get("codex_session_id"),
+            "codex_permission_decision": code_result.get("codex_permission_decision"),
+            "autonomous_execution_trace": code_result.get("autonomous_execution_trace") or _autonomous_execution_trace(
+                task_id=task.id,
+                execution_id=execution_id,
+                operation_type=BOUNDED_CODE_CHANGE,
+                policy=policy,
+                permission_decision=code_result.get("codex_permission_decision"),
+                executor="CODEX",
+                result="completed" if success else "failed",
+                timestamp=completed_at,
+            ),
             "changed_files_claimed": list(code_result.get("changed_files_claimed") or code_result.get("changed_files") or []),
             "changed_files_observed": new_or_changed,
             **test_counts,
@@ -4121,6 +4279,7 @@ def execute_bounded_code_change(
             start = dict(scope.get("execution_start") or {})
             start.update({"status": persisted_result["status"], "completed_at": completed_at})
             scope["execution_start"] = start
+            scope["autonomous_execution_trace"] = persisted_result["autonomous_execution_trace"]
             record.scope = scope
             session.commit()
         registry_record = get_execution_session(execution_id)
@@ -4160,12 +4319,25 @@ def execute_bounded_code_change(
             "real_executor_used": executor_for_operation(BOUNDED_CODE_CHANGE),
             "executor": "CODEX",
         }
+        failure["autonomous_execution_trace"] = _autonomous_execution_trace(
+            task_id=task.id if "task" in locals() else None,
+            execution_id=execution_id if "execution_id" in locals() else None,
+            operation_type=BOUNDED_CODE_CHANGE,
+            policy=policy if "policy" in locals() else None,
+            permission_decision=None,
+            executor="CODEX",
+            result="failed",
+            timestamp=failed_at,
+        )
         with SessionLocal() as session:
             record = session.get(TaskAssetDB, task.id)
             if record is not None:
                 record.result = failure
                 record.status = "failed"
                 record.execution_status = "failed"
+                scope = dict(record.scope or {})
+                scope["autonomous_execution_trace"] = failure["autonomous_execution_trace"]
+                record.scope = scope
                 session.commit()
         registry_record = get_execution_session(execution_id)
         if registry_record:
@@ -5624,6 +5796,18 @@ def handle_operational_conversation_request(
     *, conversation_id: str, founder_request: str, source_message_id: str,
 ) -> dict:
     risk = classify_operational_risk(founder_request)
+    policy = decide_from_risk(risk, context={"read_only": risk.get("operation_type") in {REPO_INSPECTION, ANALYTICAL_INSPECTION}})
+    risk["autonomous_execution_policy"] = policy
+    if policy.get("decision") != AUTO_CONTINUE:
+        risk["autonomous_execution_trace"] = _autonomous_execution_trace(
+            task_id=None,
+            execution_id=None,
+            operation_type=risk.get("operation_type"),
+            policy=policy,
+            permission_decision=None,
+            executor=None,
+            result="blocked",
+        )
     if risk.get("work_type") != CONTROLLED_LOCAL_DEVELOPMENT_TASK:
         return {"handled": False, "risk_decision": risk}
     if risk.get("operation_type") == "CLARIFICATION":
@@ -5689,7 +5873,7 @@ def handle_operational_conversation_request(
             grounding={"operational_runtime": {"status": "approval_required", "risk_decision": risk, "action_id": action_id}},
         )
         return {"handled": True, "risk_decision": risk, "status": "approval_required", "action_id": action_id}
-    if risk.get("risk_level") == LOW_RISK and risk.get("auto_continue"):
+    if policy.get("decision") == AUTO_CONTINUE:
         return execute_low_risk_operation(
             conversation_id=conversation_id,
             founder_request=founder_request,

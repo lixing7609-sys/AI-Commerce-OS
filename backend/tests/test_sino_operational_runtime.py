@@ -14,6 +14,7 @@ from app.founder_ai.codex_adapter import CodexExecutionResult
 from app.founder_ai.task_package import TaskPackageBuilder
 from app.founder_ai import api
 from app.founder_ai import action_queue
+from app.founder_ai import autonomous_execution_policy
 from app.founder_ai import execution_worker
 from app.founder_ai import operational_runtime as runtime
 from app.founder_ai import execution_registry
@@ -106,6 +107,46 @@ def test_arbitrary_shell_request_is_not_executed():
     assert decision["auto_continue"] is False
 
 
+@pytest.mark.parametrize(("risk_decision", "context", "reason"), [
+    ({"operation_type": runtime.REPO_INSPECTION, "risk_level": runtime.LOW_RISK}, {"read_only": True}, "low_risk_read_only_operation"),
+    ({"operation_type": runtime.FOCUSED_TEST, "risk_level": runtime.LOW_RISK}, {}, "low_risk_allowlisted_test"),
+    ({"operation_type": runtime.FRONTEND_BUILD, "risk_level": runtime.LOW_RISK}, {}, "low_risk_local_build"),
+    (
+        {
+            "operation_type": runtime.BOUNDED_CODE_CHANGE,
+            "risk_level": runtime.MEDIUM_RISK,
+            "approval_action_id": "bounded-code-change:1",
+        },
+        {"founder_approved": True, "allowed_files": ["frontend/src/sino-founder/ConversationThread.jsx"]},
+        "founder_approved_bounded_local_development",
+    ),
+])
+def test_autonomous_execution_policy_allows_only_low_or_approved_bounded_work(risk_decision, context, reason):
+    decision = autonomous_execution_policy.decide_from_risk(risk_decision, context=context)
+    assert decision["decision"] == autonomous_execution_policy.AUTO_CONTINUE
+    assert decision["auto_continue"] is True
+    assert decision["approval_required"] is False
+    assert decision["reason"] == reason
+
+
+@pytest.mark.parametrize(("risk_decision", "context", "reason"), [
+    ({"operation_type": runtime.SAFE_PUSH, "risk_level": runtime.HIGH_RISK}, {}, "high_risk_requires_founder_approval"),
+    ({"operation_type": runtime.SAFE_MERGE, "risk_level": runtime.HIGH_RISK}, {}, "high_risk_requires_founder_approval"),
+    ({"operation_type": "RESET_HARD", "risk_level": runtime.HIGH_RISK, "destructive": True}, {}, "high_risk_requires_founder_approval"),
+    ({"operation_type": "DEPLOY_PRODUCTION", "risk_level": runtime.HIGH_RISK, "production": True}, {}, "high_risk_requires_founder_approval"),
+    ({"operation_type": "CREDENTIAL_CHANGE", "risk_level": runtime.HIGH_RISK, "credential": True}, {}, "high_risk_requires_founder_approval"),
+    ({"operation_type": None, "risk_level": None}, {}, "unknown_operation_or_risk"),
+    ({"operation_type": runtime.REPO_INSPECTION, "risk_level": runtime.LOW_RISK, "remote_write": True}, {}, "remote_write_requires_founder_approval"),
+    ({"operation_type": runtime.BOUNDED_CODE_CHANGE, "risk_level": runtime.LOW_RISK}, {"founder_approved": True}, "bounded_local_development_requires_scope_and_approval"),
+])
+def test_autonomous_execution_policy_requires_founder_approval_for_risky_or_unproven_work(risk_decision, context, reason):
+    decision = autonomous_execution_policy.decide_from_risk(risk_decision, context=context)
+    assert decision["decision"] == autonomous_execution_policy.FOUNDER_APPROVAL_REQUIRED
+    assert decision["auto_continue"] is False
+    assert decision["approval_required"] is True
+    assert decision["reason"] == reason
+
+
 def test_low_request_auto_continues_to_task_execution_and_same_conversation(monkeypatch, tmp_path):
     factory = _runtime(monkeypatch, tmp_path)
     calls = {"runner": 0}
@@ -135,6 +176,53 @@ def test_low_request_auto_continues_to_task_execution_and_same_conversation(monk
     assert result["execution_id"] in execution_registry._sessions
     assert any("执行完成" in item.content for item in messages)
     assert state.discovery["operational_runtime"]["status"] == "completed"
+    assert state.discovery.get("founder_action_queue", []) == []
+    policy = state.discovery["operational_runtime"]["risk_decision"]["autonomous_execution_policy"]
+    assert policy["decision"] == autonomous_execution_policy.AUTO_CONTINUE
+    assert policy["reason"] == "low_risk_read_only_operation"
+    trace = tasks[0].result["autonomous_execution_trace"]
+    assert trace["task_id"] == tasks[0].id
+    assert trace["execution_id"] == result["execution_id"]
+    assert trace["operation_type"] == runtime.REPO_INSPECTION
+    assert trace["policy_decision"] == autonomous_execution_policy.AUTO_CONTINUE
+    assert trace["permission_decision"] == "NOT_APPLICABLE_LOCAL_EXECUTOR"
+    assert trace["executor"] == "LOCAL_EXECUTOR"
+    assert trace["result"] == "completed"
+    assert trace["approval_boundary"] == "AUTO_CONTINUE_NO_FOUNDER_QUEUE"
+    assert tasks[0].scope["autonomous_execution_trace"]["execution_id"] == result["execution_id"]
+
+
+def test_remote_write_approval_required_creates_founder_action_queue(monkeypatch, tmp_path):
+    factory = _runtime(monkeypatch, tmp_path, conversation_id="conv-safe-push-policy")
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-safe-push-policy",
+        founder_request="把当前 branch push 到远端 origin。",
+        source_message_id="message-safe-push-policy",
+    )
+    assert result["status"] == "approval_required"
+    assert result["risk_decision"]["autonomous_execution_policy"]["decision"] == autonomous_execution_policy.FOUNDER_APPROVAL_REQUIRED
+    trace = result["risk_decision"]["autonomous_execution_trace"]
+    assert trace["policy_decision"] == autonomous_execution_policy.FOUNDER_APPROVAL_REQUIRED
+    assert trace["approval_boundary"] == "FOUNDER_APPROVAL_REQUIRED"
+    assert trace["result"] == "blocked"
+    with factory() as db:
+        state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-safe-push-policy").one()
+    queue = state.discovery["founder_action_queue"]
+    assert len(queue) == 1
+    assert queue[0]["action_type"] == runtime.SAFE_PUSH_QUEUE_TYPE
+
+
+def test_unknown_operational_request_trace_fails_closed():
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-unknown-trace",
+        founder_request="do something somewhere maybe",
+        source_message_id="message-unknown-trace",
+    )
+    trace = result["risk_decision"]["autonomous_execution_trace"]
+    assert result["handled"] is False
+    assert trace["policy_decision"] == autonomous_execution_policy.FOUNDER_APPROVAL_REQUIRED
+    assert trace["approval_boundary"] == "UNKNOWN_FAIL_CLOSED"
+    assert trace["result"] == "blocked"
 
 
 def test_focused_test_uses_shell_false_and_persists_result(monkeypatch, tmp_path):
@@ -469,6 +557,10 @@ def test_analytical_model_failure_does_not_leave_ready_to_execute(monkeypatch, t
 
 def test_deterministic_repo_development_and_high_risk_routing_regressions():
     assert runtime.classify_operational_risk(READ_ONLY_BASELINE_REQUEST)["operation_type"] == runtime.REPO_INSPECTION
+    status_query = runtime.classify_operational_risk("检查当前项目分支和工作树状态，并告诉我有没有未提交修改。")
+    assert status_query["operation_type"] == runtime.REPO_INSPECTION
+    assert status_query["risk_level"] == runtime.LOW_RISK
+    assert status_query["approval_required"] is False
     development = runtime.classify_operational_risk("把按钮 A 改成 B，并验证。")
     assert development["operation_type"] == runtime.AUTONOMOUS_DEVELOPMENT_MISSION
     assert development["risk_level"] == runtime.MEDIUM_RISK
@@ -614,6 +706,13 @@ def test_bounded_code_change_approval_auto_continues_and_persists_result(monkeyp
     assert task.result["checkpoint"]["commit_created"] is True
     assert task.result["checkpoint"]["commit_file_count"] == 1
     assert task.result["changed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
+    trace = task.result["autonomous_execution_trace"]
+    assert trace["task_id"] == task.id
+    assert trace["execution_id"] == approved["execution_id"]
+    assert trace["operation_type"] == runtime.BOUNDED_CODE_CHANGE
+    assert trace["policy_decision"] == autonomous_execution_policy.AUTO_CONTINUE
+    assert trace["executor"] == "CODEX"
+    assert trace["approval_boundary"] == "AUTO_CONTINUE_NO_FOUNDER_QUEUE"
     assert state.discovery["operational_runtime"]["result"]["changed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
     assert any("受控代码修改完成" in item.content for item in messages)
     assert len(execution_registry._sessions) == 1
@@ -633,8 +732,10 @@ def test_bounded_code_change_retry_reuses_completed_execution(monkeypatch, tmp_p
     monkeypatch.setattr(runtime, "run_bounded_code_change", lambda _plan: (_ for _ in ()).throw(AssertionError("retry must not run code executor")))
     second = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
     with factory() as db:
-        assert db.query(TaskAssetDB).count() == 1
+        task = db.query(TaskAssetDB).one()
     assert first["execution_id"] == second["execution_id"]
+    assert task.result["autonomous_execution_trace"]["execution_id"] == first["execution_id"]
+    assert isinstance(task.scope["autonomous_execution_trace"], dict)
     assert len(execution_registry._sessions) == 1
 
 
@@ -806,6 +907,7 @@ def test_run_bounded_code_change_uses_existing_codex_adapter_and_isolates_sessio
                 exit_code=0,
                 changed_files=list(package.context["allowed_files"]),
                 codex_run_id=f"codex-{package.context['execution_id']}",
+                permission_decision={"decision": "PERMISSION_AUTO_HANDLED", "reason": "low_risk_bounded_local_development"},
             )
 
     for suffix in ("a", "b"):
@@ -816,6 +918,10 @@ def test_run_bounded_code_change_uses_existing_codex_adapter_and_isolates_sessio
             "mission_id": f"mission-{suffix}",
             "task_id": f"task-{suffix}",
             "execution_id": f"execution-{suffix}",
+            "autonomous_execution_policy": {
+                "decision": "AUTO_CONTINUE",
+                "reason": "founder_approved_bounded_local_development",
+            },
         }
         result = runtime.run_bounded_code_change(plan, cwd=tmp_path, adapter=FakeCodexAdapter())
         assert result["real_executor_used"] == runtime.CODEX_EXECUTOR
@@ -823,6 +929,10 @@ def test_run_bounded_code_change_uses_existing_codex_adapter_and_isolates_sessio
         assert result["codex_session_id"] == f"codex-execution-{suffix}"
         assert result["codex_invocation"]["conversation_id"] == f"conv-{suffix}"
         assert result["codex_invocation"]["mission_id"] == f"mission-{suffix}"
+        assert result["codex_permission_decision"]["decision"] == "PERMISSION_AUTO_HANDLED"
+        assert result["autonomous_execution_trace"]["permission_decision"] == "PERMISSION_AUTO_HANDLED"
+        assert result["autonomous_execution_trace"]["policy_decision"] == "AUTO_CONTINUE"
+        assert result["autonomous_execution_trace"]["approval_boundary"] == "AUTO_CONTINUE_NO_FOUNDER_QUEUE"
     assert calls[0][0].context["conversation_id"] == "conv-a"
     assert calls[1][0].context["conversation_id"] == "conv-b"
 
