@@ -100,6 +100,16 @@ def test_approved_execution_uses_adapter_and_captures_assets():
     assert session.completed_at is not None
     assert artifact.changed_files == ["app.py"]
     assert memory.commit == "commit-1"
+    trace = session.result["autonomous_execution_trace"]
+    assert trace["task_id"] == "task-1"
+    assert trace["execution_id"] == "session-1"
+    assert trace["executor"] == "CODEX"
+    assert trace["result"] == "completed"
+    assert any(
+        event["event_name"] == "codex_finished"
+        and event["metadata"]["autonomous_execution_trace"]["execution_id"] == "session-1"
+        for event in session.events
+    )
 
 
 def test_codex_adapter_terminates_process_group_on_timeout(monkeypatch, tmp_path: Path):

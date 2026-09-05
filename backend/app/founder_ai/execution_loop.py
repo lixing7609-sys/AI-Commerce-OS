@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from .codex_adapter import CodexExecutionResult, SubprocessCodexAdapter
 from .execution_events import append_event
 from .orchestrator import ExecutionPackage, MemoryAssetDraft, build_memory_asset_draft
+from .autonomous_execution_policy import AUTO_CONTINUE
 
 
 EXECUTION_STATES = {"created", "draft", "approved", "queued", "executing", "testing", "paused", "blocked", "completed", "failed"}
@@ -123,6 +124,41 @@ def _result_attribution(result: CodexExecutionResult) -> dict[str, Any]:
     return attribution
 
 
+def _autonomous_execution_trace(
+    *,
+    session: ExecutionSession,
+    package: ExecutionPackage,
+    permission_decision: dict | None,
+    result: str,
+) -> dict[str, Any]:
+    context = package.context if isinstance(package.context, dict) else {}
+    policy = context.get("autonomous_execution_policy")
+    if not isinstance(policy, dict):
+        risk = context.get("risk_decision")
+        policy = risk.get("autonomous_execution_policy") if isinstance(risk, dict) else None
+    policy = dict(policy or {})
+    policy_decision = policy.get("decision") or "UNKNOWN"
+    if policy_decision == AUTO_CONTINUE:
+        approval_boundary = "AUTO_CONTINUE_NO_FOUNDER_QUEUE"
+    elif policy_decision == "UNKNOWN" or policy.get("reason") == "unknown_operation_or_risk":
+        approval_boundary = "UNKNOWN_FAIL_CLOSED"
+    else:
+        approval_boundary = "FOUNDER_APPROVAL_REQUIRED"
+    return {
+        "schema_version": "sino-autonomous-execution-trace-v1",
+        "task_id": session.task_asset_id,
+        "execution_id": session.id,
+        "operation_type": context.get("operation_type"),
+        "policy_decision": policy_decision,
+        "policy_reason": policy.get("reason"),
+        "permission_decision": (permission_decision or {}).get("decision"),
+        "executor": "CODEX",
+        "result": result,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "approval_boundary": approval_boundary,
+    }
+
+
 def _record_codex_executor_invocation(
     session: ExecutionSession,
     package: ExecutionPackage,
@@ -213,6 +249,12 @@ class FounderExecutionLoop:
                     error_code=error.__class__.__name__,
                 )
                 raise
+            codex_trace = _autonomous_execution_trace(
+                session=session,
+                package=package,
+                permission_decision=result.permission_decision,
+                result="completed" if result.exit_code == 0 else "failed",
+            )
             _record_codex_executor_invocation(
                 session,
                 package,
@@ -226,11 +268,13 @@ class FounderExecutionLoop:
             append_event(session, "codex_finished", status="executing",
                          message=f"Codex subprocess finished with exit code {result.exit_code}",
                          metadata={"exit_code": result.exit_code, "codex_run_id": result.codex_run_id,
-                                   "stderr_summary": (result.stderr or "")[-2000:]})
+                                   "stderr_summary": (result.stderr or "")[-2000:],
+                                   "autonomous_execution_trace": codex_trace})
             if result.exit_code != 0:
                 session.result = {"stdout": result.stdout, "stderr": result.stderr, "exit_code": result.exit_code,
                                   "changed_files": result.changed_files, "execution_baseline": result.execution_baseline,
-                                  "execution_attribution": result.execution_attribution, "codex_run_id": result.codex_run_id}
+                                  "execution_attribution": result.execution_attribution, "codex_run_id": result.codex_run_id,
+                                  "autonomous_execution_trace": codex_trace}
                 session.subprocess_exit_status = result.exit_code
                 raise RuntimeError(result.stderr or "Codex execution failed")
             from .execution_scope import SCOPE_PASS, rollback_scope_mismatch_patch, verify_execution_scope
@@ -350,6 +394,7 @@ class FounderExecutionLoop:
                 "execution_id": session.id,
                 "execution_package_id": session.execution_package_id,
                 "codex_run_id": result.codex_run_id,
+                "autonomous_execution_trace": codex_trace,
             }
             if post_verification.get("status") != "VERIFIED":
                 raise RuntimeError(

@@ -180,6 +180,16 @@ def test_low_request_auto_continues_to_task_execution_and_same_conversation(monk
     policy = state.discovery["operational_runtime"]["risk_decision"]["autonomous_execution_policy"]
     assert policy["decision"] == autonomous_execution_policy.AUTO_CONTINUE
     assert policy["reason"] == "low_risk_read_only_operation"
+    trace = tasks[0].result["autonomous_execution_trace"]
+    assert trace["task_id"] == tasks[0].id
+    assert trace["execution_id"] == result["execution_id"]
+    assert trace["operation_type"] == runtime.REPO_INSPECTION
+    assert trace["policy_decision"] == autonomous_execution_policy.AUTO_CONTINUE
+    assert trace["permission_decision"] == "NOT_APPLICABLE_LOCAL_EXECUTOR"
+    assert trace["executor"] == "LOCAL_EXECUTOR"
+    assert trace["result"] == "completed"
+    assert trace["approval_boundary"] == "AUTO_CONTINUE_NO_FOUNDER_QUEUE"
+    assert tasks[0].scope["autonomous_execution_trace"]["execution_id"] == result["execution_id"]
 
 
 def test_remote_write_approval_required_creates_founder_action_queue(monkeypatch, tmp_path):
@@ -191,11 +201,28 @@ def test_remote_write_approval_required_creates_founder_action_queue(monkeypatch
     )
     assert result["status"] == "approval_required"
     assert result["risk_decision"]["autonomous_execution_policy"]["decision"] == autonomous_execution_policy.FOUNDER_APPROVAL_REQUIRED
+    trace = result["risk_decision"]["autonomous_execution_trace"]
+    assert trace["policy_decision"] == autonomous_execution_policy.FOUNDER_APPROVAL_REQUIRED
+    assert trace["approval_boundary"] == "FOUNDER_APPROVAL_REQUIRED"
+    assert trace["result"] == "blocked"
     with factory() as db:
         state = db.query(SinoBrainSessionDB).filter_by(conversation_id="conv-safe-push-policy").one()
     queue = state.discovery["founder_action_queue"]
     assert len(queue) == 1
     assert queue[0]["action_type"] == runtime.SAFE_PUSH_QUEUE_TYPE
+
+
+def test_unknown_operational_request_trace_fails_closed():
+    result = runtime.handle_operational_conversation_request(
+        conversation_id="conv-unknown-trace",
+        founder_request="do something somewhere maybe",
+        source_message_id="message-unknown-trace",
+    )
+    trace = result["risk_decision"]["autonomous_execution_trace"]
+    assert result["handled"] is False
+    assert trace["policy_decision"] == autonomous_execution_policy.FOUNDER_APPROVAL_REQUIRED
+    assert trace["approval_boundary"] == "UNKNOWN_FAIL_CLOSED"
+    assert trace["result"] == "blocked"
 
 
 def test_focused_test_uses_shell_false_and_persists_result(monkeypatch, tmp_path):
@@ -679,6 +706,13 @@ def test_bounded_code_change_approval_auto_continues_and_persists_result(monkeyp
     assert task.result["checkpoint"]["commit_created"] is True
     assert task.result["checkpoint"]["commit_file_count"] == 1
     assert task.result["changed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
+    trace = task.result["autonomous_execution_trace"]
+    assert trace["task_id"] == task.id
+    assert trace["execution_id"] == approved["execution_id"]
+    assert trace["operation_type"] == runtime.BOUNDED_CODE_CHANGE
+    assert trace["policy_decision"] == autonomous_execution_policy.AUTO_CONTINUE
+    assert trace["executor"] == "CODEX"
+    assert trace["approval_boundary"] == "AUTO_CONTINUE_NO_FOUNDER_QUEUE"
     assert state.discovery["operational_runtime"]["result"]["changed_files"] == ["frontend/src/sino-founder/ConversationThread.jsx"]
     assert any("受控代码修改完成" in item.content for item in messages)
     assert len(execution_registry._sessions) == 1
@@ -698,8 +732,10 @@ def test_bounded_code_change_retry_reuses_completed_execution(monkeypatch, tmp_p
     monkeypatch.setattr(runtime, "run_bounded_code_change", lambda _plan: (_ for _ in ()).throw(AssertionError("retry must not run code executor")))
     second = runtime.decide_bounded_code_change_action(result["action_id"], "approve")
     with factory() as db:
-        assert db.query(TaskAssetDB).count() == 1
+        task = db.query(TaskAssetDB).one()
     assert first["execution_id"] == second["execution_id"]
+    assert task.result["autonomous_execution_trace"]["execution_id"] == first["execution_id"]
+    assert isinstance(task.scope["autonomous_execution_trace"], dict)
     assert len(execution_registry._sessions) == 1
 
 
@@ -871,6 +907,7 @@ def test_run_bounded_code_change_uses_existing_codex_adapter_and_isolates_sessio
                 exit_code=0,
                 changed_files=list(package.context["allowed_files"]),
                 codex_run_id=f"codex-{package.context['execution_id']}",
+                permission_decision={"decision": "PERMISSION_AUTO_HANDLED", "reason": "low_risk_bounded_local_development"},
             )
 
     for suffix in ("a", "b"):
@@ -881,6 +918,10 @@ def test_run_bounded_code_change_uses_existing_codex_adapter_and_isolates_sessio
             "mission_id": f"mission-{suffix}",
             "task_id": f"task-{suffix}",
             "execution_id": f"execution-{suffix}",
+            "autonomous_execution_policy": {
+                "decision": "AUTO_CONTINUE",
+                "reason": "founder_approved_bounded_local_development",
+            },
         }
         result = runtime.run_bounded_code_change(plan, cwd=tmp_path, adapter=FakeCodexAdapter())
         assert result["real_executor_used"] == runtime.CODEX_EXECUTOR
@@ -888,6 +929,10 @@ def test_run_bounded_code_change_uses_existing_codex_adapter_and_isolates_sessio
         assert result["codex_session_id"] == f"codex-execution-{suffix}"
         assert result["codex_invocation"]["conversation_id"] == f"conv-{suffix}"
         assert result["codex_invocation"]["mission_id"] == f"mission-{suffix}"
+        assert result["codex_permission_decision"]["decision"] == "PERMISSION_AUTO_HANDLED"
+        assert result["autonomous_execution_trace"]["permission_decision"] == "PERMISSION_AUTO_HANDLED"
+        assert result["autonomous_execution_trace"]["policy_decision"] == "AUTO_CONTINUE"
+        assert result["autonomous_execution_trace"]["approval_boundary"] == "AUTO_CONTINUE_NO_FOUNDER_QUEUE"
     assert calls[0][0].context["conversation_id"] == "conv-a"
     assert calls[1][0].context["conversation_id"] == "conv-b"
 
