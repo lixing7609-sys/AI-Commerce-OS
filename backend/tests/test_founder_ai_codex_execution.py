@@ -112,6 +112,44 @@ def test_approved_execution_uses_adapter_and_captures_assets():
     )
 
 
+def test_execution_trace_projection_returns_one_stable_trace(monkeypatch):
+    trace = {
+        "execution_id": "session-trace",
+        "task_id": "task-trace",
+        "policy_decision": AUTO_CONTINUE,
+        "permission_decision": "PERMISSION_AUTO_HANDLED",
+        "approval_boundary": "AUTO_CONTINUE_NO_FOUNDER_QUEUE",
+    }
+    session = SimpleNamespace(
+        id="session-trace", task_asset_id="task-trace",
+        result={"autonomous_execution_trace": trace},
+        events=[{"event_name": "codex_finished", "metadata": {"autonomous_execution_trace": trace}}],
+    )
+    monkeypatch.setattr(api, "get_execution_session", lambda _execution_id: (session, SimpleNamespace(context={})))
+    monkeypatch.setattr(api, "get_founder_task_asset", lambda _task_id: None)
+
+    projected = api.get_founder_execution_trace("session-trace")
+
+    assert projected["trace"]["execution_id"] == "session-trace"
+    assert projected["trace"]["policy_decision"] == AUTO_CONTINUE
+    assert projected["trace"]["permission_decision"] == "PERMISSION_AUTO_HANDLED"
+
+
+def test_execution_trace_projection_never_promotes_unknown_to_auto_continue(monkeypatch):
+    session = SimpleNamespace(
+        id="session-unknown", task_asset_id="task-unknown",
+        result={"autonomous_execution_trace": {"execution_id": "session-unknown", "policy_decision": "UNKNOWN", "approval_boundary": "UNKNOWN_FAIL_CLOSED"}},
+        events=[],
+    )
+    monkeypatch.setattr(api, "get_execution_session", lambda _execution_id: (session, SimpleNamespace(context={})))
+    monkeypatch.setattr(api, "get_founder_task_asset", lambda _task_id: None)
+
+    projected = api.get_founder_execution_trace("session-unknown")
+
+    assert projected["trace"]["policy_decision"] == "UNKNOWN"
+    assert projected["trace"]["approval_boundary"] == "UNKNOWN_FAIL_CLOSED"
+
+
 def test_codex_adapter_terminates_process_group_on_timeout(monkeypatch, tmp_path: Path):
     class TimedOutProcess:
         pid = 4321

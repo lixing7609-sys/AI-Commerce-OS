@@ -397,6 +397,7 @@ class ExecutionSessionOut(BaseModel):
     authorization_envelope: dict[str, Any] | None = None
     authorization_audit: list[dict[str, Any]] = Field(default_factory=list)
     pending_codex_authorization: dict[str, Any] | None = None
+    autonomous_execution_trace: dict[str, Any] | None = None
 
 
 class ExecutionResultOut(ExecutionSessionOut):
@@ -1685,8 +1686,37 @@ def _execution_result(session, package) -> ExecutionResultOut:
         execution_logs=session.execution_logs,
         package_version=package.package_version,
         deltas=list(session.deltas),
+        autonomous_execution_trace=_execution_trace_projection(session, package),
         **_execution_observability(session),
     )
+
+
+def _execution_trace_projection(session, package) -> dict[str, Any] | None:
+    """Read one stable trace from existing execution/task metadata."""
+    candidates: list[dict[str, Any]] = []
+    session_result = session.result if isinstance(session.result, dict) else {}
+    if isinstance(session_result.get("autonomous_execution_trace"), dict):
+        candidates.append(session_result["autonomous_execution_trace"])
+    for event in reversed(session.events or []):
+        metadata = event.get("metadata") if isinstance(event, dict) else None
+        event_trace = metadata.get("autonomous_execution_trace") if isinstance(metadata, dict) else None
+        if isinstance(event_trace, dict):
+            candidates.append(event_trace)
+    context = package.context if isinstance(package.context, dict) else {}
+    if isinstance(context.get("autonomous_execution_trace"), dict):
+        candidates.append(context["autonomous_execution_trace"])
+    task = get_founder_task_asset(session.task_asset_id)
+    if task is not None:
+        for container in (task.result, task.scope):
+            if isinstance(container, dict) and isinstance(container.get("autonomous_execution_trace"), dict):
+                candidates.append(container["autonomous_execution_trace"])
+    for candidate in candidates:
+        if candidate.get("execution_id") in {None, session.id}:
+            projected = dict(candidate)
+            projected.setdefault("execution_id", session.id)
+            projected.setdefault("task_id", session.task_asset_id)
+            return projected
+    return None
 
 
 def _execution_observability(session) -> dict[str, Any]:
@@ -1714,6 +1744,19 @@ def _execution_timeline(session) -> dict[str, str | None]:
         "testing": session.testing_at,
         "completed": session.completed_at if session.status == "completed" else None,
         "failed": session.completed_at if session.status == "failed" else None,
+    }
+
+
+@router.get("/executions/{execution_id}/trace", response_model=dict[str, Any])
+def get_founder_execution_trace(execution_id: str):
+    record = get_execution_session(execution_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Execution session not found")
+    session, package = record
+    return {
+        "execution_id": session.id,
+        "task_id": session.task_asset_id,
+        "trace": _execution_trace_projection(session, package),
     }
 
 
