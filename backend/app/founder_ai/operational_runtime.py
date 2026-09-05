@@ -2367,6 +2367,8 @@ def _codex_execution_package_for_bounded_change(plan: dict, *, cwd: Path) -> Exe
         "standard_task_contract": scope_contract,
         "preexisting_dirty_files": list(plan.get("preexisting_dirty_files") or []),
         "risk_level": MEDIUM_RISK,
+        "risk_decision": plan.get("risk_decision"),
+        "autonomous_execution_policy": plan.get("autonomous_execution_policy"),
         "approval_action_id": plan.get("approval_action_id"),
         "founder_authorization_boundary": {
             "allowed_files": allowed_files,
@@ -2475,7 +2477,9 @@ def run_bounded_code_change(
             "started_at": started_at,
             "completed_at": _now(),
             "codex_run_id": result.codex_run_id,
+            "permission_decision": result.permission_decision,
         },
+        "codex_permission_decision": result.permission_decision,
         "started_at": started_at,
         "completed_at": _now(),
     }
@@ -2660,6 +2664,8 @@ def _execution_package(*, task: TaskAssetDB, execution_id: str, risk: dict) -> E
         "working_branch": operational.get("working_branch"),
         "baseline_head": operational.get("baseline_head"),
         "risk_level": risk.get("risk_level", LOW_RISK),
+        "risk_decision": operational.get("risk_decision") or risk,
+        "autonomous_execution_policy": operational.get("autonomous_execution_policy") or (risk.get("autonomous_execution_policy") if isinstance(risk, dict) else None),
         "operation_type": operation_type,
         "allowed_scope": operational.get("allowed_scope"),
         "allowed_files": allowed_files,
@@ -3898,6 +3904,7 @@ def _bounded_task_scope(*, founder_request: str, conversation_id: str, source_me
             "working_branch": plan.get("working_branch"),
             "baseline_head": plan.get("baseline_head"),
             "risk_decision": risk,
+            "autonomous_execution_policy": risk.get("autonomous_execution_policy"),
             "risk_level": MEDIUM_RISK,
             "allowed_files": list(plan.get("allowed_files") or []),
             "allowed_directories": list(plan.get("allowed_directories") or []),
@@ -3962,6 +3969,8 @@ def execute_bounded_code_change(
     if policy.get("decision") != AUTO_CONTINUE:
         raise ValueError(policy.get("reason") or "bounded_local_development_not_authorized")
     risk["autonomous_execution_policy"] = policy
+    plan["risk_decision"] = {key: value for key, value in risk.items() if key != "plan"}
+    plan["autonomous_execution_policy"] = dict(policy)
     if not (plan.get("allowed_files") or plan.get("allowed_directories")):
         raise ValueError("bounded_code_change_requires_file_boundary")
     root = repo_root()

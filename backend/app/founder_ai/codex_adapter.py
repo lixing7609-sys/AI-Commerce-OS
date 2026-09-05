@@ -12,6 +12,7 @@ import subprocess
 import time
 
 from .orchestrator import ExecutionPackage
+from .codex_permission_adapter import PERMISSION_AUTO_HANDLED, decide_codex_permission
 from .task_package import TaskPackageBuilder
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ class CodexExecutionResult:
     execution_baseline: dict | None = None
     execution_attribution: dict | None = None
     codex_run_id: str | None = None
+    permission_decision: dict | None = None
 
 
 class SubprocessCodexAdapter:
@@ -69,6 +71,11 @@ class SubprocessCodexAdapter:
         return str(user_install) if user_install.is_file() else command
 
     def execute(self, package: ExecutionPackage, *, cwd: Path) -> CodexExecutionResult:
+        permission_decision = decide_codex_permission(package)
+        if permission_decision.get("decision") != PERMISSION_AUTO_HANDLED:
+            raise PermissionError(
+                f"codex_permission_not_auto_handled:{permission_decision.get('reason') or 'founder_approval_required'}"
+            )
         instruction_path = self.task_package_builder.write(package, cwd / ".founder-execution")
         instruction = instruction_path.read_text(encoding="utf-8")
         contract = dict(package.context.get("standard_task_contract") or {})
@@ -88,7 +95,7 @@ class SubprocessCodexAdapter:
         started = time.monotonic()
         logger.info("Codex started instruction=%s timeout_seconds=%s", instruction_path.name, self.timeout_seconds)
         process = subprocess.Popen(
-            [self.command, "exec", "-s", "workspace-write", "-c", 'approval_policy="never"', "-"],
+            [self.command, "exec", "-s", "workspace-write", "-c", f'approval_policy="{permission_decision["codex_approval_policy"]}"', "-"],
             cwd=str(cwd),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -132,6 +139,7 @@ class SubprocessCodexAdapter:
             execution_baseline=baseline,
             execution_attribution=attribution,
             codex_run_id=codex_run_id(stderr),
+            permission_decision=permission_decision,
         )
 
     @staticmethod
